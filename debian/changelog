@@ -1,3 +1,25 @@
+mysql-5.7 (5.7.13-0ubuntu1) UNRELEASED; urgency=medium
+
+  * Ubuntu merge from Debian VCS 1cdae6c. Remaining changes:
+    - Revert "Build with libmecab-dev" since libmecab-dev is in
+      universe.
+  * Drop changes:
+    - mysql-server-5.7: depend on apparmor (>= 2.10) for Trusty upgrade
+      path (all upgrade paths go through Xenial; in hindsight this
+      should have been a Breaks anyway).
+    - Upstreamed to Debian:
+      + d/p/allowemptyport.patch: update corresponding test
+      + postinst: ignore mysql_upgrade's exit status 2
+      + Export my_make_scrambled_password
+      + Client commands in postinst should ignore custom config
+      + Enable setting password for existing database if it was empty
+      + Quote $rootpw correctly
+      + Add libnuma-dev, libaio-dev to libmysqld-dev deps
+      + d/p/fix-man-page-links.patch: drop (fixed upstream)
+      + Add d/NEWS
+
+ -- Robie Basak <robie.basak@ubuntu.com>  Wed, 16 Mar 2016 14:01:31 +0000
+
 mysql-5.7 (5.7.13-1~exp1) UNRELEASED; urgency=medium
 
   [ Robie Basak ]
