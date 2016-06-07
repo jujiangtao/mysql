@@ -149,6 +149,76 @@ mysql-5.7 (5.7.13-1~exp1) UNRELEASED; urgency=medium
 
  -- Robie Basak <robie.basak@canonical.com>  Tue, 24 May 2016 15:39:33 +0100
 
+mysql-5.7 (5.7.12-0ubuntu2) yakkety; urgency=medium
+
+  * No change rebuild to fix miscompilation on s390x. LP: #1572613
+
+ -- Dimitri John Ledkov <xnox@ubuntu.com>  Tue, 26 Apr 2016 13:11:50 +0100
+
+mysql-5.7 (5.7.12-0ubuntu1) xenial-security; urgency=medium
+
+  * SECURITY UPDATE: Update to 5.7.12 to fix security issues (LP: #1572559)
+    - http://www.oracle.com/technetwork/security-advisory/cpuapr2016v3-2985753.html
+    - CVE-2016-0639
+    - CVE-2016-0642
+    - CVE-2016-0643
+    - CVE-2016-0647
+    - CVE-2016-0648
+    - CVE-2016-0655
+    - CVE-2016-0657
+    - CVE-2016-0659
+    - CVE-2016-0662
+    - CVE-2016-0666
+    - CVE-2016-0667
+    - CVE-2016-2047
+  * d/p/fix-manpage-links.patch: drop (fixed upstream).
+  * Add NEWS entry missed from my previous upload.
+
+ -- Robie Basak <robie.basak@ubuntu.com>  Thu, 21 Apr 2016 12:05:40 +0100
+
+mysql-5.7 (5.7.11-0ubuntu6) xenial; urgency=medium
+
+  [ Lars Tangvald ]
+  * Added patch for exporting my_make_scrambled_password to fix
+    pure-ftpd FTBFS.
+  * Client commands in d/postinst will ignore custom config (LP:
+    #1567695)
+  * Enable changing root password on install if previous db had empty
+    (LP: #1567098)
+
+  [ Robie Basak ]
+  * d/mysql-server-5.7.postinst: quote "$rootpw" correctly.
+  * d/control: add libnuma-dev and libaio-dev to libmysqld-dev
+    dependencies, since these are required according to "mysql_config
+    --libmysqld-libs". This fixes FTBFS of packages that use
+    libmysqld-dev.
+
+ -- Robie Basak <robie.basak@ubuntu.com>  Wed, 13 Apr 2016 17:34:08 +0100
+
+mysql-5.7 (5.7.11-0ubuntu5) xenial; urgency=medium
+
+  * d/mysql-server-5.7.postinst: ignore mysql_upgrade's exit status when
+    it is one that includes the indication that there is nothing to do
+    (LP: #1566406).
+
+ -- Robie Basak <robie.basak@ubuntu.com>  Thu, 07 Apr 2016 11:58:28 +0100
+
+mysql-5.7 (5.7.11-0ubuntu4) xenial; urgency=medium
+
+  * d/p/allowemptyport.patch: update corresponding test.
+
+ -- Robie Basak <robie.basak@ubuntu.com>  Wed, 06 Apr 2016 12:48:52 +0100
+
+mysql-5.7 (5.7.11-0ubuntu3) xenial; urgency=medium
+
+  * Ubuntu upload from Debian VCS c17404a.
+  * FFe update to MySQL 5.7 (LP: #1528583).
+  * Revert "Build with libmecab-dev" since libmecab-dev is in universe.
+  * mysql-server-5.7: depend on apparmor (>= 2.10) for Trusty upgrade
+    path.
+
+ -- Robie Basak <robie.basak@ubuntu.com>  Wed, 16 Mar 2016 14:01:31 +0000
+
 mysql-5.6 (5.6.28-1) unstable; urgency=medium
 
   [ Robie Basak ]
