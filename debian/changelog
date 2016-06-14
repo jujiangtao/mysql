@@ -1,4 +1,4 @@
-mysql-5.7 (5.7.13-0ubuntu1) UNRELEASED; urgency=medium
+mysql-5.7 (5.7.13-0ubuntu1) yakkety; urgency=medium
 
   * Ubuntu merge from Debian VCS 1cdae6c. Remaining changes:
     - Revert "Build with libmecab-dev" since libmecab-dev is in
@@ -18,7 +18,7 @@ mysql-5.7 (5.7.13-0ubuntu1) UNRELEASED; urgency=medium
       + d/p/fix-man-page-links.patch: drop (fixed upstream)
       + Add d/NEWS
 
- -- Robie Basak <robie.basak@ubuntu.com>  Wed, 16 Mar 2016 14:01:31 +0000
+ -- Robie Basak <robie.basak@ubuntu.com>  Tue, 14 Jun 2016 16:15:59 +0100
 
 mysql-5.7 (5.7.13-1~exp1) UNRELEASED; urgency=medium
 
