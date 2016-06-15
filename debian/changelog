@@ -1,0 +1,5 @@
+mysql-defaults (0.0.1) UNRELEASED; urgency=medium
+
+  * Move mysql-common from src:mysql-5.7 to a separate source package.
+
+ -- Andreas Beckmann <anbe@debian.org>  Wed, 15 Jun 2016 03:07:27 +0200

@@ -1,20 +1,19 @@
-Source: mysql-5.7
+Source: mysql-defaults
 Section: database
 Priority: optional
 Maintainer: Debian MySQL Maintainers <pkg-mysql-maint@lists.alioth.debian.org>
-Uploaders: Norbert Tretkowski <norbert@tretkowski.de>,
-           Clint Byrum <clint@ubuntu.com>,
-           James Page <jamespage@debian.org>,
-           Robie Basak <robie@justgohome.co.uk>
+Uploaders: Robie Basak <robie@justgohome.co.uk>,
+           Otto Kekäläinen <otto@debian.org>,
+           Andreas Beckmann <anbe@debian.org>,
 Build-Depends: debhelper (>= 9),
                dpkg-dev (>= 1.16.1~),
-Standards-Version: 3.9.6
-Vcs-Git: git://anonscm.debian.org/pkg-mysql/mysql-5.7.git
-Vcs-Browser: https://anonscm.debian.org/cgit/pkg-mysql/mysql-5.7.git
+Standards-Version: 3.9.8
+Vcs-Git: https://anonscm.debian.org/git/pkg-mysql/mysql.git -b mysql-defaults/master
+Vcs-Browser: https://anonscm.debian.org/cgit/pkg-mysql/mysql.git
 
 Package: mysql-common
 Architecture: all
-Depends: ${misc:Depends}, ${shlibs:Depends}
+Depends: ${misc:Depends}
 Provides: mysql-common-5.6
 Conflicts: mariadb-server-5.5,
            mysql-common-5.6,
