@@ -89,3 +89,23 @@ Description: MySQL database server binaries and system database setup (metapacka
  .
  This package depends on the default implementation of all the infrastructure
  needed to setup system databases.
+
+Package: default-libmysqlclient-dev
+Architecture: all
+Depends:
+ libmariadbclient-dev-compat,
+ ${misc:Depends}
+Description: MySQL database development files (metapackage)
+ MySQL is a fast, stable and true multi-user, multi-threaded SQL database
+ server. SQL (Structured Query Language) is the most popular database query
+ language in the world. The main goals of MySQL are speed, robustness and
+ ease of use.
+ .
+ This package depends on the default implementation of the client development
+ libraries and header files (API and ABI defined by MySQL). Depending on the
+ default defined through this metapackage, the underlying implementation may be
+ provided by either MySQL or MariaDB. Build-Depend on this package and then
+ link using -lmysqlclient. You will end up with a binary that depends on either
+ libmysqlclient.so.X or libmariadbclient.so.X depending on the current default.
+ dpkg-shlibdeps should correctly generate a dependency on libmysqlclientX or
+ libmariadbclientX as appropriate.
