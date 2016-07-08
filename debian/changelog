@@ -1,7 +1,23 @@
-mysql-defaults (0.0.1) UNRELEASED; urgency=medium
+mysql-defaults (1.0.0~exp1) experimental; urgency=low
 
+  [ Otto Kekäläinen ]
+  * Initial upload to Debian. This package provides a mysql-common package
+    that is independent on it's own without the server source packages.
+    This source package also generates the default-mysql-* metapackages
+    that have been created to meet the requirements set by the release team.
+    The package will be first tested in experimental so that any potential
+    regressions have minimal impact.
+    .
+    The mysql-common package replaces the one provided from mysql-5.6/5.7
+    source package. In the future mysql-common will be provided only from this
+    source package.
+
+  [ Andreas Beckmann ]
   * Move mysql-common from src:mysql-5.7 to a separate source package.
   * Provide default-mysql-{client,server}{,-core} metapackages corresponding
     to virtual-mysql-*. These depend on the respective mariadb-10.0 packages.
 
- -- Andreas Beckmann <anbe@debian.org>  Wed, 15 Jun 2016 03:07:27 +0200
+  [ Robie Basak ]
+  * Add default-libmysqlclient-dev package
+
+ -- Otto Kekäläinen <otto@debian.org>  Sat, 09 Jul 2016 00:57:48 +0300
