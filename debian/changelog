@@ -1,3 +1,11 @@
+mysql-5.7 (5.7.13-0ubuntu3) yakkety; urgency=medium
+
+  * Automatically replace removed config options from 5.5 and old 5.6
+    installations (LP: #1571865). Cherry-picked from Debian VCS ef3f92b.
+    Thanks to Lars Tangvald.
+
+ -- Robie Basak <robie.basak@ubuntu.com>  Tue, 12 Jul 2016 17:45:00 +0100
+
 mysql-5.7 (5.7.13-0ubuntu2) yakkety; urgency=medium
 
   * Drop obsolete initscripts dependency. Backported from Debian packaging
