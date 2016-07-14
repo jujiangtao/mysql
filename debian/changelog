@@ -1,3 +1,12 @@
+mysql-5.7 (5.7.13-0ubuntu4) yakkety; urgency=medium
+
+  * Check that /etc/mysql/my.cnf.migrated exists before attempting to
+    amend it, so that it is properly idempotent. This fixes a postinst
+    failure in some known edge cases where the version match still
+    passes. Cherry-picked from Debian VCS 8672b6b.
+
+ -- Robie Basak <robie.basak@ubuntu.com>  Thu, 14 Jul 2016 14:14:56 +0100
+
 mysql-5.7 (5.7.13-0ubuntu3) yakkety; urgency=medium
 
   * Automatically replace removed config options from 5.5 and old 5.6
