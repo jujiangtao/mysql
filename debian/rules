@@ -72,6 +72,7 @@ configure-stamp:
 		-DBUILD_CONFIG=mysql_release \
 		-DWITH_LIBWRAP=ON \
 		-DWITH_ZLIB=system \
+		-DWITH_LZ4=system \
 		-DWITH_EDITLINE=system \
 		-DWITH_LIBEVENT=system \
 		-DWITH_SSL=bundled \
