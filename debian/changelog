@@ -1,8 +1,8 @@
-mysql-5.7 (5.7.14-1) UNRELEASED; urgency=medium
+mysql-5.7 (5.7.15-1) UNRELEASED; urgency=medium
 
-  * New upstream release
+  * New upstream release (Closes: #837883)
 
- -- Bjoern Boschman <bjoern@boschman.de>  Wed, 03 Aug 2016 19:51:54 +0200
+ -- Bjoern Boschman <bjoern@boschman.de>  Thu, 15 Sep 2016 12:23:15 +0200
 
 mysql-5.7 (5.7.13-1~exp1) experimental; urgency=medium
 
