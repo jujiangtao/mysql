@@ -30,6 +30,9 @@ EOF
 
 cd /usr/lib/mysql-test
 echo "starting mysql-test-run.pl..."
+# Workaround for change introduced as part of https://www.debian.org/security/2016/dsa-3628
+# Pending upstream fix of mtr includes
+export PERLLIB=.
 ./mysql-test-run.pl --suite=main --vardir=$WORKDIR/var --tmpdir=$WORKDIR/tmp \
     --skip-ndbcluster --parallel=auto --skip-rpl --report-features \
     --force --skip-test-list=$SKIP_TEST_LST $@ 2>&1
