@@ -1,16 +1,36 @@
 
-###########################
-##	FIXME for 5.1    ##
-###########################
-
-* put this trigger-recreation thing into the init scripts -- what?!
-
 ###########################################################################
 # Here are some information that are only of interest for the current and #
 # following Debian maintainers of MySQL.                                  #
 ###########################################################################
 
-The debian/ directory is under SVN control, see debian/control for URL.
+The debian/ directory is under GIT control, see debian/control for URL.
+
+#
+# Building with sbuild and running dep8 tests
+#
+- Note: This is tested on Ubuntu 16.04 with xenial-backports enabled. There are bugs in older
+- versions of the required packages that might break the build/test run
+- You need packages autopkgtest, qemu, sbuild, ubuntu-dev-tools and vmdebootstrap
+
+- To create a basic sbuild image for building:
+mk-sbuild --eatmydata [codename]
+- eg. mk-sbuild --eatmydata sid
+
+- Build using the created image
+DEB_BUILD_OPTIONS=parallel=15 sbuild -Ad[codename] mysql-5.7_[version].dsc
+- eg. DEB_BUILD_OPTIONS=parallel=15 sbuild -Adsid-amd64 mysql-5.7_5.7.15-1.dsc
+
+- Create raw sid image for running dep8
+sudo vmdebootstrap --verbose --serial-console --distribution=sid --customize=/usr/share/autopkgtest/setup-commands/setup-testbed --user=adt/adt --size=10000000000 --grub --image=adt-sid.raw
+- If behind a proxy, add an ADT_APT_PROXY=[url:port] before vmdebootstrap
+- Convert to qemu image
+qemu-img convert -O qcow2 adt-sid.raw  adt-sid.img
+rm adt-sid.raw
+
+- Run dep8 tests
+adt-run -oadt -B *.deb mysql-5.7_[version].dsc --- adt-virt-qemu ./adt-sid.img
+- eg. adt-run -oadt -B *.deb mysql-5.7_5.7.15-1.dsc --- adt-virt-qemu ./adt-sid.img | tee testresult.txt
 
 #
 # Preparing a new version
