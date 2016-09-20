@@ -1,10 +1,14 @@
 mysql-5.7 (5.7.15-0ubuntu2) UNRELEASED; urgency=medium
 
-  * Add working dir to perl lib path for dep8 upstream tests (fixes mtr failure)
-    New versions of perl will no longer automatically include working dir in the path.
-  * Change mysql-testsuite dependency from python to libjson-perl (fixes test failure)
-    Tests written in python were rewritten in perl, replacing the dependency
+  * Add working dir to perl lib path for dep8 upstream.
+    New versions of perl will no longer automatically include working dir in
+    the path. This was causing the mtr suite to fail to start.
+  * Change mysql-testsuite dependency from python to libjson-perl.
+    Tests written in python were rewritten in perl, so testsuite no longer
+    depends on python, but tests fail if libjson-perl is missing.
   * Build with DWITH_LZ4=system
+    If the flag is not set the package will be built with a bundled liblz4
+    instead of the one provided by the liblz4-dev build-dep.
   * Add support for custom datadir to systemd service (LP: #1574782)
     The service was reporting errors if no database was found in /var/lib/mysql
     It will now check the path specified in the config
