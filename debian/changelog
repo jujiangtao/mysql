@@ -1,3 +1,17 @@
+mysql-5.7 (5.7.15-0ubuntu0.16.04.1) xenial-security; urgency=medium
+
+  * SECURITY UPDATE: Update to 5.7.15 to fix security issues
+    - CVE-2016-6662
+  * Removed patches included in new release:
+    - debian/patches/fix-mtr-search-paths.patch
+    - debian/patches/mysql-atomic.patch
+    - debian/patches/mysql-atomic-link.patch
+    - debian/patches/mysql-atomic-innodb.patch
+    - debian/patches/allowemptyport.patch
+  * debian/rules: new version no longer ships unit.pl.
+
+ -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Mon, 12 Sep 2016 10:10:36 -0400
+
 mysql-5.7 (5.7.13-0ubuntu0.16.04.2) xenial-security; urgency=medium
 
   * SECURITY UPDATE: Update to 5.7.13 to fix security issues (LP: #1604796)
