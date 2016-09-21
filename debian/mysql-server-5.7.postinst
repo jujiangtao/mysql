@@ -169,7 +169,7 @@ case "$1" in
     db_set mysql-server/postrm_remove_database false || true
 
     # Fix old options that were deprecated in 5.5 and removed in 5.7
-    if dpkg --compare-versions "$2" le-nl "5.7.13-0ubuntu3~"; then
+    if dpkg --compare-versions "$2" le "5.7.13-0ubuntu3~"; then
       echo "Renaming removed key_buffer and myisam-recover options (if present)"
       fix_old_config_options
     fi
