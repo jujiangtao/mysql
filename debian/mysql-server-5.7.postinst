@@ -45,6 +45,37 @@ invoke() {
   fi
 }
 
+# Check if server is able to start. If it fails we abort early and refer
+# the user to a wiki page with solutions for common configuration problems.
+test_mysqld_startup() {
+  # mysqld --verbose --help will output a full listing of settings and plugins.
+  # To do so it needs to initialize the database, so it can be used as a test
+  # for whether or not the server can start. We redirect stdout to /dev/null so
+  # only the error messages are left.
+  result=0
+  output=$(mysqld --verbose --help --innodb-read-only 2>&1 > /dev/null) || result=$?
+  if [ ! "$result" = "0" ]; then
+    echo "ERROR: Unable to start MySQL server:" >&2
+    echo "$output" >&2
+    echo "Please take a look at https://wiki.debian.org/Teams/MySQL/FAQ for tips on fixing common upgrade issues." >&2
+    echo "Once the problem is resolved, run apt-get --fix-broken install to retry." >&2
+  fi
+  return $result
+}
+
+# Default config in 5.5 and older 5.6 installations contains two deprecated
+# options that were removed in 5.7. They were renamed, so we can fix this
+# automatically. We create a backup of the old file
+fix_old_config_options() {
+  [ -f /etc/mysql/my.cnf.migrated ] || return 0
+  sed -e 's/[[:space:]]*key_buffer[[:space:]]*=/# Obsolete key_buffer option renamed to key_buffer_size by maintainer script\nkey_buffer_size\t\t=/' \
+      -e 's/[[:space:]]*myisam-recover[[:space:]]*=/# Obsolete myisam-recover option renamed to myisam_recover_options by maintainer script\nmyisam_recover_options\t=/' /etc/mysql/my.cnf.migrated --in-place=.bak
+  # If nothing was changed, remove the new file
+  if cmp -s /etc/mysql/my.cnf.migrated /etc/mysql/my.cnf.migrated.bak; then
+    mv /etc/mysql/my.cnf.migrated.bak /etc/mysql/my.cnf.migrated
+  fi
+}
+
 # Check if there is passwordless root login
 test_mysql_access() {
   mysql --no-defaults -u root -h localhost </dev/null >/dev/null 2>&1
@@ -137,6 +168,14 @@ case "$1" in
     # data directory and then somewhen gets purged by the admin.
     db_set mysql-server/postrm_remove_database false || true
 
+    # Fix old options that were deprecated in 5.5 and removed in 5.7
+    if dpkg --compare-versions "$2" le-nl "5.7.13-0ubuntu3~"; then
+      echo "Renaming removed key_buffer and myisam-recover options (if present)"
+      fix_old_config_options
+    fi
+
+    # Sanity check to make sure the server can start
+    test_mysqld_startup
 
     ## On every reconfiguration the maintenance user is recreated.
     #
@@ -233,6 +272,8 @@ if [ "$1" = "configure" ]; then
       echo "mysql_upgrade failed with exit status $result" >&2
       exit 1
     fi
+    # Server should be restarted after running mysql_upgrade
+    invoke restart
   fi
   # Here we check to see if we can connect as root without a password
   # this should catch upgrades from previous versions where the root

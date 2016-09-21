@@ -1,3 +1,22 @@
+mysql-5.7 (5.7.12-0ubuntu1.2) xenial; urgency=medium
+
+  [ Robie Basak ]
+  * Replace removed config options from 5.5 and old 5.6 installations
+    (LP: #1571865)
+
+  [ Christian Ehrhardt ]
+  * Avoid running mysql_upgrade twice concurrently (LP: #1577712)
+    - Changed debian-start to just exit 0
+    - Removed debian-start.inc.sh, which was only used by debian-start
+    - Drop install of d/additions/debian-start.inc.sh
+  * d/a/source_mysql-5.7.py: strip lines from log that may contain
+    passwords (LP: #1574458)
+  * Restart server after running mysqld_upgrade (LP: #1576647)
+  * Try to fail postinst with useful error message if server can
+    not start (LP: #1602763)
+
+ -- Robie Basak <robie.basak@ubuntu.com>  Thu, 14 Jul 2016 17:09:53 +0100
+
 mysql-5.7 (5.7.12-0ubuntu1.1) xenial; urgency=medium
 
   * Recompile to resolve miscompilation on s390x architecture. LP:
