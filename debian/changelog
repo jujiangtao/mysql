@@ -1,3 +1,28 @@
+mysql-5.7 (5.7.13-0ubuntu0.16.04.2) xenial-security; urgency=medium
+
+  * SECURITY UPDATE: Update to 5.7.13 to fix security issues (LP: #1604796)
+    - http://www.oracle.com/technetwork/security-advisory/cpujul2016-2881720.html
+    - CVE-2016-3424
+    - CVE-2016-3459
+    - CVE-2016-3477
+    - CVE-2016-3486
+    - CVE-2016-3501
+    - CVE-2016-3518
+    - CVE-2016-3521
+    - CVE-2016-3588
+    - CVE-2016-3614
+    - CVE-2016-3615
+    - CVE-2016-5436
+    - CVE-2016-5437
+    - CVE-2016-5439
+    - CVE-2016-5440
+    - CVE-2016-5441
+    - CVE-2016-5442
+    - CVE-2016-5443
+  * debian/patches/mysql-export-scramble.patch: removed, upstream.
+
+ -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Wed, 20 Jul 2016 08:44:25 -0400
+
 mysql-5.7 (5.7.12-0ubuntu1.2) xenial; urgency=medium
 
   [ Robie Basak ]
