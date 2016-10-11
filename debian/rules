@@ -24,9 +24,15 @@ DEB_UPSTREAM_VERSION_MAJOR_MINOR := $(shell echo $(DEB_UPSTREAM_VERSION) | sed -
 DEB_HOST_MULTIARCH ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
 DISTRIBUTION := $(shell lsb_release -i -s)
 EXPORTED_SOURCE_TARBALL := debian/mysql-source-5.7.tar.gz
-TESTSUITE_FAIL_CMD:=true
 TMP := $(CURDIR)/debian/tmp/
 NUMJOBS=$(patsubst parallel=%,%,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
+
+# Some tests will fail on platforms that are not tested by upstream
+ifneq (,$(filter $(ARCH), amd64 i386))
+    TESTSUITE_FAIL_CMD:=exit 1
+else
+    TESTSUITE_FAIL_CMD:=true
+endif
 
 ifeq (,$(NUMJOBS))
 	NUMJOBS=1
