@@ -1,8 +1,60 @@
 mysql-5.7 (5.7.16-1) UNRELEASED; urgency=medium
 
-  * New upstream release (Closes: #837883)
+  * New upstream release
 
- -- Bjoern Boschman <bjoern@boschman.de>  Thu, 15 Sep 2016 12:23:15 +0200
+ -- Bjoern Boschman <bjoern@boschman.de>  Fri, 14 Oct 2016 13:23:08 +0200
+
+mysql-5.7 (5.7.15-1) unstable; urgency=medium
+
+  [ Bjoern Boschman ]
+  * New upstream release to fix security issues
+    - CVE-2016-6662
+    (Closes: #837883)
+  * Removed patches that have been included upstream
+
+  [ Dieter Adriaenssens ]
+  * Add DEP-12 formatted upstream metadata file
+  * d/control: Fix git url typo
+
+  [ Lars Tangvald ]
+  * Add working dir to perl lib path for dep8 upstream.
+    New versions of perl will no longer automatically include working dir in
+    the path. This was causing the mtr suite to fail to start.
+  * Change mysql-testsuite dependency from python to libjson-perl.
+    Tests written in python were rewritten in perl, so testsuite no longer
+    depends on python, but tests fail if libjson-perl is missing. Also added
+    libjson-perl build-dep to fix build-time test failures (LP: #1631338)
+  * Build with DWITH_LZ4=system
+    If the flag is not set the package will be built with a bundled liblz4
+    instead of the one provided by the liblz4-dev build-dep (LP: #1631339)
+  * Add support for custom datadir to systemd service (LP: #1574782)
+    The service was reporting errors if no database was found in /var/lib/mysql
+    It will now check the path specified in the config
+  * Fix support for soft-link datadir (LP: #1474212)
+    Upgrading more than once when datadir is soft-link was causing errors
+  * Escape special characters in password (LP: #1598992)
+    The password string was not escaped, causing SQL errors if certain special
+    characters such as apostrophes were included.
+  * Removed always-false check on purge in postrm (LP: #1602945)
+    Users were never seeing the query to remove data on a package purge
+  * Added patch for failing test datadir_permission
+  * Changed build to fail if build-time tests fail on intel platforms.
+    Certain tests fail on platforms not supported by upstream, but all tests
+    should pass on intel platforms, and ignoring such failures can hide bugs.
+  * Added --force flag to test run during build
+    The flag makes the test run complete even if tests fail. To help show
+    which tests are failing on non-intel platforms.
+  * Added functionality for skipping bad tests at build-time
+    Similarly to how it's done for dep8, some tests may fail on certain
+    platforms or be generally unstable. Added functionality for skipping these
+    Until they are disabled or fixed upstream
+
+  [ Robie Basak ]
+  * fix_old_config_options: adjust version comparison
+    Version comparison could give incorrect result if mysql-server-5.7 had
+    never been installed before (e.g. when upgrading from mysql-server-5.6)
+
+ -- Lars Tangvald <lars.tangvald@oracle.com>  Wed, 05 Oct 2016 13:10:56 +0200
 
 mysql-5.7 (5.7.13-1~exp1) experimental; urgency=medium
 
