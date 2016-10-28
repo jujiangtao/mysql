@@ -5,9 +5,11 @@ Author: Robie Basak <robie.basak@canonical.com>
 Forwarded: not-needed
 Last-Update: 2016-03-17
 
---- a/mysql-test/mysql-test-run.pl
-+++ b/mysql-test/mysql-test-run.pl
-@@ -2666,7 +2666,7 @@ sub environment_setup {
+Index: mysql-5.7.15/mysql-test/mysql-test-run.pl
+===================================================================
+--- mysql-5.7.15.orig/mysql-test/mysql-test-run.pl	2016-09-12 10:36:28.138747572 -0400
++++ mysql-5.7.15/mysql-test/mysql-test-run.pl	2016-09-12 10:36:28.138747572 -0400
+@@ -2737,7 +2737,7 @@
    # lz4_decompress
    # ----------------------------------------------------
    my $exe_lz4_decompress= mtr_exe_exists(vs_config_dirs('extra', 'lz4_decompress'),
@@ -16,7 +18,7 @@ Last-Update: 2016-03-17
                                   "$path_client_bindir/lz4_decompress");
    $ENV{'LZ4_DECOMPRESS'}= native_path($exe_lz4_decompress);
  
-@@ -2674,7 +2674,7 @@ sub environment_setup {
+@@ -2745,7 +2745,7 @@
    # zlib_decompress
    # ----------------------------------------------------
    my $exe_zlib_decompress= mtr_exe_exists(vs_config_dirs('extra', 'zlib_decompress'),

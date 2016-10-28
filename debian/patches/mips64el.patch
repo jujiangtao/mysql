@@ -6,11 +6,11 @@ Bug: http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=798126
 Forwarded: yes, http://bugs.mysql.com/69978
 Last-Update: 2015-09-21
 
-Index: mysql-5.6/extra/yassl/taocrypt/src/integer.cpp
+Index: mysql-5.7.15/extra/yassl/taocrypt/src/integer.cpp
 ===================================================================
---- mysql-5.6.orig/extra/yassl/taocrypt/src/integer.cpp
-+++ mysql-5.6/extra/yassl/taocrypt/src/integer.cpp
-@@ -192,7 +192,7 @@
+--- mysql-5.7.15.orig/extra/yassl/taocrypt/src/integer.cpp	2016-09-12 10:36:21.382668318 -0400
++++ mysql-5.7.15/extra/yassl/taocrypt/src/integer.cpp	2016-09-12 10:36:21.378668271 -0400
+@@ -178,7 +178,7 @@
                  "a" (a), "rm" (b) : "cc");
  
          #elif defined(__mips64)
