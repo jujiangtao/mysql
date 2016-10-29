@@ -91,7 +91,8 @@ Description: MySQL database server binaries and system database setup (metapacka
  needed to setup system databases.
 
 Package: default-libmysqlclient-dev
-Architecture: all
+Architecture: any
+Multi-Arch: same
 Depends:
  libmariadbclient-dev-compat,
  ${misc:Depends}
