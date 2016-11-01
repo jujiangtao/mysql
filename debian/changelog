@@ -1,9 +1,14 @@
-mysql-5.7 (5.7.16-1) UNRELEASED; urgency=medium
+mysql-5.7 (5.7.16-1) unstable; urgency=high (security fixes)
 
-  * New upstream release
+  * Imported upstream version 5.7.16 to fix security issues:
+    - http://www.oracle.com/technetwork/security-advisory/cpuoct2016-2881722.html
+    - CVE-2016-5584 CVE-2016-6304 CVE-2016-6662 CVE-2016-7440
+    Note that CVE-2016-6662 is listed both for this release and the previous.
+    The CVE-2016-6662 related changes in 5.7.16 do not affect Linux packages.
+    Thanks to Bjoern Boschman for the version update.
+    (Closes: #841163)
 
- -- Bjoern Boschman <bjoern@boschman.de>  Fri, 14 Oct 2016 13:23:08 +0200
-
+ -- Lars Tangvald <lars.tangvald@oracle.com>  Fri, 21 Oct 2016 08:59:56 +0200
 mysql-5.7 (5.7.15-1) unstable; urgency=medium
 
   [ Bjoern Boschman ]
