@@ -1,4 +1,26 @@
-mysql-5.7 (5.7.16-1) unstable; urgency=high (security fixes)
+mysql-5.7 (5.7.16-0ubuntu2) zesty; urgency=medium
+
+  * Merge from Debian VCS a733d9a. Remaining changes:
+    - Revert "Build with libmecab-dev" since libmecab-dev is in
+      universe.
+  * Drop changes (adopted in Debian):
+    - Drop obsolete initscripts dependency.
+    - Replace removed config options from 5.5 and old 5.6 installations.
+    - Remove patches included in new release.
+    - debian/rules: new version no longer ships unit.pl.
+    - Fix copy of soft-link datadir to /var/lib/mysql-upgrade if it already
+      exists there.
+    - Add support for custom datadir to systemd service.
+    - Build with DWITH_LZ4=system.
+    - Change mysql-testsuite dependency from python to libjson-perl.
+    - Set perl to include working dir for d/tests/upstream tests.
+    - Escape special characters in password.
+    - Removed always-false check on purge in postrm.
+    - Added sbuild/dep8 instructions to maintainer readme.
+
+ -- Robie Basak <robie.basak@ubuntu.com>  Tue, 01 Nov 2016 14:34:01 +0000
+
+mysql-5.7 (5.7.16-1) UNRELEASED; urgency=high (security fixes)
 
   * Imported upstream version 5.7.16 to fix security issues:
     - http://www.oracle.com/technetwork/security-advisory/cpuoct2016-2881722.html
