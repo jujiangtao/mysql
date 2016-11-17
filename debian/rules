@@ -26,7 +26,7 @@ DISTRIBUTION := $(shell lsb_release -i -s)
 EXPORTED_SOURCE_TARBALL := debian/mysql-source-5.7.tar.gz
 TMP := $(CURDIR)/debian/tmp/
 NUMJOBS=$(patsubst parallel=%,%,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
-
+TESTJOBS=$(NUMJOBS)
 # Some tests will fail on platforms that are not tested by upstream
 ifneq (,$(filter $(ARCH), amd64 i386))
     TESTSUITE_FAIL_CMD:=exit 1
@@ -39,6 +39,16 @@ ifeq (,$(NUMJOBS))
 endif
 
 MAKEFLAGS += -j $(NUMJOBS)
+
+# The below system setting constrains how many servers can be run in parallel
+# A server with default config needs a bit over 5300 slots, so we assume 6000 to be sure
+AIOMAX := $(shell cat /proc/sys/fs/aio-max-nr)
+AIOPER := 6000
+PARMAX := $(shell echo $$(( $(AIOMAX)/$(AIOPER))))
+
+ifeq ($(shell test $(TESTJOBS) -gt $(PARMAX); echo $$?),0)
+	TESTJOBS:=$(shell echo $(PARMAX) )
+endif
 
 export MYSQL_BUILD_CC=$(DEB_HOST_GNU_TYPE)-gcc
 export MYSQL_BUILD_CXX=$(DEB_HOST_GNU_TYPE)-g++
@@ -144,7 +154,7 @@ else
 
 	# Skip replication tests since they are timing sensitive and may
 	# result in false positives.
-	cd $(builddir)/mysql-test && ./mtr --parallel=$(NUMJOBS) --skip-rpl $(MTR_SUITE) --force --skip-test-list=./skiplist || $(TESTSUITE_FAIL_CMD) ;
+	cd $(builddir)/mysql-test && ./mtr --parallel=$(TESTJOBS) --skip-rpl $(MTR_SUITE) --force --skip-test-list=./skiplist || $(TESTSUITE_FAIL_CMD) ;
 endif
 endif
 
