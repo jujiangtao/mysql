@@ -1,3 +1,26 @@
+mysql-5.7 (5.7.16-2) unstable; urgency=medium
+
+  * Fix the test main.grant_user_lock when run as root
+    The test was to log in as anonymous user, but would use the current system
+    user. This was ok in most cases, but failed when the test was run as root
+    since root has its own mysql user by default.
+    (Closes: #841592)
+  * Fix invalid build flags being used by mysql_config
+    mysql_config was pulling in build flags from the build environment, causing
+    build failures in other packages if the environment contained invalid flags.
+    It now uses a whitelist system instead.
+    (Closes: #844275)
+  * Limit number of mtr parallel tests based on aio-max-nr system setting
+    On systems with many cores the test suite could fail or be unstable because
+    each server needs a certain number of aio slots. Build now limits max test
+    parallelization based on the max number of slots available on the system.
+  * Fix upgrade issue from mysql-5.5 in Jessie
+    An innochecksum file was moved from server to server-core in 5.7, causing
+    file conflicts when upgrading.
+    (Closes: #847231)
+
+ -- Lars Tangvald <lars.tangvald@oracle.com>  Fri, 25 Nov 2016 13:19:43 +0100
+
 mysql-5.7 (5.7.16-1) unstable; urgency=high (security fixes)
 
   * Imported upstream version 5.7.16 to fix security issues:
