@@ -13,7 +13,7 @@ set -e
 # rename it since it will be in active use, the user may not expect a .dpkg-bak
 # file to be in use and we do not want to surprise the user.
 
-if [ "$1" = "configure" ]; then
+if [ "$1" = "configure" ] && [ -f /etc/mysql/my.cnf.fallback ]; then
     # Low priority fallback for client use when no server is installed.
     update-alternatives --install /etc/mysql/my.cnf my.cnf /etc/mysql/my.cnf.fallback 100
 fi
