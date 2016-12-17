@@ -8,5 +8,5 @@ VERSION	:= $(shell dpkg-parsechangelog --show-field=Version)
 	dh $@
 
 override_dh_gencontrol:
-	dh_gencontrol -pmysql-common -- -v5.8+$(VERSION)
+	#dh_gencontrol -pmysql-common -- -v5.8+$(VERSION)
 	dh_gencontrol -Nmysql-common

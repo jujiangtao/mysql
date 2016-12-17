@@ -2,6 +2,7 @@ mysql-defaults (1.0.1~bpo8+1) jessie-backports; urgency=medium
 
   * Rebuild for jessie-backports.
   * Switch the defaults to mysql-5.5 packages.
+  * Do not build mysql-common.
 
  -- Andreas Beckmann <anbe@debian.org>  Sat, 17 Dec 2016 22:09:17 +0100
 
