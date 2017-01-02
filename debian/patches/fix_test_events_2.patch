@@ -1,0 +1,35 @@
+Description: Fix failing test main.events_2
+ The test fails because it adds an event scheduled for 2017-01-01,
+ ie. in the past, causing it to fail. The patch adds a short-term
+ fix by adding 10 years to the date, pending a fix upstream.
+Author: Lars Tangvald <lars.tangvald@oracle.com>
+Bug: http://bugs.mysql.com/bug.php?id=84381
+Forwarded: not-needed
+Last-Update: 2017-01-02
+
+--- mysql-5.7-5.7.16.orig/mysql-test/r/events_2.result
++++ mysql-5.7-5.7.16/mysql-test/r/events_2.result
+@@ -1,10 +1,10 @@
+ drop database if exists events_test;
+ create database events_test;
+ use events_test;
+-create event e_26 on schedule at '2017-01-01 00:00:00' disable do set @a = 5;
++create event e_26 on schedule at '2027-01-01 00:00:00' disable do set @a = 5;
+ select db, name, body, definer, convert_tz(execute_at, 'UTC', 'SYSTEM'), on_completion from mysql.event;
+ db	name	body	definer	convert_tz(execute_at, 'UTC', 'SYSTEM')	on_completion
+-events_test	e_26	set @a = 5	root@localhost	2017-01-01 00:00:00	DROP
++events_test	e_26	set @a = 5	root@localhost	2027-01-01 00:00:00	DROP
+ drop event e_26;
+ create event e_26 on schedule at NULL disable do set @a = 5;
+ ERROR HY000: Incorrect AT value: 'NULL'
+--- mysql-5.7-5.7.16.orig/mysql-test/t/events_2.test
++++ mysql-5.7-5.7.16/mysql-test/t/events_2.test
+@@ -14,7 +14,7 @@ use events_test;
+ # mysql.event intact checking end
+ #
+ 
+-create event e_26 on schedule at '2017-01-01 00:00:00' disable do set @a = 5;
++create event e_26 on schedule at '2027-01-01 00:00:00' disable do set @a = 5;
+ select db, name, body, definer, convert_tz(execute_at, 'UTC', 'SYSTEM'), on_completion from mysql.event;
+ drop event e_26;
+ --error ER_WRONG_VALUE
