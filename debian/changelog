@@ -22,7 +22,7 @@ mysql-5.7 (5.7.16-2) unstable; urgency=medium
     The test uses a hardcoded date (2017-01-01), and fails after that date.
     The patch is temporary pending upstream fix of the test.
 
- -- Lars Tangvald <lars.tangvald@oracle.com>  Fri, 25 Nov 2016 13:19:43 +0100
+ -- Lars Tangvald <lars.tangvald@oracle.com>  Tue, 03 Jan 2017 07:44:43 +0100
 
 mysql-5.7 (5.7.16-1) unstable; urgency=high (security fixes)
 
