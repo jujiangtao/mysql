@@ -18,6 +18,9 @@ mysql-5.7 (5.7.16-2) unstable; urgency=medium
     An innochecksum file was moved from server to server-core in 5.7, causing
     file conflicts when upgrading.
     (Closes: #847231)
+  * Added patch to fix failing test main.events_2
+    The test uses a hardcoded date (2017-01-01), and fails after that date.
+    The patch is temporary pending upstream fix of the test.
 
  -- Lars Tangvald <lars.tangvald@oracle.com>  Fri, 25 Nov 2016 13:19:43 +0100
 
