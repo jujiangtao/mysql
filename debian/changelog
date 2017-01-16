@@ -3,6 +3,10 @@ mysql-5.7 (5.7.17-0ubuntu1) zesty; urgency=medium
   * Merge from Debian VCS 8305cfa. Remaining changes:
     - Revert "Build with libmecab-dev" since libmecab-dev is in
       universe.
+  * Additional changes picked up from Debian VCS since 5.7.16-2:
+    - [4a72d12] Merge new upstream release 5.7.17.
+    - [8305cfa] d/p/fix_mysql_config_flags.patch: update due to context
+      changes upstream.
 
  -- Lars Tangvald <lars.tangvald@oracle.com>  Mon, 16 Jan 2017 13:07:55 +0100
 
