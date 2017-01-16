@@ -8,10 +8,10 @@ Origin: backport
 Bug: http://bugs.mysql.com/bug.php?id=83949
 Bug-Debian: https://bugs.debian.org/844275
 Forwarded: not-needed
-Last-Update: 2016-11-24
+Last-Update: 2017-01-12
 
---- mysql-5.7-5.7.16.orig/scripts/CMakeLists.txt
-+++ mysql-5.7-5.7.16/scripts/CMakeLists.txt
+--- mysql-5.7-5.7.17.orig/scripts/CMakeLists.txt
++++ mysql-5.7-5.7.17/scripts/CMakeLists.txt
 @@ -170,78 +170,42 @@ IF(MALLOC_LIB)
    INSTALL(FILES ${MALLOC_LIB} DESTINATION ${INSTALL_LIBDIR} OPTIONAL)
  ENDIF()
@@ -119,8 +119,8 @@ Last-Update: 2016-11-24
 +ENDFOREACH()
  
  IF(UNIX)
-   # FIND_PROC and CHECK_PID are used by mysqld_safe
-@@ -387,6 +351,16 @@ IF(QUOTED_CMAKE_CXX_LINK_FLAGS)
+   # SHELL_PATH, FIND_PROC, CHECK_PID are used by mysqld_safe
+@@ -393,6 +357,16 @@ IF(QUOTED_CMAKE_CXX_LINK_FLAGS)
    SET(CONFIG_EMBEDD_LIBS "${CONFIG_EMBEDD_LIBS} ${QUOTED_CMAKE_CXX_LINK_FLAGS}")
  ENDIF()
  
@@ -137,8 +137,8 @@ Last-Update: 2016-11-24
  SET(LIBMYSQLD_LIBS_USAGE "
          --libmysqld-libs [$embedded_libs]")
  SET(DISABLE_EMBEDDED_SH "")
---- mysql-5.7-5.7.16.orig/scripts/mysqlclient.pc.in
-+++ mysql-5.7-5.7.16/scripts/mysqlclient.pc.in
+--- mysql-5.7-5.7.17.orig/scripts/mysqlclient.pc.in
++++ mysql-5.7-5.7.17/scripts/mysqlclient.pc.in
 @@ -1,4 +1,4 @@
 -# Copyright (c) 2015, Oracle and/or its affiliates. All rights reserved.
 +# Copyright (c) 2015, 2016, Oracle and/or its affiliates. All rights reserved.
