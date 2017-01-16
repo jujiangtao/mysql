@@ -1,3 +1,11 @@
+mysql-5.7 (5.7.17-0ubuntu1) zesty; urgency=medium
+
+  * Merge from Debian VCS 8305cfa. Remaining changes:
+    - Revert "Build with libmecab-dev" since libmecab-dev is in
+      universe.
+
+ -- Lars Tangvald <lars.tangvald@oracle.com>  Mon, 16 Jan 2017 13:07:55 +0100
+
 mysql-5.7 (5.7.16-2) unstable; urgency=medium
 
   * Fix the test main.grant_user_lock when run as root
