@@ -37,7 +37,7 @@ Description: MySQL database common files, e.g. /etc/mysql/my.cnf
 Package: default-mysql-client-core
 Architecture: all
 Depends:
- mariadb-client-core-10.1,
+ mysql-client-core-5.7,
  ${misc:Depends}
 Description: MySQL database core client binaries (metapackage)
  MySQL is a fast, stable and true multi-user, multi-threaded SQL database
@@ -51,7 +51,7 @@ Description: MySQL database core client binaries (metapackage)
 Package: default-mysql-client
 Architecture: all
 Depends:
- mariadb-client-10.1,
+ mysql-client-5.7,
  ${misc:Depends}
 Description: MySQL database client binaries (metapackage)
  MySQL is a fast, stable and true multi-user, multi-threaded SQL database
@@ -65,7 +65,7 @@ Description: MySQL database client binaries (metapackage)
 Package: default-mysql-server-core
 Architecture: all
 Depends:
- mariadb-server-core-10.1,
+ mysql-server-core-5.7,
  ${misc:Depends}
 Description: MySQL database server binaries (metapackage)
  MySQL is a fast, stable and true multi-user, multi-threaded SQL database
@@ -79,7 +79,7 @@ Description: MySQL database server binaries (metapackage)
 Package: default-mysql-server
 Architecture: all
 Depends:
- mariadb-server-10.1,
+ mysql-server-5.7,
  ${misc:Depends}
 Description: MySQL database server binaries and system database setup (metapackage)
  MySQL is a fast, stable and true multi-user, multi-threaded SQL database
@@ -94,7 +94,7 @@ Package: default-libmysqlclient-dev
 Architecture: any
 Multi-Arch: same
 Depends:
- libmariadbclient-dev-compat,
+ libmysqlclient-dev,
  ${misc:Depends}
 Description: MySQL database development files (metapackage)
  MySQL is a fast, stable and true multi-user, multi-threaded SQL database
