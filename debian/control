@@ -1,7 +1,8 @@
 Source: mysql-defaults
 Section: database
 Priority: optional
-Maintainer: Debian MySQL Maintainers <pkg-mysql-maint@lists.alioth.debian.org>
+Maintainer: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+XSBC-Original-Maintainer: Debian MySQL Maintainers <pkg-mysql-maint@lists.alioth.debian.org>
 Uploaders: Robie Basak <robie@justgohome.co.uk>,
            Otto Kekäläinen <otto@debian.org>,
            Andreas Beckmann <anbe@debian.org>,
