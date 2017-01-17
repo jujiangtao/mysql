@@ -1,3 +1,10 @@
+mysql-defaults (1.0.2ubuntu1) zesty; urgency=medium
+
+  * Merge from Debian. Remaining changes:
+    - Set MySQL to default on Ubuntu to maintain the status quo.
+
+ -- Robie Basak <robie.basak@ubuntu.com>  Tue, 17 Jan 2017 10:01:39 +0000
+
 mysql-defaults (1.0.2) unstable; urgency=medium
 
   [ Andreas Beckmann ]
