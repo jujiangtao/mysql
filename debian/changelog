@@ -17,6 +17,12 @@ mysql-defaults (1.0.1) unstable; urgency=low
 
  -- Otto Kekäläinen <otto@debian.org>  Thu, 10 Nov 2016 22:22:16 +0200
 
+mysql-defaults (1.0.0ubuntu1) zesty; urgency=medium
+
+  * Set MySQL to default on Ubuntu to maintain the status quo.
+
+ -- Robie Basak <robie.basak@ubuntu.com>  Wed, 26 Oct 2016 09:21:47 +0100
+
 mysql-defaults (1.0.0) unstable; urgency=low
 
   [ Andreas Beckmann ]
