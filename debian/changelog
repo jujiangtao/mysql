@@ -1,7 +1,11 @@
 mysql-defaults (1.0.3) UNRELEASED; urgency=medium
 
+  [ Andreas Beckmann ]
   * default-mysql-server: Add Breaks against the transitional mysql-server
     package in stretch to reduce future upgrade problems.
+
+  [ Pino Toscano ]
+  * Add default-libmysqld-dev package.  (Closes: #852102)
 
  -- Andreas Beckmann <anbe@debian.org>  Mon, 19 Jun 2017 11:18:16 +0200
 
