@@ -5,7 +5,8 @@ Maintainer: Debian MySQL Maintainers <pkg-mysql-maint@lists.alioth.debian.org>
 Uploaders: Norbert Tretkowski <norbert@tretkowski.de>,
            Clint Byrum <clint@ubuntu.com>,
            James Page <jamespage@debian.org>,
-           Robie Basak <robie@justgohome.co.uk>
+           Robie Basak <robie@justgohome.co.uk>,
+           Lars Tangvald <lars.tangvald@oracle.com>
 Build-Depends: bison,
                chrpath,
                cmake,
