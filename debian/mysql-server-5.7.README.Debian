@@ -68,7 +68,7 @@ If you already had a password set add "-p" before "-u" to the lines above.
 
 If you are tired to type the password in every time or want to automate your
 scripts you can store it in the file $HOME/.my.cnf. It should be chmod 0600
-(-rw------- username username .my.cnf) to ensure that nobody else can read
+(-rw------- username groupname .my.cnf) to ensure that nobody else can read
 it.  Every other configuration parameter can be stored there, too. You will
 find an example below and more information in the MySQL manual in
 /usr/share/doc/mysql-doc or www.mysql.com.
