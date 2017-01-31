@@ -1,35 +1,36 @@
 mysql-5.7 (5.7.13-1~exp1) experimental; urgency=medium
 
-  * Password behaviour when the MySQL root password is empty has
-    changed. Packaging now enables socket authentication when the MySQL
-    root password is empty. This means that a non-root user can't log in
-    as the MySQL root user with an empty password. The new logic is as
-    follows:
+  Password behaviour when the MySQL root password is empty has
+  changed. Packaging now enables socket authentication when the MySQL
+  root password is empty. This means that a non-root user can't log in
+  as the MySQL root user with an empty password. The new logic is as
+  follows:
 
-    - The auth_socket plugin will be installed automatically only if it
-      is to be activated for the root user.
+  - The auth_socket plugin will be installed automatically only if it
+    is to be activated for the root user.
 
-    - The auth_socket plugin will be activated for the root user:
+  - The auth_socket plugin will be activated for the root user:
 
-      + If you had a database before with an empty root password.
+    + If you had a database before with an empty root password.
 
-      + If you create a new database with an empty root password.
+    + If you create a new database with an empty root password.
 
-    - The auth_socket plugin will NOT be activated for the root user:
+  - The auth_socket plugin will NOT be activated for the root user:
 
-      + If you had a database before with a root password set.
+    + If you had a database before with a root password set.
 
-      + If you create a new database with a root password set.
+    + If you create a new database with a root password set.
 
-    - The auth_socket plugin will NOT be activated for any other user.
+  - The auth_socket plugin will NOT be activated for any other user.
 
-    - If you do not want the new behaviour, set the MySQL root password
-      to be non-empty.
+  - If you do not want the new behaviour, set the MySQL root password
+    to be non-empty.
 
-  * The MySQL server now uses strict mode by default. See
-    http://dev.mysql.com/doc/refman/5.7/en/sql-mode.html#sql-mode-strict
-    for details. See
-    http://dev.mysql.com/doc/refman/5.6/en/sql-mode.html#sql-mode-setting
-    for details about the default settings in older versions.
+
+  The MySQL server now uses strict mode by default. See
+  http://dev.mysql.com/doc/refman/5.7/en/sql-mode.html#sql-mode-strict
+  for details. See
+  http://dev.mysql.com/doc/refman/5.6/en/sql-mode.html#sql-mode-setting
+  for details about the default settings in older versions.
 
  -- Robie Basak <robie.basak@canonical.com>  Fri, 15 Jul 2016 03:15:14 +0200
