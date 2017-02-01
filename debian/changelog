@@ -13,6 +13,10 @@ mysql-5.7 (5.7.17-1) unstable; urgency=high (security fixes)
     - CVE-2017-3313 CVE-2017-3317 CVE-2017-3318 CVE-2017-3319
     - CVE-2017-3320
 
+  [ Andreas Beckmann ]
+  * d/copyright: Fix more issues noticed by lintian: drop copyright info for
+    files that were removed upstream, reorder shadowed sections
+
  -- Lars Tangvald <lars.tangvald@oracle.com>  Wed, 18 Jan 2017 08:41:57 +0100
 
 mysql-5.7 (5.7.16-2) unstable; urgency=medium

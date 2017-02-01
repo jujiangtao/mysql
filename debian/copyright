@@ -170,30 +170,19 @@ Files: cmd-line-utils/libedit/config.h
  libmysqld/resource.h
  mysql-test/*
  regex/*
- sql-bench/graph-compare-results.sh
- storage/ndb/bin/*
  storage/ndb/demos/*
  support-files/build-tags
- support-files/binary-configure.sh
  support-files/magic
  support-files/my-default.cnf.sh
- support-files/my-huge.cnf.sh
- support-files/my-innodb-heavy-4G.cnf.sh
- support-files/my-large.cnf.sh
- support-files/my-medium.cnf.sh
- support-files/my-small.cnf.sh
  support-files/mysqld_multi.server.sh
  support-files/mysql-log-rotate.sh
  support-files/mysql.server-sys5.sh
  win/create_def_file.js
  man/*
  .gitignore
- BUILD-CMAKE
  COPYING
  Doxyfile-perfschema
  INSTALL
- INSTALL-SOURCE
- INSTALL-WIN-SOURCE
  VERSION
  plugin/connection_control/*
  plugin/innodb_memcached/daemon_memcached/*
@@ -250,7 +239,6 @@ Files: BUILD/*
  mysql-test/lib/My/SafeProcess.pm
  mysql-test/lib/My/SafeProcess/safe_kill_win.cc
  mysql-test/lib/My/SafeProcess/safe_process.cc
- mysql-test/lib/My/SafeProcess/safe_process.pl
  mysql-test/lib/My/SafeProcess/safe_process_win.cc
  mysql-test/lib/My/SysInfo.pm
  mysql-test/lib/My/Test.pm
@@ -290,17 +278,8 @@ Files: BUILD/*
  storage/*
  strings/*
  support-files/compiler_warnings.supp
- support-files/config.huge.ini.sh
- support-files/config.medium.ini.sh
- support-files/config.small.ini.sh
  support-files/MacOSX/*
- support-files/RHEL4-SElinux/*
- support-files/MySQL-shared-compat.spec.sh
- support-files/mysql.spec.sh
- support-files/mysql.5.7.*.spec
  support-files/mysql.m4
- support-files/ndb-config-2-node.ini.sh
- tests/*
  unittest/*
  vio/*
 Copyright: 1979-2008 MySQL AB
@@ -312,10 +291,6 @@ Files: storage/innobase/*
 Copyright: 1994-2011 Innobase Oy.
 License: GPL-2
 
-Files: cmd-line-utils/readline/*
-Copyright: 1987-2006 Free Software Foundation Inc
-License: GPL-2+
-
 Files: cmd-line-utils/libedit/*
 Copyright: 1989-1990,1992-1993 The Regents of the University of California.
 License: BSD-3-clause
@@ -325,7 +300,6 @@ Files: cmd-line-utils/libedit/filecomplete.c
  cmd-line-utils/libedit/np/fgetln.c
  cmd-line-utils/libedit/read.h
  cmd-line-utils/libedit/readline.c
- cmd-line-utils/libedit/readline/*
 Copyright: 1997-2001 The NetBSD Foundation Inc
 License: BSD-2-clause
  This code is derived from software contributed to The NetBSD Foundation
@@ -353,14 +327,9 @@ License: BSD-2-clause
  POSSIBILITY OF SUCH DAMAGE.
 
 Files: client/completion_hash.h
- scripts/mysqlaccess.sh
- scripts/mysql_fix_extensions.sh
- scripts/mysql_setpermission.sh
- sql-bench/*
  storage/myisam/ftbench/ft-test-run.sh
  storage/myisam/mi_test_all.sh
  storage/ndb/test/run-test/atrt-analyze-result.sh
- storage/ndb/test/run-test/atrt-clear-result.sh
  storage/ndb/test/run-test/atrt-gather-result.sh
  storage/ndb/test/run-test/atrt-setup.sh
  storage/ndb/test/run-test/make-config.sh
@@ -380,16 +349,6 @@ Files: storage/archive/azio.c
  zlib/*
 Copyright: 1995-2005 Jean-loup Gailly and Mark Adler
 License: zlib/libpng
-
-Files: sql-bench/innotest1.sh
- sql-bench/innotest1a.sh
- sql-bench/innotest1b.sh
- sql-bench/innotest2.sh
- sql-bench/innotest2a.sh
- sql-bench/innotest2b.sh
-Copyright: 2000-2002 Innobase Oy & MySQL AB
-Comment: These files fall under the blanket license specified in the file COPYING
-License: GPL-2
 
 Files: storage/innobase/btr/btr0sea.c
  storage/innobase/include/log0log.h
@@ -417,14 +376,6 @@ Files: storage/myisam/rt_index.h
 Copyright: 2000,2002-2006 MySQL AB & Ramil Kalimullin
 License: GPL-2
 
-
-Files: plugin/semisync/semisync.cc
- plugin/semisync/semisync.h
- plugin/semisync/semisync_slave_plugin.cc
-Copyright: 2008 MySQL AB
- 2007 Google Inc
-License: GPL-2
-
 Files: strings/ctype-bin.c
  strings/ctype-eucjpms.c
  strings/ctype-ujis.c
@@ -432,7 +383,6 @@ Copyright: 2000,2002,2005-2011 Oracle and/or its affiliates. & tommy@valley.ne.j
 License: LGPL
 
 Files: scripts/mysqld_safe.sh
- support-files/mysql-multi.server.sh
  support-files/mysql.server.sh
 Copyright: 1996 Abandoned TCX DataKonsult AB & Monty Program KB & Detron HB
 License: public-domain
@@ -456,20 +406,13 @@ Copyright: 1995-1996,2010-2011 Innobase Oy.
  2009 Percona Inc
 License: GPL-2
 
-Files: plugin/semisync/semisync_master.cc
- plugin/semisync/semisync_master_plugin.cc
-Copyright: 2008-2009 MySQL AB Sun Microsystems Inc
- 2007 Google Inc
-License: GPL-2
-
 Files: storage/innobase/include/os0file.h
  storage/innobase/os/os0file.c
 Copyright: 1995-2010 Innobase Oy.
  2009 Percona Inc
 License: GPL-2
 
-Files: include/t_ctype.h
- strings/t_ctype.h
+Files: strings/t_ctype.h
 Copyright: 2000 MySQL AB
  1998 Theppitak Karoonboonyanan
  1998-1999 Pruet Boonma
@@ -498,7 +441,6 @@ License: public-domain
  This file is public domain and comes with NO WARRANTY of any kind
 
 Files: dbug/dbug.c
- dbug/dbug_long.h
 Copyright: 1987 Abandoned Fred Fish
 License: public-domain
  N O T I C E
@@ -547,11 +489,6 @@ Files: storage/innobase/handler/ha_innodb.cc
 Copyright: 2008-2009 Google Inc
  2009 Percona Inc
  2000-2011 MySQL AB & Innobase Oy.
-License: GPL-2
-
-Files: plugin/semisync/semisync_master.h
-Copyright: 2008-2009 MySQL AB Sun Microsystems Inc
- 2007 Google Inc
 License: GPL-2
 
 Files: storage/innobase/srv/srv0srv.c
@@ -603,11 +540,6 @@ License: SWsoft
  Permission to modify the code and to distribute modified code is granted,
  provided the above notices are retained, and a notice that the code was
  modified is included with the above copyright notice.
-
-Files: tests/mail_to_db.pl
-Copyright: 1998 Abandoned TCX DataKonsult AB & Monty Program KB & Detron HB
-License: public-domain
- This file is public domain and comes with NO WARRANTY of any kind
 
 Files: dbug/dbug_analyze.c
 Copyright: 1987 June Binayak Banerjee
@@ -736,13 +668,27 @@ Files: plugin/semisync/CMakeLists.txt
 Copyright: 2006, 2010 Oracle and/or its affiliates.
 License: GPL-2
 
+Files: plugin/semisync/semisync.cc
+ plugin/semisync/semisync.h
+ plugin/semisync/semisync_slave_plugin.cc
+Copyright: 2008 MySQL AB
+ 2007 Google Inc
+License: GPL-2
+
+Files: plugin/semisync/semisync_master.h
+ plugin/semisync/semisync_master.cc
+ plugin/semisync/semisync_master_plugin.cc
+Copyright: 2008-2009 MySQL AB Sun Microsystems Inc
+ 2007 Google Inc
+License: GPL-2
+
 Files: support-files/dtrace/*
 Copyright: 2009, 2014 Oracle and/or its affiliates.
 License: GPL-2
 
 Files: boost/*
 Copyright:
-License: Boost
+License: Boost-1.0
 
 License: GPL-2
  This program is free software; you can redistribute it and/or modify
@@ -853,7 +799,7 @@ License: zlib/libpng
      misrepresented as being the original software.
   3. This notice may not be removed or altered from any source distribution.
 
-License: Boost
+License: Boost-1.0
   Boost Software License - Version 1.0 - August 17th, 2003.
   .
   Permission is hereby granted, free of charge, to any person or organization
