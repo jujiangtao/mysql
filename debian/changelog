@@ -12,12 +12,18 @@ mysql-5.7 (5.7.17-1) unstable; urgency=high (security fixes)
     - CVE-2017-3265 CVE-2017-3273 CVE-2017-3291 CVE-2017-3312
     - CVE-2017-3313 CVE-2017-3317 CVE-2017-3318 CVE-2017-3319
     - CVE-2017-3320
+  * d/copyright: Add files for connection_control plugin
+  * d/*.README.Debian: Fix spelling errors
+  * d/libmysqld-dev.lintian-overrides: Override "depends-on-obsolete-package
+    depends: libmysqlclient-dev => default-libmysqlclient-dev" which is a
+    false positive for src:mysql-5.7
+  * d/control: Add myself to Uploaders
 
   [ Andreas Beckmann ]
   * d/copyright: Fix more issues noticed by lintian: drop copyright info for
     files that were removed upstream, reorder shadowed sections
 
- -- Lars Tangvald <lars.tangvald@oracle.com>  Wed, 18 Jan 2017 08:41:57 +0100
+ -- Lars Tangvald <lars.tangvald@oracle.com>  Wed, 01 Feb 2017 01:12:18 +0100
 
 mysql-5.7 (5.7.16-2) unstable; urgency=medium
 
