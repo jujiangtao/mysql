@@ -1,3 +1,31 @@
+mysql-5.7 (5.7.17-0ubuntu0.16.04.1) xenial-security; urgency=medium
+
+  * SECURITY UPDATE: Update to 5.7.17 to fix security issues
+    - CVE-2016-8318
+    - CVE-2016-8327
+    - CVE-2017-3238
+    - CVE-2017-3244
+    - CVE-2017-3251
+    - CVE-2017-3256
+    - CVE-2017-3258
+    - CVE-2017-3265
+    - CVE-2017-3273
+    - CVE-2017-3291
+    - CVE-2017-3312
+    - CVE-2017-3313
+    - CVE-2017-3317
+    - CVE-2017-3318
+    - CVE-2017-3319
+    - CVE-2017-3320
+  * debian/patches/fix_failing_test.patch: fix test failure that uses env
+    from rapid plugins.
+  * debian/patches/fix_test_events_2.patch: fix date in test.
+  * debian/control: replace python with libjson-perl in mysql-testsuite-5.7
+    Depends.
+  * debian/mysql-testsuite-5.7.install: add test_udf_services.so.
+
+ -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Wed, 18 Jan 2017 14:53:51 -0500
+
 mysql-5.7 (5.7.16-0ubuntu0.16.04.1) xenial-security; urgency=medium
 
   * SECURITY UPDATE: Update to 5.7.16 to fix security issues

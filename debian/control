@@ -235,7 +235,7 @@ Package: mysql-testsuite-5.7
 Architecture: any
 Depends: mysql-client-5.7 (= ${binary:Version}),
          mysql-server-5.7 (= ${binary:Version}),
-         python,
+         libjson-perl,
          ${misc:Depends},
          ${shlibs:Depends}
 Provides: virtual-mysql-testsuite
