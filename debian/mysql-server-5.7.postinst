@@ -309,16 +309,27 @@ if [ "$1" = "configure" ]; then
       set_mysql_pw "debian-sys-maint" "$pass"
       invoke start
     fi
-    # mysql_upgrade returns exit status 2 if the database is already upgraded
-    # (LP: #1566406) so ignore its exit status if it is 2.
+    # Generate a tmpdir to store socket and pid files
+    tmpdir=$(mktemp -d)
+    chown mysql:mysql "$tmpdir"
+    mysql_statedir=/var/lib/mysql
     result=0
-    mysql_upgrade --defaults-file=/etc/mysql/debian.cnf || result=$?
-    if [ $result -ne 0 -a $result -ne 2 ]; then
-      echo "mysql_upgrade failed with exit status $result" >&2
-      exit 1
+    start_server "$mysql_statedir" "$tmpdir" "skip_grant" || result=$?
+    # If the server fails to start, then skip the various client operations
+    if [ $result -ne 0 ]; then
+      echo "Warning: Unable to start the server. Please run mysql_upgrade to ensure the database is ready for use."
+    else
+      # mysql_upgrade returns exit status 2 if the database is already upgraded
+      # (LP: #1566406) so ignore its exit status if it is 2.
+      mysql_upgrade --no-defaults --socket="$tmpdir/mysqld.sock" || result=$?
+      if [ $result -ne 0 -a $result -ne 2 ]; then
+        echo "mysql_upgrade failed with exit status $result" >&2
+        exit 1
+      fi
+      # Stop the server
+      stop_server_no_auth "$tmpdir"
     fi
-    # Server should be restarted after running mysql_upgrade
-    invoke restart
+    rm -rf "$tmpdir"
   fi
   # Here we check to see if we can connect as root without a password
   # this should catch upgrades from previous versions where the root
