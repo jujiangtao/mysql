@@ -12,6 +12,53 @@ export PATH=$PATH:/sbin:/usr/sbin:/bin:/usr/bin
 # This command can be used as pipe to syslog. With "-s" it also logs to stderr.
 ERR_LOGGER="logger -p daemon.err -t mysqld_safe -i"
 
+# Start the server with networking disabled and socket in a temporary location
+# Usage: start_server <datadir> <tmpdir> <skip_grant>
+# Params:
+# datadir - Location of database files
+# tmpdir - Used to store temporary pid and socket files
+# skip_grant - If set, the server will be started with --skip-grant-tables
+start_server() {
+  local datadir=$1
+  local tmpdir=$2
+  local skip_grant=$3
+  # If a database is already running, mysqld will keep trying to lock the files for ~100 seconds before failing.
+  # If the ibdata1 file is locked we fail immediately
+  if fuser "$datadir/ibdata1"; then
+    echo "ERROR: Database files are locked. Daemon already running?"
+    return 1
+  fi
+  # The --daemonize flag makes the process fork, with the original exiting once the database is ready for use
+  if [ ! -z "$skip_grant" ]; then
+    mysqld --user=mysql --daemonize --socket="$tmpdir/mysqld.sock" --pid-file="$tmpdir/mysqld.pid" --skip-networking --skip-grant-tables 
+  else
+    mysqld --user=mysql --daemonize --socket="$tmpdir/mysqld.sock" --pid-file="$tmpdir/mysqld.pid" --skip-networking
+  fi
+}
+
+# Shut down the server by sending a kill signal to the process
+# Usage: stop_server_no_auth <tmpdir>
+# Params:
+# tmpdir - Location of temporary pid-file
+stop_server_no_auth(){
+  local tmpdir=$1
+  # Send kill signal
+  server_pid=$(cat "$tmpdir/mysqld.pid")
+  kill $server_pid
+
+  for i in $(seq 1 60); do
+    sleep 1
+    if $(ps $server_pid >/dev/null 2>&1); then
+      shutdown_ok=0
+    else
+      return 0
+    fi
+  done
+  # The server hasn't shut down in a timely manner
+  echo "Error: Unable to shut down server with process id $server_pid"
+  return 1
+}
+
 # Runs an arbitrary init sql file supplied in $1. Does not require login access
 run_init_sql() {
   tmpdir=`mktemp -d`
