@@ -304,11 +304,6 @@ if [ "$1" = "configure" ]; then
   # We want to run mysql_upgrade to cover users upgrading. First we check if
   # the debian-sys-maint user can log in. If not, we reset its password first.
   if [ $existingdatabase = 1 ]; then
-    if ! test_sysmaint_access; then
-      invoke stop
-      set_mysql_pw "debian-sys-maint" "$pass"
-      invoke start
-    fi
     # Generate a tmpdir to store socket and pid files
     tmpdir=$(mktemp -d)
     chown mysql:mysql "$tmpdir"
