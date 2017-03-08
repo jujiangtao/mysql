@@ -335,28 +335,33 @@ if [ "$1" = "configure" ]; then
   # password wasn't set.  If the connection succeeds we install the
   # auth_socket plugin and enable it for the root user to improve
   # security.
-  if test_mysql_access; then
+  tmpdir=$(mktemp -d)
+  chown mysql:mysql "$tmpdir"
+  mysql_statedir=/var/lib/mysql
+  result=0
+  start_server "$mysql_statedir" "$tmpdir" || result=$?
+  if [ $result -ne 0 ]; then
+    echo "Warning: Unable to start the server. Please run mysql_upgrade to ensure the database is ready for use."
+  elif test_mysql_access "$tmpdir"; then
     db_get mysql-server/root_password && rootpw="$RET"
     if [ ! -z "$rootpw" ]; then
+      stop_server_no_auth "$tmpdir"
       rootpw=$(printf %q "${rootpw}")
-      invoke stop
       initfile=`mktemp --tmpdir=/var/lib/mysql-files/`
       chown mysql:mysql "$initfile"
       echo "ALTER USER 'root'@'localhost' IDENTIFIED WITH 'mysql_native_password' BY '$rootpw';" >> "$initfile"
       echo "SHUTDOWN;"                                                                           >> "$initfile"
-      invoke stop
       run_init_sql "$initfile"
       rm "$initfile"
-      invoke start
     else
       # Try to install auth_socket plugin. This throws an error if the plugin is
       # already installed, which would end execution of the init sql to stop if
       # --init-file was used. Bug: http://bugs.mysql.com/bug.php?id=80642
       pluginfile=`mktemp --tmpdir=/var/lib/mysql-files/`
       echo "INSTALL PLUGIN auth_socket SONAME 'auth_socket.so';" >> "$pluginfile"
-      mysql --no-defaults -uroot < "$pluginfile" > /dev/null 2>&1 || true
+      mysql --no-defaults --socket="$tmpdir/mysqld.sock" -uroot < "$pluginfile" > /dev/null 2>&1 || true
       rm "$pluginfile"
-      invoke stop
+      stop_server_no_auth "$tmpdir"
       initfile=`mktemp --tmpdir=/var/lib/mysql-files/`
       chown mysql:mysql "$initfile"
       # If there is no root password set we enable the auth_socket plugin for the root user
@@ -366,9 +371,11 @@ if [ "$1" = "configure" ]; then
       # The INSTALL PLUGIN line will throw an error if the plugin is already installed
       run_init_sql "$initfile"
       rm "$initfile"
-      invoke start
     fi
+  else
+    stop_server_no_auth "$tmpdir"
   fi
+  rm -rf "$tmpdir"
 fi
 
 # forget we ever saw the password.  don't use reset to keep the seen status
