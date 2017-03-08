@@ -252,9 +252,6 @@ case "$1" in
   ;;
 esac
 
-# The debhelper section is needed to unmask and enable the service
-# in some cases like when upgrading from 5.5
-#DEBHELPER#
 
 if [ "$1" = "configure" ]; then
   # We want to run mysql_upgrade to cover users upgrading. First we check if
@@ -322,5 +319,6 @@ db_set mysql-server/root_password ""
 db_set mysql-server/root_password_again ""
 db_stop # in case invoke failes
 
+#DEBHELPER#
 
 exit 0
