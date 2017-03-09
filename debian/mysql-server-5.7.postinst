@@ -124,8 +124,12 @@ fix_old_config_options() {
 }
 
 # Check if there is passwordless root login
+# Usage: test_mysql_access <tmpdir>
+# Params:
+# tmpdir - Location of mysqld.sock file
 test_mysql_access() {
-  mysql --no-defaults -u root -h localhost </dev/null >/dev/null 2>&1
+  local tmpdir=$1
+  mysql --no-defaults -u root --socket="$tmpdir/mysqld.sock" </dev/null >/dev/null 2>&1
 }
 
 # Check if the debian-sys-maint user can log in
