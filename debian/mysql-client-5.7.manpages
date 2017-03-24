@@ -1,4 +1,3 @@
-debian/additions/innotop/innotop.1
 debian/additions/mysqlreport.1
 debian/tmp/usr/share/man/man1/myisam_ftdump.1
 debian/tmp/usr/share/man/man1/mysql_config_editor.1
