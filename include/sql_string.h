@@ -18,12 +18,26 @@
 
 /* This file is originally from the mysql distribution. Coded by monty */
 
-#include "m_ctype.h"                            /* my_charset_bin */
-#include "my_sys.h"              /* alloc_root, my_free, my_realloc */
-#include "m_string.h"                           /* TRASH */
+/**
+  @file include/sql_string.h
+*/
+
+#include "my_global.h"
+#include "m_ctype.h"                         // my_convert
+#include "m_string.h"                        // LEX_CSTRING
+#include "my_sys.h"                          // alloc_root
+#include "mysql/mysql_lex_string.h"          // LEX_STRING
+#include "mysql/service_mysql_alloc.h"       // my_free
+
+#include <string.h>
+
+typedef struct st_mysql_lex_string LEX_STRING;
+
 
 #ifdef MYSQL_SERVER
+extern "C" {
 extern PSI_memory_key key_memory_String_value;
+}
 #define STRING_PSI_MEMORY_KEY key_memory_String_value
 #else
 #define STRING_PSI_MEMORY_KEY PSI_NOT_INSTRUMENTED
@@ -119,7 +133,7 @@ typedef struct st_io_cache IO_CACHE;
 typedef struct st_mem_root MEM_ROOT;
 
 int sortcmp(const String *a,const String *b, const CHARSET_INFO *cs);
-String *copy_if_not_alloced(String *a, String *b, size_t arg_length);
+String *copy_if_not_alloced(String *to, String *from, size_t from_length);
 inline size_t copy_and_convert(char *to, size_t to_length,
                                const CHARSET_INFO *to_cs,
                                const char *from, size_t from_length,
@@ -176,7 +190,9 @@ public:
      m_alloced_length(static_cast<uint32>(str.m_alloced_length)),
      m_is_alloced(false)
   { }
-  static void *operator new(size_t size, MEM_ROOT *mem_root) throw ()
+  static void *operator new(size_t size, MEM_ROOT *mem_root,
+                            const std::nothrow_t &arg MY_ATTRIBUTE((unused))
+                            = std::nothrow) throw ()
   { return alloc_root(mem_root, size); }
   static void operator delete(void *ptr_arg, size_t size)
   {
@@ -184,8 +200,11 @@ public:
     (void) size;
     TRASH(ptr_arg, size);
   }
-  static void operator delete(void *, MEM_ROOT *)
+
+  static void operator delete(void *, MEM_ROOT *,
+                              const std::nothrow_t &) throw ()
   { /* never called */ }
+
   ~String() { mem_free(); }
 
   void set_charset(const CHARSET_INFO *charset_arg)
@@ -197,13 +216,18 @@ public:
   void length(size_t len) { m_length= len; }
   bool is_empty() const { return (m_length == 0); }
   void mark_as_const() { m_alloced_length= 0;}
+  /* Returns a pointer to data, may not include NULL terminating character. */
   const char *ptr() const { return m_ptr; }
   char *c_ptr()
   {
     DBUG_ASSERT(!m_is_alloced || !m_ptr || !m_alloced_length ||
                 (m_alloced_length >= (m_length + 1)));
 
-    if (!m_ptr || m_ptr[m_length])		/* Should be safe */
+    /*
+      Should be safe, but in case valgrind complains on this line, it means
+      there is a misuse of c_ptr(). Please prefer <ptr(), length()> instead.
+    */
+    if (!m_ptr || m_ptr[m_length])
       (void) mem_realloc(m_length);
     return m_ptr;
   }
@@ -294,14 +318,14 @@ public:
   /*
     PMG 2004.11.12
     This is a method that works the same as perl's "chop". It simply
-    drops the last character of a string. This is useful in the case
+    drops the last byte of a string. This is useful in the case
     of the federated storage handler where I'm building a unknown
     number, list of values and fields to be used in a sql insert
     statement to be run on the remote server, and have a comma after each.
     When the list is complete, I "chop" off the trailing comma
 
-    ex. 
-      String stringobj; 
+    ex.
+      String stringobj;
       stringobj.append("VALUES ('foo', 'fi', 'fo',");
       stringobj.chop();
       stringobj.append(")");
@@ -311,13 +335,13 @@ public:
     VALUES ('foo', 'fi', 'fo',
     VALUES ('foo', 'fi', 'fo'
     VALUES ('foo', 'fi', 'fo')
-      
+
+    This is not safe to call when the string ends in a multi-byte character!
   */
   void chop()
   {
     m_length--;
     m_ptr[m_length]= '\0';
-    DBUG_ASSERT(strlen(m_ptr) == m_length);
   }
 
   void mem_claim()
@@ -471,7 +495,7 @@ public:
     }
     else
     {
-      if (mem_realloc_exp(m_length + 1))
+      if (mem_realloc_exp(m_length+1))
 	return 1;
       m_ptr[m_length++]= chr;
     }
@@ -481,7 +505,7 @@ public:
   void strip_sp();
   friend int sortcmp(const String *a,const String *b, const CHARSET_INFO *cs);
   friend int stringcmp(const String *a,const String *b);
-  friend String *copy_if_not_alloced(String *a,String *b, size_t arg_length);
+  friend String *copy_if_not_alloced(String *to, String *from, size_t from_length);
   size_t numchars() const;
   size_t charpos(size_t i, size_t offset=0);
 

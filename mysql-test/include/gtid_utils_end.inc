@@ -10,7 +10,6 @@
 --source include/begin_include_file.inc
 
 --disable_query_log
---let $gtid_utils_included=0
 
 DROP FUNCTION GTID_IS_EQUAL;
 DROP FUNCTION GTID_IS_DISJOINT;

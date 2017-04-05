@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -15,12 +15,19 @@
 
 /* For use with thr_lock:s */
 
+/**
+  @file include/thr_lock.h
+*/
+
 #ifndef _thr_lock_h
 #define _thr_lock_h
 
 #include <my_thread.h>
 #include <my_list.h>
+#include "mysql/psi/mysql_cond.h"
 #include "mysql/psi/mysql_thread.h"
+
+extern mysql_mutex_t THR_LOCK_lock;
 
 #ifdef	__cplusplus
 extern "C" {
@@ -130,7 +137,6 @@ typedef struct st_thr_lock {
 
 
 extern LIST *thr_lock_thread_list;
-extern mysql_mutex_t THR_LOCK_lock;
 
 void thr_lock_info_init(THR_LOCK_INFO *info, my_thread_id thread_id,
                         mysql_cond_t *suspend);
@@ -149,7 +155,6 @@ enum enum_thr_lock_result thr_multi_lock(THR_LOCK_DATA **data,
 void thr_multi_unlock(THR_LOCK_DATA **data,uint count);
 void
 thr_lock_merge_status(THR_LOCK_DATA **data, uint count);
-void thr_abort_locks(THR_LOCK *lock, my_bool upgrade_lock);
 void thr_abort_locks_for_thread(THR_LOCK *lock, my_thread_id thread);
 void thr_print_locks(void);		/* For debugging */
 void    thr_downgrade_write_lock(THR_LOCK_DATA *data,

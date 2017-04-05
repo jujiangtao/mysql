@@ -16,30 +16,28 @@
 
 #include "sp_cache.h"
 
-#include "my_atomic.h"
 #include "sp_head.h"
+#include "psi_memory_key.h"
+
+#include <atomic>
 
 
 /*
   Cache of stored routines.
 */
 
-extern "C"
+static const uchar *hash_get_key_for_sp_head(const uchar *ptr, size_t *plen)
 {
-  static uchar *hash_get_key_for_sp_head(const uchar *ptr, size_t *plen,
-                                         my_bool first)
-  {
-    sp_head *sp= (sp_head *)ptr;
-    *plen= sp->m_qname.length;
-    return (uchar*) sp->m_qname.str;
-  }
+  sp_head *sp= (sp_head *)ptr;
+  *plen= sp->m_qname.length;
+  return (uchar*) sp->m_qname.str;
+}
 
 
-  static void hash_free_sp_head(void *p)
-  {
-    sp_head *sp= (sp_head *)p;
-    delete sp;
-  }
+static void hash_free_sp_head(void *p)
+{
+  sp_head *sp= (sp_head *)p;
+  sp_head::destroy(sp);
 }
 
 
@@ -48,7 +46,7 @@ class sp_cache
 public:
   sp_cache()
   {
-    my_hash_init(&m_hashtable, system_charset_info, 0, 0, 0,
+    my_hash_init(&m_hashtable, system_charset_info, 0, 0,
                  hash_get_key_for_sp_head, hash_free_sp_head, 0,
                  key_memory_sp_cache);
   }
@@ -100,7 +98,7 @@ private:
 }; // class sp_cache
 
 
-static int64 volatile Cversion= 0;
+static std::atomic<int64> atomic_Cversion { 0 };
 
 
 /*
@@ -197,7 +195,7 @@ sp_head *sp_cache_lookup(sp_cache **cp, sp_name *name)
 void sp_cache_invalidate()
 {
   DBUG_PRINT("info",("sp_cache: invalidating"));
-  my_atomic_add64(&Cversion, 1);
+  atomic_Cversion++;
 }
 
 
@@ -228,7 +226,7 @@ void sp_cache_flush_obsolete(sp_cache **cp, sp_head **sp)
 
 int64 sp_cache_version()
 {
-  return my_atomic_load64(&Cversion);
+  return atomic_Cversion;
 }
 
 

@@ -1,4 +1,4 @@
-
+-- source include/no_valgrind_without_big.inc
 -- source include/not_embedded.inc
 
 --echo #
@@ -390,7 +390,14 @@ SELECT * FROM t5 ORDER BY 1;
 --echo # compress using lz4
 --exec $MYSQL_PUMP --databases bug21644479 --compress-output=lz4 --result-file=$MYSQLTEST_VARDIR/tmp/bug21644479.lz4
 --echo # uncompress using lz4_decompress
+if ($LZ4_DECOMPRESS)
+{
 --exec $LZ4_DECOMPRESS $MYSQLTEST_VARDIR/tmp/bug21644479.lz4 $MYSQLTEST_VARDIR/tmp/bug21644479_lz4.sql
+}
+if (!$LZ4_DECOMPRESS)
+{
+--exec lz4 -d $MYSQLTEST_VARDIR/tmp/bug21644479.lz4 $MYSQLTEST_VARDIR/tmp/bug21644479_lz4.sql 
+}
 DROP DATABASE bug21644479;
 --exec $MYSQL < $MYSQLTEST_VARDIR/tmp/bug21644479_lz4.sql
 
@@ -405,7 +412,14 @@ SELECT * FROM t5 ORDER BY 1;
 --echo # compress using zlib
 --exec $MYSQL_PUMP --databases bug21644479 --compress-output=zlib --result-file=$MYSQLTEST_VARDIR/tmp/bug21644479.zlib
 --echo # uncompress using zlib_decompress
+if ($ZLIB_DECOMPRESS)
+{
 --exec $ZLIB_DECOMPRESS $MYSQLTEST_VARDIR/tmp/bug21644479.zlib $MYSQLTEST_VARDIR/tmp/bug21644479_zlib.sql
+}
+if (!$ZLIB_DECOMPRESS)
+{
+--exec openssl zlib -d < $MYSQLTEST_VARDIR/tmp/bug21644479.zlib > $MYSQLTEST_VARDIR/tmp/bug21644479_zlib.sql
+}
 DROP DATABASE bug21644479;
 --exec $MYSQL < $MYSQLTEST_VARDIR/tmp/bug21644479_zlib.sql
 
@@ -604,22 +618,3 @@ SHOW GRANTS FOR bug23721446_u2@'%';
 #cleanup
 DROP USER bug23721446_u1,bug23721446_u2;
 DROP DATABASE db23721446;
-
--- echo #
--- echo # Bug#22919028 - MYSQLPUMP DOES NOT HANDLE RE-IMPORT FROM UPGRADE
--- echo #
-
-CREATE DATABASE bug22919028;
-USE bug22919028;
-CREATE TABLE t (i DATE);
-SET SQL_MODE = ALLOW_INVALID_DATES;
-INSERT INTO t VALUES('2016-02-31');
---exec $MYSQL_PUMP --databases bug22919028 > $MYSQLTEST_VARDIR/tmp/bug22919028.sql
-DROP DATABASE bug22919028;
-
---exec $MYSQL < $MYSQLTEST_VARDIR/tmp/bug22919028.sql
-SELECT * FROM bug22919028.t;
-
-# Cleanup
---remove_file $MYSQLTEST_VARDIR/tmp/bug22919028.sql
-DROP DATABASE bug22919028;

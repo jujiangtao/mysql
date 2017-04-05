@@ -32,6 +32,7 @@
 #include "client_priv.h"
 #include "my_default.h"
 #include "my_default_priv.h"
+#include "mysql/service_mysql_alloc.h"
 
 #define MYSQL_CONFIG_EDITOR_VERSION "1.0"
 #define MY_LINE_MAX 4096
@@ -83,7 +84,8 @@ static int read_login_key(void);
 static int add_header(void);
 static void my_perror(const char *msg);
 
-static void verbose_msg(const char *fmt, ...);
+static void verbose_msg(const char *fmt, ...)
+  MY_ATTRIBUTE((format(printf, 1, 2)));
 static void print_version(void);
 static void usage_program(void);
 static void usage_command(int command);
@@ -98,6 +100,7 @@ enum commands {
   MY_CONFIG_HELP
 };
 
+extern "C" {
 struct my_command_data {
   const int id;
   const char *name;
@@ -107,6 +110,7 @@ struct my_command_data {
                                  const struct my_option *opt,
                                  char *argument);
 };
+}
 
 
 /* mysql_config_editor utility options. */
@@ -210,7 +214,8 @@ static struct my_option my_help_command_options[]=
   {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
 };
 
-my_bool
+extern "C" {
+static my_bool
 my_program_get_one_option(int optid,
                           const struct my_option *opt MY_ATTRIBUTE((unused)),
                           char *argument)
@@ -231,7 +236,7 @@ my_program_get_one_option(int optid,
   return 0;
 }
 
-my_bool
+static my_bool
 my_set_command_get_one_option(int optid,
                               const struct my_option *opt MY_ATTRIBUTE((unused)),
                               char *argument)
@@ -258,7 +263,7 @@ my_set_command_get_one_option(int optid,
   return 0;
 }
 
-my_bool
+static my_bool
 my_remove_command_get_one_option(int optid,
                                  const struct my_option *opt MY_ATTRIBUTE((unused)),
                                  char *argument)
@@ -282,7 +287,7 @@ my_remove_command_get_one_option(int optid,
   return 0;
 }
 
-my_bool
+static my_bool
 my_print_command_get_one_option(int optid,
                                 const struct my_option *opt MY_ATTRIBUTE((unused)),
                                 char *argument)
@@ -306,7 +311,7 @@ my_print_command_get_one_option(int optid,
   return 0;
 }
 
-my_bool
+static my_bool
 my_reset_command_get_one_option(int optid,
                                 const struct my_option *opt MY_ATTRIBUTE((unused)),
                                 char *argument)
@@ -318,6 +323,7 @@ my_reset_command_get_one_option(int optid,
     break;
   }
   return 0;
+}
 }
 
 static struct my_command_data command_data[]=
@@ -518,8 +524,6 @@ done:
 /**
   Execute 'set' command.
 
-  @param void
-
   @return -1              Error
            0              Success
 */
@@ -667,8 +671,6 @@ error:
 /**
   Execute 'print' command.
 
-  @param void
-
   @return -1              Error
            0              Success
 */
@@ -704,8 +706,6 @@ error:
   Create the login file if it does not exist, check
   and set its permissions and modes.
 
-  @param void
-
   @return  TRUE           Error
            FALSE          Success
 */
@@ -725,7 +725,7 @@ static my_bool check_and_create_login_file(void)
 #define S_IRWXO  00007
 #endif
 
-  const int access_flag= (O_RDWR | O_BINARY);
+  const int access_flag= O_RDWR;
   const ushort create_mode= (S_IRUSR | S_IWUSR );
 
   /* Get the login file name. */
@@ -848,12 +848,9 @@ error:
   option is used, print all the optins stored in the login
   file.
 
-  @param file_buf  [in]   Buffer storing the unscrambled login
+  @param [in] file_buf    Buffer storing the unscrambled login
                           file contents.
-  @param path_name [in]   Path name.
-
-  @return                 void
-
+  @param [in] path_name   Path name.
 */
 
 static void print_login_path(DYNAMIC_STRING *file_buf, const char *path_name)
@@ -900,9 +897,7 @@ done:
   Print the specified buffer by masking the actual
   password string.
 
-  @param buf [in]         Buffer to be printed.
-
-  @raturn                 void
+  @param [in] buf          Buffer to be printed.
 */
 
 static void mask_password_and_print(char *buf)
@@ -1035,12 +1030,9 @@ done:
 /**
   Remove the specified login path from the login file.
 
-  @param file_buf  [in]   Buffer storing the unscrambled login
+  @param [in] file_buf    Buffer storing the unscrambled login
                           file contents.
-  @param path_name [in]   Path name.
-
-  @return                 void
-
+  @param [in] path_name   Path name.
 */
 
 static void remove_login_path(DYNAMIC_STRING *file_buf, const char *path_name)
@@ -1082,7 +1074,7 @@ done:
 /**
   Remove all the contents from the login file.
 
-  @param gen_key [in]     Flag to control the generation of
+  @param [in] gen_key     Flag to control the generation of
                           a new key.
 
   @return -1              Error
@@ -1120,9 +1112,9 @@ error:
   Find the specified login path in the login file buffer
   and return the starting address.
 
-  @param file_buf  [in]   Buffer storing the unscrambled login
+  @param [in] file_buf    Buffer storing the unscrambled login
                           file contents.
-  @param path_name [in]   Path name.
+  @param [in] path_name   Path name.
 
   @return                 If found, the starting address of the
                           login path, NULL otherwise.
@@ -1160,7 +1152,7 @@ static char* locate_login_path(DYNAMIC_STRING *file_buf, const char *path_name)
 /**
   Encrypt the file buffer and write it to the login file.
 
-  @param file_buf  [in]   Buffer storing the unscrambled login
+  @param [in] file_buf    Buffer storing the unscrambled login
                           file contents.
 
   @return -1 Error
@@ -1169,8 +1161,8 @@ static char* locate_login_path(DYNAMIC_STRING *file_buf, const char *path_name)
   @note The contents of the file buffer are encrypted
         on a line-by-line basis with each line having
         the following format :
-        [<first 4 bytes store cipher-length>|<Next cipher-length
-        bytes store actual cipher>]
+        [\<first 4 bytes store cipher-length\>
+        |\<Next cipher-length bytes store actual cipher\>]
 */
 
 static int encrypt_and_write_file(DYNAMIC_STRING *file_buf)
@@ -1249,7 +1241,7 @@ error:
   Read the login file, unscramble its contents and store
   them into the file buffer.
 
-  @param file_buf  [in]   Buffer for storing the unscrambled login
+  @param [in] file_buf    Buffer for storing the unscrambled login
                           file contents.
 
   @return -1 Error
@@ -1301,9 +1293,10 @@ error:
 /**
   Encrypt the given plain text.
 
-  @param plain     [in]   Plain text to be encrypted.
-  @param plain_len [in]   Length of the plain text.
-  @param cipher    [out]  Encrypted cipher text.
+  @param plain            Plain text to be encrypted
+  @param plain_len        Length of the plain text
+  @param [out] cipher     Encrypted cipher text
+  @param aes_len          Length of the cypher
 
   @return                 -1 if error encountered,
                           length encrypted, otherwise.
@@ -1327,9 +1320,9 @@ static int encrypt_buffer(const char *plain, int plain_len, char cipher[], const
 /**
   Decrypt the given cipher text.
 
-  @param cipher     [in]  Cipher text to be decrypted.
-  @param cipher_len [in]  Length of the cipher text.
-  @param plain      [out] Decrypted plain text.
+  @param [in] cipher      Cipher text to be decrypted.
+  @param [in] cipher_len  Length of the cipher text.
+  @param [out] plain      Decrypted plain text.
 
   @return                 -1 if error encountered,
                           length decrypted, otherwise.

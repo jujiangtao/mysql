@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2016, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -28,9 +28,26 @@
 #include "table_helper.h"
 
 /**
-  @addtogroup Performance_schema_tables
+  @addtogroup performance_schema_tables
   @{
 */
+
+class PFS_index_esms_global_by_event_name : public PFS_engine_index
+{
+public:
+  PFS_index_esms_global_by_event_name()
+    : PFS_engine_index(&m_key),
+    m_key("EVENT_NAME")
+  {}
+
+  ~PFS_index_esms_global_by_event_name()
+  {}
+
+  virtual bool match(PFS_instr_class *instr_class);
+
+private:
+  PFS_key_event_name m_key;
+};
 
 /**
   A row of table
@@ -53,6 +70,9 @@ public:
   static PFS_engine_table* create();
   static int delete_all_rows();
   static ha_rows get_row_count();
+
+  virtual int index_init(uint idx, bool sorted);
+  virtual int index_next(void);
 
   virtual int rnd_init(bool scan);
   virtual int rnd_next();
@@ -88,6 +108,8 @@ private:
   PFS_simple_index m_pos;
   /** Next position. */
   PFS_simple_index m_next_pos;
+
+  PFS_index_esms_global_by_event_name *m_opened_index;
 };
 
 /** @} */

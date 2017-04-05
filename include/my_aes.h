@@ -17,8 +17,10 @@
  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 
-/* Header file for my_aes.c */
-/* Wrapper to give simple interface for MySQL to AES standard encryption */
+/**
+  @file include/my_aes.h
+  Wrapper to give simple interface for MySQL to AES standard encryption.
+*/
 
 C_MODE_START
 
@@ -70,14 +72,14 @@ extern const char *my_aes_opmode_names[];
 /**
   Encrypt a buffer using AES
 
-  @param source         [in]  Pointer to data for encryption
-  @param source_length  [in]  Size of encryption data
-  @param dest           [out] Buffer to place encrypted data (must be large enough)
-  @param key            [in]  Key to be used for encryption
-  @param key_length     [in]  Length of the key. Will handle keys of any length
-  @param mode           [in]  encryption mode
-  @param iv             [in]  16 bytes initialization vector if needed. Otherwise NULL
-  @param padding        [in]  if padding needed.
+  @param [in] source           Pointer to data for encryption
+  @param [in] source_length    Size of encryption data
+  @param [out] dest            Buffer to place encrypted data (must be large enough)
+  @param [in] key              Key to be used for encryption
+  @param [in] key_length       Length of the key. Will handle keys of any length
+  @param [in] mode             encryption mode
+  @param [in] iv               16 bytes initialization vector if needed. Otherwise NULL
+  @param [in] padding          if padding needed.
   @return              size of encrypted data, or negative in case of error
 */
 
@@ -109,21 +111,19 @@ int my_aes_decrypt(const unsigned char *source, uint32 source_length,
                    bool padding = true);
 
 /**
-  Calculate the size of a buffer large enough for encrypted data
+  Calculate the size of a buffer large enough for encrypted data.
 
   @param source_length  length of data to be encrypted
-  @param mode           encryption mode
+  @param opmode         encryption mode
   @return               size of buffer required to store encrypted data
 */
 
-int my_aes_get_size(uint32 source_length, enum my_aes_opmode mode);
+int my_aes_get_size(uint32 source_length, enum my_aes_opmode opmode);
 
 /**
-  Return true if the AES cipher and block mode requires an IV
+  Return true if the AES cipher and block mode requires an IV.
 
-  SYNOPSIS
-  my_aes_needs_iv()
-  @param mode           encryption mode
+  @param opmode           encryption mode
 
   @retval TRUE   IV needed
   @retval FALSE  IV not needed

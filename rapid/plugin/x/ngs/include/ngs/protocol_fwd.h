@@ -64,9 +64,6 @@ class Update;
 class Collection;
 class Find;
 class Delete;
-class DropView;
-class CreateView;
-class ModifyView;
 }
 
 namespace Expr

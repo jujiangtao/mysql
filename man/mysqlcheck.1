@@ -2,12 +2,12 @@
 .\"     Title: \fBmysqlcheck\fR
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 11/26/2016
+.\"      Date: 08/25/2016
 .\"    Manual: MySQL Database System
-.\"    Source: MySQL 5.7
+.\"    Source: MySQL 8.0
 .\"  Language: English
 .\"
-.TH "\FBMYSQLCHECK\FR" "1" "11/26/2016" "MySQL 5\&.7" "MySQL Database System"
+.TH "\FBMYSQLCHECK\FR" "1" "08/25/2016" "MySQL 8\&.0" "MySQL Database System"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -41,7 +41,7 @@ client performs table maintenance: It checks, repairs, optimizes, or analyzes ta
 Each table is locked and therefore unavailable to other sessions while it is being processed, although for check operations, the table is locked with a
 READ
 lock only (see
-Section\ \&14.3.5, \(lqLOCK TABLES and UNLOCK TABLES Syntax\(rq, for more information about
+Section\ \&13.3.5, \(lqLOCK TABLES and UNLOCK TABLES Syntax\(rq, for more information about
 READ
 and
 WRITE
@@ -76,7 +76,7 @@ REPAIR TABLE,
 ANALYZE TABLE, and
 OPTIMIZE TABLE
 in a convenient way for the user\&. It determines which statements to use for the operation you want to perform, and then sends the statements to the server to be executed\&. For details about which storage engines each statement works with, see the descriptions for those statements in
-Section\ \&14.7.2, \(lqTable Maintenance Statements\(rq\&.
+Section\ \&13.7.2, \(lqTable Maintenance Statements\(rq\&.
 .PP
 The
 MyISAM
@@ -105,7 +105,7 @@ note     : The storage engine for the table doesn\*(Aqt support check
 If
 \fBmysqlcheck\fR
 is unable to repair a table, see
-Section\ \&2.11.4, \(lqRebuilding or Repairing Tables or Indexes\(rq
+Section\ \&2.10.4, \(lqRebuilding or Repairing Tables or Indexes\(rq
 for manual table repair strategies\&. This will be the case, for example, for
 InnoDB
 tables, which can be checked with
@@ -200,7 +200,7 @@ supports the following options, which can be specified on the command line or in
 and
 [client]
 groups of an option file\&. For information about option files used by MySQL programs, see
-Section\ \&5.2.6, \(lqUsing Option Files\(rq\&.
+Section\ \&4.2.6, \(lqUsing Option Files\(rq\&.
 .sp
 .RS 4
 .ie n \{\
@@ -233,7 +233,7 @@ option and naming all the databases on the command line, except that the
 INFORMATION_SCHEMA
 and
 performace_schema
-databases are not checked\&. They can be checked by explicitly naming them with the
+databases are not dumped\&. They can be dumped by explicitly naming them with the
 \fB\-\-databases\fR
 option\&.
 .RE
@@ -303,7 +303,7 @@ On a computer having multiple network interfaces, use this option to select whic
 \fB\-\-character\-sets\-dir=\fR\fB\fIdir_name\fR\fR
 .sp
 The directory where character sets are installed\&. See
-Section\ \&11.5, \(lqCharacter Set Configuration\(rq\&.
+Section\ \&10.5, \(lqCharacter Set Configuration\(rq\&.
 .RE
 .sp
 .RS 4
@@ -349,11 +349,7 @@ Invoke
 CHECK TABLE
 with the
 FOR UPGRADE
-option to check tables for incompatibilities with the current version of the server\&. This option automatically enables the
-\fB\-\-fix\-db\-names\fR
-and
-\fB\-\-fix\-table\-names\fR
-options\&.
+option to check tables for incompatibilities with the current version of the server\&.
 .RE
 .sp
 .RS 4
@@ -383,6 +379,16 @@ Compress all information sent between the client and the server if both support 
 Process all tables in the named databases\&. Normally,
 \fBmysqlcheck\fR
 treats the first name argument on the command line as a database name and any following names as table names\&. With this option, it treats all name arguments as database names\&.
+.sp
+This option may be used to dump the
+INFORMATION_SCHEMA
+and
+performace_schema
+databases, which normally are not dumped even with the
+\fB\-\-all\-databases\fR
+option\&. (Also use the
+\fB\-\-skip\-lock\-tables\fR
+option\&.)
 .RE
 .sp
 .RS 4
@@ -442,7 +448,7 @@ Print debugging information and memory and CPU usage statistics when the program
 Use
 \fIcharset_name\fR
 as the default character set\&. See
-Section\ \&11.5, \(lqCharacter Set Configuration\(rq\&.
+Section\ \&10.5, \(lqCharacter Set Configuration\(rq\&.
 .RE
 .sp
 .RS 4
@@ -473,10 +479,6 @@ is interpreted relative to the current directory if given as a relative path nam
 Use only the given option file\&. If the file does not exist or is otherwise inaccessible, an error occurs\&.
 \fIfile_name\fR
 is interpreted relative to the current directory if given as a relative path name rather than a full path name\&.
-.sp
-Exception: Even with
-\fB\-\-defaults\-file\fR, client programs read
-\&.mylogin\&.cnf\&.
 .RE
 .sp
 .RS 4
@@ -534,7 +536,7 @@ If you are using this option to repair tables, it runs an extended repair that m
 \fB\-\-default\-auth=\fR\fB\fIplugin\fR\fR
 .sp
 A hint about the client\-side authentication plugin to use\&. See
-Section\ \&7.3.8, \(lqPluggable Authentication\(rq\&.
+Section\ \&6.3.8, \(lqPluggable Authentication\(rq\&.
 .RE
 .sp
 .RS 4
@@ -550,9 +552,7 @@ Section\ \&7.3.8, \(lqPluggable Authentication\(rq\&.
 Enable the
 mysql_clear_password
 cleartext authentication plugin\&. (See
-Section\ \&7.5.1.8, \(lqThe Cleartext Client-Side Authentication Plugin\(rq\&.)
-.sp
-This option was added in MySQL 5\&.7\&.10\&.
+Section\ \&6.5.1.4, \(lqThe Cleartext Client-Side Authentication Plugin\(rq\&.)
 .RE
 .sp
 .RS 4
@@ -567,36 +567,6 @@ This option was added in MySQL 5\&.7\&.10\&.
 \fB\-F\fR
 .sp
 Check only tables that have not been closed properly\&.
-.RE
-.sp
-.RS 4
-.ie n \{\
-\h'-04'\(bu\h'+03'\c
-.\}
-.el \{\
-.sp -1
-.IP \(bu 2.3
-.\}
-\fB\-\-fix\-db\-names\fR
-.sp
-Convert database names to 5\&.1 format\&. Only database names that contain special characters are affected\&.
-.sp
-This option is deprecated in MySQL 5\&.7\&.6 and will be removed in a future version of MySQL\&. If it is necessary to convert MySQL 5\&.0 database or table names, a workaround is to upgrade a MySQL 5\&.0 installation to MySQL 5\&.1 before upgrading to a more recent release\&.
-.RE
-.sp
-.RS 4
-.ie n \{\
-\h'-04'\(bu\h'+03'\c
-.\}
-.el \{\
-.sp -1
-.IP \(bu 2.3
-.\}
-\fB\-\-fix\-table\-names\fR
-.sp
-Convert table names to 5\&.1 format\&. Only table names that contain special characters are affected\&. This option also applies to views\&.
-.sp
-This option is deprecated in MySQL 5\&.7\&.6 and will be removed in a future version of MySQL\&. If it is necessary to convert MySQL 5\&.0 database or table names, a workaround is to upgrade a MySQL 5\&.0 installation to MySQL 5\&.1 before upgrading to a more recent release\&.
 .RE
 .sp
 .RS 4
@@ -726,7 +696,7 @@ option on the command line,
 prompts for one\&.
 .sp
 Specifying a password on the command line should be considered insecure\&. See
-Section\ \&7.1.2.1, \(lqEnd-User Guidelines for Password Security\(rq\&. You can use an option file to avoid giving the password on the command line\&.
+Section\ \&6.1.2.1, \(lqEnd-User Guidelines for Password Security\(rq\&. You can use an option file to avoid giving the password on the command line\&.
 .RE
 .sp
 .RS 4
@@ -758,7 +728,7 @@ The directory in which to look for plugins\&. Specify this option if the
 option is used to specify an authentication plugin but
 \fBmysqlcheck\fR
 does not find it\&. See
-Section\ \&7.3.8, \(lqPluggable Authentication\(rq\&.
+Section\ \&6.3.8, \(lqPluggable Authentication\(rq\&.
 .RE
 .sp
 .RS 4
@@ -799,7 +769,7 @@ Print the program name and all options that it gets from option files\&.
 \fB\-\-protocol={TCP|SOCKET|PIPE|MEMORY}\fR
 .sp
 The connection protocol to use for connecting to the server\&. It is useful when the other connection parameters normally would cause a protocol to be used other than the one you want\&. For details on the permissible values, see
-Section\ \&5.2.2, \(lqConnecting to the MySQL Server\(rq\&.
+Section\ \&4.2.2, \(lqConnecting to the MySQL Server\(rq\&.
 .RE
 .sp
 .RS 4
@@ -842,10 +812,10 @@ Perform a repair that can fix almost anything except unique keys that are not un
 .\}
 \fB\-\-secure\-auth\fR
 .sp
-Do not send passwords to the server in old (pre\-4\&.1) format\&. This prevents connections except for servers that use the newer password format\&. This option was added in MySQL 5\&.7\&.4\&.
+Do not send passwords to the server in old (pre\-4\&.1) format\&. This prevents connections except for servers that use the newer password format\&.
 .sp
-As of MySQL 5\&.7\&.5, this option is deprecated and will be removed in a future MySQL release\&. It is always enabled and attempting to disable it (\fB\-\-skip\-secure\-auth\fR,
-\fB\-\-secure\-auth=0\fR) produces an error\&. Before MySQL 5\&.7\&.5, this option is enabled by default but can be disabled\&.
+This option is deprecated and will be removed in a future MySQL release\&. It is always enabled and attempting to disable it (\fB\-\-skip\-secure\-auth\fR,
+\fB\-\-secure\-auth=0\fR) produces an error\&.
 .if n \{\
 .sp
 .\}
@@ -858,8 +828,7 @@ As of MySQL 5\&.7\&.5, this option is deprecated and will be removed in a future
 \fBNote\fR
 .ps -1
 .br
-Passwords that use the pre\-4\&.1 hashing method are less secure than passwords that use the native password hashing method and should be avoided\&. Pre\-4\&.1 passwords are deprecated and support for them is removed in MySQL 5\&.7\&.5\&. For account upgrade instructions, see
-Section\ \&7.5.1.3, \(lqMigrating Away from Pre-4.1 Password Hashing and the mysql_old_password Plugin\(rq\&.
+Passwords that use the pre\-4\&.1 hashing method are less secure than passwords that use the native password hashing method and should be avoided\&. Pre\-4\&.1 passwords are deprecated and support for them has been removed\&.
 .sp .5v
 .RE
 .RE
@@ -938,7 +907,7 @@ localhost, the Unix socket file to use, or, on Windows, the name of the named pi
 Options that begin with
 \fB\-\-ssl\fR
 specify whether to connect to the server using SSL and indicate where to find SSL keys and certificates\&. See
-Section\ \&7.4.5, \(lqCommand Options for Secure Connections\(rq\&.
+Section\ \&6.4.5, \(lqCommand Options for Secure Connections\(rq\&.
 .RE
 .sp
 .RS 4
@@ -969,9 +938,7 @@ option\&. All name arguments following the option are regarded as table names\&.
 \fB\-\-tls\-version=\fR\fB\fIprotocol_list\fR\fR
 .sp
 The protocols permitted by the client for encrypted connections\&. The value is a comma\-separated list containing one or more protocol names\&. The protocols that can be named for this option depend on the SSL library used to compile MySQL\&. For details, see
-Section\ \&7.4.3, \(lqSecure Connection Protocols and Ciphers\(rq\&.
-.sp
-This option was added in MySQL 5\&.7\&.10\&.
+Section\ \&6.4.3, \(lqSecure Connection Protocols and Ciphers\(rq\&.
 .RE
 .sp
 .RS 4

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -2166,7 +2166,7 @@ Val::cmpchars(Par par, const uchar* buf1, uint len1, const uchar* buf2, uint len
     require(n1 != -1 && n1 == n2);
     k = memcmp(x1, x2, n1);
   } else {
-    k = (*cs->coll->strnncollsp)(cs, buf1, len1, buf2, len2, false);
+    k = (*cs->coll->strnncollsp)(cs, buf1, len1, buf2, len2);
   }
   return k < 0 ? -1 : k > 0 ? +1 : 0;
 }
@@ -5098,7 +5098,7 @@ struct Thr {
   enum State { Wait, Start, Stop, Exit };
   State m_state;
   Par m_par;
-  pthread_t m_id;
+  my_thread_t m_id;
   NdbThread* m_thread;
   NdbMutex* m_mutex;
   NdbCondition* m_cond;
@@ -5175,7 +5175,7 @@ static void*
 runthread(void* arg)
 {
   Thr& thr = *(Thr*)arg;
-  thr.m_id = pthread_self();
+  thr.m_id = my_thread_self();
   if (thr.run() < 0) {
     LL1("exit on error");
   } else {
@@ -5257,11 +5257,11 @@ static Thr*
 getthr()
 {
   if (g_thrlist != 0) {
-    pthread_t id = pthread_self();
+    my_thread_t id = my_thread_self();
     for (uint n = 0; n < g_opt.m_threads; n++) {
       if (g_thrlist[n] != 0) {
         Thr& thr = *g_thrlist[n];
-        if (pthread_equal(thr.m_id, id))
+        if (my_thread_equal(thr.m_id, id))
           return &thr;
       }
     }

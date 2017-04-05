@@ -19,7 +19,7 @@
 #include "ftdefs.h"
 #include <my_getopt.h>
 
-static void usage();
+static void usage() MY_ATTRIBUTE((noreturn));
 static void complain(int val);
 static my_bool get_one_option(int, const struct my_option *, char *);
 

@@ -15,13 +15,9 @@
 
 /* This file is originally from the mysql distribution. Coded by monty */
 
-#include <my_global.h>
-#include <my_sys.h>
-#include <m_string.h>
-#include <m_ctype.h>
-#include <mysql_com.h>
-
 #include "sql_string.h"
+
+#include "mysql_com.h"    // MAX_BIGINT_WIDTH
 
 #include <algorithm>
 
@@ -29,7 +25,9 @@ using std::min;
 using std::max;
 
 #ifdef MYSQL_SERVER
+extern "C" {
 PSI_memory_key key_memory_String_value;
+}
 #endif
 
 /*****************************************************************************
@@ -121,7 +119,8 @@ bool String::mem_realloc(size_t alloc_length, bool force_on_heap)
     {
       if (m_length > len - 1)
         m_length= 0;
-      memcpy(new_ptr, m_ptr, m_length);
+      if (m_length > 0)
+        memcpy(new_ptr, m_ptr, m_length);
       new_ptr[m_length]= 0;
       m_is_alloced= true;
     }
@@ -503,7 +502,7 @@ bool String::append(const String &s)
     DBUG_ASSERT(!this->uses_buffer_owned_by(&s));
     DBUG_ASSERT(!s.uses_buffer_owned_by(this));
 
-    if (mem_realloc_exp((m_length + s.length())))
+    if (mem_realloc_exp((m_length+s.length())))
       return true;
     memcpy(m_ptr + m_length,s.ptr(), s.length());
     m_length+=s.length();
@@ -863,7 +862,7 @@ int sortcmp(const String *s,const String *t, const CHARSET_INFO *cs)
 {
  return cs->coll->strnncollsp(cs,
                               (uchar *) s->ptr(),s->length(),
-                              (uchar *) t->ptr(),t->length(), 0);
+                              (uchar *) t->ptr(),t->length());
 }
 
 
@@ -890,7 +889,7 @@ int stringcmp(const String *s,const String *t)
   size_t s_len= s->length();
   size_t t_len= t->length();
   size_t len= min(s_len, t_len);
-  int cmp= memcmp(s->ptr(), t->ptr(), len);
+  int cmp= (len == 0) ? 0 : memcmp(s->ptr(), t->ptr(), len);
   return (cmp) ? cmp : static_cast<int>(s_len) - static_cast<int>(t_len);
 }
 
@@ -901,8 +900,8 @@ int stringcmp(const String *s,const String *t)
   'from', possibly re-allocated to be at least from_length bytes long.
   It is also the case if from==to or to==NULL.
   Otherwise, this function makes and returns a copy of "from" into "to"; the
-  buffer of "to" is heap-allocated; a pre-condition is that from->str and
-  to->str must point to non-overlapping buffers.
+  buffer of "to" is heap-allocated; a pre-condition is that \c from->str and
+  \c to->str must point to non-overlapping buffers.
   The logic behind this complex design, is that a caller, typically a
   val_str() function, sometimes has an input String ('from') which buffer it
   wants to modify; but this String's buffer may or not be heap-allocated; if
@@ -1046,7 +1045,8 @@ size_t well_formed_copy_nchars(const CHARSET_INFO *to_cs,
       set_if_smaller(from_length, to_length);
       res= to_cs->cset->well_formed_len(to_cs, from, from + from_length,
                                         nchars, &well_formed_error);
-      memmove(to, from, res);
+      if (res > 0)
+        memmove(to, from, res);
       *from_end_pos= from + res;
       *well_formed_error_pos= well_formed_error ? from + res : NULL;
       *cannot_convert_error_pos= NULL;
@@ -1121,6 +1121,10 @@ void String::print(String *str)
 {
   char *st= m_ptr;
   char *end= st + m_length;
+
+  if (str->reserve(m_length))
+    return;
+
   for (; st < end; st++)
   {
     uchar c= *st;
@@ -1163,11 +1167,11 @@ void String::print(String *str)
 
 void String::swap(String &s)
 {
-  swap_variables(char *, m_ptr, s.m_ptr);
-  swap_variables(size_t, m_length, s.m_length);
-  swap_variables(uint32, m_alloced_length, s.m_alloced_length);
-  swap_variables(bool, m_is_alloced, s.m_is_alloced);
-  swap_variables(const CHARSET_INFO *, m_charset, s.m_charset);
+  std::swap(m_ptr, s.m_ptr);
+  std::swap(m_length, s.m_length);
+  std::swap(m_alloced_length, s.m_alloced_length);
+  std::swap(m_is_alloced, s.m_is_alloced);
+  std::swap(m_charset, s.m_charset);
 }
 
 

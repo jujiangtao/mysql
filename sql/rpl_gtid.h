@@ -24,16 +24,14 @@
 #include "my_atomic.h"          // my_atomic_add32
 #include "prealloced_array.h"   // Prealloced_array
 #include "control_events.h"     // binary_log::Uuid
-
-#ifdef MYSQL_SERVER
-#include "mysqld.h"             // key_rwlock_global_sid_lock
-#include "table.h"
-#endif
-
 #include <list>
 #include "atomic_class.h"
+#include "typelib.h"
+#include "mysql/psi/mysql_rwlock.h" // mysql_rwlock_t
+#include "template_utils.h"
 
-using binary_log::Uuid;
+struct TABLE_LIST;
+
 /**
   Report an error from code that can be linked into either the server
   or mysqlbinlog.  There is no common error reporting mechanism, so we
@@ -52,12 +50,13 @@ using binary_log::Uuid;
 #endif
 
 
+extern "C" {
 extern PSI_memory_key key_memory_Gtid_set_to_string;
 extern PSI_memory_key key_memory_Owned_gtids_to_string;
 extern PSI_memory_key key_memory_Gtid_state_to_string;
 extern PSI_memory_key key_memory_Group_cache_to_string;
 extern PSI_memory_key key_memory_Gtid_set_Interval_chunk;
-extern PSI_memory_key key_memory_Gtid_state_group_commit_sidno;
+}
 
 /**
   This macro is used to check that the given character, pointed to by the
@@ -120,6 +119,7 @@ enum enum_return_status
 };
 
 /**
+  @def __CHECK_RETURN_STATUS
   Lowest level macro used in the PROPAGATE_* and RETURN_* macros
   below.
 
@@ -271,7 +271,7 @@ extern TYPELIB gtid_mode_typelib;
 
   @param string The string to decode.
 
-  @param[OUT] error If the string does not represent a valid
+  @param[out] error If the string does not represent a valid
   GTID_MODE, this is set to true, otherwise it is left untouched.
 
   @return The GTID_MODE.
@@ -343,7 +343,7 @@ enum_gtid_mode get_gtid_mode(enum_gtid_mode_lock have_lock);
 /**
   Return the current GTID_MODE as a string. Used only for debugging.
 
-  @param need_lock Pass this parameter to get_gtid_mode(bool).
+  @param have_lock Pass this parameter to get_gtid_mode(bool).
 */
 inline const char *get_gtid_mode_string(enum_gtid_mode_lock have_lock)
 {
@@ -420,7 +420,7 @@ rpl_gno parse_gno(const char **s);
 */
 int format_gno(char *s, rpl_gno gno);
 
-typedef Uuid rpl_sid;
+typedef binary_log::Uuid rpl_sid;
 
 
 /**
@@ -735,6 +735,13 @@ private:
     rpl_sid sid;
   };
 
+  static const uchar *sid_map_get_key(const uchar *ptr, size_t *length)
+  {
+    const Node *node= pointer_cast<const Node*>(ptr);
+    *length= binary_log::Uuid::BYTE_LENGTH;
+    return node->sid.bytes;
+  }
+
   /**
     Create a Node from the given SIDNO and SID and add it to
     _sidno_to_sid, _sid_to_sidno, and _sorted.
@@ -827,7 +834,7 @@ public:
     Assert that this thread owns the n'th mutex.
     This is a no-op if DBUG_OFF is on.
   */
-  inline void assert_owner(int n) const
+  inline void assert_owner(int n MY_ATTRIBUTE((unused))) const
   {
 #ifndef DBUG_OFF
     mysql_mutex_assert_owner(&get_mutex_cond(n)->mutex);
@@ -837,7 +844,7 @@ public:
     Assert that this thread does not own the n'th mutex.
     This is a no-op if DBUG_OFF is on.
   */
-  inline void assert_not_owner(int n) const
+  inline void assert_not_owner(int n MY_ATTRIBUTE((unused))) const
   {
 #ifndef DBUG_OFF
     mysql_mutex_assert_not_owner(&get_mutex_cond(n)->mutex);
@@ -854,7 +861,7 @@ public:
     or the timeout is reached.
 
     @param[in] thd THD object for the calling thread.
-    @param[in] n Condition variable to wait for.
+    @param[in] sidno Condition variable to wait for.
     @param[in] abstime The absolute point in time when the wait times
     out and stops, or NULL to wait indefinitely.
 
@@ -1024,6 +1031,7 @@ struct Gtid
   /**
     Parses the given string and stores in this Gtid.
 
+    @param sid_map sid_map to use when converting SID to a sidno.
     @param text The text to parse
     @return RETURN_STATUS_OK or RETURN_STATUS_REPORTED_ERROR.
   */
@@ -1039,8 +1047,9 @@ struct Gtid
   }
 #endif
   /// Print this Gtid to the trace file if debug is enabled; no-op otherwise.
-  void dbug_print(const Sid_map *sid_map, const char *text= "",
-                  bool need_lock= false) const
+  void dbug_print(const Sid_map *sid_map MY_ATTRIBUTE((unused)),
+                  const char *text MY_ATTRIBUTE((unused))= "",
+                  bool need_lock MY_ATTRIBUTE((unused))= false) const
   {
 #ifndef DBUG_OFF
     char buf[MAX_TEXT_LENGTH + 1];
@@ -1086,12 +1095,11 @@ public:
     @param sid_lock Read-write lock that protects updates to the
     number of SIDs. This may be NULL if such changes do not need to be
     protected.
-    @param free_intervals_mutex_key Performance_schema instrumentation
-    key to use for the free_intervals mutex.
   */
   Gtid_set(Sid_map *sid_map, Checkable_rwlock *sid_lock= NULL);
   /**
-    Constructs a new Gtid_set that contains the groups in the given string, in the same format as add_gtid_text(char *).
+    Constructs a new Gtid_set that contains the groups in the given
+    string, in the same format as add_gtid_text(char *).
 
     @param sid_map The Sid_map to use for SIDs.
     @param text The text to parse.
@@ -1100,9 +1108,6 @@ public:
     @param sid_lock Read/write lock to protect changes in the number
     of SIDs with. This may be NULL if such changes do not need to be
     protected.
-    @param free_intervals_mutex_key Performance_schema instrumentation
-    key to use for the free_intervals mutex.
-
     If sid_lock != NULL, then the read lock on sid_lock must be held
     before calling this function. If the array is grown, sid_lock is
     temporarily upgraded to a write lock and then degraded again;
@@ -1211,7 +1216,7 @@ public:
     Adds the set of GTIDs represented by the given string to this Gtid_set.
 
     The string must have the format of a comma-separated list of zero
-    or more of the following:
+    or more of the following items:
 
        XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX(:NUMBER+(-NUMBER)?)*
        | ANONYMOUS
@@ -1223,6 +1228,10 @@ public:
        interval may be 0, but any interval that has an endpoint that
        is smaller than the start is discarded.
 
+    The string can start with an optional '+' appender qualifier
+    which triggers @c executed_gtids and @c lost_gtids set examination
+    on the matter of disjointness with the one being added.
+
     If sid_lock != NULL, then the read lock on sid_lock must be held
     before calling this function. If a new sidno is added so that the
     array of lists of intervals is grown, sid_lock is temporarily
@@ -1230,7 +1239,7 @@ public:
     short period when the lock is not held at all.
 
     @param text The string to parse.
-    @param anonymous[in,out] If this is NULL, ANONYMOUS is not
+    @param [in,out] anonymous If this is NULL, ANONYMOUS is not
     allowed.  If this is not NULL, it will be set to true if the
     anonymous group was found; false otherwise.
     @return RETURN_STATUS_OK or RETURN_STATUS_REPORTED_ERROR.
@@ -1239,7 +1248,7 @@ public:
   /**
     Decodes a Gtid_set from the given string.
 
-    @param string The string to parse.
+    @param encoded The string to parse.
     @param length The number of bytes.
     @param actual_length If this is not NULL, it is set to the number
     of bytes used by the encoding (which may be less than 'length').
@@ -1288,7 +1297,7 @@ public:
     Returns true if this Gtid_set is a subset of the given gtid_set
     on the given superset_sidno and subset_sidno.
 
-    @param super          Gtid_set with which 'this'::gtid_set needs to be
+    @param super          Gtid_set with which this->gtid_set needs to be
                            compared
     @param superset_sidno The sidno that will be compared, relative to
                            super->sid_map.
@@ -1426,8 +1435,9 @@ public:
     Print this Gtid_set to the trace file if debug is enabled; no-op
     otherwise.
   */
-  void dbug_print(const char *text= "", bool need_lock= false,
-                  const Gtid_set::String_format *sf= NULL) const
+  void dbug_print(const char *text MY_ATTRIBUTE((unused))= "",
+                  bool need_lock MY_ATTRIBUTE((unused))= false,
+                  const Gtid_set::String_format *sf MY_ATTRIBUTE((unused))= NULL) const
   {
 #ifndef DBUG_OFF
     char *str;
@@ -1491,7 +1501,7 @@ public:
     number of intervals.
 
     @param n_intervals The number of intervals to add.
-    @param intervals Array of n_intervals intervals.
+    @param intervals_param Array of n_intervals intervals.
   */
   void add_interval_memory(int n_intervals, Interval *intervals_param)
   {
@@ -1695,6 +1705,10 @@ public:
     encode() function.
   */
   size_t get_encoded_length() const;
+  /**
+    Returns true when the set is marked as appendable, false otherwise.
+  */
+  bool is_appendable() const { return m_appendable; }
 
 private:
   /**
@@ -1950,7 +1964,12 @@ private:
   */
   int n_chunks;
 #endif
-
+  /**
+    The set is marked with true bool value when its textual
+    presentation contains the '+' as the first non-whitespace character.
+    The property is checked by methods like Gtid_state::add_lost_gtids().
+  */
+  bool m_appendable;
   /// Used by unit tests that need to access private members.
 #ifdef FRIEND_OF_GTID_SET
   friend FRIEND_OF_GTID_SET;
@@ -2052,7 +2071,7 @@ public:
   /**
     Returns the owner of the given GTID, or 0 if the GTID is not owned.
 
-    @param Gtid The Gtid to query.
+    @param gtid The Gtid to query.
     @return my_thread_id of the thread that owns the group, or
     0 if the group is not owned.
   */
@@ -2197,7 +2216,7 @@ public:
     Print this Owned_gtids to the trace file if debug is enabled; no-op
     otherwise.
   */
-  void dbug_print(const char *text= "") const
+  void dbug_print(const char *text MY_ATTRIBUTE((unused))= "") const
   {
 #ifndef DBUG_OFF
     char *str= to_string();
@@ -2214,6 +2233,12 @@ private:
     /// Owner of the group.
     my_thread_id owner;
   };
+  static const uchar* node_get_key(const uchar *ptr, size_t *size)
+  {
+    const Node *node= pointer_cast<const Node*>(ptr);
+    *size= sizeof(rpl_gno);
+    return pointer_cast<const uchar*>(&node->gno);
+  }
   /// Read-write lock that protects updates to the number of SIDs.
   mutable Checkable_rwlock *sid_lock;
   /// Returns the HASH for the given SIDNO.
@@ -2369,8 +2394,7 @@ public:
     executed_gtids(sid_map, sid_lock),
     gtids_only_in_table(sid_map, sid_lock),
     previous_gtids_logged(sid_map, sid_lock),
-    owned_gtids(sid_lock),
-    commit_group_sidnos(key_memory_Gtid_state_group_commit_sidno) {}
+    owned_gtids(sid_lock) {}
   /**
     Add @@GLOBAL.SERVER_UUID to this binlog's Sid_map.
 
@@ -2431,26 +2455,6 @@ public:
     @return RETURN_STATUS_OK or RETURN_STATUS_REPORTED_ERROR.
   */
   enum_return_status acquire_ownership(THD *thd, const Gtid &gtid);
-  /**
-    This function updates both the THD and the Gtid_state to reflect that
-    the transaction set of transactions has ended, and it does this for the
-    whole commit group (by following the thd->next_to_commit pointer).
-
-    It will:
-
-    - Clean up the thread state when a thread owned GTIDs is empty.
-    - Release ownership of all GTIDs owned by the THDs. This removes
-      the GTIDs from Owned_gtids and clears the ownership status in the
-      THDs object.
-    - Add the owned GTIDs to executed_gtids when the thread is committing.
-    - Decrease counters of GTID-violating transactions.
-    - Send a broadcast on the condition variable for every sidno for
-      which we released ownership.
-
-    @param first_thd The first thread of the group commit that needs GTIDs to
-                     be updated.
-  */
-  void update_commit_group(THD *first_thd);
   /**
     Remove the GTID owned by thread from owned GTIDs, stating that
     thd->owned_gtid was committed.
@@ -2619,7 +2623,7 @@ public:
     Increase the global counter when starting a call to
     WAIT_FOR_EXECUTED_GTID_SET or WAIT_UNTIL_SQL_THREAD_AFTER_GTIDS.
   */
-  void begin_gtid_wait(enum_gtid_mode_lock gtid_mode_lock)
+  void begin_gtid_wait(enum_gtid_mode_lock gtid_mode_lock MY_ATTRIBUTE((unused)))
   {
     DBUG_ENTER("Gtid_state::begin_gtid_wait");
     DBUG_ASSERT(get_gtid_mode(gtid_mode_lock) != GTID_MODE_OFF);
@@ -2674,27 +2678,6 @@ private:
     @retval >0 The GNO for the GTID.
   */
   rpl_gno get_automatic_gno(rpl_sidno sidno) const;
-  /**
-    The next_free_gno variable will be set with the supposed next free GNO
-    every time a new GNO is delivered automatically or when a transaction is
-    rolled back, releasing a GNO smaller than the last one delivered.
-    It was introduced in an optimization of Gtid_state::get_automatic_gno and
-    Gtid_state::generate_automatic_gtid functions.
-
-    Locking scheme
-
-    This variable can be read and modified in four places:
-    - During server startup, holding global_sid_lock.wrlock;
-    - By a client thread holding global_sid_lock.wrlock (doing a RESET MASTER);
-    - By a client thread calling MYSQL_BIN_LOG::write_gtid function (often the
-      group commit FLUSH stage leader). It will call
-      Gtid_state::generate_automatic_gtid, that will acquire
-      global_sid_lock.rdlock and lock_sidno(get_server_sidno()) when getting a
-      new automatically generated GTID;
-    - By a client thread rolling back, holding global_sid_lock.rdlock
-      and lock_sidno(get_server_sidno()).
-  */
-  rpl_gno next_free_gno;
 public:
   /**
     Return the last executed GNO for a given SIDNO, e.g.
@@ -2710,27 +2693,16 @@ public:
     Generates the GTID (or ANONYMOUS, if GTID_MODE = OFF or
     OFF_PERMISSIVE) for the THD, and acquires ownership.
 
-    @param THD The thread.
+    @param thd The thread.
     @param specified_sidno Externaly generated sidno.
     @param specified_gno   Externaly generated gno.
-    @param[in,out] locked_sidno This parameter should be used when there is
-                                a need of generating many GTIDs without having
-                                to acquire/release a sidno_lock many times.
-                                The caller must hold global_sid_lock and unlock
-                                the locked_sidno after invocation when
-                                locked_sidno > 0 if locked_sidno!=NULL.
-                                The caller must not hold global_sid_lock when
-                                locked_sidno==NULL.
-                                See comments on function code to more details.
 
     @return RETURN_STATUS_OK or RETURN_STATUS_ERROR. Error can happen
     in case of out of memory or if the range of GNOs was exhausted.
   */
   enum_return_status generate_automatic_gtid(THD *thd,
                                              rpl_sidno specified_sidno= 0,
-                                             rpl_gno specified_gno= 0,
-                                             rpl_sidno *locked_sidno= NULL);
-
+                                             rpl_gno specified_gno= 0);
   /// Locks a mutex for the given SIDNO.
   void lock_sidno(rpl_sidno sidno) { sid_locks.lock(sidno); }
   /// Unlocks a mutex for the given SIDNO.
@@ -2816,6 +2788,8 @@ public:
   /**
     Adds the given Gtid_set to lost_gtids and executed_gtids.
     lost_gtids must be a subset of executed_gtids.
+    purged_gtid and executed_gtid sets are appened with the argument set
+    provided the latter is disjoint with gtid_executed owned_gtids.
 
     Requires that the caller holds global_sid_lock.wrlock.
 
@@ -2904,7 +2878,7 @@ public:
     Print this Gtid_state to the trace file if debug is enabled; no-op
     otherwise.
   */
-  void dbug_print(const char *text= "") const
+  void dbug_print(const char *text MY_ATTRIBUTE((unused))= "") const
   {
 #ifndef DBUG_OFF
     sid_lock->assert_some_wrlock();
@@ -2989,8 +2963,6 @@ public:
   */
   bool warn_or_err_on_modify_gtid_table(THD *thd, TABLE_LIST *table);
 #endif
-
-private:
   /**
     Remove the GTID owned by thread from owned GTIDs.
 
@@ -3006,9 +2978,12 @@ private:
     - Send a broadcast on the condition variable for every sidno for
       which we released ownership.
 
-    @param[in] thd - Thread for which owned groups are updated.
+    @param[in] thd Thread for which owned groups are updated.
+    @param[in] is_commit If true, the update is for a commit (not a rollback).
   */
   void update_gtids_impl(THD *thd, bool is_commit);
+
+private:
 #ifdef HAVE_GTID_NEXT_LIST
   /// Lock all SIDNOs owned by the given THD.
   void lock_owned_sidnos(const THD *thd);
@@ -3059,252 +3034,6 @@ private:
 #ifdef FRIEND_OF_GTID_STATE
   friend FRIEND_OF_GTID_STATE;
 #endif
-
-  /**
-    This is a sub task of update_on_rollback responsible only to handle
-    the case of a thread that needs to skip GTID operations when it has
-    "failed to commit".
-
-    Administrative commands [CHECK|REPAIR|OPTIMIZE|ANALYZE] TABLE
-    are written to the binary log even when they fail.  When the
-    commands fail, they will call update_on_rollback; later they will
-    write the binary log.  But we must not do any of the things in
-    update_gtids_impl if we are going to write the binary log.  So
-    these statements set the skip_gtid_rollback flag, which tells
-    update_on_rollback to return early.  When the statements are
-    written to the binary log they will call update_on_commit as
-    usual.
-
-    @param[in] thd - Thread to be evaluated.
-
-    @retval true The transaction should skip the rollback, false otherwise.
-  */
-  bool update_gtids_impl_check_skip_gtid_rollback(THD *thd);
-  /**
-    This is a sub task of update_gtids_impl responsible only to handle
-    the case of a thread that owns nothing and does not violate GTID
-    consistency.
-
-    If the THD does not own anything, there is nothing to do, so we can do an
-    early return of the update process. Except if there is a GTID consistency
-    violation; then we need to decrease the counter, so then we can continue
-    executing inside update_gtids_impl.
-
-    @param[in] thd - Thread to be evaluated.
-    @retval true The transaction can be skipped because it owns nothing and
-                 does not violate GTID consistency, false otherwise.
-  */
-  bool update_gtids_impl_do_nothing(THD *thd);
-  /**
-    This is a sub task of update_gtids_impl responsible only to evaluate
-    if the thread is committing in the middle of a statement by checking
-    THD's is_commit_in_middle_of_statement flag.
-
-    This flag is true for anonymous transactions, when the
-    'transaction' has been split into multiple transactions in the
-    binlog, and the present transaction is not the last one.
-
-    This means two things:
-
-    - We should not release anonymous ownership in case
-      gtid_next=anonymous.  If we did, it would be possible for user
-      to set GTID_MODE=ON from a concurrent transaction, making it
-      impossible to commit the current transaction.
-
-    - We should not decrease the counters for GTID-violating
-      statements.  If we did, it would be possible for a concurrent
-      client to set ENFORCE_GTID_CONSISTENCY=ON despite there is an
-      ongoing transaction that violates GTID consistency.
-
-    The flag is set in two cases:
-
-     1. We are committing the statement cache when there are more
-        changes in the transaction cache.
-
-        This happens either because a single statement in the
-        beginning of a transaction updates both transactional and
-        non-transactional tables, or because we are committing a
-        non-transactional update in the middle of a transaction when
-        binlog_direct_non_transactional_updates=1.
-
-        In this case, the flag is set further down in this function.
-
-     2. The statement is one of the special statements that may
-        generate multiple transactions: CREATE...SELECT, DROP TABLE,
-        DROP DATABASE. See comment for THD::owned_gtid in
-        sql/sql_class.h.
-
-        In this case, the THD::is_commit_in_middle_of_statement flag
-        is set by the caller and the flag becomes true here.
-
-    @param[in] thd - Thread to be evaluated.
-    @return The value of thread's is_commit_in_middle_of_statement flag.
-  */
-  bool update_gtids_impl_begin(THD *thd);
-  /**
-    Handle the case that the thread own a set of GTIDs.
-
-    This is a sub task of update_gtids_impl responsible only to handle
-    the case of a thread with a set of GTIDs being updated.
-
-    - Release ownership of the GTIDs owned by the THD. This removes
-      the GTID from Owned_gtids and clears the ownership status in the
-      THD object.
-    - Add the owned GTIDs to executed_gtids if the is_commit flag is set.
-    - Send a broadcast on the condition variable for the sidno which we
-      released ownership.
-
-    @param[in] thd - Thread for which owned GTID set should be updated.
-    @param[in] is_commit - If the thread is being updated by a commit.
-  */
-  void update_gtids_impl_own_gtid_set(THD *thd, bool is_commit);
-  /**
-    Lock a given sidno of a transaction being updated.
-
-    This is a sub task of update_gtids_impl responsible only to lock the
-    sidno of the GTID being updated.
-
-    @param[in] sidno - The sidno to be locked.
-  */
-  void update_gtids_impl_lock_sidno(rpl_sidno sidno);
-  /**
-
-    Locks the sidnos of all the GTIDs of the commit group starting on the
-    transaction passed as parameter.
-
-    This is a sub task of update_commit_group responsible only to lock the
-    sidno(s) of the GTID(s) being updated.
-
-    The function should follow thd->next_to_commit to lock all sidnos of all
-    transactions being updated in a group.
-
-    @param[in] thd - Thread that owns the GTID(s) to be updated or leader
-                     of the commit group in the case of a commit group
-                     update.
-  */
-  void update_gtids_impl_lock_sidnos(THD *thd);
-  /**
-    Handle the case that the thread own a single non-anonymous GTID.
-
-    This is a sub task of update_gtids_impl responsible only to handle
-    the case of a thread with a single non-anonymous GTID being updated
-    either for commit or rollback.
-
-    - Release ownership of the GTID owned by the THD. This removes
-      the GTID from Owned_gtids and clears the ownership status in the
-      THD object.
-    - Add the owned GTID to executed_gtids if the is_commit flag is set.
-    - Send a broadcast on the condition variable for the sidno which we
-      released ownership.
-
-    @param[in] thd - Thread to be updated that owns single non-anonymous GTID.
-    @param[in] is_commit - If the thread is being updated by a commit.
-  */
-  void update_gtids_impl_own_gtid(THD *thd, bool is_commit);
-  /**
-    Unlock a given sidno after broadcasting its changes.
-
-    This is a sub task of update_gtids_impl responsible only to
-    unlock the sidno of the GTID being updated after broadcasting
-    its changes.
-
-    @param[in] sidno - The sidno to be broadcasted and unlocked.
-  */
-  void update_gtids_impl_broadcast_and_unlock_sidno(rpl_sidno sidno);
-  /**
-    Unlocks all locked sidnos after broadcasting their changes.
-
-    This is a sub task of update_commit_group responsible only to
-    unlock the sidno(s) of the GTID(s) being updated after broadcasting
-    their changes.
-  */
-  void update_gtids_impl_broadcast_and_unlock_sidnos();
-  /**
-    Handle the case that the thread owns ANONYMOUS GTID.
-
-    This is a sub task of update_gtids_impl responsible only to handle
-    the case of a thread with an ANONYMOUS GTID being updated.
-
-    - Release ownership of the anonymous GTID owned by the THD and clears
-      the ownership status in the THD object.
-    - Decrease counters of GTID-violating transactions.
-
-    @param[in] thd - Thread to be updated that owns anonymous GTID.
-    @param[in,out] more_trx - If the 'transaction' has been split into
-                              multiple transactions in the binlog.
-                              This is firstly assigned with the return of
-                              Gtid_state::update_gtids_impl_begin function, and
-                              its value can be set to true when
-                              Gtid_state::update_gtids_impl_anonymous_gtid
-                              detects more content on the transaction cache.
-  */
-  void update_gtids_impl_own_anonymous(THD* thd, bool *more_trx);
-  /**
-    Handle the case that the thread owns nothing.
-
-    This is a sub task of update_gtids_impl responsible only to handle
-    the case of a thread that owns nothing being updated.
-
-    There are two cases when this happens:
-    - Normally, it is a rollback of an automatic transaction, so
-      the is_commit is false and gtid_next=automatic.
-    - There is also a corner case. This case may happen for a transaction
-      that uses GTID_NEXT=AUTOMATIC, and violates GTID_CONSISTENCY, and
-      commits changes to the database, but does not write to the binary log,
-      so that no GTID is generated. An example is CREATE TEMPORARY TABLE
-      inside a transaction when binlog_format=row. Despite the thread does
-      not own anything, the GTID consistency violation makes it necessary to
-      call end_gtid_violating_transaction. Therefore
-      MYSQL_BIN_LOG::gtid_end_transaction will call
-      gtid_state->update_on_commit in this case, and subsequently we will
-      reach this case.
-
-    @param[in] thd - Thread to be updated that owns anonymous GTID.
-  */
-  void update_gtids_impl_own_nothing(THD *thd);
-  /**
-    Handle the final part of update_gtids_impl.
-
-    This is a sub task of update_gtids_impl responsible only to handle
-    the call to end_gtid_violating_transaction function when there is no
-    more transactions split after the current transaction.
-
-    @param[in] thd - Thread for which owned group is updated.
-    @param[in] more_trx - This is the value returned from
-                          Gtid_state::update_gtids_impl_begin and can be
-                          changed for transactions owning anonymous GTID at
-                          Gtid_state::update_gtids_impl_own_anonymous.
-  */
-  void update_gtids_impl_end(THD *thd, bool more_trx);
-  /**
-    This array is used by Gtid_state_update_gtids_impl* functions.
-
-    The array items (one per sidno of the sid_map) will be set as true for
-    each sidno that requires to be locked when updating a set of GTIDs
-    (at Gtid_set::update_gtids_impl_lock_sidnos).
-
-    The array items will be set false at
-    Gtid_set::update_gtids_impl_broadcast_and_unlock_sidnos.
-
-    It is used to so that lock, unlock, and broadcast operations are only
-    called once per sidno per commit group, instead of once per transaction.
-
-    Its access is protected by:
-    - global_sid_lock->wrlock when growing and cleaning up;
-    - MYSQL_BIN_LOG::LOCK_commit when setting true/false on array items.
-  */
-  Prealloced_array<bool, 8, true> commit_group_sidnos;
-  /**
-    Ensure that commit_group_sidnos have room for the SIDNO passed as
-    parameter.
-
-    This function must only be called in one place:
-    Gtid_state::ensure_sidno().
-
-    @param sidno The SIDNO.
-    @return RETURN_STATUS_OK or RETURN_STATUS_REPORTED_ERROR.
-  */
-  enum_return_status ensure_commit_group_sidnos(rpl_sidno sidno);
 };
 
 
@@ -3481,6 +3210,7 @@ struct Gtid_specification
   /**
     Parses the given string and stores in this Gtid_specification.
 
+    @param sid_map sid_map to use when converting SID to a sidno.
     @param text The text to parse
     @return RETURN_STATUS_OK or RETURN_STATUS_REPORTED_ERROR.
   */
@@ -3494,7 +3224,7 @@ struct Gtid_specification
 
     @param sid_map Sid_map to use if the type of this
     Gtid_specification is GTID_GROUP.
-    @param buf[out] The buffer
+    @param [out] buf The buffer
     @param need_lock If true, this function acquires global_sid_lock
     before looking up the sidno in sid_map, and then releases it. If
     false, this function asserts that the lock is held by the caller.
@@ -3507,9 +3237,8 @@ struct Gtid_specification
     @param sid SID to use if the type of this Gtid_specification is
     GTID_GROUP.  Can be NULL if this Gtid_specification is
     ANONYMOUS_GROUP or AUTOMATIC_GROUP.
-    @param buf[out] The buffer
+    @param[out] buf The buffer
     @retval The number of characters written.
-    @buf[out]
   */
   int to_string(const rpl_sid *sid, char *buf) const;
 #ifndef DBUG_OFF
@@ -3525,7 +3254,8 @@ struct Gtid_specification
     Print this Gtid_specificatoin to the trace file if debug is
     enabled; no-op otherwise.
   */
-  void dbug_print(const char *text= "", bool need_lock= false) const
+  void dbug_print(const char *text MY_ATTRIBUTE((unused))= "",
+                  bool need_lock MY_ATTRIBUTE((unused))= false) const
   {
 #ifndef DBUG_OFF
     char buf[MAX_TEXT_LENGTH + 1];
@@ -3631,13 +3361,13 @@ bool gtid_pre_statement_post_implicit_commit_checks(THD *thd);
   The Gtid_specification must be of type GTID_GROUP or ANONYMOUS_GROUP.
 
   The caller must hold global_sid_lock (normally the rdlock).  The
-  lock may be termporarily released and acquired again. In the end,
+  lock may be temporarily released and acquired again. In the end,
   the lock will be released, so the caller should *not* release the
   lock.
 
   The function will try to acquire ownership of the GTID and update
   both THD::gtid_next, Gtid_state::owned_gtids, and
-  THD::owned_gtid/THD::owned_sid.
+  THD::owned_gtid / THD::owned_sid.
 
   @param thd The thread that acquires ownership.
 

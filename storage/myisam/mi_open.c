@@ -37,9 +37,6 @@
 #endif
 
 static void setup_key_functions(MI_KEYDEF *keyinfo);
-#define get_next_element(to,pos,size) { memcpy((char*) to,pos,(size_t) size); \
-					pos+=size;}
-
 
 #define disk_pos_assert(pos, end_pos) \
 if (pos > end_pos)             \
@@ -139,13 +136,13 @@ MI_INFO *mi_open_share(const char *name, MYISAM_SHARE *old_share, int mode,
                     });
     if ((kfile= mysql_file_open(mi_key_file_kfile,
                                 name_buff,
-                                (open_mode= O_RDWR) | O_SHARE, MYF(0))) < 0)
+                                (open_mode= O_RDWR), MYF(0))) < 0)
     {
       if ((errno != EROFS && errno != EACCES) ||
 	  mode != O_RDONLY ||
           (kfile= mysql_file_open(mi_key_file_kfile,
                                   name_buff,
-                                  (open_mode= O_RDONLY) | O_SHARE, MYF(0))) < 0)
+                                  (open_mode= O_RDONLY), MYF(0))) < 0)
 	goto err;
     }
     share->mode=open_mode;
@@ -1241,7 +1238,7 @@ int mi_open_datafile(MI_INFO *info, MYISAM_SHARE *share, const char *org_name,
     }
   }
   info->dfile= mysql_file_open(mi_key_file_dfile,
-                               data_name, share->mode | O_SHARE, MYF(MY_WME));
+                               data_name, share->mode, MYF(MY_WME));
   return info->dfile >= 0 ? 0 : 1;
 }
 
@@ -1250,7 +1247,7 @@ int mi_open_keyfile(MYISAM_SHARE *share)
 {
   if ((share->kfile= mysql_file_open(mi_key_file_kfile,
                                      share->unique_file_name,
-                                     share->mode | O_SHARE,
+                                     share->mode,
                                      MYF(MY_WME))) < 0)
     return 1;
   return 0;

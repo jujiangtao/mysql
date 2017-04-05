@@ -21,6 +21,7 @@
 #include "my_global.h"
 #include "rpl_channel_service_interface.h" // enum_channel_type
 #include "rpl_mi.h"                        // Master_info
+#include "mysqld.h"                        // key_rwlock_channel_map_lock
 
 #include <map>
 #include <string>
@@ -61,7 +62,8 @@ typedef std::map<int, mi_map> replication_channel_map;
   The two important data structures in this class are
   i) C++ std map to store the Master_info pointers with channel name as a key.
     These are the base channel maps.
-    @TODO: convert to boost after it's introduction.
+    @todo Convert to boost after it's introduction.
+
   ii) C++ std map to store the channel maps with a channel type as its key.
       This map stores slave channel maps, group replication channels or others
   iii) An array of Master_info pointers to access from performance schema
@@ -70,7 +72,7 @@ typedef std::map<int, mi_map> replication_channel_map;
       b) To avoid recalibration of data structure if master info is deleted.
          * Consider the following high level implementation of a pfs table
             to make a row.
-          <pseudo_code>
+          @code
           highlevel_pfs_funciton()
           {
            while(replication_table_xxxx.rnd_next())
@@ -78,7 +80,7 @@ typedef std::map<int, mi_map> replication_channel_map;
              do stuff;
            }
           }
-         </pseudo_code>
+          @endcode
          However, we lock channel_map lock for every rnd_next(); There is a gap
          where an addition/deletion of a channel would rearrange the map
          making the integer indices of the pfs table point to a wrong value.
@@ -184,9 +186,10 @@ public:
     from replication channel_map;
     Return if it exists, otherwise return 0
 
-    @param[in]  channel       channel name for the master info object.
+    @param[in]  channel_name  channel name for the master info object.
 
-    @retval                   pointer to the master info object if exists
+    @return
+      @retval                 pointer to the master info object if exists
                               in the map. Otherwise, NULL;
   */
   Master_info* get_mi(const char* channel_name);
@@ -228,7 +231,7 @@ public:
 
     @return The number of channels or 0 if empty.
   */
-  inline uint get_num_instances(bool all=false)
+  inline size_t get_num_instances(bool all=false)
   {
     DBUG_ENTER("Multisource_info::get_num_instances");
 
@@ -238,7 +241,7 @@ public:
 
     if (all)
     {
-      int count = 0;
+      size_t count = 0;
 
       for (map_it= rep_channel_map.begin();
            map_it != rep_channel_map.end(); map_it++)
@@ -349,9 +352,9 @@ private:
   bool add_mi_to_rpl_pfs_mi(Master_info *mi);
 
   /**
-     Get the index of the master info correposponding to channel name
+     Get the index of the master info corresponding to channel name
      from the rpl_pfs_mi array.
-     @param[in]       channe_name     Channel name to get the index from
+     @param[in]       channel_name     Channel name to get the index from
 
      @return         index of mi for the channel_name. Else -1;
   */

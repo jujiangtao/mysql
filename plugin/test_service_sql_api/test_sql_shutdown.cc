@@ -29,7 +29,7 @@ static const char *sep = "======================================================
 
 static File outfile;
 
-void WRITE_STR(const char *format)
+static void WRITE_STR(const char *format)
 {
   char buffer[STRING_BUFFER_SIZE];
   my_snprintf(buffer,sizeof(buffer),format);
@@ -234,7 +234,7 @@ static void sql_abort_row(void *ctx)
   DBUG_ENTER("sql_abort_row");
   pctx->current_col= 0;
   DBUG_VOID_RETURN;
-};
+}
 
 
 static ulong sql_get_client_capabilities(void *ctx){
@@ -458,7 +458,7 @@ static int sql_get_string(void * ctx, const char * const value, size_t length,
   pctx->sql_str_len[row][col]= length;
 
   DBUG_RETURN(false);
-};
+}
 
 
 static void sql_handle_ok(void * ctx,

@@ -115,17 +115,17 @@ Format_description_event::Format_description_event(uint8_t binlog_ver,
       STOP_HEADER_LEN,
       ROTATE_HEADER_LEN,
       INTVAR_HEADER_LEN,
-      LOAD_HEADER_LEN,
+      0,
       /*
         Unused because the code for Slave log event was removed.
         (15th Oct. 2010)
       */
       0,
-      CREATE_FILE_HEADER_LEN,
+      0,
       APPEND_BLOCK_HEADER_LEN,
-      EXEC_LOAD_HEADER_LEN,
+      0,
       DELETE_FILE_HEADER_LEN,
-      NEW_LOAD_HEADER_LEN,
+      0,
       RAND_HEADER_LEN,
       USER_VAR_HEADER_LEN,
       FORMAT_DESCRIPTION_HEADER_LEN,
@@ -133,15 +133,9 @@ Format_description_event::Format_description_event(uint8_t binlog_ver,
       BEGIN_LOAD_QUERY_HEADER_LEN,
       EXECUTE_LOAD_QUERY_HEADER_LEN,
       TABLE_MAP_HEADER_LEN,
-      /*
-       The PRE_GA events are never be written to any binlog, but
-       their lengths are included in Format_description_log_event.
-       Hence, we need to be assign some value here, to avoid reading
-       uninitialized memory when the array is written to disk.
-      */
-      0,                                       /* PRE_GA_WRITE_ROWS_EVENT */
-      0,                                       /* PRE_GA_UPDATE_ROWS_EVENT*/
-      0,                                       /* PRE_GA_DELETE_ROWS_EVENT*/
+      0,
+      0,
+      0,
       ROWS_HEADER_LEN_V1,                      /* WRITE_ROWS_EVENT_V1*/
       ROWS_HEADER_LEN_V1,                      /* UPDATE_ROWS_EVENT_V1*/
       ROWS_HEADER_LEN_V1,                      /* DELETE_ROWS_EVENT_V1*/
@@ -206,17 +200,17 @@ Format_description_event::Format_description_event(uint8_t binlog_ver,
       STOP_HEADER_LEN,
       uint8_t(binlog_ver == 1 ? 0 : ROTATE_HEADER_LEN),
       INTVAR_HEADER_LEN,
-      LOAD_HEADER_LEN,
+      0,
       /*
        Unused because the code for Slave log event was removed.
        (15th Oct. 2010)
       */
       0,
-      CREATE_FILE_HEADER_LEN,
+      0,
       APPEND_BLOCK_HEADER_LEN,
-      EXEC_LOAD_HEADER_LEN,
+      0,
       DELETE_FILE_HEADER_LEN,
-      NEW_LOAD_HEADER_LEN,
+      0,
       RAND_HEADER_LEN,
       USER_VAR_HEADER_LEN
     };
@@ -338,11 +332,10 @@ Format_description_event(const char* buf, unsigned int event_len,
   number_of_event_types=
    event_len - (LOG_EVENT_MINIMAL_HEADER_LEN + ST_COMMON_HEADER_LEN_OFFSET + 1);
 
-  const uint8_t *ubuf = reinterpret_cast<const uint8_t*>(buf);
   post_header_len.resize(number_of_event_types);
   post_header_len.insert(post_header_len.begin(),
-                         ubuf + ST_COMMON_HEADER_LEN_OFFSET + 1,
-                         (ubuf + ST_COMMON_HEADER_LEN_OFFSET + 1 +
+                         reinterpret_cast<const uint8_t*>(buf + ST_COMMON_HEADER_LEN_OFFSET + 1),
+                         reinterpret_cast<const uint8_t*>(buf + ST_COMMON_HEADER_LEN_OFFSET + 1 +
                           number_of_event_types));
 
   calc_server_version_split();
@@ -440,15 +433,10 @@ Format_description_event(const char* buf, unsigned int event_len,
     static const uint8_t perm[EVENT_TYPE_PERMUTATION_NUM]=
       {
         UNKNOWN_EVENT, START_EVENT_V3, QUERY_EVENT, STOP_EVENT, ROTATE_EVENT,
-        INTVAR_EVENT, LOAD_EVENT, SLAVE_EVENT, CREATE_FILE_EVENT,
-        APPEND_BLOCK_EVENT, EXEC_LOAD_EVENT, DELETE_FILE_EVENT,
-        NEW_LOAD_EVENT,
-        RAND_EVENT, USER_VAR_EVENT,
+        INTVAR_EVENT, 0, SLAVE_EVENT, 0, APPEND_BLOCK_EVENT, 0,
+        DELETE_FILE_EVENT, 0, RAND_EVENT, USER_VAR_EVENT,
         FORMAT_DESCRIPTION_EVENT,
         TABLE_MAP_EVENT,
-        PRE_GA_WRITE_ROWS_EVENT,
-        PRE_GA_UPDATE_ROWS_EVENT,
-        PRE_GA_DELETE_ROWS_EVENT,
         XID_EVENT,
         BEGIN_LOAD_QUERY_EVENT,
         EXECUTE_LOAD_QUERY_EVENT,
@@ -501,8 +489,9 @@ Incident_event::Incident_event(const char *buf, unsigned int event_len,
     incident= INCIDENT_NONE;
 
   }
+  else
+    incident= static_cast<enum_incident>(incident_number);
 
-  incident= static_cast<enum_incident>(incident_number);
   char const *ptr= buf + post_header_len;
   char const *const str_end= buf - common_header_len + event_len;
   uint8_t len= 0;                   // Assignment to keep compiler happy
@@ -528,7 +517,6 @@ Incident_event::Incident_event(const char *buf, unsigned int event_len,
     decoding. So that we just update the position and continue.
 
     @param buf                Contains the serialized event.
-    @param length             Length of the serialized event.
     @param descr_event        An FDE event, used to get the
                               following information
                               -binlog_version
@@ -707,15 +695,15 @@ Transaction_context_event(const char *buffer, unsigned int event_len,
   uint8_t server_uuid_len= (static_cast<unsigned int>
                            (data_head[ENCODED_SERVER_UUID_LEN_OFFSET]));
 
-  uint32_t write_set_len= 0;
+  uint16_t write_set_len= 0;
   memcpy(&write_set_len, data_head + ENCODED_WRITE_SET_ITEMS_OFFSET,
          sizeof(write_set_len));
-  write_set_len= le32toh(write_set_len);
+  write_set_len= le16toh(write_set_len);
 
-  uint32_t read_set_len= 0;
+  uint16_t read_set_len= 0;
   memcpy(&read_set_len, data_head + ENCODED_READ_SET_ITEMS_OFFSET,
          sizeof(read_set_len));
-  read_set_len= le32toh(read_set_len);
+  read_set_len= le16toh(read_set_len);
 
   encoded_snapshot_version_length= 0;
   memcpy(&encoded_snapshot_version_length,
@@ -724,7 +712,7 @@ Transaction_context_event(const char *buffer, unsigned int event_len,
   encoded_snapshot_version_length= le32toh(encoded_snapshot_version_length);
 
   memcpy(&thread_id, data_head + ENCODED_THREAD_ID_OFFSET, sizeof(thread_id));
-  thread_id= (uint32_t) le32toh(thread_id);
+  thread_id= (uint64_t) le64toh(thread_id);
   gtid_specified= (int8_t) data_head[ENCODED_GTID_SPECIFIED_OFFSET];
 
   const char *pos = data_head + TRANSACTION_CONTEXT_HEADER_LEN;
@@ -766,11 +754,11 @@ err:
             value.
 */
 const char* Transaction_context_event::read_data_set(const char *pos,
-                                                     uint32_t set_len,
+                                                     uint16_t set_len,
                                                      std::list<const char*> *set)
 {
   uint16_t len= 0;
-  for (uint32_t i= 0; i < set_len; i++)
+  for (int i= 0; i < set_len; i++)
   {
     memcpy(&len, pos, 2);
     len= le16toh(len);

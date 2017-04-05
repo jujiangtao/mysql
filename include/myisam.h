@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -14,7 +14,10 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-/* This file should be included when using myisam_funktions */
+/**
+  @file include/myisam.h
+  This file should be included when using myisam functions.
+*/
 
 #ifndef _myisam_h
 #define _myisam_h
@@ -367,7 +370,7 @@ typedef struct st_mi_check_param
   uint opt_sort_key,total_files,max_level;
   uint testflag, key_cache_block_size;
   uint16 language;
-  my_bool using_global_keycache, opt_lock_memory, opt_follow_links;
+  my_bool using_global_keycache, opt_follow_links;
   my_bool retry_repair, force_sort;
   char temp_filename[FN_REFLEN],*isam_file_name;
   MY_TMPDIR *tmpdir;
@@ -425,13 +428,12 @@ int chk_size(MI_CHECK *param, MI_INFO *info);
 int chk_key(MI_CHECK *param, MI_INFO *info);
 int chk_data_link(MI_CHECK *param, MI_INFO *info,int extend);
 int mi_repair(MI_CHECK *param, MI_INFO *info,
-	      char * name, int rep_quick, my_bool no_copy_stat);
-int mi_sort_index(MI_CHECK *param, MI_INFO *info, char * name,
-                  my_bool no_copy_stat);
+	      char * name, int rep_quick);
+int mi_sort_index(MI_CHECK *param, MI_INFO *info, char * name);
 int mi_repair_by_sort(MI_CHECK *param, MI_INFO *info,
-		      const char * name, int rep_quick, my_bool no_copy_stat);
+		      const char * name, int rep_quick);
 int mi_repair_parallel(MI_CHECK *param, MI_INFO *info,
-                       const char * name, int rep_quick, my_bool no_copy_stat);
+		      const char * name, int rep_quick);
 int change_to_newfile(const char * filename, const char * old_ext,
 		      const char * new_ext, myf myflags);
 int lock_file(MI_CHECK *param, File file, my_off_t start, int lock_type,

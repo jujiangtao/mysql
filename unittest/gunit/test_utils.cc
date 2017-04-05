@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2011, 2016 Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -21,7 +21,12 @@
 #include "rpl_handler.h"                        // delegates_init()
 #include "mysqld_thd_manager.h"                 // Global_THD_manager
 #include "opt_costconstantcache.h"              // optimizer cost constant cache
+#include "my_dbug.h"                            // DBUG_ASSERT
+#include "mysqld.h"                             // set_remaining_args
 #include "log.h"                                // query_logger
+
+#include "dd/impl/dictionary_impl.h"            // dd::Dictionary_impl
+
 
 namespace my_testing {
 
@@ -46,7 +51,6 @@ void setup_server_for_unit_tests()
   static char *my_name= strdup(my_progname);
   char *argv[] = { my_name,
                    const_cast<char*>("--secure-file-priv=NULL"),
-                   const_cast<char*>("--early_plugin_load=\"\""),
                    const_cast<char*>("--log_syslog=0"),
                    const_cast<char*>("--explicit_defaults_for_timestamp"),
                    const_cast<char*>("--datadir=" DATA_DIR),
@@ -64,6 +68,7 @@ void setup_server_for_unit_tests()
   // Initialize Query_logger last, to avoid spurious warnings to stderr.
   query_logger.init();
   init_optimizer_cost_module(false);
+  DD_initializer::SetUp();
 }
 
 void teardown_server_for_unit_tests()
@@ -74,6 +79,7 @@ void teardown_server_for_unit_tests()
   gtid_server_cleanup();
   query_logger.cleanup();
   delete_optimizer_cost_module();
+  DD_initializer::TearDown();
 }
 
 void Server_initializer::set_expected_error(uint val)
@@ -92,7 +98,7 @@ void Server_initializer::SetUp()
   m_thd->thread_stack= (char*) &stack_thd;
   m_thd->store_globals();
   lex_start(m_thd);
-  m_thd->set_current_time();
+
 }
 
 void Server_initializer::TearDown()
@@ -121,7 +127,8 @@ Mock_error_handler::~Mock_error_handler()
   }
   else
   {
-    EXPECT_GT(m_handle_called, 0);
+    EXPECT_GT(m_handle_called, 0)
+      << "Error " << m_expected_error << " expected.";
   }
 }
 
@@ -136,5 +143,24 @@ bool Mock_error_handler::handle_condition(THD *thd,
   return true;
 }
 
+void DD_initializer::SetUp()
+{
+  /*
+    With WL#6599, SELECT_LEX::add_table_to_list() will invoke
+    dd::Dictionary::is_system_view_name() method. E.g., the unit
+    test InsertDelayed would invoke above API. This requires us
+    to have a instance of dictionary_impl. We do not really need
+    to initialize dd::System_views for this test. Also, there can
+    be future test cases that need the same.
+  */
+  dd::Dictionary_impl::s_instance= new (std::nothrow)dd::Dictionary_impl();
+  DBUG_ASSERT(dd::Dictionary_impl::s_instance != nullptr);
+}
+
+void DD_initializer::TearDown()
+{
+  DBUG_ASSERT(dd::Dictionary_impl::s_instance != nullptr);
+  delete dd::Dictionary_impl::s_instance;
+}
 
 }  // namespace my_testing

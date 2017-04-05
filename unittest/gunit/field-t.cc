@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2011, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -393,7 +393,7 @@ Field_set *FieldTest::create_field_set(TYPELIB *tl)
               42,                               // len_arg
               NULL,                             // null_ptr_arg
               '\0',                             // null_bit_arg
-              Field::NONE,                      // unireg_check_arg
+              Field::NONE,                      // auto_flags_arg
               "f1",                             // field_name_arg
               1,                                // packlength_arg
               tl,                               // typelib_arg
@@ -528,16 +528,16 @@ public:
 };
 
 
-size_t mock_strnxfrm(const CHARSET_INFO *charset, uchar *, size_t dstlen, uint,
-                     const uchar *, size_t, uint)
+static size_t mock_strnxfrm(const CHARSET_INFO *charset, uchar *, size_t dstlen, uint,
+                            const uchar *, size_t, uint)
 {
   // CHARSET_INFO is not polymorphic, hence the abomination.
   static_cast<const Mock_charset*>(charset)->strnxfrm_called= true;
   return dstlen;
-};
+}
 
 
-void test_integer_field(Field *field)
+static void test_integer_field(Field *field)
 {
   uchar from[MAX_FIELD_WIDTH], expected[MAX_FIELD_WIDTH];
   const int pack_length= field->pack_length();

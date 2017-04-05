@@ -18,7 +18,6 @@
 CALL mtr.add_suppression("but MySQL is asking statistics for 2 columns. Have you mixed");
 
 --source include/have_innodb.inc
---source include/have_geometry.inc
 
 let MYSQLD_DATADIR= `select @@datadir`;
 
@@ -616,6 +615,9 @@ ALTER TABLE parent ADD SPATIAL INDEX idx1(id ASC);
 
 ALTER TABLE child ADD SPATIAL INDEX idx2(parent_id ASC);
 
+ANALYZE TABLE parent;
+ANALYZE TABLE child;
+
 SHOW CREATE TABLE parent;
 
 SHOW CREATE TABLE child;
@@ -642,6 +644,9 @@ CREATE TABLE child (id GEOMETRY NOT NULL, parent_id GEOMETRY NOT NULL) ENGINE=In
 ALTER TABLE parent ADD SPATIAL INDEX idx1(id ASC) ;
 
 ALTER TABLE child ADD SPATIAL INDEX idx2(parent_id ASC);
+
+ANALYZE TABLE parent;
+ANALYZE TABLE child;
 
 SHOW CREATE TABLE parent;
 

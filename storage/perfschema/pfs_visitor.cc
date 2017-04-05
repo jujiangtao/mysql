@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2016, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -21,8 +21,10 @@
 #include "pfs_user.h"
 #include "pfs_host.h"
 #include "pfs_account.h"
+#include "mysqld.h"
 #include "mysqld_thd_manager.h"
 #include "pfs_buffer_container.h"
+#include "sql_class.h"
 
 /**
   @file storage/perfschema/pfs_visitor.cc
@@ -30,7 +32,7 @@
 */
 
 /**
-  @addtogroup Performance_schema_buffers
+  @addtogroup performance_schema_buffers
   @{
 */
 
@@ -1251,6 +1253,65 @@ void PFS_connection_all_transaction_visitor::visit_thread(PFS_thread *pfs)
 }
 #endif
 
+PFS_connection_error_visitor
+::PFS_connection_error_visitor(PFS_error_class *klass, int error_index) : m_error_index(error_index)
+{
+  m_index= klass->m_event_name_index;
+  m_stat.reset();
+}
+
+PFS_connection_error_visitor::~PFS_connection_error_visitor()
+{}
+
+void PFS_connection_error_visitor::visit_global()
+{
+  m_stat.aggregate(global_error_stat.get_stat(m_error_index));
+}
+
+void PFS_connection_error_visitor::visit_host(PFS_host *pfs)
+{
+  const PFS_error_stat *event_name_array;
+  event_name_array= pfs->read_instr_class_errors_stats();
+
+  if(event_name_array == NULL)
+    return;
+
+  m_stat.aggregate(event_name_array->get_stat(m_error_index));
+}
+
+void PFS_connection_error_visitor::visit_user(PFS_user *pfs)
+{
+  const PFS_error_stat *event_name_array;
+  event_name_array= pfs->read_instr_class_errors_stats();
+
+  if(event_name_array == NULL)
+    return;
+
+  m_stat.aggregate(event_name_array->get_stat(m_error_index));
+}
+
+void PFS_connection_error_visitor::visit_account(PFS_account *pfs)
+{
+  const PFS_error_stat *event_name_array;
+  event_name_array= pfs->read_instr_class_errors_stats();
+  
+  if(event_name_array == NULL)
+    return;
+
+  m_stat.aggregate(event_name_array->get_stat(m_error_index));
+}
+
+void PFS_connection_error_visitor::visit_thread(PFS_thread *pfs)
+{
+  const PFS_error_stat *event_name_array;
+  event_name_array= pfs->read_instr_class_errors_stats();
+
+  if(event_name_array == NULL)
+    return;
+
+  m_stat.aggregate(event_name_array->get_stat(m_error_index));
+}
+
 PFS_connection_stat_visitor::PFS_connection_stat_visitor()
 {}
 
@@ -1347,9 +1408,9 @@ void PFS_connection_memory_visitor::visit_thread(PFS_thread *pfs)
 
 
 PFS_connection_status_visitor::
-PFS_connection_status_visitor(STATUS_VAR *status_vars) : m_status_vars(status_vars)
+PFS_connection_status_visitor(System_status_var *status_vars) : m_status_vars(status_vars)
 {
-  memset(m_status_vars, 0, sizeof(STATUS_VAR));
+  memset(m_status_vars, 0, sizeof(System_status_var));
 }
 
 PFS_connection_status_visitor::~PFS_connection_status_visitor()

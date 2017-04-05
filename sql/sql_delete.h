@@ -1,4 +1,4 @@
-/* Copyright (c) 2006, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2006, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -16,16 +16,15 @@
 #ifndef SQL_DELETE_INCLUDED
 #define SQL_DELETE_INCLUDED
 
-#include "my_base.h"     // ha_rows
-#include "sql_class.h"   // Query_result_interceptor
-#include "sql_cmd_dml.h" // Sql_cmd_dml
+#include "my_base.h"        // ha_rows
+#include "query_result.h"   // Query_result_interceptor
+#include "sql_cmd_dml.h"    // Sql_cmd_dml
 
 class THD;
 class Unique;
 struct TABLE_LIST;
 
 bool mysql_prepare_delete(THD *thd);
-bool mysql_delete(THD *thd, ha_rows rows);
 int mysql_multi_delete_prepare(THD *thd, uint *table_count);
 
 class Query_result_delete :public Query_result_interceptor
@@ -57,7 +56,14 @@ class Query_result_delete :public Query_result_interceptor
   bool error_handled;
 
 public:
-  Query_result_delete(TABLE_LIST *dt, uint num_of_tables);
+  Query_result_delete(THD *thd, TABLE_LIST *dt, uint num_of_tables_arg)
+  : Query_result_interceptor(thd),
+    delete_tables(dt), tempfiles(NULL), tables(NULL), deleted(0), found(0),
+    num_of_tables(num_of_tables_arg), error(0),
+    delete_table_map(0), delete_immediate(0),
+    transactional_table_map(0), non_transactional_table_map(0),
+    do_delete(0), non_transactional_deleted(false), error_handled(false)
+  {}
   ~Query_result_delete();
   virtual bool need_explain_interceptor() const { return true; }
   int prepare(List<Item> &list, SELECT_LEX_UNIT *u);

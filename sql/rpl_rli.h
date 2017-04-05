@@ -26,6 +26,7 @@
 #include "rpl_tblmap.h"        // table_mapping
 #include "rpl_utility.h"       // Deferred_log_events
 #include "sql_class.h"         // THD
+#include "rpl_slave_until_options.h"
 
 #include <string>
 #include <vector>
@@ -354,8 +355,6 @@ public:
 
   time_t last_master_timestamp;
 
-  void clear_until_condition();
-
   /**
     Reset the delay.
     This is used by RESET SLAVE to clear the delay.
@@ -396,52 +395,8 @@ public:
     UNTIL_SQL_VIEW_ID,
     UNTIL_DONE
   } until_condition;
-  char until_log_name[FN_REFLEN];
-  ulonglong until_log_pos;
-  /* extension extracted from log_name and converted to int */
-  ulong until_log_name_extension;
-  /**
-    The START SLAVE UNTIL SQL_*_GTIDS initializes until_sql_gtids.
-    Each time a gtid is about to be processed, we check if it is in the
-    set. Depending on until_condition, SQL thread is stopped before or
-    after applying the gtid.
-  */
-  Gtid_set until_sql_gtids;
-  /*
-    True if the current event is the first gtid event to be processed
-    after executing START SLAVE UNTIL SQL_*_GTIDS.
-  */
-  bool until_sql_gtids_first_event;
-  /* 
-     Cached result of comparison of until_log_name and current log name
-     -2 means unitialised, -1,0,1 are comarison results 
-  */
-  enum 
-  { 
-    UNTIL_LOG_NAMES_CMP_UNKNOWN= -2, UNTIL_LOG_NAMES_CMP_LESS= -1,
-    UNTIL_LOG_NAMES_CMP_EQUAL= 0, UNTIL_LOG_NAMES_CMP_GREATER= 1
-  } until_log_names_cmp_result;
 
   char cached_charset[6];
-
-  /*
-    View_id until which UNTIL_SQL_VIEW_ID condition will wait.
-  */
-  std::string until_view_id;
-  /*
-    Flag used to indicate that view_id identified by 'until_view_id'
-    was found on the current UNTIL_SQL_VIEW_ID condition.
-    It is set to false on the beginning of the UNTIL_SQL_VIEW_ID
-    condition, and set to true when view_id is found.
-  */
-  bool until_view_id_found;
-  /*
-    Flag used to indicate that commit event after view_id identified
-    by 'until_view_id' was found on the current UNTIL_SQL_VIEW_ID condition.
-    It is set to false on the beginning of the UNTIL_SQL_VIEW_ID
-    condition, and set to true when commit event after view_id is found.
-  */
-  bool until_view_id_commit_found;
 
   /*
     trans_retries varies between 0 to slave_transaction_retries and counts how
@@ -476,14 +431,14 @@ public:
   struct timespec last_clock;
 
   /**
-    Invalidates cached until_log_name and group_relay_log_name comparison
-    result. Should be called after any update of group_realy_log_name if
+    Invalidates cached until_log_name and event_relay_log_name comparison
+    result. Should be called after switch to next relay log if
     there chances that sql_thread is running.
   */
-  inline void notify_group_relay_log_name_update()
+  inline void notify_relay_log_change()
   {
-    if (until_condition==UNTIL_RELAY_POS)
-      until_log_names_cmp_result= UNTIL_LOG_NAMES_CMP_UNKNOWN;
+    if (until_condition == UNTIL_RELAY_POS)
+      dynamic_cast<Until_position *>(until_option)->notify_log_name_change();
   }
 
   /**
@@ -492,10 +447,10 @@ public:
   */
   inline void notify_group_master_log_name_update()
   {
-    if (until_condition==UNTIL_MASTER_POS)
-      until_log_names_cmp_result= UNTIL_LOG_NAMES_CMP_UNKNOWN;
+    if (until_condition == UNTIL_MASTER_POS)
+      dynamic_cast<Until_position *>(until_option)->notify_log_name_change();
   }
-  
+
   inline void inc_event_relay_log_pos()
   {
     event_relay_log_pos= future_event_relay_log_pos;
@@ -510,14 +465,6 @@ public:
   int wait_for_gtid_set(THD* thd, const Gtid_set* wait_gtid_set, longlong timeout);
 
   void close_temporary_tables();
-
-  /* Check if UNTIL condition is satisfied. See slave.cc for more. */
-  bool is_until_satisfied(THD *thd, Log_event *ev);
-  inline ulonglong until_pos()
-  {
-    return ((until_condition == UNTIL_MASTER_POS) ? group_master_log_pos :
-	    group_relay_log_pos);
-  }
 
   RPL_TABLE_LIST *tables_to_lock;           /* RBR: Tables to lock  */
   uint tables_to_lock_count;        /* RBR: Count of tables to lock */
@@ -775,12 +722,6 @@ public:
   /* MTS submode  */
   Mts_submode* current_mts_submode;
 
-  /*
-    Slave side local seq_no identifying a parent group that being
-    the scheduled transaction is considered to be dependent
-   */
-  ulonglong mts_last_known_parent_group_id;
-
   /* most of allocation in the coordinator rli is there */
   void init_workers(ulong);
 
@@ -1024,6 +965,7 @@ public:
   {
     strmake(event_relay_log_name,log_file_name, sizeof(event_relay_log_name)-1);
     set_event_relay_log_number(relay_log_name_to_number(log_file_name));
+    notify_relay_log_change();
   }
 
   uint get_event_relay_log_number() { return event_relay_log_number; }
@@ -1068,12 +1010,7 @@ public:
 
     @param delay_end The time when the delay shall end.
   */
-  void start_sql_delay(time_t delay_end)
-  {
-    mysql_mutex_assert_owner(&data_lock);
-    sql_delay_end= delay_end;
-    THD_STAGE_INFO(info_thd, stage_sql_thd_waiting_until_delay);
-  }
+  void start_sql_delay(time_t delay_end);
 
   /* Note that this is cast to uint32 in show_slave_status(). */
   time_t get_sql_delay() { return sql_delay; }
@@ -1184,6 +1121,36 @@ public:
     commit_order_mngr= mngr;
   }
 
+  /*
+    Following set function is required to initialize the 'until_option' during
+    MTS relay log recovery process.
+
+    Ideally initialization of 'until_option' is done through rli::init_until_option.
+    This init_until_option requires the main server thread object and it makes
+    use of the thd->lex->mi object to initialize the 'until_option'.
+
+    But MTS relay log recovery process happens before the main server comes
+    up at this time the THD object will not be available. Hence the following
+    set function does the initialization of 'until_option'.
+  */
+  void set_until_option(Until_option *option)
+  {
+    mysql_mutex_lock(&data_lock);
+    until_option= option;
+    mysql_mutex_unlock(&data_lock);
+  }
+
+  void clear_until_option()
+  {
+    mysql_mutex_lock(&data_lock);
+    if (until_option)
+    {
+      delete until_option;
+      until_option= NULL;
+    }
+    mysql_mutex_unlock(&data_lock);
+  }
+
   bool set_info_search_keys(Rpl_info_handler *to);
 
   /**
@@ -1290,17 +1257,18 @@ private:
   */
   int thd_tx_priority;
 
+  /* The object stores and handles START SLAVE UNTIL option */
+  Until_option *until_option;
 public:
   /*
-    The boolean is set to true when the binlog (rli_fake) or slave
-    (rli_slave) applier thread detaches any engine ha_data
-    it has dealt with at time of XA START processing.
-    The boolean is reset to false at the end of XA PREPARE,
-    XA COMMIT ONE PHASE for the binlog applier, and
-    at internal rollback of the slave applier at the same time with
-    the engine ha_data re-attachment.
+    The boolean is set to true when the binlog applier (rli_fake) thread
+    detaches any "native" engine transactions it has dealt with
+    at time of XA START processing.
+    The boolean is reset to false at the end of XA PREPARE
+    and XA COMMIT ONE PHASE, at the same time with the native transactions
+    re-attachment.
   */
-  bool is_engine_ha_data_detached;
+  bool is_native_trx_detached;
 
   void set_thd_tx_priority(int priority)
   {
@@ -1311,30 +1279,34 @@ public:
   {
     return thd_tx_priority;
   }
-  /**
-    Detaches the engine ha_data from THD. The fact
-    is memorized in @c is_engine_ha_detached flag.
 
-    @param  thd a reference to THD
-  */
-  void detach_engine_ha_data(THD *thd);
-  /**
-    Drops the engine ha_data flag when it is up.
-    The method is run at execution points of the engine ha_data
-    re-attachment.
-
-    @return true   when THD has detached the engine ha_data,
-            false  otherwise
-  */
-  bool unflag_detached_engine_ha_data()
+  const char *get_until_log_name();
+  my_off_t get_until_log_pos();
+  bool is_until_satisfied_at_start_slave()
   {
-    bool rc= false;
-
-    if (is_engine_ha_data_detached)
-      rc= !(is_engine_ha_data_detached= false); // return the old value
-
-    return rc;
+    return until_option != NULL && until_option->is_satisfied_at_start_slave();
   }
+  bool is_until_satisfied_before_dispatching_event(const Log_event *ev)
+  {
+    return until_option != NULL &&
+      until_option->is_satisfied_before_dispatching_event(ev);
+  }
+  bool is_until_satisfied_after_dispatching_event()
+  {
+    return until_option != NULL &&
+      until_option->is_satisfied_after_dispatching_event();
+  }
+  /**
+   Intialize until option object when starting slave.
+
+   @param[in] thd The thread object of current session.
+   @param[in] master_param the parameters of START SLAVE.
+
+   @return int
+     @retval 0      Succeeds to initialize until option object.
+     @retval <> 0   A defined error number is return if any error happens.
+ */
+  int init_until_option(THD *thd, const LEX_MASTER_INFO* master_param);
 };
 
 bool mysql_show_relaylog_events(THD* thd);

@@ -21,8 +21,10 @@
 #include <functional>
 #include <vector>
 
-#include "sql_select.h"
+#include "sql_optimizer.h"                      // Key_use_array
 #include "mem_root_array.h"
+#include "mysqld.h"                             // THR_MALLOC
+#include "current_thd.h"
 
 /**
    WL#5774 Decrease number of malloc's for normal DML queries.
@@ -168,7 +170,7 @@ public:
 
   virtual void SetUp()
   {
-    my_init_dynamic_array(&m_keyuse_dyn,
+    dynarray_unittest::my_init_dynamic_array(&m_keyuse_dyn,
                           PSI_NOT_INSTRUMENTED,
                           sizeof(Key_use), NULL,
                           num_elements, 64);

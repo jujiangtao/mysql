@@ -14,8 +14,8 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 
 IF(WIN32)
-  # CMake 2.8.12 is needed for Visual Studio 2013
-  CMAKE_MINIMUM_REQUIRED(VERSION 2.8.12)
+  # CMake 3.2.3 is needed for Visual Studio 2015 due to CMake bug 15552.
+  CMAKE_MINIMUM_REQUIRED(VERSION 3.2.3)
 ELSE()
   # There's a bug in unzipping prior to 2.8.2
   CMAKE_MINIMUM_REQUIRED(VERSION 2.8.2)
@@ -111,6 +111,63 @@ ELSEIF(NOT HAVE_CMAKE_BUILD_TYPE OR OLD_WITH_DEBUG)
   SET(OLD_WITH_DEBUG 0 CACHE INTERNAL "" FORCE)
 ENDIF()
 
+# Switch to 64 bit toolset on Windows (32 bit is default).
+# This is recommended as the 32 bit linker can run into address space issues.
+# Sadly there is no clean way to do it from CMake yet, so therefore this
+# slightly hackish way of doing it.
+IF(WIN32)
+  SET(CMAKE_GENERATOR_TOOLSET
+      "v140</PlatformToolset><PreferredToolArchitecture>x64</PreferredToolArchitecture><PlatformToolset>v140")
+ENDIF()
+
+# On Linux el6/el7 the default gcc is too old, see if devtoolset is installed.
+# We need to look for gcc before calling PROJECT below.
+OPTION(FORCE_UNSUPPORTED_COMPILER "Disable compiler version checks" OFF)
+MARK_AS_ADVANCED(WITHOUT_SERVER DISABLE_SHARED FORCE_UNSUPPORTED_COMPILER)
+IF(CMAKE_HOST_UNIX AND NOT FORCE_UNSUPPORTED_COMPILER
+    AND NOT CMAKE_C_COMPILER AND NOT CMAKE_CXX_COMPILER)
+  # Cannot INCLUDE(CMakeDetermineSystem) prior to PROJECT initialization below.
+  SET (ENV_CC "$ENV{CC}")
+  SET (ENV_CXX "$ENV{CXX}")
+  IF (ENV_CC STREQUAL "" AND ENV_CXX STREQUAL "")
+    FIND_PROGRAM(MY_UNAME uname /bin /usr/bin /usr/local/bin )
+    IF(MY_UNAME)
+      EXEC_PROGRAM(uname ARGS -s OUTPUT_VARIABLE MY_HOST_SYSTEM_NAME)
+      EXEC_PROGRAM(uname ARGS -r OUTPUT_VARIABLE MY_HOST_SYSTEM_VERSION)
+      IF(MY_HOST_SYSTEM_NAME MATCHES "Linux" AND
+          MY_HOST_SYSTEM_VERSION MATCHES "\\.el[67](uek)?\\.")
+        MESSAGE(STATUS
+          "This is ${MY_HOST_SYSTEM_NAME} version ${MY_HOST_SYSTEM_VERSION}")
+        FIND_PROGRAM(MY_GCC_COMPILER gcc)
+        IF (MY_GCC_COMPILER)
+          MESSAGE(STATUS "gcc is ${MY_GCC_COMPILER}")
+          MESSAGE(STATUS
+            "We probably need /opt/rh/devtoolset-3/root/usr/bin/gcc")
+          EXECUTE_PROCESS(COMMAND ${MY_GCC_COMPILER} -dumpversion
+            OUTPUT_VARIABLE MY_GCC_VERSION)
+          IF(MY_GCC_VERSION VERSION_LESS 4.8)
+            MESSAGE(STATUS "${MY_GCC_COMPILER} is version ${MY_GCC_VERSION}")
+            FIND_PROGRAM(ALTERNATIVE_GCC gcc
+              NO_DEFAULT_PATH
+              PATHS "/opt/rh/devtoolset-3/root/usr/bin")
+            FIND_PROGRAM(ALTERNATIVE_GPP g++
+              NO_DEFAULT_PATH
+              PATHS "/opt/rh/devtoolset-3/root/usr/bin")
+            IF(ALTERNATIVE_GCC AND ALTERNATIVE_GPP)
+              SET(CMAKE_C_COMPILER ${ALTERNATIVE_GCC})
+              SET(CMAKE_CXX_COMPILER ${ALTERNATIVE_GPP})
+              MESSAGE(STATUS "Using ${ALTERNATIVE_GCC}")
+              MESSAGE(STATUS "Using ${ALTERNATIVE_GPP}")
+            ELSE()
+              MESSAGE(WARNING "Could not find devtoolset gcc")
+            ENDIF()
+          ENDIF()
+        ENDIF()
+      ENDIF()
+    ENDIF()
+  ENDIF()
+ENDIF()
+
 # Optionally set project name, e.g.
 # foo.xcodeproj (mac) or foo.sln (windows)
 SET(MYSQL_PROJECT_NAME_DOCSTRING "MySQL project name")
@@ -142,6 +199,8 @@ IF(BUILD_CONFIG)
   INCLUDE(
   ${CMAKE_SOURCE_DIR}/cmake/build_configurations/${BUILD_CONFIG}.cmake)
 ENDIF()
+
+OPTION(INSTALL_STATIC_LIBRARIES "Install static libraries" ON)
 
 #cmake on 64bit windows/mac/solaris doesn't set CMAKE_SYSTEM_PROCESSOR correctly
 SET(MYSQL_MACHINE_TYPE ${CMAKE_SYSTEM_PROCESSOR})
@@ -202,6 +261,7 @@ INCLUDE(mysql_version)
 INCLUDE(libutils)
 INCLUDE(dtrace)
 INCLUDE(plugin)
+INCLUDE(component)
 INCLUDE(install_macros)
 INCLUDE(install_layout)
 INCLUDE(mysql_add_executable)
@@ -230,8 +290,6 @@ ENDIF()
 IF(NOT WITHOUT_SERVER)
   OPTION (WITH_UNIT_TESTS "Compile MySQL with unit tests" ON)
 ENDIF()
-OPTION(FORCE_UNSUPPORTED_COMPILER "Disable compiler version checks" OFF)
-MARK_AS_ADVANCED(WITHOUT_SERVER DISABLE_SHARED FORCE_UNSUPPORTED_COMPILER)
 
 
 include(CheckCSourceCompiles)
@@ -270,18 +328,21 @@ MACRO (MY_CHECK_CXX_COMPILER_FLAG FLAG RESULT)
   SET(CMAKE_REQUIRED_FLAGS "${SAVE_CMAKE_REQUIRED_FLAGS}")
 ENDMACRO()
 
-MACRO(MY_SANITIZER_CHECK SAN_OPT RESULT)
+MACRO(MY_SANITIZER_CHECK SAN_OPT ADD_OPTIMIZATION RESULT)
   MY_CHECK_C_COMPILER_FLAG("${SAN_OPT}" C_RESULT)
   MY_CHECK_CXX_COMPILER_FLAG("${SAN_OPT}" CXX_RESULT)
-  IF(C_RESULT AND CXX_RESULT)
+  IF(C_RESULT AND CXX_RESULT AND ${ADD_OPTIMIZATION})
     # We switch on basic optimization also for debug builds.
     # With optimization we may get some warnings, so we switch off -Werror
+    SET(OPT_FLAG " -O1 ")
+  ENDIF()
+  IF(C_RESULT AND CXX_RESULT)
     SET(CMAKE_C_FLAGS_DEBUG
-      "${CMAKE_C_FLAGS_DEBUG} ${SAN_OPT} -O1 -Wno-error -fPIC")
+      "${CMAKE_C_FLAGS_DEBUG} ${SAN_OPT} ${OPT_FLAG} -Wno-error -fPIC")
     SET(CMAKE_C_FLAGS_RELWITHDEBINFO
       "${CMAKE_C_FLAGS_RELWITHDEBINFO} ${SAN_OPT} -fPIC")
     SET(CMAKE_CXX_FLAGS_DEBUG
-      "${CMAKE_CXX_FLAGS_DEBUG} ${SAN_OPT} -O1 -Wno-error -fPIC")
+      "${CMAKE_CXX_FLAGS_DEBUG} ${SAN_OPT} ${OPT_FLAG} -Wno-error -fPIC")
     SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO
       "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} ${SAN_OPT} -fPIC")
     SET(${RESULT} 1)
@@ -292,7 +353,7 @@ ENDMACRO()
 
 OPTION(WITH_ASAN "Enable address sanitizer" OFF)
 IF(WITH_ASAN)
-  MY_SANITIZER_CHECK("-fsanitize=address" WITH_ASAN_OK)
+  MY_SANITIZER_CHECK("-fsanitize=address" TRUE WITH_ASAN_OK)
   IF(WITH_ASAN_OK)
     SET(HAVE_ASAN 1)
   ELSE()
@@ -303,21 +364,32 @@ ENDIF()
 OPTION(WITH_MSAN "Enable memory sanitizer" OFF)
 IF(WITH_MSAN)
   MY_SANITIZER_CHECK("-fsanitize=memory -fsanitize-memory-track-origins"
-                     WITH_MSAN_OK)
+    TRUE WITH_MSAN_OK)
   IF(NOT WITH_MSAN_OK)
     MESSAGE(FATAL_ERROR "Do not know how to enable memory sanitizer")
+  ELSE()
+    MESSAGE(WARNING "Memory sanitizer support is currently experimental.")
   ENDIF()
 ENDIF()
 
 OPTION(WITH_UBSAN "Enable undefined behavior sanitizer" OFF)
 IF(WITH_UBSAN)
-  MY_SANITIZER_CHECK("-fsanitize=undefined" WITH_UBSAN_OK)
+  MY_SANITIZER_CHECK("-fsanitize=undefined" FALSE WITH_UBSAN_OK)
   IF(NOT WITH_UBSAN_OK)
     MESSAGE(FATAL_ERROR
             "Do not know how to enable undefined behavior sanitizer")
   ELSE()
-    MESSAGE(WARNING
-            "Note that Undefined Behavior support is currently experimental.")
+    SET(HAVE_UBSAN 1)
+  ENDIF()
+ENDIF()
+
+OPTION(WITH_TSAN "Enable thread sanitizer" OFF)
+IF(WITH_TSAN)
+  MY_SANITIZER_CHECK("-fsanitize=thread" TRUE WITH_TSAN_OK)
+  IF(NOT WITH_TSAN_OK)
+    MESSAGE(FATAL_ERROR "Do not know how to enable thread sanitizer")
+  ELSE()
+    MESSAGE(WARNING "Thread sanitizer support is currently experimental.")
   ENDIF()
 ENDIF()
 
@@ -353,6 +425,33 @@ IF (ENABLE_GPROF AND NOT WIN32 AND NOT APPLE)
     "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -pg")
   SET(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO
     "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -pg")
+ENDIF()
+
+# Use gold if available and not explicitly disabled.
+IF(WIN32)
+  # Feature tests are expensive on Windows, and we only support MSVC,
+  # which does not use gold. Thus, default to off to save the test.
+  OPTION(USE_LD_GOLD "Use GNU gold linker" OFF)
+ELSE()
+  OPTION(USE_LD_GOLD "Use GNU gold linker" ON)
+ENDIF()
+IF (USE_LD_GOLD)
+  # These tests will give a false negative on some Clang versions,
+  # since there is no easy way in CMake to check for a linker flag
+  # without reimplementing CheckCXXSourceCompiles, and
+  # CheckCXXSourceCompiles tends to compile and link in two steps
+  # (which causes warning output about unused flags, which we interpret
+  # as the flag not existing).
+  MY_CHECK_C_COMPILER_FLAG("-fuse-ld=gold" C_RESULT)
+  MY_CHECK_CXX_COMPILER_FLAG("-fuse-ld=gold" CXX_RESULT)
+  IF (C_RESULT AND CXX_RESULT)
+    IF (HAVE_REAL_DTRACE_INSTRUMENTING)
+      MESSAGE(WARNING " gold is not compatible with DTrace - using regular ld")
+    ELSE()
+      SET(CMAKE_C_LINK_FLAGS "${CMAKE_C_LINK_FLAGS} -fuse-ld=gold")
+      SET(CMAKE_CXX_LINK_FLAGS "${CMAKE_CXX_LINK_FLAGS} -fuse-ld=gold")
+    ENDIF()
+  ENDIF()
 ENDIF()
 
 OPTION(ENABLED_LOCAL_INFILE
@@ -470,9 +569,11 @@ INCLUDE(configure.cmake)
 
 # Common defines and includes
 ADD_DEFINITIONS(-DHAVE_CONFIG_H)
+ADD_DEFINITIONS(-DRAPIDJSON_NO_SIZETYPEDEFINE)
 INCLUDE_DIRECTORIES(
   ${CMAKE_CURRENT_BINARY_DIR}/include
   ${CMAKE_SOURCE_DIR}/extra/rapidjson/include
+  ${CMAKE_SOURCE_DIR}/sql/histograms
   ${CMAKE_CURRENT_BINARY_DIR}/libbinlogevents/include
   ${CMAKE_SOURCE_DIR}/libbinlogevents/export)
 # Add bundled or system zlib.
@@ -490,30 +591,6 @@ IF(NOT WITHOUT_SERVER)
   MYSQL_CHECK_PROTOBUF()
 ENDIF()
 
-# Check for SYS_thread_selfid system call
-CHECK_C_SOURCE_COMPILES("
-#include <sys/types.h>
-#include <sys/syscall.h>
-#include <unistd.h>
-int main(int ac, char **av)
-{
-  unsigned long long tid = syscall(SYS_thread_selfid);
-  return (tid != 0 ? 0 : 1);
-}"
-HAVE_SYS_THREAD_SELFID)
-
-# Check for gettid() system call
-CHECK_C_SOURCE_COMPILES("
-#include <sys/types.h>
-#include <sys/syscall.h>
-#include <unistd.h>
-int main(int ac, char **av)
-{
-  unsigned long long tid = syscall(SYS_gettid);
-  return (tid != 0 ? 0 : 1);
-}"
-HAVE_SYS_GETTID)
-
 IF(CMAKE_SYSTEM_NAME MATCHES "Linux")
   # Check for pthread_setname_np
   CHECK_C_SOURCE_COMPILES("
@@ -526,29 +603,6 @@ IF(CMAKE_SYSTEM_NAME MATCHES "Linux")
   }"
   HAVE_PTHREAD_SETNAME_NP)
 ENDIF()
-
-# Check for pthread_getthreadid_np()
-CHECK_C_SOURCE_COMPILES("
-#include <pthread_np.h>
-int main(int ac, char **av)
-{
-  unsigned long long tid = pthread_getthreadid_np();
-  return (tid != 0 ? 0 : 1);
-}"
-HAVE_PTHREAD_GETTHREADID_NP)
-
-# Check for pthread_self() returning an integer type
-CHECK_C_SOURCE_COMPILES("
-#include <sys/types.h>
-#include <pthread.h>
-int main(int ac, char **av)
-{
-  unsigned long long tid = pthread_self();
-  return (tid != 0 ? 0 : 1);
-}"
-HAVE_INTEGER_PTHREAD_SELF
-FAIL_REGEX "warning: incompatible pointer to integer conversion"
-)
 
 #
 # Setup maintainer mode options by the end. Platform checks are
@@ -605,6 +659,11 @@ IF(WITH_UNIT_TESTS)
   IF(WITH_RAPID AND EXISTS ${CMAKE_SOURCE_DIR}/rapid/unittest/gunit)
     ADD_SUBDIRECTORY(rapid/unittest/gunit)
   ENDIF()
+ENDIF()
+
+IF(NOT WITHOUT_SERVER)
+  SET (MYSQLD_STATIC_COMPONENT_LIBS "" CACHE INTERNAL "")
+  CONFIGURE_COMPONENTS()
 ENDIF()
 
 ADD_SUBDIRECTORY(extra)
@@ -733,6 +792,8 @@ GET_PROPERTY(cwd_definitions DIRECTORY PROPERTY COMPILE_DEFINITIONS)
 MESSAGE(STATUS "COMPILE_DEFINITIONS: ${cwd_definitions}")
 MESSAGE(STATUS "CMAKE_C_FLAGS: ${CMAKE_C_FLAGS}")
 MESSAGE(STATUS "CMAKE_CXX_FLAGS: ${CMAKE_CXX_FLAGS}")
+MESSAGE(STATUS "CMAKE_C_LINK_FLAGS: ${CMAKE_C_LINK_FLAGS}")
+MESSAGE(STATUS "CMAKE_CXX_LINK_FLAGS: ${CMAKE_CXX_LINK_FLAGS}")
 IF(CMAKE_BUILD_TYPE AND CMAKE_GENERATOR MATCHES "Makefiles")
   STRING(TOUPPER "${CMAKE_BUILD_TYPE}" CMAKEBT)
   MESSAGE(STATUS "CMAKE_C_FLAGS_${CMAKEBT}: ${CMAKE_C_FLAGS_${CMAKEBT}}")

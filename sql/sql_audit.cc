@@ -15,12 +15,16 @@
 
 #include "sql_audit.h"
 
+#include "auto_thd.h"                           // Auto_THD
+#include "current_thd.h"
 #include "log.h"
+#include "error_handler.h"                      // Internal_error_handler
 #include "mysqld.h"                             // sql_statement_names
 #include "sql_class.h"                          // THD
 #include "sql_thd_internal_api.h"               // create_thd / destroy_thd
 #include "sql_plugin.h"                         // my_plugin_foreach
 #include "sql_rewrite.h"                        // mysql_rewrite_query
+#include "sql_parse.h"                          // check_stack_overrun
 
 /**
   @class Audit_error_handler
@@ -45,8 +49,8 @@ public:
   /**
     @brief Construction.
 
-    @param thd[in]             Current thread data.
-    @param warning_message[in] Warning message used when error has been
+    @param thd            Current thread data.
+    @param warning_message Warning message used when error has been
                                suppressed.
     @param active              Specifies whether the handler is active or not.
                                Optional parameter (default is true).
@@ -80,7 +84,7 @@ public:
   /**
     @brief Simplified custom handler.
 
-    @retval True on error rejection, otherwise false.
+    @returns True on error rejection, otherwise false.
   */
   virtual bool handle() = 0;
 
@@ -89,7 +93,7 @@ public:
 
     @see Internal_error_handler::handle_condition
 
-    @retval True on error rejection, otherwise false.
+    @returns True on error rejection, otherwise false.
   */
   virtual bool handle_condition(THD *thd,
                                 uint sql_errno,
@@ -113,7 +117,7 @@ public:
   /**
     @brief Warning print routine.
 
-    @param warn_msg[in] Warning message to be printed.
+    @param warn_msg Warning message to be printed.
   */
   virtual void print_warning(const char *warn_msg)
   {
@@ -123,9 +127,9 @@ public:
   /**
     @brief Convert the result value returned from the audit api.
 
-    @param result[in] Result value received from the plugin function.
+    @param result Result value received from the plugin function.
 
-    @retval Converted result value.
+    @returns Converted result value.
   */
   int get_result(int result)
   {
@@ -145,55 +149,6 @@ private:
 
   /** Handler has been activated. */
   const bool m_active;
-};
-
-/**
-  Self destroying THD.
-*/
-class Auto_THD : public Internal_error_handler
-{
-public:
-  /**
-    Create THD object and initialize internal variables.
-  */
-  Auto_THD() :
-    thd(create_thd(false, true, false, 0))
-  {
-    thd->push_internal_handler(this);
-  }
-
-  /**
-    Deinitialize THD.
-  */
-  virtual ~Auto_THD()
-  {
-    thd->pop_internal_handler();
-    destroy_thd(thd);
-  }
-
-  /**
-    Error handler that prints error message on to the error log.
-
-    @param thd       Current THD.
-    @param sql_errno Error id.
-    @param sqlstate  State of the SQL error.
-    @param level     Error level.
-    @param msg       Message to be reported.
-
-    @return This function always return false.
-  */
-  virtual bool handle_condition(THD *thd MY_ATTRIBUTE((unused)),
-            uint sql_errno MY_ATTRIBUTE((unused)),
-            const char* sqlstate MY_ATTRIBUTE((unused)),
-            Sql_condition::enum_severity_level *level MY_ATTRIBUTE((unused)),
-            const char* msg)
-  {
-    sql_print_error("%s", msg);
-    return false;
-  }
-
-  /** Thd associated with the object. */
-  THD *thd;
 };
 
 struct st_mysql_event_generic
@@ -271,6 +226,61 @@ void thd_get_audit_query(THD *thd, MYSQL_LEX_CSTRING *query,
   }
 }
 
+int mysql_audit_notify(THD *thd, mysql_event_general_subclass_t subclass,
+                       int error_code, const char *msg, size_t msg_len)
+{
+  mysql_event_general event;
+  char user_buff[MAX_USER_HOST_SIZE];
+
+  if (mysql_audit_acquire_plugins(thd, MYSQL_AUDIT_GENERAL_CLASS,
+                                  static_cast<unsigned long>(subclass)))
+    return 0;
+
+  event.event_subclass= subclass;
+  event.general_error_code= error_code;
+  event.general_thread_id= thd ? thd->thread_id() : 0;
+  if (thd)
+  {
+    Security_context *sctx= thd->security_context();
+
+    event.general_user.str= user_buff;
+    event.general_user.length= make_user_name(thd->security_context(), user_buff);
+    event.general_ip= sctx->ip();
+    event.general_host= sctx->host();
+    event.general_external_user= sctx->external_user();
+    event.general_rows= thd->get_stmt_da()->current_row_for_condition();
+    event.general_sql_command= sql_statement_names[thd->lex->sql_command];
+
+    thd_get_audit_query(thd, &event.general_query,
+                        (const charset_info_st**)&event.general_charset);
+
+    event.general_time= thd->query_start_in_secs();
+  }
+  else
+  {
+    static MYSQL_LEX_CSTRING empty={ C_STRING_WITH_LEN("") };
+
+    event.general_user.str= NULL;
+    event.general_user.length= 0;
+    event.general_ip= empty;
+    event.general_host= empty;
+    event.general_external_user= empty;
+    event.general_rows= 0;
+    event.general_sql_command= empty;
+    event.general_query.str= "";
+    event.general_query.length= 0;
+    event.general_time= my_time(0);
+  }
+
+  DBUG_EXECUTE_IF("audit_log_negative_general_error_code",
+                  event.general_error_code*= -1;);
+
+  event.general_command.str= msg;
+  event.general_command.length= msg_len;
+
+  return event_class_dispatch(thd, MYSQL_AUDIT_GENERAL_CLASS, &event);
+}
+
 /**
   @class Ignore_event_error_handler
 
@@ -283,9 +293,8 @@ public:
   /**
     @brief Construction.
 
-    @param thd[in]             Current thread data.
-    @param warning_message[in] Warning message used when error has been
-                               suppressed.
+    @param thd             Current thread data.
+    @param event_name
   */
   Ignore_event_error_handler(THD *thd, const char *event_name) :
     Audit_error_handler(thd, "Event '%s' cannot be aborted."),
@@ -306,7 +315,7 @@ public:
   /**
   @brief Custom warning print routine.
 
-  @param warn_msg[in] Placeholding warning message to be printed.
+  @param warn_msg Placeholding warning message to be printed.
   */
   virtual void print_warning(const char *warn_msg)
   {
@@ -320,54 +329,6 @@ private:
   */
   const char *m_event_name;
 };
-
-int mysql_audit_notify(THD *thd, mysql_event_general_subclass_t subclass,
-                       const char* subclass_name,
-                       int error_code, const char *msg, size_t msg_len)
-{
-  mysql_event_general event;
-  char user_buff[MAX_USER_HOST_SIZE];
-
-  DBUG_ASSERT(thd);
-
-  if (mysql_audit_acquire_plugins(thd, MYSQL_AUDIT_GENERAL_CLASS,
-                                  static_cast<unsigned long>(subclass)))
-    return 0;
-
-  event.event_subclass= subclass;
-  event.general_error_code= error_code;
-  event.general_thread_id= thd->thread_id();
-
-  Security_context *sctx= thd->security_context();
-
-  event.general_user.str= user_buff;
-  event.general_user.length= make_user_name(sctx, user_buff);
-  event.general_ip= sctx->ip();
-  event.general_host= sctx->host();
-  event.general_external_user= sctx->external_user();
-  event.general_rows= thd->get_stmt_da()->current_row_for_condition();
-  event.general_sql_command= sql_statement_names[thd->lex->sql_command];
-
-  thd_get_audit_query(thd, &event.general_query,
-                      (const charset_info_st**)&event.general_charset);
-
-  event.general_time= thd->start_time.tv_sec;
-
-  DBUG_EXECUTE_IF("audit_log_negative_general_error_code",
-                  event.general_error_code*= -1;);
-
-  event.general_command.str= msg;
-  event.general_command.length= msg_len;
-
-  if (subclass == MYSQL_AUDIT_GENERAL_ERROR)
-  {
-    Ignore_event_error_handler handler(thd, subclass_name);
-
-    return event_class_dispatch(thd, MYSQL_AUDIT_GENERAL_CLASS, &event);
-  }
-
-  return event_class_dispatch(thd, MYSQL_AUDIT_GENERAL_CLASS, &event);
-}
 
 int mysql_audit_notify(THD *thd, mysql_event_connection_subclass_t subclass,
                        const char* subclass_name, int errcode)
@@ -395,7 +356,10 @@ int mysql_audit_notify(THD *thd, mysql_event_connection_subclass_t subclass,
   event.ip.length= thd->security_context()->ip().length;
   event.database.str= thd->db().str;
   event.database.length= thd->db().length;
-  event.connection_type= thd->get_vio_type();
+
+  /* Keep this for backward compatibility. */
+  event.connection_type= subclass == MYSQL_AUDIT_CONNECTION_CONNECT ?
+                         thd->get_vio_type() : NO_VIO_TYPE;
 
   if (subclass == MYSQL_AUDIT_CONNECTION_DISCONNECT)
   {
@@ -476,8 +440,8 @@ inline bool generate_table_access_event(TABLE_LIST *table)
   Function that allows to use AUDIT_EVENT macro for setting subclass
   and subclass name values.
 
-  @param out_subclass      [out] Subclass value pointer to be set.
-  @param out_subclass_name [out] Subclass name pointer to be set.
+  @param [out] out_subclass      Subclass value pointer to be set.
+  @param [out] out_subclass_name Subclass name pointer to be set.
   @param subclass                Subclass that sets out_subclass value.
   @param subclass_name           Subclass name that sets out_subclass_name.
 */
@@ -502,10 +466,10 @@ inline static void set_table_access_subclass(
   @param subclass_name Subclass name.
   @param table         Table, for which table access event is to be generated.
 
-  @retval Abort execution on 'true', otherwise continue execution.
+  @return Abort execution on 'true', otherwise continue execution.
 */
-int mysql_audit_notify(THD *thd, mysql_event_table_access_subclass_t subclass,
-                       const char *subclass_name, TABLE_LIST *table)
+static int mysql_audit_notify(THD *thd, mysql_event_table_access_subclass_t subclass,
+                              const char *subclass_name, TABLE_LIST *table)
 {
   LEX_CSTRING str;
   mysql_event_table_access event;
@@ -597,6 +561,14 @@ int mysql_audit_table_access_notify(THD *thd, TABLE_LIST *table)
   for (; table; table= table->next_global)
   {
     /*
+      Do not generate audit logs for opening DD tables when processing I_S
+      queries.
+    */
+    if (table->referencing_view &&
+        table->referencing_view->is_system_view)
+      continue;
+
+    /*
       Update-Multi query can have several updatable tables as well as readable
       tables. This is taken from table->updating field, which holds info,
       whether table is being updated or not. table->updating holds invalid
@@ -661,24 +633,12 @@ int mysql_audit_notify(mysql_event_server_startup_subclass_t subclass,
                                     subclass_name, &event);
 }
 
-/**
-  Call audit plugins of SERVER SHUTDOWN audit class.
-
-  @param[in] thd       Client thread info or NULL.
-  @param[in] subclass  Type of the server abort audit event.
-  @param[in] reason    Reason code of the shutdown.
-  @param[in] exit_code Abort exit code.
-
-  @result Value returned is not taken into consideration by the server.
-*/
-int mysql_audit_notify(THD *thd,
-                       mysql_event_server_shutdown_subclass_t subclass,
+int mysql_audit_notify(mysql_event_server_shutdown_subclass_t subclass,
                        mysql_server_shutdown_reason_t reason, int exit_code)
 {
   mysql_event_server_shutdown event;
 
-  if (mysql_audit_acquire_plugins(thd,
-                                  MYSQL_AUDIT_SERVER_SHUTDOWN_CLASS,
+  if (mysql_audit_acquire_plugins(0, MYSQL_AUDIT_SERVER_SHUTDOWN_CLASS,
                                   static_cast<unsigned long>(subclass)))
     return 0;
 
@@ -686,21 +646,7 @@ int mysql_audit_notify(THD *thd,
   event.exit_code = exit_code;
   event.reason= reason;
 
-  return event_class_dispatch(thd, MYSQL_AUDIT_SERVER_SHUTDOWN_CLASS,
-                              &event);
-}
-
-int mysql_audit_notify(mysql_event_server_shutdown_subclass_t subclass,
-                       mysql_server_shutdown_reason_t reason, int exit_code)
-{
-  if (error_handler_hook == my_message_sql)
-  {
-    Auto_THD thd;
-
-    return mysql_audit_notify(thd.thd, subclass, reason, exit_code);
-  }
-
-  return mysql_audit_notify(NULL, subclass, reason, exit_code);
+  return event_class_dispatch(0, MYSQL_AUDIT_SERVER_SHUTDOWN_CLASS, &event);
 }
 
 /*
@@ -753,8 +699,9 @@ public:
   /**
     @brief Construction.
 
-    @param thd[in]     Current thread data.
-    @param command[in] Current command that the handler will be active against.
+    @param thd     Current thread data.
+    @param command Current command that the handler will be active against.
+    @param command_text
   */
   Ignore_command_start_error_handler(THD *thd,
                                      enum_server_command command,
@@ -779,7 +726,7 @@ public:
   /**
     @brief Custom warning print routine.
 
-    @param warn_msg[in] Placeholding warning message text.
+    @param warn_msg Placeholding warning message text.
   */
   virtual void print_warning(const char *warn_msg)
   {
@@ -954,6 +901,7 @@ static my_bool acquire_plugins(THD *thd, plugin_ref plugin, void *arg)
 
   @param[in]   thd              MySQL thread handle
   @param[in]   event_class      Audit event class
+  @param       event_subclass
 
   @details Ensure that audit plugins interested in given event
   class are locked by current thread.
@@ -1042,11 +990,7 @@ void mysql_audit_init_thd(THD *thd)
 /**
   Free thd variables used by Audit
   
-  @param[in] thd
-  @param[in] plugin
-  @param[in] arg
-
-  @retval FALSE Always  
+  @param thd Current thread
 */
 
 void mysql_audit_free_thd(THD *thd)
@@ -1060,7 +1004,7 @@ static PSI_mutex_key key_LOCK_audit_mask;
 
 static PSI_mutex_info all_audit_mutexes[]=
 {
-  { &key_LOCK_audit_mask, "LOCK_audit_mask", PSI_FLAG_GLOBAL}
+  { &key_LOCK_audit_mask, "LOCK_audit_mask", PSI_FLAG_GLOBAL, 0}
 };
 
 static void init_audit_psi_keys(void)
@@ -1255,6 +1199,7 @@ static my_bool plugins_dispatch_bool(THD *thd, plugin_ref plugin, void *arg)
   Distributes an audit event to plug-ins
   
   @param[in] thd
+  @param     event_class
   @param[in] event
 */
 
@@ -1277,6 +1222,29 @@ static int event_class_dispatch(THD *thd, mysql_event_class_t event_class,
   else
   {
     plugin_ref *plugins, *plugins_last;
+
+    /*
+      Audit events must be generated from a thread associated with a given
+      THD. During generation of the certain events, THD's state is modified
+      using the THD::push_internal_handler and THD::pop_internal_handler
+      functions, which are not multithread safe. Additionally, audit
+      notifications have associated thread id, which should remain the same
+      accross all session associated notifications.
+    */
+    DBUG_ASSERT(thd == current_thd);
+
+    /*
+      Does not allow infinite recursive calls that crash the server.
+      This happens when error is reported from within a plugin that already
+      is receiving error event (MYSQL_AUDIT_GENERAL_ERROR). This condition
+      breaks the recursion, when the stack size gets close to its minimal
+      value.
+    */
+    if (check_stack_overrun(thd, STACK_MIN_SIZE * 5,
+                            reinterpret_cast<uchar *>(&event_generic)))
+    {
+      return 0;
+    }
 
     /* Use the cached set of audit plugins */
     plugins= thd->audit_class_plugins.begin();

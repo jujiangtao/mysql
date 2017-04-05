@@ -1,4 +1,4 @@
-# Copyright (c) 2006, 2015, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2006, 2016, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -29,10 +29,24 @@ INCLUDE(${MYSQL_CMAKE_SCRIPT_DIR}/compile_flags.cmake)
 SET(MYSQL_INSTALL_COMPONENT Server)
 
 IF(NOT CMAKE_CROSSCOMPILING)
- ADD_EXECUTABLE(comp_err comp_err.c)
+ ADD_EXECUTABLE(comp_err comp_err.cc)
  TARGET_LINK_LIBRARIES(comp_err mysys mysys_ssl)
- SET_TARGET_PROPERTIES(comp_err PROPERTIES LINKER_LANGUAGE CXX)
 ENDIF()
+
+ADD_EXECUTABLE(comp_client_err
+  comp_client_err.cc ${CMAKE_SOURCE_DIR}/libmysql/errmsg.c)
+TARGET_LINK_LIBRARIES(comp_client_err mysys mysys_ssl)
+
+ADD_CUSTOM_COMMAND(OUTPUT ${PROJECT_BINARY_DIR}/include/mysqlclient_ername.h
+  COMMAND comp_client_err
+  --in_file=${PROJECT_SOURCE_DIR}/include/errmsg.h
+  --out_file=${PROJECT_BINARY_DIR}/include/mysqlclient_ername.h
+  DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/comp_client_err.cc)
+
+ADD_CUSTOM_TARGET(GenClientError
+                  ALL
+                  DEPENDS ${PROJECT_BINARY_DIR}/include/mysqlclient_ername.h)
+
 
 IF (BUILD_BUNDLED_LZ4)
   ADD_CONVENIENCE_LIBRARY(lz4_lib
@@ -50,10 +64,9 @@ ADD_CUSTOM_COMMAND(OUTPUT ${PROJECT_BINARY_DIR}/include/mysqld_error.h
                     --out-dir=${PROJECT_BINARY_DIR}/sql/share/
                     --header_file=${PROJECT_BINARY_DIR}/include/mysqld_error.h 
                     --name_file=${PROJECT_BINARY_DIR}/include/mysqld_ername.h
-                    --state_file=${PROJECT_BINARY_DIR}/include/sql_state.h
                     --in_file=${PROJECT_SOURCE_DIR}/sql/share/errmsg-utf8.txt
                    DEPENDS ${PROJECT_SOURCE_DIR}/sql/share/errmsg-utf8.txt
-                   ${CMAKE_CURRENT_SOURCE_DIR}/comp_err.c)
+                   ${CMAKE_CURRENT_SOURCE_DIR}/comp_err.cc)
 
 ADD_CUSTOM_TARGET(GenError
                   ALL
@@ -96,11 +109,15 @@ ENDIF()
 MYSQL_ADD_EXECUTABLE(replace replace.c)
 TARGET_LINK_LIBRARIES(replace mysys)
 
-MYSQL_ADD_EXECUTABLE(lz4_decompress lz4_decompress.cc)
-TARGET_LINK_LIBRARIES(lz4_decompress ${LZ4_LIBRARY})
+IF (BUILD_BUNDLED_LZ4)
+  MYSQL_ADD_EXECUTABLE(lz4_decompress lz4_decompress.cc)
+  TARGET_LINK_LIBRARIES(lz4_decompress ${LZ4_LIBRARY})
+ENDIF()
 
-MYSQL_ADD_EXECUTABLE(zlib_decompress zlib_decompress.cc)
-TARGET_LINK_LIBRARIES(zlib_decompress ${ZLIB_LIBRARY})
+IF (BUILD_BUNDLED_ZLIB)
+  MYSQL_ADD_EXECUTABLE(zlib_decompress zlib_decompress.cc)
+  TARGET_LINK_LIBRARIES(zlib_decompress ${ZLIB_LIBRARY})
+ENDIF()
 
 IF(WITH_INNOBASE_STORAGE_ENGINE)
 
@@ -109,38 +126,52 @@ IF(WITH_INNOBASE_STORAGE_ENGINE)
     INCLUDE_DIRECTORIES(${LZ4_INCLUDE_DIR})
   ENDIF()
 
+  IF(NOT MSVC)
+    IF(NOT CMAKE_CROSSCOMPILING)
+    CHECK_C_SOURCE_RUNS(
+    "#include<stdint.h>
+    int main()
+    {
+      unsigned char       a = 0;
+      unsigned char       b = 0;
+      unsigned char       c = 1;
+
+      __atomic_exchange(&a, &b,  &c, __ATOMIC_RELEASE);
+      __atomic_compare_exchange(&a, &b, &c, 0,
+                                __ATOMIC_RELEASE, __ATOMIC_ACQUIRE);
+      return(0);
+    }"
+    HAVE_IB_GCC_ATOMIC_COMPARE_EXCHANGE
+    )
+    ENDIF()
+
+    IF(HAVE_IB_GCC_ATOMIC_COMPARE_EXCHANGE)
+      ADD_DEFINITIONS(-DHAVE_IB_GCC_ATOMIC_COMPARE_EXCHANGE=1)
+    ENDIF()
+  ENDIF(NOT MSVC)
+
   # Add path to the InnoDB headers
   INCLUDE_DIRECTORIES(
+    ${CMAKE_SOURCE_DIR}/storage/innobase/
     ${CMAKE_SOURCE_DIR}/storage/innobase/include
     ${CMAKE_SOURCE_DIR}/sql
   )
+
   # We use the InnoDB code directly in case the code changes.
-  ADD_DEFINITIONS("-DUNIV_INNOCHECKSUM")
-  SET(INNOBASE_SOURCES
-      ../storage/innobase/buf/buf0checksum.cc
-      ../storage/innobase/ut/ut0crc32.cc
-      ../storage/innobase/ut/ut0ut.cc
-      ../storage/innobase/buf/buf0buf.cc
-      ../storage/innobase/page/page0zip.cc
-      ../storage/innobase/os/os0file.cc
-     )
-
-  # Avoid generating Hardware Capabilities due to crc32 instructions
-  IF(CMAKE_SYSTEM_NAME MATCHES "SunOS" AND
-     CMAKE_SYSTEM_PROCESSOR MATCHES "i386")
-    INCLUDE(${MYSQL_CMAKE_SCRIPT_DIR}/compile_flags.cmake)
-    MY_CHECK_CXX_COMPILER_FLAG("-Wa,-nH" HAVE_WA_NH)
-    IF(HAVE_WA_NH)
-      ADD_COMPILE_FLAGS(
-        ../storage/innobase/ut/ut0crc32.cc
-        COMPILE_FLAGS "-Wa,-nH"
-      )
-    ENDIF()
-  ENDIF()
-
-  MYSQL_ADD_EXECUTABLE(innochecksum innochecksum.cc ${INNOBASE_SOURCES})
-  TARGET_LINK_LIBRARIES(innochecksum mysys mysys_ssl ${LZ4_LIBRARY})
+  MYSQL_ADD_EXECUTABLE(innochecksum innochecksum.cc)
+  SET_TARGET_PROPERTIES(innochecksum
+    PROPERTIES COMPILE_DEFINITIONS "UNIV_LIBRARY")
+  TARGET_LINK_LIBRARIES(innochecksum
+    mysys_ssl innodb_zipdecompress ${LZ4_LIBRARY})
   ADD_DEPENDENCIES(innochecksum GenError)
+
+ MYSQL_ADD_EXECUTABLE(ibd2sdi ibd2sdi.cc)
+  SET_TARGET_PROPERTIES(ibd2sdi
+    PROPERTIES COMPILE_DEFINITIONS "UNIV_LIBRARY")
+  TARGET_LINK_LIBRARIES(ibd2sdi
+    mysys_ssl innodb_zipdecompress ${LZ4_LIBRARY})
+  ADD_DEPENDENCIES(ibd2sdi GenError)
+
 ENDIF()
 
 IF(UNIX)

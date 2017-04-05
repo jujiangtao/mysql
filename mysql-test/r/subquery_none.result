@@ -920,7 +920,7 @@ create table t1 (a float);
 select 10.5 IN (SELECT * from t1 LIMIT 1);
 ERROR 42000: This version of MySQL doesn't yet support 'LIMIT & IN/ALL/ANY/SOME subquery'
 select 10.5 IN (SELECT * from t1 LIMIT 1 UNION SELECT 1.5);
-ERROR HY000: Incorrect usage of UNION and LIMIT
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'UNION SELECT 1.5)' at line 1
 select 10.5 IN (SELECT * from t1 UNION SELECT 1.5 LIMIT 1);
 ERROR 42000: This version of MySQL doesn't yet support 'LIMIT & IN/ALL/ANY/SOME subquery'
 drop table t1;
@@ -995,7 +995,7 @@ ERROR 42S02: Table 'test.t1' doesn't exist
 CREATE TABLE t1 (a int, KEY(a));
 HANDLER t1 OPEN;
 HANDLER t1 READ a=((SELECT 1));
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'SELECT 1))' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '(SELECT 1))' at line 1
 HANDLER t1 CLOSE;
 drop table t1;
 create table t1 (a int);
@@ -1354,7 +1354,7 @@ id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered
 1	SIMPLE	t1	NULL	system	NULL	NULL	NULL	NULL	1	100.00	NULL
 Warnings:
 Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
-Note	1003	(/* select#1 */ select 'tttt' AS `s1` from dual)
+Note	1003	/* select#1 */ select 'tttt' AS `s1` from dual
 (select * from t1);
 s1
 tttt
@@ -3413,11 +3413,16 @@ SELECT sql_no_cache * FROM t1 WHERE NOT EXISTS
 i
 SELECT * FROM t1
 WHERE NOT EXISTS (((SELECT i FROM t1) UNION (SELECT i FROM t1)));
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'UNION (SELECT i FROM t1)))' at line 2
+i
 explain select ((select t11.i from t1 t11) union (select t12.i from t1 t12))
 from t1;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'union (select t12.i from t1 t12))
-from t1' at line 1
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	PRIMARY	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	no matching row in const table
+2	SUBQUERY	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	no matching row in const table
+3	UNION	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	no matching row in const table
+NULL	UNION RESULT	<union2,3>	NULL	ALL	NULL	NULL	NULL	NULL	NULL	NULL	Using temporary
+Warnings:
+Note	1003	/* select#1 */ select ((/* select#2 */ select NULL from `test`.`t1` `t11`) union (/* select#3 */ select NULL from `test`.`t1` `t12`)) AS `((select t11.i from t1 t11) union (select t12.i from t1 t12))` from `test`.`t1`
 explain select * from t1 where not exists
 ((select t11.i from t1 t11) union (select t12.i from t1 t12));
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
@@ -5189,12 +5194,12 @@ SELECT COUNT(*) FROM t1
 WHERE NOT EXISTS (SELECT 1 FROM t2 WHERE 1 = (SELECT MIN(t2.b) FROM t3))
 ORDER BY COUNT(*);
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	PRIMARY	t1	NULL	index	NULL	a	5	NULL	2	100.00	Using index
-2	DEPENDENT SUBQUERY	t2	NULL	ALL	NULL	NULL	NULL	NULL	2	100.00	Using where
+1	PRIMARY	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+2	SUBQUERY	t2	NULL	ALL	NULL	NULL	NULL	NULL	2	100.00	Using where
 3	DEPENDENT SUBQUERY	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	no matching row in const table
 Warnings:
 Note	1276	Field or reference 'test.t2.b' of SELECT #3 was resolved in SELECT #2
-Note	1003	/* select#1 */ select count(0) AS `COUNT(*)` from `test`.`t1` where (not(exists(/* select#2 */ select 1 from `test`.`t2` where (1 = (/* select#3 */ select min(`test`.`t2`.`b`) from `test`.`t3`)))))
+Note	1003	/* select#1 */ select count(0) AS `COUNT(*)` from `test`.`t1` where 1
 # should not crash the next statement
 SELECT COUNT(*) FROM t1
 WHERE NOT EXISTS (SELECT 1 FROM t2 WHERE 1 = (SELECT MIN(t2.b) FROM t3))
@@ -5691,34 +5696,43 @@ INSERT INTO t1 VALUES (1),(2);
 CREATE TABLE t2( a INT, b INT );
 SELECT * 
 FROM (SELECT a INTO @var FROM t1 WHERE a = 2) t1a;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'INTO @var FROM t1 WHERE a = 2) t1a' at line 2
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '(SELECT a INTO @var FROM t1 WHERE a = 2) t1a' at line 2
 SELECT * 
 FROM (SELECT a INTO OUTFILE 'file' FROM t1 WHERE a = 2) t1a;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'INTO OUTFILE 'file' FROM t1 WHERE a = 2) t1a' at line 2
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '(SELECT a INTO OUTFILE 'file' FROM t1 WHERE a = 2) t1a' at line 2
 SELECT * 
 FROM (SELECT a INTO DUMPFILE 'file' FROM t1 WHERE a = 2) t1a;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'INTO DUMPFILE 'file' FROM t1 WHERE a = 2) t1a' at line 2
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '(SELECT a INTO DUMPFILE 'file' FROM t1 WHERE a = 2) t1a' at line 2
 SELECT * FROM ( 
 SELECT 1 a 
 UNION 
 SELECT a INTO @var FROM t1 WHERE a = 2 
 ) t1a;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'INTO @var FROM t1 WHERE a = 2 
-) t1a' at line 4
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( 
+SELECT 1 a 
+UNION 
+SELECT a INTO @var FROM t1 WHERE a = 2 
+) t1a' at line 1
 SELECT * FROM ( 
 SELECT 1 a 
 UNION 
 SELECT a INTO OUTFILE 'file' FROM t1 WHERE a = 2 
 ) t1a;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'INTO OUTFILE 'file' FROM t1 WHERE a = 2 
-) t1a' at line 4
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( 
+SELECT 1 a 
+UNION 
+SELECT a INTO OUTFILE 'file' FROM t1 WHERE a = 2 
+) t1a' at line 1
 SELECT * FROM ( 
 SELECT 1 a 
 UNION 
 SELECT a INTO DUMPFILE 'file' FROM t1 WHERE a = 2 
 ) t1a;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'INTO DUMPFILE 'file' FROM t1 WHERE a = 2 
-) t1a' at line 4
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( 
+SELECT 1 a 
+UNION 
+SELECT a INTO DUMPFILE 'file' FROM t1 WHERE a = 2 
+) t1a' at line 1
 SELECT * FROM (SELECT a FROM t1 WHERE a = 2) t1a;
 a
 2
@@ -5748,23 +5762,23 @@ SELECT * FROM (SELECT 1 UNION SELECT 1) t1a;
 1
 1
 SELECT * FROM ((SELECT 1 a INTO @a)) t1a;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'INTO @a)) t1a' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '((SELECT 1 a INTO @a)) t1a' at line 1
 SELECT * FROM ((SELECT 1 a INTO OUTFILE 'file' )) t1a;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'INTO OUTFILE 'file' )) t1a' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '((SELECT 1 a INTO OUTFILE 'file' )) t1a' at line 1
 SELECT * FROM ((SELECT 1 a INTO DUMPFILE 'file' )) t1a;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'INTO DUMPFILE 'file' )) t1a' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '((SELECT 1 a INTO DUMPFILE 'file' )) t1a' at line 1
 SELECT * FROM (SELECT 1 a UNION (SELECT 1 a INTO @a)) t1a;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'INTO @a)) t1a' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '(SELECT 1 a UNION (SELECT 1 a INTO @a)) t1a' at line 1
 SELECT * FROM (SELECT 1 a UNION (SELECT 1 a INTO DUMPFILE 'file' )) t1a;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'INTO DUMPFILE 'file' )) t1a' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '(SELECT 1 a UNION (SELECT 1 a INTO DUMPFILE 'file' )) t1a' at line 1
 SELECT * FROM (SELECT 1 a UNION (SELECT 1 a INTO OUTFILE 'file' )) t1a;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'INTO OUTFILE 'file' )) t1a' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '(SELECT 1 a UNION (SELECT 1 a INTO OUTFILE 'file' )) t1a' at line 1
 SELECT * FROM (SELECT 1 a UNION ((SELECT 1 a INTO @a))) t1a;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'INTO @a))) t1a' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '(SELECT 1 a UNION ((SELECT 1 a INTO @a))) t1a' at line 1
 SELECT * FROM (SELECT 1 a UNION ((SELECT 1 a INTO DUMPFILE 'file' ))) t1a;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'INTO DUMPFILE 'file' ))) t1a' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '(SELECT 1 a UNION ((SELECT 1 a INTO DUMPFILE 'file' ))) t1a' at line 1
 SELECT * FROM (SELECT 1 a UNION ((SELECT 1 a INTO OUTFILE 'file' ))) t1a;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'INTO OUTFILE 'file' ))) t1a' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '(SELECT 1 a UNION ((SELECT 1 a INTO OUTFILE 'file' ))) t1a' at line 1
 SELECT * FROM (SELECT 1 a ORDER BY a) t1a;
 a
 1
@@ -5794,9 +5808,9 @@ ERROR 42000: You have an error in your SQL syntax; check the manual that corresp
 SELECT * FROM t1 JOIN ((t1 t1a UNION SELECT 1)) ON 1;
 ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'UNION SELECT 1)) ON 1' at line 1
 SELECT * FROM t1 JOIN  (t1 t1a)  t1a ON 1;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '  t1a ON 1' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 't1a ON 1' at line 1
 SELECT * FROM t1 JOIN ((t1 t1a)) t1a ON 1;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near ' t1a ON 1' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 't1a ON 1' at line 1
 SELECT * FROM t1 JOIN  (t1 t1a)  ON 1;
 a	a
 1	1
@@ -5834,7 +5848,7 @@ a	a
 1	1
 2	1
 SELECT * FROM (t1 JOIN (SELECT 1) t1a1 ON 1) t1a2;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near ' t1a2' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 't1a2' at line 1
 SELECT * FROM t1 WHERE a = ALL ( SELECT 1 );
 a
 1
@@ -5845,11 +5859,11 @@ SELECT * FROM t1 WHERE a = ANY ( SELECT 3 UNION SELECT 1 );
 a
 1
 SELECT * FROM t1 WHERE a = ANY ( SELECT 1 UNION SELECT 1 INTO @a);
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'INTO @a)' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 UNION SELECT 1 INTO @a)' at line 1
 SELECT * FROM t1 WHERE a = ANY ( SELECT 1 UNION SELECT 1 INTO OUTFILE 'file' );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'INTO OUTFILE 'file' )' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 UNION SELECT 1 INTO OUTFILE 'file' )' at line 1
 SELECT * FROM t1 WHERE a = ANY ( SELECT 1 UNION SELECT 1 INTO DUMPFILE 'file' );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'INTO DUMPFILE 'file' )' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 UNION SELECT 1 INTO DUMPFILE 'file' )' at line 1
 SELECT * FROM t1 WHERE a = ( SELECT 1 );
 a
 1
@@ -5857,29 +5871,29 @@ SELECT * FROM t1 WHERE a = ( SELECT 1 UNION SELECT 1 );
 a
 1
 SELECT * FROM t1 WHERE a = ( SELECT 1 INTO @a);
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'INTO @a)' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 INTO @a)' at line 1
 SELECT * FROM t1 WHERE a = ( SELECT 1 INTO OUTFILE 'file' );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'INTO OUTFILE 'file' )' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 INTO OUTFILE 'file' )' at line 1
 SELECT * FROM t1 WHERE a = ( SELECT 1 INTO DUMPFILE 'file' );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'INTO DUMPFILE 'file' )' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 INTO DUMPFILE 'file' )' at line 1
 SELECT * FROM t1 WHERE a = ( SELECT 1 UNION SELECT 1 INTO @a);
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'INTO @a)' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 UNION SELECT 1 INTO @a)' at line 1
 SELECT * FROM t1 WHERE a = ( SELECT 1 UNION SELECT 1 INTO OUTFILE 'file' );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'INTO OUTFILE 'file' )' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 UNION SELECT 1 INTO OUTFILE 'file' )' at line 1
 SELECT * FROM t1 WHERE a = ( SELECT 1 UNION SELECT 1 INTO DUMPFILE 'file' );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'INTO DUMPFILE 'file' )' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 UNION SELECT 1 INTO DUMPFILE 'file' )' at line 1
 SELECT ( SELECT 1 INTO @v );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'INTO @v )' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 INTO @v )' at line 1
 SELECT ( SELECT 1 INTO OUTFILE 'file' );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'INTO OUTFILE 'file' )' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 INTO OUTFILE 'file' )' at line 1
 SELECT ( SELECT 1 INTO DUMPFILE 'file' );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'INTO DUMPFILE 'file' )' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 INTO DUMPFILE 'file' )' at line 1
 SELECT ( SELECT 1 UNION SELECT 1 INTO @v );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'INTO @v )' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 UNION SELECT 1 INTO @v )' at line 1
 SELECT ( SELECT 1 UNION SELECT 1 INTO OUTFILE 'file' );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'INTO OUTFILE 'file' )' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 UNION SELECT 1 INTO OUTFILE 'file' )' at line 1
 SELECT ( SELECT 1 UNION SELECT 1 INTO DUMPFILE 'file' );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'INTO DUMPFILE 'file' )' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 UNION SELECT 1 INTO DUMPFILE 'file' )' at line 1
 SELECT ( SELECT a FROM t1 WHERE a = 1 ), a FROM t1;
 ( SELECT a FROM t1 WHERE a = 1 )	a
 1	1
@@ -5891,13 +5905,14 @@ SELECT ( SELECT a FROM t1 WHERE a = 1 UNION SELECT 1 ), a FROM t1;
 SELECT * FROM t2 WHERE (a, b) IN (SELECT a, b FROM t2);
 a	b
 SELECT 1 UNION ( SELECT 1 UNION SELECT 1 );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'UNION SELECT 1 )' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 UNION SELECT 1 )' at line 1
 ( SELECT 1 UNION SELECT 1 ) UNION SELECT 1;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'UNION SELECT 1 ) UNION SELECT 1' at line 1
+1
+1
 SELECT ( SELECT 1 UNION ( SELECT 1 UNION SELECT 1 ) );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'UNION SELECT 1 ) )' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 UNION SELECT 1 ) )' at line 1
 SELECT ( ( SELECT 1 UNION SELECT 1 ) UNION SELECT 1;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'UNION SELECT 1' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '' at line 1
 SELECT ( SELECT 1 UNION SELECT 1 UNION SELECT 1 );
 ( SELECT 1 UNION SELECT 1 UNION SELECT 1 )
 1
@@ -5905,7 +5920,7 @@ SELECT ((SELECT 1 UNION SELECT 1 UNION SELECT 1));
 ((SELECT 1 UNION SELECT 1 UNION SELECT 1))
 1
 SELECT * FROM ( SELECT 1 UNION ( SELECT 1 UNION SELECT 1 ) );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'UNION SELECT 1 ) )' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 UNION SELECT 1 ) )' at line 1
 SELECT * FROM ( ( SELECT 1 UNION SELECT 1 ) UNION SELECT 1 );
 ERROR 42000: Every derived table must have its own alias
 SELECT * FROM ( ( SELECT 1 UNION SELECT 1 ) UNION SELECT 1 ) a;
@@ -5915,21 +5930,25 @@ SELECT * FROM ( SELECT 1 UNION SELECT 1 UNION SELECT 1 ) a;
 1
 1
 SELECT * FROM t1 WHERE a =     ( SELECT 1 UNION ( SELECT 1 UNION SELECT 1 ) );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'UNION SELECT 1 ) )' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 UNION SELECT 1 ) )' at line 1
 SELECT * FROM t1 WHERE a = ALL ( SELECT 1 UNION ( SELECT 1 UNION SELECT 1 ) );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'UNION SELECT 1 ) )' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 UNION SELECT 1 ) )' at line 1
 SELECT * FROM t1 WHERE a = ANY ( SELECT 1 UNION ( SELECT 1 UNION SELECT 1 ) );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'UNION SELECT 1 ) )' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 UNION SELECT 1 ) )' at line 1
 SELECT * FROM t1 WHERE a IN    ( SELECT 1 UNION ( SELECT 1 UNION SELECT 1 ) );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'UNION SELECT 1 ) )' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 UNION SELECT 1 ) )' at line 1
 SELECT * FROM t1 WHERE a =     ( ( SELECT 1 UNION SELECT 1 )  UNION SELECT 1 );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'UNION SELECT 1 )' at line 1
+a
+1
 SELECT * FROM t1 WHERE a = ALL ( ( SELECT 1 UNION SELECT 1 )  UNION SELECT 1 );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'UNION SELECT 1 )  UNION SELECT 1 )' at line 1
+a
+1
 SELECT * FROM t1 WHERE a = ANY ( ( SELECT 1 UNION SELECT 1 )  UNION SELECT 1 );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'UNION SELECT 1 )  UNION SELECT 1 )' at line 1
+a
+1
 SELECT * FROM t1 WHERE a IN    ( ( SELECT 1 UNION SELECT 1 )  UNION SELECT 1 );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'UNION SELECT 1 )' at line 1
+a
+1
 SELECT * FROM t1 WHERE a =     ( SELECT 1 UNION SELECT 1 UNION SELECT 1 );
 a
 1
@@ -5943,18 +5962,18 @@ SELECT * FROM t1 WHERE a IN    ( SELECT 1 UNION SELECT 1 UNION SELECT 1 );
 a
 1
 SELECT * FROM t1 WHERE EXISTS ( SELECT 1 UNION SELECT 1 INTO @v );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'INTO @v )' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 UNION SELECT 1 INTO @v )' at line 1
 SELECT EXISTS(SELECT 1+1);
 EXISTS(SELECT 1+1)
 1
 SELECT EXISTS(SELECT 1+1 INTO @test);
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'INTO @test)' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '(SELECT 1+1 INTO @test)' at line 1
 SELECT * FROM t1 WHERE a IN ( SELECT 1 UNION SELECT 1 INTO @v );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'INTO @v )' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 UNION SELECT 1 INTO @v )' at line 1
 SELECT * FROM t1 WHERE EXISTS ( SELECT 1 INTO @v );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'INTO @v )' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 INTO @v )' at line 1
 SELECT * FROM t1 WHERE a IN ( SELECT 1 INTO @v );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'INTO @v )' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 INTO @v )' at line 1
 DROP TABLE t1, t2;
 CREATE TABLE t1 (a ENUM('rainbow'));
 INSERT INTO t1 VALUES (),(),(),(),();
@@ -7452,7 +7471,7 @@ WHERE ((SELECT i1 FROM t0 WHERE i1 = 7),
 (SELECT col_int_key,col_int_nokey FROM t2);
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	PRIMARY	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Impossible WHERE noticed after reading const tables
-4	DEPENDENT SUBQUERY	t2	NULL	index_subquery	col_int_key	col_int_key	5	func	4	100.00	Using where; Full scan on NULL key
+4	DEPENDENT SUBQUERY	t2	NULL	index_subquery	col_int_key	col_int_key	5	func	5	100.00	Using where; Full scan on NULL key
 3	SUBQUERY	t0	NULL	const	PRIMARY	PRIMARY	4	const	1	100.00	Using index
 2	SUBQUERY	t0	NULL	const	PRIMARY	PRIMARY	4	const	1	100.00	Using index
 Warnings:
@@ -7923,6 +7942,25 @@ Note	1003	/* select#1 */ select (/* select#2 */ select `test`.`t1`.`t1_id` from 
 SELECT (SELECT * FROM t1 GROUP BY t1_id ORDER BY t1_id DESC LIMIT 1) AS C FROM DUAL;
 C
 3
+# Without LIMIT, ORDER BY is removed from subquery
+EXPLAIN SELECT * FROM t1 GROUP BY t1_id ORDER BY t1_id DESC;
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t1	NULL	index	PRIMARY	PRIMARY	4	NULL	3	100.00	Using index
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t1`.`t1_id` AS `t1_id` from `test`.`t1` group by `test`.`t1`.`t1_id` desc order by `test`.`t1`.`t1_id` desc
+SELECT * FROM t1 GROUP BY t1_id ORDER BY t1_id DESC;
+t1_id
+3
+2
+1
+EXPLAIN SELECT (SELECT * FROM t1 GROUP BY t1_id ORDER BY t1_id DESC) AS C FROM DUAL;
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	PRIMARY	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+2	SUBQUERY	t1	NULL	index	PRIMARY	PRIMARY	4	NULL	3	100.00	Using index
+Warnings:
+Note	1003	/* select#1 */ select (/* select#2 */ select `test`.`t1`.`t1_id` from `test`.`t1` group by `test`.`t1`.`t1_id`) AS `C`
+SELECT (SELECT * FROM t1 GROUP BY t1_id ORDER BY t1_id DESC) AS C FROM DUAL;
+ERROR 21000: Subquery returns more than 1 row
 DROP TABLE t1;
 #
 # Bug#21251627 ASSERT `ORDER == __NULL && !SELECT_DISTINCT' AT JOIN::REPLACE_INDEX_SUBQUERY

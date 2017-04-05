@@ -15,15 +15,17 @@
 
 
 #include "transaction.h"
-#include "rpl_handler.h"
-#include "debug_sync.h"         // DEBUG_SYNC
-#include "auth_common.h"            // SUPER_ACL
-#include <pfs_transaction_provider.h>
-#include <mysql/psi/mysql_transaction.h>
-#include "rpl_context.h"
-#include "sql_class.h"
-#include "log.h"
-#include "binlog.h"
+
+#include "auth_common.h"      // SUPER_ACL
+#include "binlog.h"           // mysql_bin_log
+#include "debug_sync.h"       // DEBUG_SYNC
+#include "log.h"              // sql_print_warning
+#include "mysqld.h"           // opt_readonly
+#include "sql_class.h"        // THD
+
+#include "pfs_transaction_provider.h"
+#include "mysql/psi/mysql_transaction.h"
+
 
 /**
   Helper: Tell tracker (if any) that transaction ended.
@@ -219,13 +221,17 @@ bool trans_begin(THD *thd, uint flags)
 /**
   Commit the current transaction, making its changes permanent.
 
-  @param thd     Current thread
+  @param[in] thd                       Current thread
+  @param[in] ignore_global_read_lock   Allow commit to complete even if a
+                                       global read lock is active. This can be
+                                       used to allow changes to internal tables
+                                       (e.g. slave status tables, analyze table).
 
   @retval FALSE  Success
   @retval TRUE   Failure
 */
 
-bool trans_commit(THD *thd)
+bool trans_commit(THD *thd, bool ignore_global_read_lock)
 {
   int res;
   DBUG_ENTER("trans_commit");
@@ -236,7 +242,7 @@ bool trans_commit(THD *thd)
   thd->server_status&=
     ~(SERVER_STATUS_IN_TRANS | SERVER_STATUS_IN_TRANS_READONLY);
   DBUG_PRINT("info", ("clearing SERVER_STATUS_IN_TRANS"));
-  res= ha_commit_trans(thd, TRUE);
+  res= ha_commit_trans(thd, TRUE, ignore_global_read_lock);
   if (res == FALSE)
     if (thd->rpl_thd_ctx.session_gtids_ctx().
         notify_after_transaction_commit(thd))
@@ -275,13 +281,18 @@ bool trans_commit(THD *thd)
 
   @note A implicit commit does not releases existing table locks.
 
-  @param thd     Current thread
+  @param[in] thd                       Current thread
+  @param[in] ignore_global_read_lock   Allow commit to complete even if a
+                                       global read lock is active. This can be
+                                       used to allow changes to internal tables
+                                       (e.g. slave status tables, analyze table).
+
 
   @retval FALSE  Success
   @retval TRUE   Failure
 */
 
-bool trans_commit_implicit(THD *thd)
+bool trans_commit_implicit(THD *thd, bool ignore_global_read_lock)
 {
   bool res= FALSE;
   DBUG_ENTER("trans_commit_implicit");
@@ -304,7 +315,7 @@ bool trans_commit_implicit(THD *thd)
     thd->server_status&=
       ~(SERVER_STATUS_IN_TRANS | SERVER_STATUS_IN_TRANS_READONLY);
     DBUG_PRINT("info", ("clearing SERVER_STATUS_IN_TRANS"));
-    res= MY_TEST(ha_commit_trans(thd, TRUE));
+    res= MY_TEST(ha_commit_trans(thd, TRUE, ignore_global_read_lock));
   }
   else if (tc_log)
     tc_log->commit(thd, true);
@@ -427,13 +438,18 @@ bool trans_rollback_implicit(THD *thd)
         is based on counting locks, but if the user has used LOCK
         TABLES then that mechanism does not know to do the commit.
 
-  @param thd     Current thread
+  @param[in] thd                       Current thread
+  @param[in] ignore_global_read_lock   Allow commit to complete even if a
+                                       global read lock is active. This can be
+                                       used to allow changes to internal tables
+                                       (e.g. slave status tables, analyze table).
+
 
   @retval FALSE  Success
   @retval TRUE   Failure
 */
 
-bool trans_commit_stmt(THD *thd)
+bool trans_commit_stmt(THD *thd, bool ignore_global_read_lock)
 {
   DBUG_ENTER("trans_commit_stmt");
   int res= FALSE;
@@ -455,7 +471,7 @@ bool trans_commit_stmt(THD *thd)
 
   if (thd->get_transaction()->is_active(Transaction_ctx::STMT))
   {
-    res= ha_commit_trans(thd, FALSE);
+    res= ha_commit_trans(thd, FALSE, ignore_global_read_lock);
     if (! thd->in_active_multi_stmt_transaction())
       trans_reset_one_shot_chistics(thd);
   }
@@ -713,13 +729,22 @@ bool trans_rollback_to_savepoint(THD *thd, LEX_STRING name)
   if (thd->get_transaction()->xid_state()->check_has_uncommitted_xa())
     DBUG_RETURN(true);
 
+  if (ha_rollback_to_savepoint(thd, sv))
+    res= TRUE;
+  else if (thd->get_transaction()->cannot_safely_rollback(
+           Transaction_ctx::SESSION) &&
+           !thd->slave_thread)
+    thd->get_transaction()->push_unsafe_rollback_warnings(thd);
+
+  thd->get_transaction()->m_savepoints= sv;
+
   /**
     Checking whether it is safe to release metadata locks acquired after
     savepoint, if rollback to savepoint is successful.
-  
+
     Whether it is safe to release MDL after rollback to savepoint depends
     on storage engines participating in transaction:
-  
+
     - InnoDB doesn't release any row-locks on rollback to savepoint so it
       is probably a bad idea to release MDL as well.
     - Binary log implementation in some cases (e.g when non-transactional
@@ -731,24 +756,9 @@ bool trans_rollback_to_savepoint(THD *thd, LEX_STRING name)
       rollback ot it) can break replication, as concurrent DROP TABLES
       statements will be able to drop these tables before events will get
       into binary log,
-  
-    For backward-compatibility reasons we always release MDL if binary
-    logging is off.
   */
-  bool mdl_can_safely_rollback_to_savepoint=
-                (!(mysql_bin_log.is_open() && thd->variables.sql_log_bin) ||
-                 ha_rollback_to_savepoint_can_release_mdl(thd));
 
-  if (ha_rollback_to_savepoint(thd, sv))
-    res= TRUE;
-  else if (thd->get_transaction()->cannot_safely_rollback(
-           Transaction_ctx::SESSION) &&
-           !thd->slave_thread)
-    thd->get_transaction()->push_unsafe_rollback_warnings(thd);
-
-  thd->get_transaction()->m_savepoints= sv;
-
-  if (!res && mdl_can_safely_rollback_to_savepoint)
+  if (!res && ha_rollback_to_savepoint_can_release_mdl(thd))
     thd->mdl_context.rollback_to_savepoint(sv->mdl_savepoint);
 
   DBUG_RETURN(MY_TEST(res));

@@ -66,12 +66,14 @@ Callback_command_delegate::Field_value::Field_value(const longlong &num, bool un
 }
 
 Callback_command_delegate::Field_value::Field_value(const double num)
+  : is_unsigned(false)
 {
   value.v_double = num;
   is_string = false;
 }
 
 Callback_command_delegate::Field_value::Field_value(const decimal_t &decimal)
+  : is_unsigned(false)
 {
   value.v_decimal = decimal;
   is_string = false;
@@ -79,12 +81,14 @@ Callback_command_delegate::Field_value::Field_value(const decimal_t &decimal)
 
 
 Callback_command_delegate::Field_value::Field_value(const MYSQL_TIME &time)
+  : is_unsigned(false)
 {
   value.v_time = time;
   is_string = false;
 }
 
 Callback_command_delegate::Field_value::Field_value(const char *str, size_t length)
+  : is_unsigned(false)
 {
   value.v_string = new std::string(str, length);
   is_string = true;
@@ -104,11 +108,8 @@ Callback_command_delegate::Row_data::~Row_data()
 
 void Callback_command_delegate::Row_data::clear()
 {
-  std::vector<Field_value*>::iterator i = fields.begin();
-
-  for (; i != fields.end(); ++i)
-    ngs::free_object(*i);
-
+  for (std::vector<Field_value*>::iterator i = fields.begin(); i != fields.end(); ++i)
+    delete *i;
   fields.clear();
 }
 
@@ -134,7 +135,7 @@ void Callback_command_delegate::Row_data::clone_fields(const Row_data& other)
   std::vector<Field_value*>::const_iterator i = other.fields.begin();
   for (; i != other.fields.end(); ++i)
   {
-    this->fields.push_back((*i) ? ngs::allocate_object<Field_value>(**i) : NULL);
+    this->fields.push_back((*i) ? new Field_value(**i) : NULL);
   }
 }
 
@@ -216,7 +217,7 @@ int Callback_command_delegate::get_integer(longlong value)
   try
   {
     if (m_current_row)
-      m_current_row->fields.push_back(ngs::allocate_object<Field_value>(value));
+      m_current_row->fields.push_back(new Field_value(value));
   }
   catch (std::exception &e)
   {
@@ -231,7 +232,7 @@ int Callback_command_delegate::get_longlong(longlong value, uint unsigned_flag)
   try
   {
     if (m_current_row)
-      m_current_row->fields.push_back(ngs::allocate_object<Field_value>(value, unsigned_flag));
+      m_current_row->fields.push_back(new Field_value(value, unsigned_flag));
   }
   catch (std::exception &e)
   {
@@ -246,7 +247,7 @@ int Callback_command_delegate::get_decimal(const decimal_t * value)
   try
   {
     if (m_current_row)
-      m_current_row->fields.push_back(ngs::allocate_object<Field_value>(*value));
+      m_current_row->fields.push_back(new Field_value(*value));
   }
   catch (std::exception &e)
   {
@@ -261,7 +262,7 @@ int Callback_command_delegate::get_double(double value, uint32 decimals)
   try
   {
     if (m_current_row)
-      m_current_row->fields.push_back(ngs::allocate_object<Field_value>(value));
+      m_current_row->fields.push_back(new Field_value(value));
   }
   catch (std::exception &e)
   {
@@ -276,7 +277,7 @@ int Callback_command_delegate::get_date(const MYSQL_TIME * value)
   try
   {
     if (m_current_row)
-      m_current_row->fields.push_back(ngs::allocate_object<Field_value>(*value));
+      m_current_row->fields.push_back(new Field_value(*value));
   }
   catch (std::exception &e)
   {
@@ -291,7 +292,7 @@ int Callback_command_delegate::get_time(const MYSQL_TIME * value, uint decimals)
   try
   {
     if (m_current_row)
-      m_current_row->fields.push_back(ngs::allocate_object<Field_value>(*value));
+      m_current_row->fields.push_back(new Field_value(*value));
   }
   catch (std::exception &e)
   {
@@ -306,7 +307,7 @@ int Callback_command_delegate::get_datetime(const MYSQL_TIME * value, uint decim
   try
   {
     if (m_current_row)
-      m_current_row->fields.push_back(ngs::allocate_object<Field_value>(*value));
+      m_current_row->fields.push_back(new Field_value(*value));
   }
   catch (std::exception &e)
   {
@@ -322,7 +323,7 @@ int Callback_command_delegate::get_string(const char * const value, size_t lengt
   try
   {
     if (m_current_row)
-      m_current_row->fields.push_back(ngs::allocate_object<Field_value>(value, length));
+      m_current_row->fields.push_back(new Field_value(value, length));
   }
   catch (std::exception &e)
   {

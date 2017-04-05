@@ -15,6 +15,7 @@
 
 
 #include <gtest/gtest.h>
+#include <boost/scoped_ptr.hpp>
 #include <mysql/service_my_snprintf.h>
 
 #include "ngs_common/xdatetime.h"

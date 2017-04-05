@@ -13,6 +13,10 @@ You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
+/**
+  @file mysys_ssl/my_aes_openssl.cc
+*/
+
 #include <my_global.h>
 #include <m_string.h>
 #include <my_aes.h>
@@ -152,6 +156,7 @@ aes_error:
   return MY_AES_BAD_DATA;
 }
 
+
 int my_aes_decrypt(const unsigned char *source, uint32 source_length,
                    unsigned char *dest,
                    const unsigned char *key, uint32 key_length,
@@ -191,6 +196,7 @@ aes_error:
   return MY_AES_BAD_DATA;
 }
 
+
 int my_aes_get_size(uint32 source_length, my_aes_opmode opmode)
 {
   const EVP_CIPHER *cipher= aes_evp_type(opmode);
@@ -208,7 +214,7 @@ int my_aes_get_size(uint32 source_length, my_aes_opmode opmode)
 
   SYNOPSIS
   my_aes_needs_iv()
-  @param mode           encryption mode
+  @param opmode           encryption mode
 
   @retval TRUE   IV needed
   @retval FALSE  IV not needed

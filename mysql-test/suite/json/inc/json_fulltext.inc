@@ -88,9 +88,9 @@ analyze table messages;
 
 select * from messages order by id;
 
-# FULLTEXT INDEX can't be created on JSON column type.
---error ER_BAD_FT_COLUMN
-alter table messages add fulltext index (raw_message) ;
+## FULLTEXT INDEX can't be created on JSON column type.
+#--error ER_BAD_FT_COLUMN
+#alter table messages add fulltext index (raw_message) ;
 
 # Search the message subject and body
 select id from messages

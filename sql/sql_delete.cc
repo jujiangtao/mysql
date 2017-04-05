@@ -23,10 +23,15 @@
 
 #include "binlog.h"                   // mysql_bin_log
 #include "debug_sync.h"               // DEBUG_SYNC
+#include "error_handler.h"            // Ignore_error_handler
+#include "filesort.h"                 // Filesort
 #include "opt_explain.h"              // Modification_plan
+#include "opt_range.h"                // prune_partitions
 #include "opt_trace.h"                // Opt_trace_object
+#include "psi_memory_key.h"
 #include "records.h"                  // READ_RECORD
 #include "sql_base.h"                 // open_tables_for_query
+#include "sql_cache.h"                // query_cache
 #include "sql_optimizer.h"            // optimize_cond, substitute_gc
 #include "sql_resolver.h"             // setup_order
 #include "sql_select.h"               // free_underlaid_joins
@@ -35,7 +40,7 @@
 #include "uniques.h"                  // Unique
 #include "probes_mysql.h"
 #include "auth_common.h"
-
+#include "mysqld.h"                   // stage_init
 
 /**
   Implement DELETE SQL word.
@@ -138,8 +143,7 @@ bool Sql_cmd_delete::mysql_delete(THD *thd, ha_rows limit)
   const_cond= (!conds || conds->const_item());
   if (safe_update && const_cond)
   {
-    my_message(ER_UPDATE_WITHOUT_KEY_IN_SAFE_MODE,
-               ER(ER_UPDATE_WITHOUT_KEY_IN_SAFE_MODE), MYF(0));
+    my_error(ER_UPDATE_WITHOUT_KEY_IN_SAFE_MODE, MYF(0));
     DBUG_RETURN(TRUE);
   }
 
@@ -287,7 +291,7 @@ bool Sql_cmd_delete::mysql_delete(THD *thd, ha_rows limit)
       zero_rows= true;
     else if (conds != NULL)
     {
-      key_map keys_to_use(key_map::ALL_BITS), needed_reg_dummy;
+      Key_map keys_to_use(Key_map::ALL_BITS), needed_reg_dummy;
       QUICK_SELECT_I *qck;
       zero_rows= test_quick_select(thd, keys_to_use, 0, limit, safe_update,
                                    ORDER::ORDER_NOT_RELEVANT, &qep_tab,
@@ -325,8 +329,7 @@ bool Sql_cmd_delete::mysql_delete(THD *thd, ha_rows limit)
     if (safe_update && !using_limit)
     {
       free_underlaid_joins(thd, select_lex);
-      my_message(ER_UPDATE_WITHOUT_KEY_IN_SAFE_MODE,
-                 ER(ER_UPDATE_WITHOUT_KEY_IN_SAFE_MODE), MYF(0));
+      my_error(ER_UPDATE_WITHOUT_KEY_IN_SAFE_MODE, MYF(0));
       DBUG_RETURN(TRUE);
     }
   }
@@ -439,7 +442,7 @@ bool Sql_cmd_delete::mysql_delete(THD *thd, ha_rows limit)
     else
       will_batch= !table->file->start_bulk_delete();
 
-    table->mark_columns_needed_for_delete();
+    table->mark_columns_needed_for_delete(thd);
     if (thd->is_error())
       goto exit_without_my_ok;
 
@@ -533,8 +536,6 @@ bool Sql_cmd_delete::mysql_delete(THD *thd, ha_rows limit)
       /* Only handler knows how many records were really written */
       deleted= table->file->end_read_removal();
     }
-    if (thd->lex->is_ignore())
-      table->file->extra(HA_EXTRA_NO_IGNORE_DUP_KEY);
     THD_STAGE_INFO(thd, stage_end);
     end_read_record(&info);
     if (select_lex->active_options() & OPTION_QUICK)
@@ -666,9 +667,9 @@ bool Sql_cmd_delete::mysql_prepare_delete(THD *thd)
     tables.alias = table_list->alias;
 
     DBUG_ASSERT(!select->group_list.elements);
-    if (select->setup_ref_array(thd))
+    if (select->setup_base_ref_items(thd))
       DBUG_RETURN(true);                     /* purecov: inspected */
-    if (setup_order(thd, select->ref_pointer_array, &tables,
+    if (setup_order(thd, select->base_ref_items, &tables,
                     fields, all_fields, select->order_list.first))
       DBUG_RETURN(true);
   }
@@ -676,7 +677,7 @@ bool Sql_cmd_delete::mysql_prepare_delete(THD *thd)
   thd->want_privilege= want_privilege_saved;
   thd->mark_used_columns= mark_used_columns_saved;
 
-  if (setup_ftfuncs(select))
+  if (select->has_ft_funcs() && setup_ftfuncs(select))
     DBUG_RETURN(true);                       /* purecov: inspected */
 
   // check_key_in_view() may send an SQL note, but we only want it once.
@@ -708,8 +709,6 @@ bool Sql_cmd_delete::mysql_prepare_delete(THD *thd)
 /***************************************************************************
   Delete multiple tables from join 
 ***************************************************************************/
-
-#define MEM_STRIP_BUF_SIZE current_thd->variables.sortbuff_size
 
 extern "C" int refpos_order_cmp(const void* arg, const void *a,const void *b)
 {
@@ -795,17 +794,6 @@ int Sql_cmd_delete_multi::mysql_multi_delete_prepare(THD *thd,
   }
 
   DBUG_RETURN(false);
-}
-
-
-Query_result_delete::Query_result_delete(TABLE_LIST *dt,
-                                         uint num_of_tables_arg)
-  : delete_tables(dt), tempfiles(NULL), tables(NULL), deleted(0), found(0),
-    num_of_tables(num_of_tables_arg), error(0),
-    delete_table_map(0), delete_immediate(0),
-    transactional_table_map(0), non_transactional_table_map(0),
-    do_delete(0), non_transactional_deleted(false), error_handled(false)
-{
 }
 
 
@@ -919,7 +907,7 @@ bool Query_result_delete::initialize_tables(JOIN *join)
     if (thd->lex->is_ignore())
       table->file->extra(HA_EXTRA_IGNORE_DUP_KEY);
     table->prepare_for_position();
-    table->mark_columns_needed_for_delete();
+    table->mark_columns_needed_for_delete(thd);
     if (thd->is_error())
       DBUG_RETURN(true);
   }
@@ -950,7 +938,7 @@ bool Query_result_delete::initialize_tables(JOIN *join)
     if (!(*tempfile++= new Unique(refpos_order_cmp,
                                   (void *) table->file,
                                   table->file->ref_length,
-                                  MEM_STRIP_BUF_SIZE)))
+                                  thd->variables.sortbuff_size)))
       DBUG_RETURN(true);                     /* purecov: inspected */
     *(table_ptr++)= table;
   }
@@ -965,14 +953,6 @@ bool Query_result_delete::initialize_tables(JOIN *join)
 
 Query_result_delete::~Query_result_delete()
 {
-  for (TABLE_LIST *tbl_ref= delete_tables; tbl_ref;
-       tbl_ref= tbl_ref->next_local)
-  {
-    TABLE *table= tbl_ref->correspondent_table->updatable_base_table()->table;
-    if (thd->lex->is_ignore())
-      table->file->extra(HA_EXTRA_NO_IGNORE_DUP_KEY);
-  }
-
   for (uint counter= 0; counter < num_of_tables; counter++)
   {
     if (tempfiles && tempfiles[counter])
@@ -1428,7 +1408,7 @@ bool Sql_cmd_delete_multi::execute(THD *thd)
   }
 
   if (!thd->is_fatal_error &&
-      (del_result= new Query_result_delete(aux_tables, del_table_count)))
+      (del_result= new Query_result_delete(thd, aux_tables, del_table_count)))
   {
     DBUG_ASSERT(select_lex->having_cond() == NULL &&
                 !select_lex->order_list.elements &&

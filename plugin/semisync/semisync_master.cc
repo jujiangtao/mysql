@@ -16,9 +16,11 @@
 
 
 #include "semisync_master.h"
+#include "mysqld.h"                             // max_connections
 #if defined(ENABLED_DEBUG_SYNC)
 #include "debug_sync.h"
 #include "sql_class.h"
+#include "current_thd.h"
 #endif
 
 #define TIME_THOUSAND 1000
@@ -52,11 +54,7 @@ static int getWaitTime(const struct timespec& start_ts);
 
 static unsigned long long timespec_to_usec(const struct timespec *ts)
 {
-#ifdef HAVE_STRUCT_TIMESPEC
   return (unsigned long long) ts->tv_sec * TIME_MILLION + ts->tv_nsec / TIME_THOUSAND;
-#else
-  return ts->tv.i64 / 10;
-#endif
 }
 
 /*******************************************************************************
@@ -590,9 +588,10 @@ void ReplSemiSyncMaster::remove_slave()
     */
     if ((rpl_semi_sync_master_clients ==
          rpl_semi_sync_master_wait_for_slave_count - 1) &&
-        (!rpl_semi_sync_master_wait_no_slave || abort_loop))
+        (!rpl_semi_sync_master_wait_no_slave ||
+         connection_events_loop_aborted()))
     {
-      if (abort_loop)
+      if (connection_events_loop_aborted())
       {
         if (commit_file_name_inited_ && reply_file_name_inited_)
         {
@@ -720,7 +719,6 @@ int ReplSemiSyncMaster::commitTrx(const char* trx_wait_binlog_name,
 
   TranxNode* entry= NULL;
   mysql_cond_t* thd_cond= NULL;
-  bool is_semi_sync_trans= true;
   if (active_tranxs_ != NULL && trx_wait_binlog_name)
   {
     entry=
@@ -753,19 +751,14 @@ int ReplSemiSyncMaster::commitTrx(const char* trx_wait_binlog_name,
     }
 
     /* Calcuate the waiting period. */
-#ifndef HAVE_STRUCT_TIMESPEC
-      abstime.tv.i64 = start_ts.tv.i64 + (__int64)wait_timeout_ * TIME_THOUSAND * 10;
-      abstime.max_timeout_msec= (long)wait_timeout_;
-#else
-      abstime.tv_sec = start_ts.tv_sec + wait_timeout_ / TIME_THOUSAND;
-      abstime.tv_nsec = start_ts.tv_nsec +
-        (wait_timeout_ % TIME_THOUSAND) * TIME_MILLION;
-      if (abstime.tv_nsec >= TIME_BILLION)
-      {
-        abstime.tv_sec++;
-        abstime.tv_nsec -= TIME_BILLION;
-      }
-#endif /* _WIN32 */
+    abstime.tv_sec = start_ts.tv_sec + wait_timeout_ / TIME_THOUSAND;
+    abstime.tv_nsec = start_ts.tv_nsec +
+      (wait_timeout_ % TIME_THOUSAND) * TIME_MILLION;
+    if (abstime.tv_nsec >= TIME_BILLION)
+    {
+      abstime.tv_sec++;
+      abstime.tv_nsec -= TIME_BILLION;
+    }
 
     while (is_on())
     {
@@ -783,25 +776,6 @@ int ReplSemiSyncMaster::commitTrx(const char* trx_wait_binlog_name,
                                   kWho, reply_file_name_, (unsigned long)reply_file_pos_);
           break;
         }
-      }
-      /*
-        When code reaches here an Entry object may not be present in the
-        following scenario.
-
-        Semi sync was not enabled when transaction entered into ordered_commit
-        process. During flush stage, semi sync was not enabled and there was no
-        'Entry' object created for the transaction being committed and at a
-        later stage it was enabled. In this case trx_wait_binlog_name and
-        trx_wait_binlog_pos are set but the 'Entry' object is not present. Hence
-        dump thread will not wait for reply from slave and it will not update
-        reply_file_name. In such case the committing transaction should not wait
-        for an ack from slave and it should be considered as an async
-        transaction.
-      */
-      if (!entry)
-      {
-        is_semi_sync_trans= false;
-        goto l_end;
       }
 
       /* Let us update the info about the minimum binlog position of waiting
@@ -844,7 +818,7 @@ int ReplSemiSyncMaster::commitTrx(const char* trx_wait_binlog_name,
        * when replication has progressed far enough, we will release
        * these waiting threads.
        */
-      if (abort_loop && (rpl_semi_sync_master_clients ==
+      if (connection_events_loop_aborted() && (rpl_semi_sync_master_clients ==
                          rpl_semi_sync_master_wait_for_slave_count - 1) && is_on())
       {
         sql_print_warning("SEMISYNC: Forced shutdown. Some updates might "
@@ -905,7 +879,7 @@ int ReplSemiSyncMaster::commitTrx(const char* trx_wait_binlog_name,
 
 l_end:
     /* Update the status counter. */
-    if (is_on() && is_semi_sync_trans)
+    if (is_on())
       rpl_semi_sync_master_yes_transactions++;
     else
       rpl_semi_sync_master_no_transactions++;

@@ -24,9 +24,12 @@
 #include "key.h"                             // key_rec_cmp
 #include "sql_class.h"                       // THD
 #include "myisam.h"                          // MI_MAX_MSG_BUF
+#include "derror.h"
+#include "mysql/psi/mysql_memory.h"
+#include "template_utils.h"
 
 // In sql_class.cc:
-extern "C" int thd_binlog_format(const MYSQL_THD thd);
+int thd_binlog_format(const MYSQL_THD thd);
 
 /** operation names for the enum_part_operation. */
 static const char *opt_op_name[]= {"optimize", "analyze", "check", "repair",
@@ -38,11 +41,15 @@ static PSI_memory_key key_memory_Partition_admin;
 #ifdef HAVE_PSI_INTERFACE
 PSI_mutex_key key_partition_auto_inc_mutex;
 static PSI_memory_info all_partitioning_memory[]=
-{ { &key_memory_Partition_share, "Partition_share", 0},
+{
+  { &key_memory_Partition_share, "Partition_share", 0},
   { &key_memory_partition_sort_buffer, "partition_sort_buffer", 0},
-  { &key_memory_Partition_admin, "Partition_admin", 0} };
+  { &key_memory_Partition_admin, "Partition_admin", 0}
+};
 static PSI_mutex_info all_partitioning_mutex[]=
-{ { &key_partition_auto_inc_mutex, "Partiton_share::auto_inc_mutex", 0} };
+{
+  { &key_partition_auto_inc_mutex, "Partiton_share::auto_inc_mutex", 0, 0}
+};
 #endif
 
 void partitioning_init()
@@ -158,16 +165,15 @@ Partition_share::release_auto_inc_if_possible(THD *thd, TABLE_SHARE *table_share
 /**
   Get the partition name.
 
-  @param       part   Struct containing name and length
+  @param       arg    Struct containing name and length
   @param[out]  length Length of the name
 
   @return Partition name
 */
 
-static uchar *get_part_name_from_def(PART_NAME_DEF *part,
-                                     size_t *length,
-                                     my_bool not_used MY_ATTRIBUTE((unused)))
+static const uchar *get_part_name_from_def(const uchar *arg, size_t *length)
 {
+  const PART_NAME_DEF *part= pointer_cast<const PART_NAME_DEF*>(arg);
   *length= part->length;
   return part->partition_name;
 }
@@ -219,8 +225,8 @@ bool Partition_share::populate_partition_name_hash(partition_info *part_info)
     DBUG_RETURN(true);
   }
   if (my_hash_init(&partition_name_hash,
-                   system_charset_info, tot_names, 0, 0,
-                   (my_hash_get_key) get_part_name_from_def,
+                   system_charset_info, tot_names, 0,
+                   get_part_name_from_def,
                    my_free, HASH_UNIQUE,
                    key_memory_Partition_share))
   {
@@ -342,6 +348,41 @@ const char *Partition_share::get_partition_name(size_t part_id) const
   }
   return reinterpret_cast<const char*>(partition_names[part_id]);
 }
+
+
+int Partition_handler::truncate_partition()
+{
+  handler *file= get_handler();
+  if (!file)
+  {
+    return HA_ERR_WRONG_COMMAND;
+  }
+  DBUG_ASSERT(file->table_share->tmp_table != NO_TMP_TABLE ||
+              file->m_lock_type == F_WRLCK);
+  file->mark_trx_read_write();
+  return truncate_partition_low();
+}
+
+
+int Partition_handler::change_partitions(HA_CREATE_INFO *create_info,
+                                         const char *path,
+                                         ulonglong * const copied,
+                                         ulonglong * const deleted)
+{
+  handler *file= get_handler();
+  if (!file)
+  {
+    my_error(ER_ILLEGAL_HA, MYF(0), create_info->alias);
+    return HA_ERR_WRONG_COMMAND;
+  }
+  DBUG_ASSERT(file->table_share->tmp_table != NO_TMP_TABLE ||
+              file->m_lock_type != F_UNLCK);
+  file->mark_trx_read_write();
+  return change_partitions_low(create_info, path, copied, deleted);
+}
+
+
+
 /*
   Implementation of Partition_helper class.
 */
@@ -441,6 +482,22 @@ void Partition_helper::close_partitioning()
   DBUG_ASSERT(!m_ordered_rec_buffer);
   destroy_record_priority_queue();
 }
+
+
+void Partition_helper::lock_auto_increment()
+{
+  /* lock already taken */
+  if (m_auto_increment_safe_stmt_log_lock)
+    return;
+  DBUG_ASSERT(!m_auto_increment_lock);
+  if(m_table->s->tmp_table == NO_TMP_TABLE)
+  {
+    m_auto_increment_lock= true;
+    m_part_share->lock_auto_inc();
+  }
+}
+
+
 
 /****************************************************************************
                 MODULE change record
@@ -895,7 +952,7 @@ uint32 Partition_helper::ph_calculate_key_hash_value(Field **field_array)
   ulong nr2= 4;
   bool use_51_hash;
   use_51_hash= MY_TEST((*field_array)->table->part_info->key_algorithm ==
-                       partition_info::KEY_ALGORITHM_51);
+                       enum_key_algorithm::KEY_ALGORITHM_51);
 
   do
   {
@@ -993,7 +1050,7 @@ bool Partition_helper::print_partition_error(int error, myf errflag)
   if ((error == HA_ERR_NO_PARTITION_FOUND) &&
       ! (thd->lex->alter_info.flags & Alter_info::ALTER_TRUNCATE_PARTITION))
   {
-    m_part_info->print_no_partition_found(m_table);
+    m_part_info->print_no_partition_found(thd, m_table);
     // print_no_partition_found() reports an error, so we can just return here.
     DBUG_RETURN(false);
   }
@@ -1048,7 +1105,8 @@ bool Partition_helper::print_partition_error(int error, myf errflag)
                       m_table->s->table_name.str,
                       str.c_ptr_safe());
 
-      max_length= (MYSQL_ERRMSG_SIZE - strlen(ER(ER_ROW_IN_WRONG_PARTITION)));
+      max_length= (MYSQL_ERRMSG_SIZE -
+                   strlen(ER_THD(thd, ER_ROW_IN_WRONG_PARTITION)));
       if (str.length() >= max_length)
       {
         str.length(max_length-4);
@@ -1391,7 +1449,7 @@ int Partition_helper::copy_partitions(ulonglong * const copied,
 
   if (m_part_info->linear_hash_ind)
   {
-    if (m_part_info->part_type == HASH_PARTITION)
+    if (m_part_info->part_type == partition_type::HASH)
       set_linear_hash_mask(m_part_info, m_part_info->num_parts);
     else
       set_linear_hash_mask(m_part_info, m_part_info->num_subparts);
@@ -1449,7 +1507,7 @@ error:
 /**
   Check/fix misplaced rows.
 
-  @param part_id  Partition to check/fix.
+  @param read_part_id  Partition to check/fix.
   @param repair   If true, move misplaced rows to correct partition.
 
   @return Operation status.
@@ -1789,8 +1847,6 @@ err:
 
 /**
   Set table->read_set taking partitioning expressions into account.
-
-  @param[in]	rnd_init	True if called from rnd_init (else index_init).
 */
 
 inline
@@ -1869,8 +1925,8 @@ int Partition_helper::ph_rnd_init(bool scan)
   set_partition_read_set();
 
   /* Now we see what the index of our first important partition is */
-  DBUG_PRINT("info", ("m_part_info->read_partitions: 0x%lx",
-                      (long) m_part_info->read_partitions.bitmap));
+  DBUG_PRINT("info", ("m_part_info->read_partitions: %p",
+                      m_part_info->read_partitions.bitmap));
   part_id= m_part_info->get_first_used_partition();
   DBUG_PRINT("info", ("m_part_spec.start_part %d", part_id));
 
@@ -2094,36 +2150,6 @@ void Partition_helper::ph_position(const uchar *record)
   DBUG_DUMP("ref_out", m_handler->ref, m_handler->ref_length);
 
   DBUG_VOID_RETURN;
-}
-
-
-/**
-  Read row using position.
-
-  This is like rnd_next, but you are given a position to use to determine
-  the row. The position will be pointing to data of length handler::ref_length
-  that handler::ref was set by position(record). Tables clustered on primary
-  key usually use the full primary key as reference (like InnoDB). Heap based
-  tables usually returns offset in heap file (like MyISAM).
-
-  @param[out] buf  buffer that should be filled with record in MySQL format.
-  @param[in]  pos  position given as handler::ref when position() was called.
-
-  @return Operation status.
-    @retval    0  Success
-    @retval != 0  Error code
-*/
-
-int Partition_helper::ph_rnd_pos(uchar *buf, uchar *pos)
-{
-  uint part_id;
-  DBUG_ENTER("Partition_helper::ph_rnd_pos");
-
-  part_id= uint2korr(pos);
-  DBUG_ASSERT(part_id < m_tot_parts);
-  DBUG_ASSERT(m_part_info->is_partition_used(part_id));
-  m_last_part= part_id;
-  DBUG_RETURN(rnd_pos_in_part(part_id, buf, (pos + PARTITION_BYTES_IN_POS)));
 }
 
 
@@ -2365,105 +2391,6 @@ int Partition_helper::ph_index_init_setup(uint inx, bool sorted)
     bitmap_union(m_table->read_set, &m_part_info->full_part_field_set);
 
   DBUG_RETURN(0);
-}
-
-
-/**
-  Initialize handler before start of index scan.
-
-  index_init is always called before starting index scans (except when
-  starting through index_read_idx and using read_range variants).
-
-  @param inx     Index number.
-  @param sorted  Is rows to be returned in sorted order.
-
-  @return Operation status
-    @retval    0  Success
-    @retval != 0  Error code
-*/
-
-int Partition_helper::ph_index_init(uint inx, bool sorted)
-{
-  int error;
-  uint part_id= m_part_info->get_first_used_partition();
-  DBUG_ENTER("Partition_helper::ph_index_init");
-  m_handler->active_index= inx;
-
-  if (part_id == MY_BIT_NONE)
-  {
-    DBUG_RETURN(0);
-  }
-
-  if ((error= ph_index_init_setup(inx, sorted)))
-  {
-    DBUG_RETURN(error);
-  }
-  if ((error= init_record_priority_queue()))
-  {
-    destroy_record_priority_queue();
-    DBUG_RETURN(error);
-  }
-
-  for (/* part_id already set. */;
-       part_id < MY_BIT_NONE;
-       part_id= m_part_info->get_next_used_partition(part_id))
-  {
-    if ((error= index_init_in_part(part_id, inx, sorted)))
-      goto err;
-
-    DBUG_EXECUTE_IF("partition_fail_index_init", {
-      part_id++;
-      error= HA_ERR_NO_PARTITION_FOUND;
-      goto err;
-    });
-  }
-err:
-  if (error)
-  {
-    /* End the previously initialized indexes. */
-    uint j;
-    for (j= m_part_info->get_first_used_partition();
-         j < part_id;
-         j= m_part_info->get_next_used_partition(j))
-    {
-      (void) index_end_in_part(j);
-    }
-    destroy_record_priority_queue();
-  }
-  DBUG_RETURN(error);
-}
-
-
-/**
-  End of index scan.
-
-  index_end is called at the end of an index scan to clean up any
-  things needed to clean up.
-
-  @return Operation status.
-    @retval    0  Success
-    @retval != 0  Error code
-*/
-
-int Partition_helper::ph_index_end()
-{
-  int error= 0;
-  uint i;
-  DBUG_ENTER("Partition_helper::ph_index_end");
-
-  m_part_spec.start_part= NO_CURRENT_PART_ID;
-  m_ref_usage= REF_NOT_USED;
-  for (i= m_part_info->get_first_used_partition();
-       i < MY_BIT_NONE;
-       i= m_part_info->get_next_used_partition(i))
-  {
-    int tmp;
-    if ((tmp= index_end_in_part(i)))
-      error= tmp;
-  }
-  destroy_record_priority_queue();
-  m_handler->active_index= MAX_KEY;
-  DBUG_RETURN(error);
 }
 
 
@@ -3037,7 +2964,7 @@ int Partition_helper::partition_scan_set_up(uchar * buf, bool idx_read_flag)
   perform any sort.
 
   @param[out] buf        Read row in MySQL Row Format.
-  @param[in]  next_same  Called from index_next_same.
+  @param[in]  is_next_same  Called from index_next_same.
 
   @return Operation status.
     @retval HA_ERR_END_OF_FILE  End of scan
@@ -3473,7 +3400,7 @@ int Partition_helper::handle_ordered_index_scan_key_not_found()
   Common routine to handle index_next with ordered results.
 
   @param[out] buf        Read row in MySQL Row Format.
-  @param[in]  next_same  Called from index_next_same.
+  @param[in]  is_next_same  Called from index_next_same.
 
   @return Operation status.
     @retval HA_ERR_END_OF_FILE  End of scan
@@ -3756,24 +3683,3 @@ Partition_helper::get_dynamic_partition_info_low(ha_statistics *stat_info,
   }
   bitmap_copy(&m_part_info->read_partitions, &m_part_info->lock_partitions);
 }
-
-
-/**
-  Get checksum for table.
-
-  @return Checksum or 0 if not supported, which also may be a correct checksum!.
-*/
-
-ha_checksum Partition_helper::ph_checksum() const
-{
-  ha_checksum sum= 0;
-  if ((m_handler->ha_table_flags() & HA_HAS_CHECKSUM))
-  {
-    for (uint i= 0; i < m_tot_parts; i++)
-    {
-      sum+= checksum_in_part(i);
-    }
-  }
-  return sum;
-}
-

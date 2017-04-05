@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2014, 2015, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2014, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -38,16 +38,13 @@ protected:
     // for the storage engine
     LEX_STRING engine_name= {C_STRING_WITH_LEN("InnoDB")};
 
-    hton2plugin[0]= new st_plugin_int();
-    hton2plugin[0]->name= engine_name;
-
+    insert_hton2plugin(0, new st_plugin_int())->name= engine_name;
     initializer.SetUp();
   }
   virtual void TearDown()
   {
     initializer.TearDown();
-    delete hton2plugin[0];
-    hton2plugin[0]= NULL;
+    delete remove_hton2plugin(0);
   }
 
   THD *thd() { return initializer.thd(); }
@@ -59,13 +56,13 @@ protected:
   Tests for temporary tables that are not dependent on hard coded cost
   constants.
 */
-void test_tmptable_cost(const Cost_model_server *cm,
-                        Cost_model_server::enum_tmptable_type tmp_table_type)
+static void test_tmptable_cost(const Cost_model_server *cm,
+                               Cost_model_server::enum_tmptable_type tmp_table_type)
 {
   const uint rows= 3;
 
   // Cost of inserting and reading data in a temporary table
-  EXPECT_EQ(cm->tmptable_readwrite_cost(tmp_table_type, rows, rows), 
+  EXPECT_EQ(cm->tmptable_readwrite_cost(tmp_table_type, rows, rows),
             rows * cm->tmptable_readwrite_cost(tmp_table_type, 1.0, 1.0));
 }
 

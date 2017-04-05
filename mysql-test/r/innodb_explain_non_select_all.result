@@ -1,3 +1,5 @@
+select @@global.show_compatibility_56 into @show_compatibility_56_save;
+set @@global.show_compatibility_56=ON;
 set optimizer_switch='semijoin=on,materialization=on,firstmatch=on,loosescan=on,index_condition_pushdown=on,mrr=on,mrr_cost_based=off';
 set @save_storage_engine= @@session.default_storage_engine;
 set session default_storage_engine = InnoDB;
@@ -2686,6 +2688,8 @@ Warnings:
 Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 # Status of EXPLAIN EXTENDED query
 Variable_name	Value
+Handler_read_key	4
+Handler_read_next	3
 FLUSH STATUS;
 FLUSH TABLES;
 EXPLAIN EXTENDED SELECT * FROM v1           WHERE a > 0;
@@ -2697,15 +2701,19 @@ Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select `test`.`t11`.`a` AS `a`,`test`.`t12`.`a` AS `b` from `test`.`t1` `t11` join `test`.`t1` `t12` where (`test`.`t11`.`a` > 0)
 # Status of EXPLAIN EXTENDED "equivalent" SELECT query execution
 Variable_name	Value
+Handler_read_key	4
+Handler_read_next	3
 # Status of "equivalent" SELECT query execution:
 Variable_name	Value
 Handler_read_first	2
-Handler_read_key	2
+Handler_read_key	6
+Handler_read_next	3
 Handler_read_rnd_next	6
 # Status of testing query execution:
 Variable_name	Value
 Handler_read_first	2
-Handler_read_key	3
+Handler_read_key	7
+Handler_read_next	3
 Handler_read_rnd	1
 Handler_read_rnd_next	9
 Handler_write	2
@@ -2730,6 +2738,8 @@ Warnings:
 Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 # Status of EXPLAIN EXTENDED query
 Variable_name	Value
+Handler_read_key	4
+Handler_read_next	3
 FLUSH STATUS;
 FLUSH TABLES;
 EXPLAIN EXTENDED SELECT * FROM t1, v1              WHERE t1.a = v1.a;
@@ -2742,15 +2752,19 @@ Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a`,`test`.`t11`.`a` AS `a`,`test`.`t12`.`a` AS `b` from `test`.`t1` join `test`.`t1` `t11` join `test`.`t1` `t12` where (`test`.`t11`.`a` = `test`.`t1`.`a`)
 # Status of EXPLAIN EXTENDED "equivalent" SELECT query execution
 Variable_name	Value
+Handler_read_key	4
+Handler_read_next	3
 # Status of "equivalent" SELECT query execution:
 Variable_name	Value
 Handler_read_first	3
-Handler_read_key	3
+Handler_read_key	7
+Handler_read_next	3
 Handler_read_rnd_next	9
 # Status of testing query execution:
 Variable_name	Value
 Handler_read_first	5
-Handler_read_key	7
+Handler_read_key	11
+Handler_read_next	3
 Handler_read_rnd	2
 Handler_read_rnd_next	19
 Handler_update	1
@@ -2778,6 +2792,8 @@ Warnings:
 Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 # Status of EXPLAIN EXTENDED query
 Variable_name	Value
+Handler_read_key	4
+Handler_read_next	2
 FLUSH STATUS;
 FLUSH TABLES;
 EXPLAIN EXTENDED SELECT * FROM v1 WHERE a < 4;
@@ -2788,17 +2804,19 @@ Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` where (`test`.`t1`.`a` < 4)
 # Status of EXPLAIN EXTENDED "equivalent" SELECT query execution
 Variable_name	Value
+Handler_read_key	4
+Handler_read_next	2
 # Status of "equivalent" SELECT query execution:
 Variable_name	Value
 Handler_read_first	1
-Handler_read_key	1
-Handler_read_next	3
+Handler_read_key	5
+Handler_read_next	5
 # Status of testing query execution:
 Variable_name	Value
 Handler_delete	3
 Handler_read_first	1
-Handler_read_key	1
-Handler_read_next	3
+Handler_read_key	5
+Handler_read_next	5
 
 DROP TABLE t1;
 DROP VIEW v1;
@@ -2826,6 +2844,8 @@ Warnings:
 Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 # Status of EXPLAIN EXTENDED query
 Variable_name	Value
+Handler_read_key	4
+Handler_read_next	3
 FLUSH STATUS;
 FLUSH TABLES;
 EXPLAIN EXTENDED SELECT *  FROM t2, v1 WHERE t2.x = v1.a;
@@ -2837,16 +2857,20 @@ Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select `test`.`t2`.`x` AS `x`,`test`.`t1`.`a` AS `a`,(`test`.`t1`.`b` + 1) AS `c` from `test`.`t2` join `test`.`t1` where (`test`.`t1`.`a` = `test`.`t2`.`x`)
 # Status of EXPLAIN EXTENDED "equivalent" SELECT query execution
 Variable_name	Value
+Handler_read_key	4
+Handler_read_next	3
 # Status of "equivalent" SELECT query execution:
 Variable_name	Value
 Handler_read_first	1
-Handler_read_key	5
+Handler_read_key	9
+Handler_read_next	3
 Handler_read_rnd_next	5
 # Status of testing query execution:
 Variable_name	Value
 Handler_delete	4
 Handler_read_first	1
-Handler_read_key	9
+Handler_read_key	13
+Handler_read_next	3
 Handler_read_rnd	4
 Handler_read_rnd_next	5
 
@@ -2876,6 +2900,8 @@ Warnings:
 Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 # Status of EXPLAIN EXTENDED query
 Variable_name	Value
+Handler_read_key	4
+Handler_read_next	3
 FLUSH STATUS;
 FLUSH TABLES;
 EXPLAIN EXTENDED SELECT *  FROM t2, v1 WHERE t2.x = v1.a;
@@ -2887,16 +2913,20 @@ Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select `test`.`t2`.`x` AS `x`,`test`.`t1`.`a` AS `a`,(`test`.`t1`.`b` + 1) AS `c` from `test`.`t2` join `test`.`t1` where (`test`.`t1`.`a` = `test`.`t2`.`x`)
 # Status of EXPLAIN EXTENDED "equivalent" SELECT query execution
 Variable_name	Value
+Handler_read_key	4
+Handler_read_next	3
 # Status of "equivalent" SELECT query execution:
 Variable_name	Value
 Handler_read_first	1
-Handler_read_key	5
+Handler_read_key	9
+Handler_read_next	3
 Handler_read_rnd_next	5
 # Status of testing query execution:
 Variable_name	Value
 Handler_delete	4
 Handler_read_first	1
-Handler_read_key	9
+Handler_read_key	13
+Handler_read_next	3
 Handler_read_rnd	4
 Handler_read_rnd_next	5
 
@@ -2921,6 +2951,8 @@ Warnings:
 Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 # Status of EXPLAIN EXTENDED query
 Variable_name	Value
+Handler_read_key	4
+Handler_read_next	2
 FLUSH STATUS;
 FLUSH TABLES;
 EXPLAIN EXTENDED SELECT NULL;
@@ -2935,6 +2967,8 @@ Variable_name	Value
 Variable_name	Value
 # Status of testing query execution:
 Variable_name	Value
+Handler_read_key	4
+Handler_read_next	2
 Handler_write	1
 
 DROP TABLE t1;
@@ -2962,6 +2996,8 @@ Warnings:
 Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 # Status of EXPLAIN EXTENDED query
 Variable_name	Value
+Handler_read_key	4
+Handler_read_next	2
 FLUSH STATUS;
 FLUSH TABLES;
 EXPLAIN EXTENDED SELECT * FROM t1;
@@ -2980,7 +3016,8 @@ Handler_read_rnd_next	1
 # Status of testing query execution:
 Variable_name	Value
 Handler_read_first	1
-Handler_read_key	1
+Handler_read_key	5
+Handler_read_next	2
 Handler_read_rnd_next	1
 
 DROP TABLE t1, t2;
@@ -3280,7 +3317,11 @@ CREATE PROCEDURE p9() BEGIN EXPLAIN UPDATE t1 SET i = 10;END|
 CREATE PROCEDURE p10() BEGIN         UPDATE t1 SET i = 10;END|
 CREATE PROCEDURE p11() BEGIN EXPLAIN UPDATE t1,t2 SET t1.i = 10 WHERE t1.i = t2.i ;END|
 CREATE PROCEDURE p12() BEGIN         UPDATE t1,t2 SET t1.i = 10 WHERE t1.i = t2.i ;END|
-CREATE PROCEDURE p13() BEGIN EXPLAIN DELETE FROM t1;END|
+CREATE PROCEDURE p13() BEGIN
+# Disabling binary logging temporarily as optimized delete is not used when log-bin is enabled in row mode
+SET @save_log_bin= @@sql_log_bin;SET SQL_LOG_BIN=0;
+EXPLAIN DELETE FROM t1;
+SET SQL_LOG_BIN=@save_log_bin; END|
 CREATE PROCEDURE p14() BEGIN         DELETE FROM t1;END|
 CREATE PROCEDURE p15() BEGIN EXPLAIN DELETE FROM t1 USING t1;END|
 CREATE PROCEDURE p16() BEGIN         DELETE FROM t1 USING t1;END|
@@ -3337,3 +3378,4 @@ DROP TABLE t1, t2;
 #
 set default_storage_engine= @save_storage_engine;
 set optimizer_switch=default;
+set @@global.show_compatibility_56=@show_compatibility_56_save;

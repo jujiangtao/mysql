@@ -2,9 +2,8 @@
 CREATE DATABASE `ytest`;
 
 ## Test starts here
---let $xtest_file= $MYSQL_TMP_DIR/update_table.tmp
---write_file $xtest_file
--->quiet
+--write_file $MYSQL_TMP_DIR/update_table.tmp
+
 -->sql
 drop schema if exists xtest;
 create schema xtest;
@@ -62,8 +61,9 @@ Mysqlx.Crud.Update {
     }
   }
 }
--->recvresult
 
+-- Mysqlx.Sql.StmtExecuteOk
+-->recvresult
 
 -->sql
 select * from xtest.xtable;
@@ -113,8 +113,9 @@ Mysqlx.Crud.Update {
     }
   }
 }
--->recvresult
 
+-- Mysqlx.Sql.StmtExecuteOk
+-->recvresult
 
 -->sql
 select * from xtest.xtable;
@@ -164,8 +165,9 @@ Mysqlx.Crud.Update {
     }
   }
 }
--->recvresult
 
+-- Mysqlx.Sql.StmtExecuteOk
+-->recvresult
 
 -->sql
 select * from xtest.xtable;
@@ -196,8 +198,9 @@ Mysqlx.Crud.Update {
     }
   }
 }
--->recvresult
 
+-- Mysqlx.Sql.StmtExecuteOk
+-->recvresult
 
 -->sql
 select * from xtest.xtable;
@@ -259,8 +262,9 @@ Mysqlx.Crud.Update {
     }
   }
 }
--->recvresult
 
+-- Mysqlx.Sql.StmtExecuteOk
+-->recvresult
 
 -->sql
 select * from xtest.xtable;
@@ -291,9 +295,9 @@ Mysqlx.Crud.Update {
     }
   }
 }
--->expecterror 1054
--->recvresult
 
+-- Mysqlx.Error
+-->recv
 
 -->sql
 select * from xtest.xtable;
@@ -343,9 +347,9 @@ Mysqlx.Crud.Update {
     }
   }
 }
--->expecterror 1054
--->recvresult
 
+-- Mysqlx.Error
+-->recv
 
 -->sql
 select * from xtest.xtable;
@@ -361,9 +365,9 @@ Mysqlx.Crud.Update {
   }
   data_model: TABLE
 }
--->expecterror 5050
--->recvresult
 
+-- Mysqlx.Error
+-->recv
 
 -->sql
 select * from xtest.xtable;
@@ -394,9 +398,9 @@ Mysqlx.Crud.Update {
     }
   }
 }
--->expecterror 5052
--->recvresult
 
+-- Mysqlx.Error
+-->recv
 
 -->sql
 select * from xtest.xtable;
@@ -428,9 +432,9 @@ Mysqlx.Crud.Update {
     }
   }
 }
--->expecterror 5052
--->recvresult
 
+-- Mysqlx.Error
+-->recv
 
 -->sql
 select * from xtest.xtable;
@@ -463,9 +467,9 @@ Mysqlx.Crud.Update {
     }
   }
 }
--->expecterror 5052
--->recvresult
 
+-- Mysqlx.Error
+-->recv
 
 -->sql
 select * from xtest.xtable;
@@ -496,9 +500,9 @@ Mysqlx.Crud.Update {
     }
   }
 }
--->expecterror 1146
--->recvresult
 
+-- Mysqlx.Error
+-->recv
 
 -->sql
 select * from xtest.xtable;
@@ -530,64 +534,19 @@ Mysqlx.Crud.Update {
   }
 }
 
--->expecterror 1146
--->recvresult
+-- Mysqlx.Error
+-->recv
 
 -->sql
 select * from xtest.xtable;
--->endsql
-
-
--->echo Rel: Update one field twice
-Mysqlx.Crud.Update {
-  collection {
-    name: "xtable"
-    schema: "xtest"
-  }
-  data_model: TABLE
-  operation {
-    source {
-      name: "name"
-    }
-    operation: SET
-    value {
-      type: LITERAL
-      literal {
-        type: V_STRING
-        v_string {
-          value: "carrot"
-        }
-      }
-    }
-  }
-  operation {
-    source {
-      name: "name"
-    }
-    operation: SET
-    value {
-      type: LITERAL
-      literal {
-        type: V_STRING
-        v_string {
-          value: "lemon"
-        }
-      }
-    }
-  }
-}
--->recvresult
-
--->sql
-select * from xtest.xtable;
+drop schema xtest;
 -->endsql
 
 EOF
 
---exec $MYSQLXTEST -uroot --password='' --file=$xtest_file 2>&1
---remove_file $xtest_file
+--exec $MYSQLXTEST -uroot --password='' --file=$MYSQL_TMP_DIR/update_table.tmp 2>&1
+--remove_file $MYSQL_TMP_DIR/update_table.tmp
 
 ## Postamble
-drop schema ytest;
-drop schema xtest;
+DROP DATABASE `ytest`;
 uninstall plugin mysqlx;

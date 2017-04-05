@@ -22,6 +22,7 @@
 
 #include "violite.h"
 #include "ngs/thread.h"
+#include <boost/function.hpp>
 
 namespace ngs
 {

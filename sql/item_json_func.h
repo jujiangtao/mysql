@@ -17,14 +17,13 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "my_global.h"
-#include "json_dom.h"           // Json_dom, Json_wrapper
 #include "json_path.h"          // Json_path
 #include "item_strfunc.h"       // Item_str_func
 #include "mem_root_array.h"     // Mem_root_array
 #include "prealloced_array.h"   // Prealloced_array
 
 class Item_func_like;
-struct Json_scalar_holder;
+class Json_scalar_holder;
 
 /** For use by JSON_CONTAINS_PATH() and JSON_SEARCH() */
 enum enum_one_or_all_type
@@ -46,20 +45,25 @@ enum enum_one_or_all_type
 class Json_path_cache
 {
 private:
-  // holder for path strings
+  /// Holder for path strings.
   String m_path_value;
 
-  // list of paths
+  /// List of paths.
   Prealloced_array<Json_path, 8, false> m_paths;
 
-  // map argument indexes to indexes into m_paths
-  Mem_root_array<int, true> m_arg_idx_to_vector_idx;
+  /// Enum that tells the status of a cell in m_paths.
+  enum class enum_path_status : uint8
+  { UNINITIALIZED, OK_NOT_NULL, OK_NULL, ERROR };
 
-  // remembers whether a constant path was null or invalid
-  Mem_root_array<bool, true> m_arg_idx_to_problem_indicator;
+  /// Struct that points to a cell in m_paths and tells its status.
+  struct Path_cell
+  {
+    enum_path_status m_status= enum_path_status::UNINITIALIZED;
+    size_t m_index= 0;
+  };
 
-  // number of cells in m_arg_idx_to_vector
-  uint m_size;
+  /// Map argument indexes to indexes into m_paths.
+  Mem_root_array<Path_cell, true> m_arg_idx_to_vector_idx;
 
 public:
   Json_path_cache(THD *thd, uint size);
@@ -78,7 +82,7 @@ public:
     @param[in]  arg_idx          Index of the path_expression in args
     @param[in]  forbid_wildcards True if the path shouldn't contain * or **
 
-    @returns false on success, true on error or if the path is NULL
+    @returns false on success (valid path or NULL), true on error
   */
   bool parse_and_cache_path(Item ** args, uint arg_idx,
                             bool forbid_wildcards);
@@ -89,7 +93,7 @@ public:
 
     @param[in]  arg_idx   Index of the path_expression in the JSON function args
 
-    @returns the already parsed path
+    @returns the already parsed path, possibly NULL
   */
   Json_path *get_path(uint arg_idx);
 
@@ -135,11 +139,12 @@ public:
 
   enum_field_types field_type() const { return MYSQL_TYPE_JSON; }
 
-  void fix_length_and_dec()
+  virtual bool resolve_type(THD *thd)
   {
     max_length= MAX_BLOB_WIDTH;
     maybe_null= true;
     collation.set(&my_charset_utf8mb4_bin, DERIVATION_IMPLICIT);
+    return false;
   }
   enum Item_result result_type () const { return STRING_RESULT; }
   String *val_str(String *arg);
@@ -153,12 +158,6 @@ public:
   void cleanup();
 
   Item_result cast_to_int_type () const { return INT_RESULT; }
-
-  void update_null_value ()
-  {
-    Json_wrapper wr;
-    val_json(&wr);
-  }
 };
 
 /**
@@ -182,13 +181,13 @@ bool json_value(Item **args, uint arg_idx, Json_wrapper *result);
   @param[in]  arg_idx       the argument index
   @param[out] str           the string buffer
   @param[in]  func_name     the name of the function we are executing
-  @param[out] result        the JSON value wrapper
+  @param[out] wrapper       the JSON value wrapper
   @param[in]  preserve_neg_zero_int
                             Whether integer negative zero should be preserved.
                             If set to TRUE, -0 is handled as a DOUBLE. Double
                             negative zero (-0.0) is preserved regardless of what
                             this parameter is set to.
-  @result false if we found a value or NULL, true if not.
+  @returns false if we found a value or NULL, true if not.
 */
 bool get_json_wrapper(Item **args, uint arg_idx, String *str,
                       const char *func_name, Json_wrapper *wrapper,
@@ -248,23 +247,6 @@ bool ensure_utf8mb4(String *val,
                     bool require_string);
 
 /**
-  Create a new Json_scalar_holder instance.
-*/
-Json_scalar_holder *create_json_scalar_holder();
-
-/**
-  Destroy a Json_scalar_holder instance.
-*/
-void delete_json_scalar_holder(Json_scalar_holder *holder);
-
-/**
-  Get a pointer to the Json_scalar object contained in a Json_scalar_holder.
-  @param[in] holder  the holder object
-  @return a pointer to a Json_scalar, or NULL if the holder is empty
-*/
-Json_scalar *get_json_scalar_from_holder(Json_scalar_holder *holder);
-
-/**
   Represents the JSON function JSON_VALID( <value> )
 */
 class Item_func_json_valid :public Item_int_func
@@ -286,9 +268,10 @@ public:
 
   longlong val_int();
 
-  void fix_length_and_dec()
+  virtual bool resolve_type(THD *thd)
   {
     maybe_null= true;
+    return false;
   }
 };
 
@@ -317,9 +300,10 @@ class Item_func_json_contains :public Item_int_func
 
   longlong val_int();
 
-  void fix_length_and_dec()
+  virtual bool resolve_type(THD *thd)
   {
     maybe_null= true;
+    return false;
   }
 
   /** Cleanup between executions of the statement */
@@ -356,9 +340,10 @@ public:
 
   longlong val_int();
 
-  void fix_length_and_dec()
+  virtual bool resolve_type(THD *thd)
   {
     maybe_null= true;
+    return false;
   }
 
   /** Cleanup between executions of the statement */
@@ -380,12 +365,7 @@ public:
     return "json_type";
   }
 
-  void fix_length_and_dec()
-  {
-    maybe_null= true;
-    m_value.set_charset(&my_charset_utf8mb4_bin);
-    fix_length_and_charset(Json_dom::typelit_max_length, &my_charset_utf8mb4_bin);
-  };
+  virtual bool resolve_type(THD *thd);
 
   String *val_str(String *);
 };
@@ -424,9 +404,10 @@ public:
     : Item_int_func(pos, a, b), m_path_cache(thd, 2)
   {}
 
-  void fix_length_and_dec()
+  virtual bool resolve_type(THD *thd)
   {
     maybe_null= true;
+    return false;
   }
 
   const char *func_name() const
@@ -665,7 +646,6 @@ class Item_func_json_search :public Item_json_func
 {
   String m_doc_value;
   String m_one_or_all_value;
-  String m_search_string_value;
   enum_one_or_all_type m_cached_ooa;
   String m_escape;
 
@@ -676,8 +656,9 @@ public:
   /**
    Construct a JSON_SEARCH() node.
 
+   @param     thd Current session.
    @param[in] pos Parser position
-   @param[in] a Nodes which must be fixed (i.e. bound/resolved)
+   @param[in] a   Nodes which must be fixed (i.e. bound/resolved)
 
    @returns a JSON_SEARCH() node.
   */
@@ -755,7 +736,7 @@ public:
     return "json_quote";
   }
 
-  void fix_length_and_dec()
+  virtual bool resolve_type(THD *thd)
   {
     maybe_null= true;
 
@@ -765,6 +746,7 @@ public:
     */
     uint32 max_char_length= (6 * args[0]->max_length) + 2;
     fix_length_and_charset(max_char_length, &my_charset_utf8mb4_bin);
+    return false;
   };
 
   String *val_str(String *tmpspace);
@@ -790,10 +772,11 @@ public:
     return "json_unquote";
   }
 
-  void fix_length_and_dec()
+  virtual bool resolve_type(THD *thd)
   {
     maybe_null= true;
     fix_length_and_charset(args[0]->max_length, &my_charset_utf8mb4_bin);
+    return false;
   };
 
   String *val_str(String *str);
@@ -803,14 +786,14 @@ public:
   Turn a GEOMETRY value into a JSON value per the GeoJSON specification revison 1.0.
   This method is implemented in item_geofunc.cc.
 
-  @param[in/out] wr The wrapper to be stuffed with the JSON value.
-  @param[in/]    geometry_arg The source GEOMETRY value.
+  @param[in,out] wr The wrapper to be stuffed with the JSON value.
+  @param[in]     geometry_arg The source GEOMETRY value.
   @param[in]     calling_function Name of user-invoked function (for errors)
   @param[in]     max_decimal_digits See the user documentation for ST_AsGeoJSON.
   @param[in]     add_bounding_box See the user documentation for ST_AsGeoJSON.
   @param[in]     add_short_crs_urn See the user documentation for ST_AsGeoJSON.
   @param[in]     add_long_crs_urn See the user documentation for ST_AsGeoJSON.
-  @param[in/out] geometry_srid Spatial Reference System Identifier to be filled in.
+  @param[in,out] geometry_srid Spatial Reference System Identifier to be filled in.
 
   @return false if the conversion succeeds, true otherwise
 */

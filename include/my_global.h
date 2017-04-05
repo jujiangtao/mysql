@@ -17,7 +17,8 @@
 #ifndef MY_GLOBAL_INCLUDED
 #define MY_GLOBAL_INCLUDED
 
-/*
+/**
+  @file include/my_global.h
   This include file should be included first in every header file.
 
   This makes sure my_config.h is included to get platform specific
@@ -73,18 +74,7 @@
 #endif
 
 #include "my_compiler.h"
-
-
-/*
-  InnoDB depends on some MySQL internals which other plugins should not
-  need.  This is because of InnoDB's foreign key support, "safe" binlog
-  truncation, and other similar legacy features.
-
-  We define accessors for these internals unconditionally, but do not
-  expose them in mysql/plugin.h.  They are declared in ha_innodb.h for
-  InnoDB's use.
-*/
-#define INNODB_COMPATIBILITY_HOOKS
+#include "my_dbug.h"
 
 /* Macros to make switching between C and C++ mode easier */
 #ifdef __cplusplus
@@ -96,8 +86,277 @@
 #endif
 
 #ifdef WITH_PERFSCHEMA_STORAGE_ENGINE
+#ifdef EMBEDDED_LIBRARY
+
+#ifndef DISABLE_PSI_THREAD
+#define DISABLE_PSI_THREAD
+#endif
+
+#ifndef DISABLE_PSI_MUTEX
+#define DISABLE_PSI_MUTEX
+#endif
+
+#ifndef DISABLE_PSI_RWLOCK
+#define DISABLE_PSI_RWLOCK
+#endif
+
+#ifndef DISABLE_PSI_COND
+#define DISABLE_PSI_COND
+#endif
+
+#ifndef DISABLE_PSI_FILE
+#define DISABLE_PSI_FILE
+#endif
+
+#ifndef DISABLE_PSI_TABLE
+#define DISABLE_PSI_TABLE
+#endif
+
+#ifndef DISABLE_PSI_SOCKET
+#define DISABLE_PSI_SOCKET
+#endif
+
+#ifndef DISABLE_PSI_STAGE
+#define DISABLE_PSI_STAGE
+#endif
+
+#ifndef DISABLE_PSI_STATEMENT
+#define DISABLE_PSI_STATEMENT
+#endif
+
+#ifndef DISABLE_PSI_SP
+#define DISABLE_PSI_SP
+#endif
+
+#ifndef DISABLE_PSI_PS
+#define DISABLE_PSI_PS
+#endif
+
+#ifndef DISABLE_PSI_ERROR
+#define DISABLE_PSI_ERROR
+#endif
+
+#ifndef DISABLE_PSI_IDLE
+#define DISABLE_PSI_IDLE
+#endif
+
+#ifndef DISABLE_PSI_STATEMENT_DIGEST
+#define DISABLE_PSI_STATEMENT_DIGEST
+#endif
+
+#ifndef DISABLE_PSI_METADATA
+#define DISABLE_PSI_METADATA
+#endif
+
+#ifndef DISABLE_PSI_MEMORY
+#define DISABLE_PSI_MEMORY
+#endif
+
+#ifndef DISABLE_PSI_TRANSACTION
+#define DISABLE_PSI_TRANSACTION
+#endif
+
+#endif /* EMBEDDED_LIBRARY */
+#endif /* WITH_PERFSCHEMA_STORAGE_ENGINE */
+
+#ifdef WITH_PERFSCHEMA_STORAGE_ENGINE
 #define HAVE_PSI_INTERFACE
 #endif /* WITH_PERFSCHEMA_STORAGE_ENGINE */
+
+#ifdef HAVE_PSI_INTERFACE
+
+ /**
+  @def DISABLE_PSI_MUTEX
+  Compiling option to disable the mutex instrumentation.
+  This option is mostly intended to be used during development,
+  when doing special builds with only a subset of the performance schema instrumentation,
+  for code analysis / profiling / performance tuning of a specific instrumentation alone.
+  @sa DISABLE_PSI_RWLOCK
+  @sa DISABLE_PSI_COND
+  @sa DISABLE_PSI_FILE
+  @sa DISABLE_PSI_THREAD
+  @sa DISABLE_PSI_TABLE
+  @sa DISABLE_PSI_STAGE
+  @sa DISABLE_PSI_STATEMENT
+  @sa DISABLE_PSI_SP
+  @sa DISABLE_PSI_PS
+  @sa DISABLE_PSI_STATEMENT_DIGEST
+  @sa DISABLE_PSI_SOCKET
+  @sa DISABLE_PSI_MEMORY
+  @sa DISABLE_PSI_ERROR
+  @sa DISABLE_PSI_IDLE
+  @sa DISABLE_PSI_METADATA
+  @sa DISABLE_PSI_TRANSACTION
+*/
+
+#ifndef DISABLE_PSI_MUTEX
+#define HAVE_PSI_MUTEX_INTERFACE
+#endif /* DISABLE_PSI_MUTEX */
+
+/**
+  @def DISABLE_PSI_RWLOCK
+  Compiling option to disable the rwlock instrumentation.
+  @sa DISABLE_PSI_MUTEX
+*/
+
+#ifndef DISABLE_PSI_RWLOCK
+#define HAVE_PSI_RWLOCK_INTERFACE
+#endif /* DISABLE_PSI_RWLOCK */
+
+/**
+  @def DISABLE_PSI_COND
+  Compiling option to disable the cond instrumentation.
+  @sa DISABLE_PSI_MUTEX
+*/
+
+#ifndef DISABLE_PSI_COND
+#define HAVE_PSI_COND_INTERFACE
+#endif /* DISABLE_PSI_COND */
+
+/**
+  @def DISABLE_PSI_FILE
+  Compiling option to disable the file instrumentation.
+  @sa DISABLE_PSI_MUTEX
+*/
+
+#ifndef DISABLE_PSI_FILE
+#define HAVE_PSI_FILE_INTERFACE
+#endif /* DISABLE_PSI_FILE */
+
+/**
+  @def DISABLE_PSI_THREAD
+  Compiling option to disable the thread instrumentation.
+  @sa DISABLE_PSI_MUTEX
+*/
+
+#ifndef DISABLE_PSI_THREAD
+#define HAVE_PSI_THREAD_INTERFACE
+#endif /* DISABLE_PSI_THREAD */
+
+/**
+  @def DISABLE_PSI_TABLE
+  Compiling option to disable the table instrumentation.
+  @sa DISABLE_PSI_MUTEX
+*/
+
+#ifndef DISABLE_PSI_TABLE
+#define HAVE_PSI_TABLE_INTERFACE
+#endif /* DISABLE_PSI_TABLE */
+
+/**
+  @def DISABLE_PSI_STAGE
+  Compiling option to disable the stage instrumentation.
+  @sa DISABLE_PSI_MUTEX
+*/
+
+#ifndef DISABLE_PSI_STAGE
+#define HAVE_PSI_STAGE_INTERFACE
+#endif /* DISABLE_PSI_STAGE */
+
+/**
+  @def DISABLE_PSI_STATEMENT
+  Compiling option to disable the statement instrumentation.
+  @sa DISABLE_PSI_MUTEX
+*/
+
+#ifndef DISABLE_PSI_STATEMENT
+#define HAVE_PSI_STATEMENT_INTERFACE
+#endif /* DISABLE_PSI_STATEMENT */
+
+/**
+  @def DISABLE_PSI_SP
+  Compiling option to disable the stored program instrumentation.
+  @sa DISABLE_PSI_MUTEX
+*/
+
+#ifndef DISABLE_PSI_SP
+#define HAVE_PSI_SP_INTERFACE
+#endif /* DISABLE_PSI_SP */
+
+/**
+  @def DISABLE_PSI_PS
+  Compiling option to disable the prepared statement instrumentation.
+  @sa DISABLE_PSI_MUTEX
+*/
+
+#ifndef DISABLE_PSI_STATEMENT
+#ifndef DISABLE_PSI_PS
+#define HAVE_PSI_PS_INTERFACE
+#endif /* DISABLE_PSI_PS */
+#endif /* DISABLE_PSI_STATEMENT */
+
+/**
+  @def DISABLE_PSI_STATEMENT_DIGEST
+  Compiling option to disable the statement digest instrumentation.
+*/
+
+#ifndef DISABLE_PSI_STATEMENT
+#ifndef DISABLE_PSI_STATEMENT_DIGEST
+#define HAVE_PSI_STATEMENT_DIGEST_INTERFACE
+#endif /* DISABLE_PSI_STATEMENT_DIGEST */
+#endif /* DISABLE_PSI_STATEMENT */
+
+/**
+  @def DISABLE_PSI_TRANSACTION
+  Compiling option to disable the transaction instrumentation.
+  @sa DISABLE_PSI_MUTEX
+*/
+
+#ifndef DISABLE_PSI_TRANSACTION
+#define HAVE_PSI_TRANSACTION_INTERFACE
+#endif /* DISABLE_PSI_TRANSACTION */
+
+/**
+  @def DISABLE_PSI_SOCKET
+  Compiling option to disable the statement instrumentation.
+  @sa DISABLE_PSI_MUTEX
+*/
+
+#ifndef DISABLE_PSI_SOCKET
+#define HAVE_PSI_SOCKET_INTERFACE
+#endif /* DISABLE_PSI_SOCKET */
+
+/**
+  @def DISABLE_PSI_MEMORY
+  Compiling option to disable the memory instrumentation.
+  @sa DISABLE_PSI_MUTEX
+*/
+
+#ifndef DISABLE_PSI_MEMORY
+#define HAVE_PSI_MEMORY_INTERFACE
+#endif /* DISABLE_PSI_MEMORY */
+
+/**
+  @def DISABLE_PSI_ERROR
+  Compiling option to disable the error instrumentation.
+  @sa DISABLE_PSI_MUTEX
+*/
+
+#ifndef DISABLE_PSI_ERROR
+#define HAVE_PSI_ERROR_INTERFACE
+#endif /* DISABLE_PSI_ERROR */
+
+/**
+  @def DISABLE_PSI_IDLE
+  Compiling option to disable the idle instrumentation.
+  @sa DISABLE_PSI_MUTEX
+*/
+
+#ifndef DISABLE_PSI_IDLE
+#define HAVE_PSI_IDLE_INTERFACE
+#endif /* DISABLE_PSI_IDLE */
+
+/**
+  @def DISABLE_PSI_METADATA
+  Compiling option to disable the metadata instrumentation.
+  @sa DISABLE_PSI_MUTEX
+*/
+
+#ifndef DISABLE_PSI_METADATA
+#define HAVE_PSI_METADATA_INTERFACE
+#endif /* DISABLE_PSI_METADATA */
+
+#endif /* HAVE_PSI_INTERFACE */
 
 /* Make it easier to add conditional code in _expressions_ */
 #ifdef _WIN32
@@ -145,16 +404,6 @@ static inline void sleep(unsigned long seconds)
 #define default_shared_memory_base_name "MYSQL"
 #endif /* _WIN32*/
 
-/**
-  Cast a member of a structure to the structure that contains it.
-
-  @param  ptr     Pointer to the member.
-  @param  type    Type of the structure that contains the member.
-  @param  member  Name of the member within the structure.
-*/
-#define my_container_of(ptr, type, member)              \
-  ((type *)((char *)ptr - offsetof(type, member)))
-
 /* an assert that works at compile-time. only for constant expression */
 #define compile_time_assert(X)                                              \
   do                                                                        \
@@ -162,24 +411,21 @@ static inline void sleep(unsigned long seconds)
     typedef char compile_time_assert[(X) ? 1 : -1] MY_ATTRIBUTE((unused)); \
   } while(0)
 
+/*
+  Two levels of macros are needed to stringify the
+  result of expansion of a macro argument.
+*/
 #define QUOTE_ARG(x)		#x	/* Quote argument (before cpp) */
 #define STRINGIFY_ARG(x) QUOTE_ARG(x)	/* Quote argument, after cpp */
-
-#ifdef _WIN32
-#define SO_EXT ".dll"
-#elif defined(__APPLE__)
-#define SO_EXT ".dylib"
-#else
-#define SO_EXT ".so"
-#endif
 
 #if !defined(HAVE_UINT)
 typedef unsigned int uint;
 typedef unsigned short ushort;
 #endif
 
-#define swap_variables(t, a, b) { t dummy; dummy= a; a= b; b= dummy; }
 #define MY_TEST(a)		((a) ? 1 : 0)
+#define MY_MAX(a, b)	((a) > (b) ? (a) : (b))
+#define MY_MIN(a, b)	((a) < (b) ? (a) : (b))
 #define set_if_bigger(a,b)  do { if ((a) < (b)) (a)=(b); } while(0)
 #define set_if_smaller(a,b) do { if ((a) > (b)) (a)=(b); } while(0)
 #define test_all_bits(a,b) (((a) & (b)) == (b))
@@ -200,9 +446,6 @@ typedef SOCKET my_socket;
 typedef int	my_socket;	/* File descriptor for sockets */
 #define INVALID_SOCKET -1
 #endif
-C_MODE_START
-typedef void	(*sig_return)();/* Returns type from signal */
-C_MODE_END
 #if defined(__GNUC__)
 typedef char	pchar;		/* Mixed prototypes can take char */
 typedef char	pbool;		/* Mixed prototypes can take char */
@@ -210,10 +453,6 @@ typedef char	pbool;		/* Mixed prototypes can take char */
 typedef int	pchar;		/* Mixed prototypes can't take char */
 typedef int	pbool;		/* Mixed prototypes can't take char */
 #endif
-C_MODE_START
-typedef int	(*qsort_cmp)(const void *,const void *);
-typedef int	(*qsort_cmp2)(const void*, const void *,const void *);
-C_MODE_END
 #ifdef _WIN32
 typedef int       socket_len_t;
 typedef int       sigset_t;
@@ -222,32 +461,22 @@ typedef SSIZE_T   ssize_t;
 #else
 typedef socklen_t socket_len_t;
 #endif
-typedef socket_len_t SOCKET_SIZE_TYPE; /* Used by NDB */
 
 /* file create flags */
 
-#ifndef O_SHARE			/* Probably not windows */
-#define O_SHARE		0	/* Flag to my_open for shared files */
-#ifndef O_BINARY
-#define O_BINARY	0	/* Flag to my_open for binary files */
+#ifdef _WIN32
+/* Only for my_fopen() - _O_BINARY is set by default for my_open() */
+#define MY_FOPEN_BINARY _O_BINARY
+#else
+#define MY_FOPEN_BINARY 0       /* Ignore on non-Windows */
 #endif
-#ifndef FILE_BINARY
-#define FILE_BINARY	O_BINARY /* Flag to my_fopen for binary streams */
-#endif
+
 #ifdef HAVE_FCNTL
-#define HAVE_FCNTL_LOCK
 #define F_TO_EOF	0L	/* Param to lockf() to lock rest of file */
 #endif
-#endif /* O_SHARE */
 
-#ifndef O_TEMPORARY
-#define O_TEMPORARY	0
-#endif
-#ifndef O_SHORT_LIVED
-#define O_SHORT_LIVED	0
-#endif
-#ifndef O_NOFOLLOW
-#define O_NOFOLLOW      0
+#ifdef _WIN32
+#define O_NOFOLLOW      0       /* Ignore on Windows */
 #endif
 
 /* additional file share flags for win32 */
@@ -351,15 +580,11 @@ static inline int is_directory_separator(char c)
 #define ONCE_ALLOC_INIT		(uint) (4096-MALLOC_OVERHEAD)
 	/* Typical record cash */
 #define RECORD_CACHE_SIZE	(uint) (64*1024-MALLOC_OVERHEAD)
-	/* Typical key cash */
-#define KEY_CACHE_SIZE		(uint) (8*1024*1024)
-	/* Default size of a key cache block  */
-#define KEY_CACHE_BLOCK_SIZE	(uint) 1024
 
 
 /* Some defines of functions for portability */
 
-#if (_WIN32)
+#ifdef _WIN32
 #if !defined(_WIN64)
 inline double my_ulonglong2double(unsigned long long value)
 {
@@ -409,33 +634,15 @@ inline unsigned long long my_double2ulonglong(double d)
 #define SIZE_T_MAX      (~((size_t) 0))
 #endif
 
-// Our ifdef trickery for my_isfinite does not work with gcc/solaris unless we:
-#ifdef HAVE_IEEEFP_H
-#include <ieeefp.h>
-#endif
-
-#if (__cplusplus >= 201103L)
-  /* For C++11 use the new std functions rather than C99 macros. */
-  #include <cmath>
-  #define my_isfinite(X) std::isfinite(X)
-  #define my_isnan(X) std::isnan(X)
-  #define my_isinf(X) std::isinf(X)
-#else
-  #ifdef HAVE_LLVM_LIBCPP /* finite is deprecated in libc++ */
-    #define my_isfinite(X) isfinite(X)
-  #elif defined _WIN32
-    #define my_isfinite(X) _finite(X)
-  #else
-    #define my_isfinite(X) finite(X)
-  #endif
-  #define my_isnan(X) isnan(X)
-  #ifdef HAVE_ISINF
-    /* System-provided isinf() is available and safe to use */
-    #define my_isinf(X) isinf(X)
-  #else /* !HAVE_ISINF */
-    #define my_isinf(X) (!my_isfinite(X) && !my_isnan(X))
-  #endif
-#endif /* __cplusplus >= 201103L */
+#if defined(__cplusplus)
+  /*
+    For C++ use the new C++11 std functions rather than C99 macros.
+    For C use C99 macros - see storage/myisam/rt_split.c
+  */
+  #define my_isfinite please_use_std_isfinite_rather_than_my_isfinite
+  #define my_isnan(X) please_use_std_isnan_rather_than_my_isnan
+  #define my_isinf(X) please_use_std_isinf_rather_than_my_isinf
+#endif /* __cplusplus */
 
 /*
   Max size that must be added to a so that we know Size to make
@@ -522,13 +729,9 @@ typedef long long intptr;
 #error sizeof(void *) is neither sizeof(int) nor sizeof(long) nor sizeof(long long)
 #endif
 
-#define MY_ERRPTR ((void*)(intptr)1)
-
 #if defined(_WIN32)
 typedef unsigned long long my_off_t;
-typedef unsigned long long os_off_t;
 #else
-typedef off_t os_off_t;
 #if SIZEOF_OFF_T > 4
 typedef ulonglong my_off_t;
 #else
@@ -569,29 +772,17 @@ typedef ulonglong nesting_map;  /* Used for flags of nesting constructs */
 typedef int		myf;	/* Type of MyFlags in my_funcs */
 typedef char		my_bool; /* Small bool */
 
+#if !defined(__cplusplus) && !defined(bool)
+#define bool In_C_you_should_use_my_bool_instead()
+#endif
+
 /* Macros for converting *constants* to the right type */
 #define MYF(v)		(myf) (v)
-
-/* Some helper macros */
-#define YESNO(X) ((X) ? "yes" : "no")
-
-#define MY_HOW_OFTEN_TO_WRITE	1000	/* How often we want info on screen */
-
-#include <my_byteorder.h>
-
-#ifdef HAVE_CHARSET_utf8
-#define MYSQL_UNIVERSAL_CLIENT_CHARSET "utf8"
-#else
-#define MYSQL_UNIVERSAL_CLIENT_CHARSET MYSQL_DEFAULT_CHARSET_NAME
-#endif
 
 #if defined(_WIN32)
 #define dlsym(lib, name) (void*)GetProcAddress((HMODULE)lib, name)
 #define dlopen(libname, unused) LoadLibraryEx(libname, NULL, 0)
 #define dlclose(lib) FreeLibrary((HMODULE)lib)
-#ifndef HAVE_DLOPEN
-#define HAVE_DLOPEN
-#endif
 #define DLERROR_GENERATE(errmsg, error_number) \
   char win_errormsg[2048]; \
   if(FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM, \
@@ -620,14 +811,6 @@ typedef char		my_bool; /* Small bool */
 /* Length of decimal number represented by INT64. */
 #define MY_INT64_NUM_DECIMAL_DIGITS 21U
 
-/* Define some useful general macros (should be done after all headers). */
-#define MY_MAX(a, b)	((a) > (b) ? (a) : (b))
-#define MY_MIN(a, b)	((a) < (b) ? (a) : (b))
-
-#if !defined(__cplusplus) && !defined(bool)
-#define bool In_C_you_should_use_my_bool_instead()
-#endif
-
 /* 
   MYSQL_PLUGIN_IMPORT macro is used to export mysqld data
   (i.e variables) for usage in storage engine loadable plugins.
@@ -638,8 +821,6 @@ typedef char		my_bool; /* Small bool */
 #else
 #define MYSQL_PLUGIN_IMPORT
 #endif
-
-#include <my_dbug.h>
 
 #ifdef EMBEDDED_LIBRARY
 #define NO_EMBEDDED_ACCESS_CHECKS
@@ -673,57 +854,13 @@ static inline struct tm *gmtime_r(const time_t *clock, struct tm *res)
 }
 #endif /* _WIN32 */
 
-#ifndef HAVE_STRUCT_TIMESPEC /* Windows before VS2015 */
-/*
-  Declare a union to make sure FILETIME is properly aligned
-  so it can be used directly as a 64 bit value. The value
-  stored is in 100ns units.
-*/
-union ft64 {
-  FILETIME ft;
-  __int64 i64;
- };
-
-struct timespec {
-  union ft64 tv;
-  /* The max timeout value in millisecond for native_cond_timedwait */
-  long max_timeout_msec;
-};
-
-#endif /* !HAVE_STRUCT_TIMESPEC */
-
 C_MODE_START
-extern ulonglong my_getsystime(void);
+ulonglong my_getsystime(void);
+
+void set_timespec_nsec(struct timespec *abstime, ulonglong nsec);
+
+void set_timespec(struct timespec *abstime, ulonglong sec);
 C_MODE_END
-
-static inline void set_timespec_nsec(struct timespec *abstime, ulonglong nsec)
-{
-#ifdef HAVE_STRUCT_TIMESPEC
-  ulonglong now= my_getsystime() + (nsec / 100);
-  ulonglong tv_sec= now / 10000000ULL;
-#if SIZEOF_TIME_T < SIZEOF_LONG_LONG
-  /* Ensure that the number of seconds don't overflow. */
-  tv_sec= MY_MIN(tv_sec, ((ulonglong)INT_MAX32));
-#endif
-  abstime->tv_sec=  (time_t)tv_sec;
-  abstime->tv_nsec= (now % 10000000ULL) * 100 + (nsec % 100);
-#else /* !HAVE_STRUCT_TIMESPEC */
-  ulonglong max_timeout_msec= (nsec / 1000000);
-  union ft64 tv;
-  GetSystemTimeAsFileTime(&tv.ft);
-  abstime->tv.i64= tv.i64 + (__int64)(nsec / 100);
-#if SIZEOF_LONG < SIZEOF_LONG_LONG
-  /* Ensure that the msec value doesn't overflow. */
-  max_timeout_msec= MY_MIN(max_timeout_msec, ((ulonglong)INT_MAX32));
-#endif
-  abstime->max_timeout_msec= (long)max_timeout_msec;
-#endif /* !HAVE_STRUCT_TIMESPEC */
-}
-
-static inline void set_timespec(struct timespec *abstime, ulonglong sec)
-{
-  set_timespec_nsec(abstime, sec * 1000000000ULL);
-}
 
 /**
    Compare two timespec structs.
@@ -734,30 +871,19 @@ static inline void set_timespec(struct timespec *abstime, ulonglong sec)
 */
 static inline int cmp_timespec(struct timespec *ts1, struct timespec *ts2)
 {
-#ifdef HAVE_STRUCT_TIMESPEC
   if (ts1->tv_sec > ts2->tv_sec ||
       (ts1->tv_sec == ts2->tv_sec && ts1->tv_nsec > ts2->tv_nsec))
     return 1;
   if (ts1->tv_sec < ts2->tv_sec ||
       (ts1->tv_sec == ts2->tv_sec && ts1->tv_nsec < ts2->tv_nsec))
     return -1;
-#else
-  if (ts1->tv.i64 > ts2->tv.i64)
-    return 1;
-  if (ts1->tv.i64 < ts2->tv.i64)
-    return -1;
-#endif
   return 0;
 }
 
 static inline ulonglong diff_timespec(struct timespec *ts1, struct timespec *ts2)
 {
-#ifdef HAVE_STRUCT_TIMESPEC
   return (ts1->tv_sec - ts2->tv_sec) * 1000000000ULL +
     ts1->tv_nsec - ts2->tv_nsec;
-#else
-  return (ts1->tv.i64 - ts2->tv.i64) * 100;
-#endif
 }
 
 #ifdef _WIN32
@@ -786,7 +912,12 @@ typedef mode_t MY_MODE;
 #define DEFAULT_SSL_SERVER_CERT "server-cert.pem"
 #define DEFAULT_SSL_SERVER_KEY  "server-key.pem"
 
-#if defined(_WIN32) || defined(_WIN64)
-  #define strcasecmp _stricmp
+#ifdef __cplusplus
+/*
+  Define rapidjson::SizeType to be std::size_t. See
+  extra/rapidjson/include/rapidjson/rapidjson.h for more details.
+*/
+namespace rapidjson { typedef ::std::size_t SizeType; }
 #endif
+
 #endif  // MY_GLOBAL_INCLUDED

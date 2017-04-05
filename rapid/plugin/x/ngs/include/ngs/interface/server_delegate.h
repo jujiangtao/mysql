@@ -20,7 +20,7 @@
 #ifndef _NGS_SERVER_DELEGATE_H_
 #define _NGS_SERVER_DELEGATE_H_
 
-#include "ngs_common/smart_ptr.h"
+#include <boost/shared_ptr.hpp>
 
 namespace ngs
 {
@@ -43,8 +43,8 @@ public:
   virtual void did_accept_client(const Client_interface &client) = 0;
   virtual void did_reject_client(Reject_reason reason) = 0;
 
-  virtual ngs::shared_ptr<Client_interface> create_client(Connection_ptr sock) = 0;
-  virtual ngs::shared_ptr<Session_interface> create_session(Client_interface &client,
+  virtual boost::shared_ptr<Client_interface> create_client(Connection_ptr sock) = 0;
+  virtual boost::shared_ptr<Session_interface> create_session(Client_interface &client,
                                                     Protocol_encoder &proto,
                                                     int session_id) = 0;
 

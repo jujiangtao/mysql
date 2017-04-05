@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -20,7 +20,6 @@
 #include "sql_servers.h" // servers_reload
 #include "sql_connect.h" // reset_mqh
 #include "sql_base.h"    // close_cached_tables
-#include "sql_db.h"      // my_dbopt_cleanup
 #include "hostname.h"    // hostname_cache_refresh
 #include "rpl_master.h"  // reset_master
 #include "rpl_slave.h"   // reset_slave
@@ -30,9 +29,10 @@
 #include "debug_sync.h"
 #include "connection_handler_impl.h"
 #include "opt_costconstantcache.h"     // reload_optimizer_cost_constants
+#include "current_thd.h" // my_thread_set_THR_THD
+#include "sql_cache.h"   // query_cache
 #include "log.h"         // query_logger
 #include "des_key_file.h"
-
 
 /**
   Reload/resets privileges and the different caches.
@@ -85,7 +85,6 @@ bool reload_acl_and_cache(THD *thd, unsigned long options,
       bool reload_acl_failed= acl_reload(thd);
       bool reload_grants_failed= grant_reload(thd);
       bool reload_servers_failed= servers_reload(thd);
-
       if (reload_acl_failed || reload_grants_failed || reload_servers_failed)
       {
         result= 1;
@@ -95,14 +94,30 @@ bool reload_acl_and_cache(THD *thd, unsigned long options,
         */
         my_error(ER_UNKNOWN_ERROR, MYF(0));
       }
+      else
+      {
+        /* Reload the role grant graph and rebuild index */
+        if (roles_init_from_tables(thd))
+        {
+          result= 1;
+          my_error(ER_UNKNOWN_ERROR, MYF(0));
+        }
+      }
+
+      /*
+        Check storage engine type for every ACL table and output warning
+        message in case it's different from supported one (InnoDB).
+      */
+      if (check_engine_type_for_acl_table(thd))
+        result= 1;
     }
 
+    reset_mqh(thd, (LEX_USER *)NULL, TRUE);
     if (tmp_thd)
     {
       delete tmp_thd;
       thd= 0;
     }
-    reset_mqh((LEX_USER *)NULL, TRUE);
   }
 #endif
   if (options & REFRESH_LOG)
@@ -179,12 +194,12 @@ bool reload_acl_and_cache(THD *thd, unsigned long options,
   }
   if (options & REFRESH_QUERY_CACHE_FREE)
   {
-    query_cache.pack();				// FLUSH QUERY CACHE
+    query_cache.pack(thd);			// FLUSH QUERY CACHE
     options &= ~REFRESH_QUERY_CACHE;    // Don't flush cache, just free memory
   }
   if (options & (REFRESH_TABLES | REFRESH_QUERY_CACHE))
   {
-    query_cache.flush();			// RESET QUERY CACHE
+    query_cache.flush(thd);			// RESET QUERY CACHE
   }
 
   DBUG_ASSERT(!thd || thd->locked_tables_mode ||
@@ -293,7 +308,6 @@ bool reload_acl_and_cache(THD *thd, unsigned long options,
         result= 1;
       }
     }
-    my_dbopt_cleanup();
   }
   if (options & REFRESH_HOSTS)
     hostname_cache_refresh();
@@ -339,7 +353,7 @@ bool reload_acl_and_cache(THD *thd, unsigned long options,
  }
 #endif
  if (options & REFRESH_USER_RESOURCES)
-   reset_mqh((LEX_USER *) NULL, 0);             /* purecov: inspected */
+   reset_mqh(thd, nullptr, 0);             /* purecov: inspected */
  if (*write_to_binlog != -1)
    *write_to_binlog= tmp_write_to_binlog;
  /*
@@ -348,9 +362,8 @@ bool reload_acl_and_cache(THD *thd, unsigned long options,
  return result || (thd ? thd->killed : 0);
 }
 
-
 /**
-  Implementation of FLUSH TABLES <table_list> WITH READ LOCK.
+  Implementation of FLUSH TABLES @<table_list@> WITH READ LOCK.
 
   In brief: take exclusive locks, expel tables from the table
   cache, reopen the tables, enter the 'LOCKED TABLES' mode,
@@ -370,9 +383,9 @@ bool reload_acl_and_cache(THD *thd, unsigned long options,
   ---------------------------------------
   We don't wait for the GRL, since neither the
   5.1 combination that this new statement is intended to
-  replace (LOCK TABLE <list> WRITE; FLUSH TABLES;),
+  replace (LOCK TABLE @<list@> WRITE; FLUSH TABLES;),
   nor FLUSH TABLES WITH READ LOCK do.
-  @todo: this is not implemented, Dmitry disagrees.
+  @todo This is not implemented, Dmitry disagrees.
   Currently we wait for GRL in another connection,
   but are compatible with a GRL in our own connection.
 
@@ -391,7 +404,7 @@ bool reload_acl_and_cache(THD *thd, unsigned long options,
   new transactions will be able to read the tables, but not
   write to them.
 
-  Differences from FLUSH TABLES <list>
+  Differences from FLUSH TABLES @<list@>
   -------------------------------------
   - you can't flush WITH READ LOCK a non-existent table
   - you can't flush WITH READ LOCK under LOCK TABLES

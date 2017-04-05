@@ -13,14 +13,16 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-/*
-  A better inplementation of the UNIX ctype(3) library.
+/**
+  @file include/m_ctype.h
+  A better implementation of the UNIX ctype(3) library.
 */
 
 #ifndef _m_ctype_h
 #define _m_ctype_h
 
 #include "my_global.h"                          /* uint16, uchar */
+#include "str_uca_type.h"
 
 #ifdef	__cplusplus
 extern "C" {
@@ -76,7 +78,7 @@ extern MY_UNICASE_INFO my_unicase_mysql500;
 extern MY_UNICASE_INFO my_unicase_unicode520;
 
 #define MY_UCA_MAX_CONTRACTION 6
-#define MY_UCA_MAX_WEIGHT_SIZE 8
+#define MY_UCA_MAX_WEIGHT_SIZE 25
 #define MY_UCA_WEIGHT_LEVELS   1
 
 typedef struct my_contraction_t
@@ -178,6 +180,7 @@ extern MY_UNI_CTYPE my_uni_ctype[256];
 #define MY_CS_NONASCII  8192   /* if not ASCII-compatible        */
 #define MY_CS_UNICODE_SUPPLEMENT 16384 /* Non-BMP Unicode characters */
 #define MY_CS_LOWER_SORT 32768 /* If use lower case as weight   */
+#define MY_CS_UCA_900   65536  /* If use UCA 9.0.0   */
 #define MY_CHARSET_UNDEFINED 0
 
 /* Character repertoire flags */
@@ -241,7 +244,8 @@ typedef struct my_charset_loader_st
   void *(*mem_malloc)(size_t);
   void *(*mem_realloc)(void *, size_t);
   void (*mem_free)(void *);
-  void (*reporter)(enum loglevel, const char *format, ...);
+  void (*reporter)(enum loglevel, const char *format, ...)
+    MY_ATTRIBUTE((format(printf, 2, 3)));
   int  (*add_collation)(struct charset_info_st *cs);
 } MY_CHARSET_LOADER;
 
@@ -256,8 +260,7 @@ typedef struct my_collation_handler_st
   int     (*strnncoll)(const struct charset_info_st *,
 		       const uchar *, size_t, const uchar *, size_t, my_bool);
   int     (*strnncollsp)(const struct charset_info_st *,
-                         const uchar *, size_t, const uchar *, size_t,
-                         my_bool diff_if_only_endspace_difference);
+                         const uchar *, size_t, const uchar *, size_t);
   size_t  (*strnxfrm)(const struct charset_info_st *,
                       uchar *dst, size_t dstlen, uint nweights,
                       const uchar *src, size_t srclen, uint flags);
@@ -374,13 +377,6 @@ extern MY_CHARSET_HANDLER my_charset_8bit_handler;
 extern MY_CHARSET_HANDLER my_charset_ascii_handler;
 extern MY_CHARSET_HANDLER my_charset_ucs2_handler;
 
-
-/*
-  We define this CHARSET_INFO_DEFINED here to prevent a repeat of the
-  typedef in hash.c, which will cause a compiler error.
-*/
-#define CHARSET_INFO_DEFINED
-
 /* See strings/CHARSET_INFO.txt about information on this structure  */
 typedef struct charset_info_st
 {
@@ -392,6 +388,7 @@ typedef struct charset_info_st
   const char *name;
   const char *comment;
   const char *tailoring;
+  struct Coll_param *coll_param;
   const uchar *ctype;
   const uchar *to_lower;
   const uchar *to_upper;
@@ -471,6 +468,7 @@ extern CHARSET_INFO my_charset_utf8_general_mysql500_ci;
 extern CHARSET_INFO my_charset_utf8mb4_bin;
 extern MYSQL_PLUGIN_IMPORT CHARSET_INFO my_charset_utf8mb4_general_ci;
 extern CHARSET_INFO my_charset_utf8mb4_unicode_ci;
+extern CHARSET_INFO my_charset_utf8mb4_0900_ai_ci;
 #define MY_UTF8MB3                 "utf8"
 #define MY_UTF8MB4                 "utf8mb4"
 
@@ -484,8 +482,7 @@ extern int  my_strnncoll_simple(const CHARSET_INFO *, const uchar *, size_t,
 				const uchar *, size_t, my_bool);
 
 extern int  my_strnncollsp_simple(const CHARSET_INFO *, const uchar *, size_t,
-                                  const uchar *, size_t,
-                                  my_bool diff_if_only_endspace_difference);
+                                  const uchar *, size_t);
 
 extern void my_hash_sort_simple(const CHARSET_INFO *cs,
 				const uchar *key, size_t len,
@@ -637,8 +634,7 @@ int my_strnncoll_mb_bin(const CHARSET_INFO * cs,
 
 int my_strnncollsp_mb_bin(const CHARSET_INFO *cs,
                           const uchar *a, size_t a_length,
-                          const uchar *b, size_t b_length,
-                          my_bool diff_if_only_endspace_difference);
+                          const uchar *b, size_t b_length);
 
 int my_wildcmp_mb_bin(const CHARSET_INFO *cs,
                       const char *str,const char *str_end,

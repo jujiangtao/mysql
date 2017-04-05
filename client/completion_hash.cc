@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2013, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -24,8 +24,9 @@
 #include <m_string.h>
 #include <my_sys.h>
 #include "completion_hash.h"
+#include "mysql/service_mysql_alloc.h"
 
-uint hashpjw(const char *arKey, uint nKeyLength)
+static uint hashpjw(const char *arKey, uint nKeyLength)
 {
   uint h = 0, g, i;
 

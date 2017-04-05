@@ -50,7 +50,7 @@ else
   }
 }
 
-my @mtr_unique_fh;
+my $mtr_unique_fh = undef;
 
 END
 {
@@ -63,15 +63,13 @@ END
 # If no unique ID within the specified parameters can be
 # obtained, return undef.
 #
-sub mtr_get_unique_id($$$) {
-  my ($min, $max, $build_threads_per_thread)= @_;
+sub mtr_get_unique_id($$) {
+  my ($min, $max)= @_;;
 
   msg("get $min-$max, $$");
 
-  if (scalar @mtr_unique_fh == $build_threads_per_thread)
-  {
-    die "Can only get $build_threads_per_thread unique id(s) per process!";
-  }
+  die "Can only get one unique id per process!" if defined $mtr_unique_fh;
+
 
   # Make sure our ID directory exists
   if (! -d $dir)
@@ -92,51 +90,24 @@ sub mtr_get_unique_id($$$) {
     }
   }
 
-  my $build_thread= 0;
-  while ( $build_thread < $build_threads_per_thread )
+
+  my $fh;
+  for(my $id = $min; $id <= $max; $id++)
   {
-    for (my $id= $min; $id <= $max; $id++)
+    open( $fh, ">$dir/$id");
+    chmod 0666, "$dir/$id";
+    # Try to lock the file exclusively. If lock succeeds, we're done.
+    if (flock($fh, LOCK_EX|LOCK_NB))
     {
-      my $fh;
-      open( $fh, ">$dir/$id");
-      chmod 0666, "$dir/$id";
-
-      # Try to lock the file exclusively. If lock succeeds, we're done.
-      if (flock($fh, LOCK_EX|LOCK_NB))
-      {
-        # Store file handle - we would need it to release the
-        # ID (i.e to unlock the file)
-        $mtr_unique_fh[$build_thread] = $fh;
-        $build_thread= $build_thread + 1;
-      }
-      else
-      {
-        # Not able to get a lock on the file, start the search from
-        # next id(i.e min+1).
-        $min= $min + 1;
-
-        for (;$build_thread > 0; $build_thread--)
-        {
-          if (defined $mtr_unique_fh[$build_thread-1])
-          {
-            close $mtr_unique_fh[$build_thread-1];
-          }
-        }
-
-        # Close the file opened in the current iterartion.
-        close $fh;
-        last;
-      }
-
-      if ($build_thread == $build_threads_per_thread)
-      {
-        return $id - $build_thread + 1;
-      }
+      # Store file handle - we would need it to release the ID (==unlock the file)
+      $mtr_unique_fh = $fh;
+      return $id;
     }
-
-    return undef if ($min > $max);
+    else
+    {
+      close $fh;
+    }
   }
-
   return undef;
 }
 
@@ -147,15 +118,13 @@ sub mtr_get_unique_id($$$) {
 sub mtr_release_unique_id()
 {
   msg("release $$");
-
-  for (my $i= 0; $i <= $#mtr_unique_fh; $i++)
+  if (defined $mtr_unique_fh)
   {
-    if (defined $mtr_unique_fh[$i])
-    {
-      close $mtr_unique_fh[$i];
-    }
+    close $mtr_unique_fh;
+    $mtr_unique_fh = undef;
   }
-  @mtr_unique_fh= ();
 }
 
+
 1;
+

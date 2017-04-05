@@ -1,4 +1,4 @@
-/* Copyright (c) 2007, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2007, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -52,7 +52,10 @@ typedef struct st_mysql_lex_string LEX_STRING;
 
 #include "mysql/psi/psi_memory.h"
 #include "mysql/service_mysql_alloc.h"
+
+extern "C" {
 extern PSI_memory_key key_memory_queue_item;
+}
 
 class PROF_MEASUREMENT;
 class QUERY_PROFILE;
@@ -193,9 +196,6 @@ private:
 
   void set_label(const char *status_arg, const char *function_arg, 
                   const char *file_arg, unsigned int line_arg);
-  void clean_up();
-  
-  PROF_MEASUREMENT();
   PROF_MEASUREMENT(QUERY_PROFILE *profile_arg, const char *status_arg);
   PROF_MEASUREMENT(QUERY_PROFILE *profile_arg, const char *status_arg,
                 const char *function_arg,
@@ -234,12 +234,6 @@ private:
   void new_status(const char *status_arg,
               const char *function_arg,
               const char *file_arg, unsigned int line_arg);
-
-  /* Reset the contents of this profile entry. */
-  void reset();
-
-  /* Show this profile.  This is called by PROFILING. */
-  bool show(uint options);
 };
 
 

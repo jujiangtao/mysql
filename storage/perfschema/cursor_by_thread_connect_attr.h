@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2012, 2016, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -16,12 +16,16 @@
 #ifndef CURSOR_BY_THREAD_CONNECT_ATTR_H
 #define CURSOR_BY_THREAD_CONNECT_ATTR_H
 
+/**
+  @file storage/perfschema/cursor_by_thread_connect_attr.h
+*/
+
 #include "pfs_column_types.h"
 #include "pfs_engine_table.h"
 #include "pfs_instr.h"
 
 /**
-  \addtogroup Performance_schema_tables
+  @addtogroup performance_schema_tables
   @{
 */
 
@@ -55,9 +59,13 @@ class cursor_by_thread_connect_attr : public PFS_engine_table
 public:
   static ha_rows get_row_count();
 
+  virtual void reset_position(void);
+
   virtual int rnd_next();
   virtual int rnd_pos(const void *pos);
-  virtual void reset_position(void);
+
+  virtual int index_init(uint idx, bool sorted) { return 1; }
+  virtual int index_next()  { return 1; }
 
 protected:
   cursor_by_thread_connect_attr(const PFS_engine_table_share *share);
@@ -71,7 +79,6 @@ protected:
   /** True if row exists */
   bool m_row_exists;
 
-private:
   /** Current position. */
   pos_connect_attr_by_thread_by_attr m_pos;
   /** Next position. */

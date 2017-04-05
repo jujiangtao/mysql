@@ -117,13 +117,13 @@ SET @@global.log_bin_trust_function_creators = test;
 
 --disable_warnings
 SELECT IF(@@global.log_bin_trust_function_creators, "ON", "OFF") = VARIABLE_VALUE 
-FROM INFORMATION_SCHEMA.GLOBAL_VARIABLES 
+FROM performance_schema.global_variables 
 WHERE VARIABLE_NAME='log_bin_trust_function_creators';
 --enable_warnings
 
 --Error ER_INCORRECT_GLOBAL_LOCAL_VAR
 SELECT IF(@@session.log_bin_trust_function_creators, "ON", "OFF") = VARIABLE_VALUE 
-FROM INFORMATION_SCHEMA.SESSION_VARIABLES 
+FROM performance_schema.session_variables 
 WHERE VARIABLE_NAME='log_bin_trust_function_creators';
 
 --echo '#---------------------FN_DYNVARS_063_07----------------------#'

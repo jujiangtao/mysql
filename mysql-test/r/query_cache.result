@@ -1,3 +1,5 @@
+select @@global.show_compatibility_56 into @show_compatibility_56_save;
+set @@global.show_compatibility_56=ON;
 set GLOBAL query_cache_size=1355776;
 flush query cache;
 flush query cache;
@@ -275,10 +277,6 @@ show status like "Qcache_lowmem_prunes";
 Variable_name	Value
 Qcache_lowmem_prunes	2
 reset query cache;
-insert into t2 select * from t1;
-insert into t1 select * from t2;
-insert into t2 select * from t1;
-insert into t1 select * from t2;
 insert into t2 select * from t1;
 insert into t1 select * from t2;
 insert into t2 select * from t1;
@@ -860,12 +858,12 @@ SET SESSION query_cache_type = 2;
 create table t1(a int);
 select table_name from information_schema.tables
 where table_schema="test";
-table_name
+TABLE_NAME
 t1
 drop table t1;
 select table_name from information_schema.tables
 where table_schema="test";
-table_name
+TABLE_NAME
 SET SESSION query_cache_type = 1;
 set global query_cache_size=1024*1024;
 flush query cache;
@@ -1711,17 +1709,17 @@ DROP TABLE t1;
 SET GLOBAL query_cache_size= default;
 CREATE TABLE t1( a INT );
 SET @v = ( SELECT SQL_CACHE    1 );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '1 )' at line 1
+ERROR 42000: Incorrect usage/placement of 'SQL_CACHE'
 SET @v = ( SELECT SQL_NO_CACHE 1 );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '1 )' at line 1
+ERROR 42000: Incorrect usage/placement of 'SQL_NO_CACHE'
 SELECT a FROM t1 WHERE a IN ( SELECT SQL_CACHE    a FROM t1 );
-ERROR 42S22: Unknown column 'SQL_CACHE' in 'field list'
+ERROR 42000: Incorrect usage/placement of 'SQL_CACHE'
 SELECT a FROM t1 WHERE a IN ( SELECT SQL_NO_CACHE a FROM t1 );
-ERROR 42S22: Unknown column 'SQL_NO_CACHE' in 'field list'
+ERROR 42000: Incorrect usage/placement of 'SQL_NO_CACHE'
 SELECT ( SELECT SQL_CACHE a FROM t1 );
-ERROR 42S22: Unknown column 'SQL_CACHE' in 'field list'
+ERROR 42000: Incorrect usage/placement of 'SQL_CACHE'
 SELECT ( SELECT SQL_NO_CACHE a FROM t1 );
-ERROR 42S22: Unknown column 'SQL_NO_CACHE' in 'field list'
+ERROR 42000: Incorrect usage/placement of 'SQL_NO_CACHE'
 SELECT SQL_CACHE * FROM t1;
 a
 SELECT SQL_NO_CACHE * FROM t1;
@@ -1731,16 +1729,16 @@ ERROR 42000: Incorrect usage/placement of 'SQL_CACHE'
 SELECT * FROM t1 UNION SELECT SQL_NO_CACHE * FROM t1;
 ERROR 42000: Incorrect usage/placement of 'SQL_NO_CACHE'
 SELECT * FROM t1 WHERE a IN (SELECT SQL_CACHE a FROM t1);
-ERROR 42S22: Unknown column 'SQL_CACHE' in 'field list'
+ERROR 42000: Incorrect usage/placement of 'SQL_CACHE'
 SELECT * FROM t1 WHERE a IN (SELECT a FROM t1 UNION SELECT SQL_CACHE a FROM t1);
-ERROR 42S22: Unknown column 'SQL_CACHE' in 'field list'
+ERROR 42000: Incorrect usage/placement of 'SQL_CACHE'
 SELECT * FROM t1 UNION SELECT SQL_NO_CACHE * FROM t1;
 ERROR 42000: Incorrect usage/placement of 'SQL_NO_CACHE'
 SELECT * FROM t1 WHERE a IN (SELECT SQL_NO_CACHE a FROM t1);
-ERROR 42S22: Unknown column 'SQL_NO_CACHE' in 'field list'
+ERROR 42000: Incorrect usage/placement of 'SQL_NO_CACHE'
 SELECT * FROM t1 WHERE a IN 
 (SELECT a FROM t1 UNION SELECT SQL_NO_CACHE a FROM t1);
-ERROR 42S22: Unknown column 'SQL_NO_CACHE' in 'field list'
+ERROR 42000: Incorrect usage/placement of 'SQL_NO_CACHE'
 SELECT SQL_CACHE SQL_NO_CACHE * FROM t1;
 ERROR HY000: Incorrect usage of SQL_CACHE and SQL_NO_CACHE
 SELECT SQL_NO_CACHE SQL_CACHE * FROM t1;
@@ -1755,10 +1753,10 @@ SELECT SQL_NO_CACHE * FROM t1 UNION SELECT SQL_NO_CACHE * FROM t1;
 ERROR 42000: Incorrect usage/placement of 'SQL_NO_CACHE'
 SELECT SQL_CACHE * FROM t1 WHERE a IN 
 (SELECT SQL_NO_CACHE a FROM t1);
-ERROR 42S22: Unknown column 'SQL_NO_CACHE' in 'field list'
+ERROR 42000: Incorrect usage/placement of 'SQL_NO_CACHE'
 SELECT SQL_CACHE * FROM t1 WHERE a IN 
 (SELECT a FROM t1 UNION SELECT SQL_NO_CACHE a FROM t1);
-ERROR 42S22: Unknown column 'SQL_NO_CACHE' in 'field list'
+ERROR 42000: Incorrect usage/placement of 'SQL_NO_CACHE'
 DROP TABLE t1;
 End of 5.1 tests
 #
@@ -1908,3 +1906,4 @@ INSERT INTO spoiled_child VALUES (1),(2);
 DELETE FROM parent WHERE a>1;
 DROP DATABASE `tttttttttttttttttttttttttttttttttttttttttt`;
 SET GLOBAL query_cache_size = @query_cache_size.saved;
+set @@global.show_compatibility_56=@show_compatibility_56_save;

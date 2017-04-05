@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2016, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -33,7 +33,7 @@ struct PFS_thread;
 struct PFS_memory_stat_delta;
 
 /**
-  @addtogroup Performance_schema_buffers
+  @addtogroup performance_schema_buffers
   @{
 */
 
@@ -78,6 +78,7 @@ public:
   void aggregate_stages(PFS_user *safe_user, PFS_host *safe_host);
   void aggregate_statements(PFS_user *safe_user, PFS_host *safe_host);
   void aggregate_transactions(PFS_user *safe_user, PFS_host *safe_host);
+  void aggregate_errors(PFS_user *safe_user, PFS_host *safe_host);
   void aggregate_memory(bool alive, PFS_user *safe_user, PFS_host *safe_host);
   void aggregate_status(PFS_user *safe_user, PFS_host *safe_host);
   void aggregate_stats(PFS_user *safe_user, PFS_host *safe_host);

@@ -26,11 +26,6 @@ Created 5/27/1996 Heikki Tuuri
 #include "ha_prototypes.h"
 
 #include "que0que.h"
-
-#ifdef UNIV_NONINL
-#include "que0que.ic"
-#endif
-
 #include "usr0sess.h"
 #include "trx0trx.h"
 #include "trx0roll.h"
@@ -45,8 +40,6 @@ Created 5/27/1996 Heikki Tuuri
 #include "lock0lock.h"
 #include "eval0eval.h"
 #include "pars0types.h"
-
-#define QUE_MAX_LOOPS_WITHOUT_CHECK	16
 
 /* Short introduction to query graphs
    ==================================
@@ -560,7 +553,6 @@ que_graph_free_recursive(
 	case QUE_NODE_LOCK:
 	case QUE_NODE_FUNC:
 	case QUE_NODE_ORDER:
-	case QUE_NODE_ROW_PRINTF:
 	case QUE_NODE_OPEN:
 	case QUE_NODE_FETCH:
 		/* No need to do anything */
@@ -907,10 +899,10 @@ que_node_get_containing_loop_node(
 	return(node);
 }
 
-#ifndef DBUG_OFF
+#ifdef UNIV_DEBUG
 /** Gets information of an SQL query graph node.
 @return type description */
-static MY_ATTRIBUTE((warn_unused_result, nonnull))
+static MY_ATTRIBUTE((warn_unused_result))
 const char*
 que_node_type_string(
 /*=================*/
@@ -964,7 +956,7 @@ que_node_type_string(
 		return("UNKNOWN NODE TYPE");
 	}
 }
-#endif /* !DBUG_OFF */
+#endif /* UNIV_DEBUG */
 
 /**********************************************************************//**
 Performs an execution step on a query thread.
@@ -1064,8 +1056,6 @@ que_thr_step(
 		thr = dict_create_table_step(thr);
 	} else if (type == QUE_NODE_CREATE_INDEX) {
 		thr = dict_create_index_step(thr);
-	} else if (type == QUE_NODE_ROW_PRINTF) {
-		thr = row_printf_step(thr);
 	} else {
 		ut_error;
 	}

@@ -19,6 +19,7 @@
 #include "hash.h"                           // HASH
 #include "log.h"                            // sql_print_information
 #include "log_event.h"                      // Query_log_event
+#include "mysqld.h"                         // stage_worker_....
 #include "rpl_rli.h"                        // Relay_log_info
 #include "rpl_rli_pdb.h"                    // db_worker_hash_entry
 #include "rpl_slave_commit_order_manager.h" // Commit_order_manager
@@ -27,8 +28,7 @@
 
 /**
  Does necessary arrangement before scheduling next event.
- @param:  Relay_log_info rli
- @return: 1  if  error
+ @return 1  if  error
           0 no error
 */
 int
@@ -40,10 +40,6 @@ Mts_submode_database::schedule_next_event(Relay_log_info *rli, Log_event *ev)
 
 /**
   Logic to attach temporary tables.
-  @param: THD thd
-          Relay_log_info rli
-          Query_log_event ev
-  @return: void
 */
 void
 Mts_submode_database::attach_temp_tables(THD *thd, const Relay_log_info* rli,
@@ -173,12 +169,11 @@ Mts_submode_database::wait_for_workers_to_finish(Relay_log_info *rli,
 
 /**
  Logic to detach the temporary tables from the worker threads upon
- event execution
- @param: thd THD instance
-         rli Relay_log_info instance
-         ev  Query_log_event that is being applied
- @return: void
- */
+ event execution.
+ @param thd THD instance
+ @param rli Relay_log_info instance
+ @param ev  Query_log_event that is being applied
+*/
 void
 Mts_submode_database::detach_temp_tables(THD *thd, const Relay_log_info* rli,
                                          Query_log_event *ev)
@@ -260,10 +255,9 @@ Mts_submode_database::detach_temp_tables(THD *thd, const Relay_log_info* rli,
 
 /**
   Logic to get least occupied worker when the sql mts_submode= database
-  @param
-    rli relay log info of coordinator
-    ws arrayy of worker threads
-    ev event for which we are searching for a worker.
+  @param rli relay log info of coordinator
+  @param ws  array of worker threads
+  @param ev  event for which we are searching for a worker.
   @return slave worker thread
  */
 Slave_worker *
@@ -333,11 +327,12 @@ Mts_submode_logical_clock::Mts_submode_logical_clock()
         last_lwm_timestamp <= GAQ.lwm.sequence_number           (*)
 
    Staleness is caused by GAQ garbage collection that increments the rhs of (*),
-   see ::move_queue_head(). When that's diagnozed, the search in GAQ needs
+   see @c move_queue_head(). When that's diagnosed, the search in GAQ needs
    restarting from the queue tail.
 
    Formally, the undefined cached value of last_lwm_timestamp is also stale.
 
+   @verbatim
               the last time index containg lwm
                   +------+
                   | LWM  |
@@ -350,12 +345,13 @@ Mts_submode_logical_clock::Mts_submode_logical_clock()
                 +- tne new current_lwm
 
          <---- logical (commit) time ----
+   @endverbatim
 
    here `x' stands for committed, `X' for committed and discarded from
    the running range of the queue, `o' for not committed.
 
    @param  rli         Relay_log_info pointer
-   @param  need_look   Either the caller or the function must hold a mutex
+   @param  need_lock   Either the caller or the function must hold a mutex
                        to avoid race with concurrent GAQ update.
 
    @return possibly updated current_lwm
@@ -412,7 +408,7 @@ longlong Mts_submode_logical_clock::get_lwm_timestamp(Relay_log_info *rli,
     mysql_mutex_unlock(&rli->mts_gaq_LOCK);
 
   return last_lwm_timestamp;
-};
+}
 
 /**
    The method implements logical timestamp conflict detection
@@ -442,16 +438,15 @@ longlong Mts_submode_logical_clock::get_lwm_timestamp(Relay_log_info *rli,
          for itself. That is the method should not be caller by a Worker
          whose group assignment is in the GAQ front item.
 
+   @param rli relay log info of coordinator
    @param last_committed_arg  logical timestamp of a parent transaction
-   @param gaq_index           Index of the current transaction in GAQ
    @return false as success,
            true  when the error flag is raised or
                  the caller thread is found killed.
 */
 bool Mts_submode_logical_clock::
 wait_for_last_committed_trx(Relay_log_info* rli,
-                            longlong last_committed_arg,
-                            longlong lwm_estimate_arg)
+                            longlong last_committed_arg)
 {
   THD* thd= rli->info_thd;
 
@@ -513,9 +508,7 @@ wait_for_last_committed_trx(Relay_log_info* rli,
  The current being assigned group descriptor gets associated with
  the group's logical timestamp aka sequence_number.
 
- @param:  Relay_log_info* rli
-          Log_event *ev
- @return: ER_MTS_CANT_PARALLEL, ER_MTS_INCONSISTENT_DATA
+ @return ER_MTS_CANT_PARALLEL, ER_MTS_INCONSISTENT_DATA
           0 if no error or slave has been killed gracefully
  */
 int
@@ -594,10 +587,13 @@ Mts_submode_logical_clock::schedule_next_event(Relay_log_info* rli,
     compile_time_assert(SEQ_UNINIT == 0);
     if (unlikely(sequence_number > last_sequence_number + 1))
     {
+      /*
+        TODO: account autopositioning
+        DBUG_ASSERT(rli->replicate_same_server_id);
+      */
       DBUG_PRINT("info", ("sequence_number gap found, "
                           "last_sequence_number %lld, sequence_number %lld",
                           last_sequence_number, sequence_number));
-      DBUG_ASSERT(rli->replicate_same_server_id || true /* TODO: account autopositioning */);
       gap_successor= true;
     }
   }
@@ -654,7 +650,7 @@ Mts_submode_logical_clock::schedule_next_event(Relay_log_info* rli,
         At awakening set min_waited_timestamp to commit_parent in the
         subsequent GAQ index (could be NIL).
       */
-      if (wait_for_last_committed_trx(rli, last_committed, lwm_estimate))
+      if (wait_for_last_committed_trx(rli, last_committed))
       {
         DBUG_RETURN(-1);
       }
@@ -718,12 +714,11 @@ Mts_submode_logical_clock::schedule_next_event(Relay_log_info* rli,
 
 /**
  Logic to attach the temporary tables from the worker threads upon
- event execution
- @param: thd THD instance
-         rli Relay_log_info instance
-         ev  Query_log_event that is being applied
- @return: void
- */
+ event execution.
+ @param thd THD instance
+ @param rli Relay_log_info instance
+ @param ev  Query_log_event that is being applied
+*/
 void
 Mts_submode_logical_clock::attach_temp_tables(THD *thd, const Relay_log_info* rli,
                                        Query_log_event * ev)
@@ -780,12 +775,11 @@ Mts_submode_logical_clock::attach_temp_tables(THD *thd, const Relay_log_info* rl
 
 /**
  Logic to detach the temporary tables from the worker threads upon
- event execution
- @param: thd THD instance
-         rli Relay_log_info instance
-         ev  Query_log_event that is being applied
- @return: void
- */
+ event execution.
+ @param thd THD instance
+ @param rli Relay_log_info instance
+ @param ev  Query_log_event that is being applied
+*/
 void
 Mts_submode_logical_clock::detach_temp_tables( THD *thd, const Relay_log_info* rli,
                                         Query_log_event * ev)
@@ -809,10 +803,9 @@ Mts_submode_logical_clock::detach_temp_tables( THD *thd, const Relay_log_info* r
 
 /**
   Logic to get least occupied worker when the sql mts_submode= master_parallel
-  @param
-    rli relay log info of coordinator
-    ws arrayy of worker threads
-    ev event for which we are searching for a worker.
+  @param rli relay log info of coordinator
+  @param ws  array of worker threads
+  @param ev  event for which we are searching for a worker.
   @return slave worker thread or NULL when coordinator is killed by any worker.
  */
 
@@ -945,8 +938,8 @@ Mts_submode_logical_clock::get_free_worker(Relay_log_info *rli)
   Waits for slave workers to finish off the pending tasks before returning.
   Used in this submode to make sure that all assigned jobs have been done.
 
-  @param Relay_log info *rli  coordinator rli.
-  @param Slave worker to ignore.
+  @param rli  coordinator rli.
+  @param ignore worker to ignore.
   @return -1 for error.
            0 no error.
  */
@@ -991,10 +984,10 @@ Mts_submode_logical_clock::
 /**
   Protected method to fetch the server_id and pseudo_thread_id from a
   temporary table
-  @param  : instance pointer of TABLE structure.
-  @return : std:pair<uint, my_thread_id>
-  @Note   : It is the caller's responsibility to make sure we call this
-            function only for temp tables.
+  @param  table instance pointer of TABLE structure.
+  @return std:pair<uint, my_thread_id>
+  @note   It is the caller's responsibility to make sure we call this
+          function only for temp tables.
  */
 std::pair<uint, my_thread_id>
 Mts_submode_logical_clock::get_server_and_thread_id(TABLE* table)

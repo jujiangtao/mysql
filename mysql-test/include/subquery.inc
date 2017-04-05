@@ -492,7 +492,7 @@ drop table t1,t2,t3;
 create table t1 (a float);
 -- error ER_NOT_SUPPORTED_YET
 select 10.5 IN (SELECT * from t1 LIMIT 1);
--- error ER_WRONG_USAGE
+-- error ER_PARSE_ERROR
 select 10.5 IN (SELECT * from t1 LIMIT 1 UNION SELECT 1.5);
 -- error ER_NOT_SUPPORTED_YET
 select 10.5 IN (SELECT * from t1 UNION SELECT 1.5 LIMIT 1);
@@ -2423,13 +2423,9 @@ SELECT sql_no_cache * FROM t1 WHERE NOT EXISTS
    (SELECT i FROM t1)
   );
 
-#TODO:not supported
---error ER_PARSE_ERROR
 SELECT * FROM t1
 WHERE NOT EXISTS (((SELECT i FROM t1) UNION (SELECT i FROM t1)));
 
-#TODO:not supported
---error ER_PARSE_ERROR
 explain select ((select t11.i from t1 t11) union (select t12.i from t1 t12))
   from t1;
 
@@ -4625,7 +4621,6 @@ SELECT * FROM t2 WHERE (a, b) IN (SELECT a, b FROM t2);
 
 --error ER_PARSE_ERROR
 SELECT 1 UNION ( SELECT 1 UNION SELECT 1 );
---error ER_PARSE_ERROR
 ( SELECT 1 UNION SELECT 1 ) UNION SELECT 1;
 
 --error ER_PARSE_ERROR
@@ -4651,13 +4646,9 @@ SELECT * FROM t1 WHERE a = ANY ( SELECT 1 UNION ( SELECT 1 UNION SELECT 1 ) );
 --error ER_PARSE_ERROR
 SELECT * FROM t1 WHERE a IN    ( SELECT 1 UNION ( SELECT 1 UNION SELECT 1 ) );
 
---error ER_PARSE_ERROR
 SELECT * FROM t1 WHERE a =     ( ( SELECT 1 UNION SELECT 1 )  UNION SELECT 1 );
---error ER_PARSE_ERROR
 SELECT * FROM t1 WHERE a = ALL ( ( SELECT 1 UNION SELECT 1 )  UNION SELECT 1 );
---error ER_PARSE_ERROR
 SELECT * FROM t1 WHERE a = ANY ( ( SELECT 1 UNION SELECT 1 )  UNION SELECT 1 );
---error ER_PARSE_ERROR
 SELECT * FROM t1 WHERE a IN    ( ( SELECT 1 UNION SELECT 1 )  UNION SELECT 1 );
 
 SELECT * FROM t1 WHERE a =     ( SELECT 1 UNION SELECT 1 UNION SELECT 1 );
@@ -6420,6 +6411,14 @@ let $query= SELECT * FROM t1 GROUP BY t1_id ORDER BY t1_id DESC LIMIT 1;
 eval EXPLAIN $query;
 eval $query;
 eval EXPLAIN SELECT ($query) AS C FROM DUAL;
+eval SELECT ($query) AS C FROM DUAL;
+
+--echo # Without LIMIT, ORDER BY is removed from subquery
+let $query= SELECT * FROM t1 GROUP BY t1_id ORDER BY t1_id DESC;
+eval EXPLAIN $query;
+eval $query;
+eval EXPLAIN SELECT ($query) AS C FROM DUAL;
+--error ER_SUBQUERY_NO_1_ROW
 eval SELECT ($query) AS C FROM DUAL;
 DROP TABLE t1;
 

@@ -1,4 +1,4 @@
-/* Copyright (c) 2006, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2006, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -18,7 +18,7 @@
 
 #include "my_global.h"                          /* uint, uchar */
 #include "my_base.h"                            /* ha_rows */
-#include "sql_list.h"                           /* Sql_alloc */
+#include "sql_alloc.h"                          /* Sql_alloc */
 class THD;
 struct TABLE;
 struct st_sort_field;
@@ -66,8 +66,6 @@ public:
                                  Field **ptabfield,
                                  uint sortlength, uint *plength,
                                  uint *ppackable_length);
-private:
-  void cleanup();
 };
 
 bool filesort(THD *thd, Filesort *fsort, bool sort_positions,

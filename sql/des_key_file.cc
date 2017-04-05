@@ -1,4 +1,4 @@
-/* Copyright (c) 2001, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2001, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -16,6 +16,7 @@
 #include "my_global.h"          // HAVE_*
 #include "des_key_file.h"       // st_des_keyschedule, st_des_keyblock
 #include "log.h"                // sql_print_error
+#include "mysqld.h"             // LOCK_des_key_file
 #include <m_ctype.h>
 
 #include "pfs_file_provider.h"
@@ -50,7 +51,7 @@ load_des_key_file(const char *file_name)
 
   mysql_mutex_lock(&LOCK_des_key_file);
   if ((file= mysql_file_open(key_file_des_key_file, file_name,
-                             O_RDONLY | O_BINARY, MYF(MY_WME))) < 0 ||
+                             O_RDONLY, MYF(MY_WME))) < 0 ||
       init_io_cache(&io, file, IO_SIZE*2, READ_CACHE, 0, 0, MYF(MY_WME)))
     goto error;
 

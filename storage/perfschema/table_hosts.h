@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2011, 2016, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -16,6 +16,11 @@
 #ifndef TABLE_HOSTS_H
 #define TABLE_HOSTS_H
 
+/**
+  @file storage/perfschema/table_hosts.h
+  TABLE HOSTS.
+*/
+
 #include "pfs_column_types.h"
 #include "cursor_by_host.h"
 #include "table_helper.h"
@@ -23,9 +28,25 @@
 struct PFS_host;
 
 /**
-  \addtogroup Performance_schema_tables
+  @addtogroup performance_schema_tables
   @{
 */
+
+class PFS_index_hosts_by_host : public PFS_index_hosts
+{
+public:
+  PFS_index_hosts_by_host()
+    : PFS_index_hosts(&m_key), m_key("HOST")
+  {}
+
+  ~PFS_index_hosts_by_host()
+  {}
+
+  virtual bool match(PFS_host *pfs);
+
+private:
+  PFS_key_host m_key;
+};
 
 /**
   A row of PERFORMANCE_SCHEMA.HOSTS.
@@ -53,14 +74,14 @@ protected:
                               unsigned char *buf,
                               Field **fields,
                               bool read_all);
-
-
 protected:
   table_hosts();
 
 public:
   ~table_hosts()
   {}
+
+  int index_init(uint idx, bool sorted);
 
 private:
   virtual void make_row(PFS_host *pfs);

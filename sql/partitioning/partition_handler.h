@@ -2,7 +2,7 @@
 #define PARTITION_HANDLER_INCLUDED
 
 /*
-   Copyright (c) 2005, 2015, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2005, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License
@@ -20,6 +20,7 @@
 */
 
 #include "my_global.h"            // uint etc.
+#include "hash.h"                 // HASH
 #include "my_base.h"              // ha_rows.
 #include "handler.h"              // Handler_share
 #include "sql_partition.h"        // part_id_range
@@ -185,7 +186,7 @@ class Partition_handler :public Sql_alloc
 {
 public:
   Partition_handler() {}
-  ~Partition_handler() {}
+  virtual ~Partition_handler() {}
 
   /**
     Get dynamic table information from partition.
@@ -242,17 +243,6 @@ public:
                       but not setup, checked or fixed.
   */
   virtual void set_part_info(partition_info *part_info, bool early) = 0;
-  /**
-    Initialize partition.
-
-    @param mem_root  Memory root for memory allocations.
-
-    @return Operation status
-      @retval false  Success.
-      @retval true   Failure.
-  */
-  virtual bool initialize_partition(MEM_ROOT *mem_root) {return false;}
-
 
   /**
     Truncate partitions.
@@ -265,18 +255,8 @@ public:
       @retval    0  Success.
       @retval != 0  Error code.
   */
-  int truncate_partition()
-  {
-    handler *file= get_handler();
-    if (!file)
-    {
-      return HA_ERR_WRONG_COMMAND;
-    }
-    DBUG_ASSERT(file->table_share->tmp_table != NO_TMP_TABLE ||
-                file->m_lock_type == F_WRLCK);
-    file->mark_trx_read_write();
-    return truncate_partition_low();
-  }
+  int truncate_partition();
+
   /**
     Change partitions.
 
@@ -297,19 +277,8 @@ public:
   int change_partitions(HA_CREATE_INFO *create_info,
                         const char *path,
                         ulonglong * const copied,
-                        ulonglong * const deleted)
-  {
-    handler *file= get_handler();
-    if (!file)
-    {
-      my_error(ER_ILLEGAL_HA, MYF(0), create_info->alias);
-      return HA_ERR_WRONG_COMMAND;
-    }
-    DBUG_ASSERT(file->table_share->tmp_table != NO_TMP_TABLE ||
-                file->m_lock_type != F_UNLCK);
-    file->mark_trx_read_write();
-    return change_partitions_low(create_info, path, copied, deleted);
-  }
+                        ulonglong * const deleted);
+
   /**
     Alter flags.
 
@@ -417,7 +386,7 @@ class Partition_helper : public Sql_alloc
   typedef Priority_queue<uchar *, std::vector<uchar*>, Key_rec_less> Prio_queue;
 public:
   Partition_helper(handler *main_handler);
-  ~Partition_helper();
+  virtual ~Partition_helper();
 
   /**
     Set partition info.
@@ -523,10 +492,6 @@ public:
     Integer and floating point fields use the binary character set by default.
   */
   static uint32 ph_calculate_key_hash_value(Field **field_array);
-  /** Get checksum for table.
-    @return Checksum or 0 if not supported (which also may be a correct checksum!).
-  */
-  ha_checksum ph_checksum() const;
 
   /**
     MODULE full table scan
@@ -557,7 +522,6 @@ public:
   int ph_rnd_end();
   int ph_rnd_next(uchar *buf);
   void ph_position(const uchar *record);
-  int ph_rnd_pos(uchar *buf, uchar *pos);
   int ph_rnd_pos_by_record(uchar *record);
 
   /** @} */
@@ -596,8 +560,6 @@ public:
   */
 
   int ph_index_init_setup(uint key_nr, bool sorted);
-  int ph_index_init(uint key_nr, bool sorted);
-  int ph_index_end();
   /*
     These methods are used to jump to next or previous entry in the index
     scan. There are also methods to jump to first and last entry.
@@ -680,8 +642,6 @@ protected:
   /**
     Set m_part_share, Allocate internal bitmaps etc. used by open tables.
 
-    @param mem_root  Memory root to allocate things from (not yet used).
-
     @return Operation status.
       @retval false success.
       @retval true  failure.
@@ -697,18 +657,8 @@ protected:
   /**
     Lock auto increment value if needed.
   */
-  inline void lock_auto_increment()
-  {
-    /* lock already taken */
-    if (m_auto_increment_safe_stmt_log_lock)
-      return;
-    DBUG_ASSERT(!m_auto_increment_lock);
-    if(m_table->s->tmp_table == NO_TMP_TABLE)
-    {
-      m_auto_increment_lock= true;
-      m_part_share->lock_auto_inc();
-    }
-  }
+  void lock_auto_increment();
+
   /**
     unlock auto increment.
   */
@@ -789,14 +739,14 @@ protected:
   /**
     Check/fix misplaced rows.
 
-    @param part_id  Partition to check/fix.
+    @param read_part_id  Partition to check/fix.
     @param repair   If true, move misplaced rows to correct partition.
 
     @return Operation status.
       @retval    0  Success
       @retval != 0  Error
   */
-  int check_misplaced_rows(uint part_id, bool repair);
+  int check_misplaced_rows(uint read_part_id, bool repair);
   /**
     Set used partitions bitmap from Alter_info.
 
@@ -862,7 +812,7 @@ private:
       @retval    0  Success.
       @retval != 0  Error code.
   */
-  virtual int update_row_in_part(uint new_part_id,
+  virtual int update_row_in_part(uint part_id,
                                  const uchar *old_data,
                                  uchar *new_data) = 0;
   /**
@@ -900,9 +850,6 @@ private:
   virtual int rnd_next_in_part(uint part_id, uchar *buf) = 0;
   virtual int rnd_end_in_part(uint part_id, bool scan) = 0;
   virtual void position_in_last_part(uchar *ref, const uchar *row) = 0;
-  /* If ph_rnd_pos is used then this needs to be implemented! */
-  virtual int rnd_pos_in_part(uint part_id, uchar *buf, uchar *pos)
-  { DBUG_ASSERT(0); return HA_ERR_WRONG_COMMAND; }
   virtual int rnd_pos_by_record_in_last_part(uchar *row)
   {
     /*
@@ -910,10 +857,6 @@ private:
     */
     return m_handler->rnd_pos_by_record(row);
   }
-  virtual int index_init_in_part(uint part, uint keynr, bool sorted)
-  { DBUG_ASSERT(0); return HA_ERR_WRONG_COMMAND; }
-  virtual int index_end_in_part(uint part)
-  { DBUG_ASSERT(0); return HA_ERR_WRONG_COMMAND; }
   virtual int index_first_in_part(uint part, uchar *buf) = 0;
   virtual int index_last_in_part(uint part, uchar *buf) = 0;
   virtual int index_prev_in_part(uint part, uchar *buf) = 0;
@@ -1073,7 +1016,7 @@ private:
     perform any sort.
 
     @param[out] buf        Read row in MySQL Row Format.
-    @param[in]  next_same  Called from index_next_same.
+    @param[in]  is_next_same  Called from index_next_same.
 
     @return Operation status.
       @retval HA_ERR_END_OF_FILE  End of scan
@@ -1135,7 +1078,7 @@ private:
     Common routine to handle index_next with ordered results.
 
     @param[out] buf        Read row in MySQL Row Format.
-    @param[in]  next_same  Called from index_next_same.
+    @param[in]  is_next_same  Called from index_next_same.
 
     @return Operation status.
       @retval HA_ERR_END_OF_FILE  End of scan

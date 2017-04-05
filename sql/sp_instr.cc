@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2012, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -13,29 +13,32 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "my_global.h"    // NO_EMBEDDED_ACCESS_CHECKS
 #include "sp_instr.h"
-#include "item.h"         // Item_splocal
-#include "log.h"          // query_logger
-#include "opt_trace.h"    // opt_trace_disable_etc
-#include "probes_mysql.h" // MYSQL_QUERY_EXEC_START
-#include "sp_head.h"      // sp_head
-#include "sp.h"           // sp_get_item_value
-#include "sp_rcontext.h"  // sp_rcontext
-#include "auth_common.h"  // SELECT_ACL
-#include "sql_base.h"     // open_temporary_tables
-#include "sql_parse.h"    // check_table_access
-#include "sql_prepare.h"  // reinit_stmt_before_use
-#include "transaction.h"  // trans_commit_stmt
-#include "prealloced_array.h"
-#include "binlog.h"
-#include "item_cmpfunc.h" // Item_func_eq
+
+#include "prealloced_array.h"         // Prealloced_array
+#include "auth_common.h"              // check_table_access
+#include "binlog.h"                   // mysql_bin_log
+#include "error_handler.h"            // Strict_error_handler
+#include "item.h"                     // Item_splocal
+#include "item_cmpfunc.h"             // Item_func_eq
+#include "log.h"                      // Query_logger
+#include "mysqld.h"                   // next_query_id
+#include "opt_trace.h"                // Opt_trace_start
+#include "probes_mysql.h"             // MYSQL_QUERY_EXEC_START
+#include "sp.h"                       // sp_get_item_value
+#include "sp_head.h"                  // sp_head
+#include "sp_pcontext.h"              // sp_pcontext
+#include "sp_rcontext.h"              // sp_rcontext
+#include "sql_base.h"                 // open_temporary_tables
+#include "sql_cache.h"                // query_cache
+#include "sql_parse.h"                // parse_sql
+#include "sql_prepare.h"              // reinit_stmt_before_use
+#include "table_trigger_dispatcher.h" // Table_trigger_dispatcher
+#include "transaction.h"              // trans_commit_stmt
+#include "trigger.h"                  // Trigger
 
 #include <algorithm>
 #include <functional>
-
-#include "trigger.h"                  // Trigger
-#include "table_trigger_dispatcher.h" // Table_trigger_dispatcher
 
 
 class Cmp_splocal_locations :
@@ -120,7 +123,7 @@ public:
 
   2) We need to empty thd->user_var_events after we have wrote a function
      call. This is currently done by making
-     reset_dynamic(&thd->user_var_events);
+     thd->user_var_events.clear()
      calls in several different places. (TODO consider moving this into
      mysql_bin_log.write() function)
 
@@ -561,7 +564,7 @@ LEX *sp_lex_instr::parse_expr(THD *thd, sp_head *sp)
     // Call after-parsing callback.
     parsing_failed= on_after_expr_parsing(thd);
 
-    if (sp->m_type == SP_TYPE_TRIGGER)
+    if (sp->m_type == enum_sp_type::TRIGGER)
     {
       /*
         Also let us bind these objects to Field objects in table being opened.
@@ -752,7 +755,7 @@ void sp_lex_instr::cleanup_before_parsing(THD *thd)
   // Remove previously stored trigger-field items.
   sp_head *sp= thd->sp_runtime_ctx->sp;
 
-  if (sp->m_type == SP_TYPE_TRIGGER)
+  if (sp->m_type == enum_sp_type::TRIGGER)
     m_trig_field_list.empty();
 }
 
@@ -861,7 +864,7 @@ bool sp_instr_stmt::execute(THD *thd, uint *nextp)
     if (thd->get_stmt_da()->is_eof())
     {
       /* Finalize server status flags after executing a statement. */
-      thd->update_server_status();
+      thd->update_slow_query_status();
 
       thd->send_statement_status();
     }
@@ -1277,7 +1280,7 @@ void sp_instr_jump_case_when::print(String *str)
 }
 
 
-bool sp_instr_jump_case_when::build_expr_items(THD *thd)
+bool sp_instr_jump_case_when::on_after_expr_parsing(THD *thd)
 {
   // Setup CASE-expression item (m_case_expr_item).
 
@@ -1371,6 +1374,32 @@ PSI_statement_info sp_instr_hpush_jump::psi_info=
 { 0, "hpush_jump", 0};
 #endif
 
+
+sp_instr_hpush_jump::sp_instr_hpush_jump(uint ip,
+                                         sp_pcontext *ctx,
+                                         sp_handler *handler)
+  :sp_instr_jump(ip, ctx),
+   m_handler(handler),
+   m_opt_hpop(0),
+   m_frame(ctx->current_var_count())
+{
+  DBUG_ASSERT(m_handler->condition_values.elements == 0);
+}
+
+
+sp_instr_hpush_jump::~sp_instr_hpush_jump()
+{
+  m_handler->condition_values.empty();
+  m_handler= NULL;
+}
+
+
+void sp_instr_hpush_jump::add_condition(sp_condition_value *condition_value)
+{
+  m_handler->condition_values.push_back(condition_value);
+}
+
+
 bool sp_instr_hpush_jump::execute(THD *thd, uint *nextp)
 {
   *nextp= m_dest;
@@ -1454,6 +1483,12 @@ PSI_statement_info sp_instr_hreturn::psi_info=
 { 0, "hreturn", 0};
 #endif
 
+
+sp_instr_hreturn::sp_instr_hreturn(uint ip, sp_pcontext *ctx)
+  :sp_instr_jump(ip, ctx),
+   m_frame(ctx->current_var_count())
+{ }
+
 bool sp_instr_hreturn::execute(THD *thd, uint *nextp)
 {
   /*
@@ -1532,7 +1567,7 @@ bool sp_instr_cpush::execute(THD *thd, uint *nextp)
 
   // sp_instr_cpush::execute() just registers the cursor in the runtime context.
 
-  return thd->sp_runtime_ctx->push_cursor(this);
+  return thd->sp_runtime_ctx->push_cursor(thd, this);
 }
 
 

@@ -337,14 +337,14 @@ MgmApiSession::MgmApiSession(class MgmtSrvr & mgm, NDB_SOCKET_TYPE sock, Uint64 
   m_errorInsert= 0;
 
   struct sockaddr_in addr;
-  SOCKET_SIZE_TYPE addrlen= sizeof(addr);
+  socket_len_t addrlen= sizeof(addr);
   if (my_getpeername(sock, (struct sockaddr*)&addr, &addrlen) == 0)
   {
     char addr_buf[NDB_ADDR_STRLEN];
     char *addr_str = Ndb_inet_ntop(AF_INET,
                                    static_cast<void*>(&addr.sin_addr),
                                    addr_buf,
-                                   (socklen_t)sizeof(addr_buf));
+                                   sizeof(addr_buf));
     m_name.assfmt("%s:%d", addr_str, ntohs(addr.sin_port));
   }
   DBUG_PRINT("info", ("new connection from: %s", m_name.c_str()));
@@ -524,7 +524,7 @@ MgmApiSession::get_nodeid(Parser_t::Context &,
 
   struct sockaddr_in addr;
   {
-    SOCKET_SIZE_TYPE addrlen= sizeof(addr);
+    socket_len_t addrlen= sizeof(addr);
     int r = my_getpeername(m_socket, (struct sockaddr*)&addr, &addrlen);
     if (r != 0 )
     {

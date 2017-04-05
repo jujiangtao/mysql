@@ -866,9 +866,9 @@ Note	1003	/* select#1 */ select `test`.`t1`.`f1` AS `f1`,`test`.`t1`.`f11` AS `f
 SHOW STATUS LIKE 'Handler_read%';
 Variable_name	Value
 Handler_read_first	0
-Handler_read_key	0
+Handler_read_key	8
 Handler_read_last	0
-Handler_read_next	0
+Handler_read_next	6
 Handler_read_prev	0
 Handler_read_rnd	0
 Handler_read_rnd_next	0
@@ -3136,7 +3136,7 @@ id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered
 1	PRIMARY	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	no matching row in const table
 2	DERIVED	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	no matching row in const table
 Warnings:
-Note	1003	/* select#1 */ select straight_join NULL AS `field1` from `test`.`t1` `alias1` join ((/* select#2 */ select NULL AS `col_varchar_key` from `test`.`t2` `sq1_alias2` semi join (`test`.`t3` `c_sq1_alias1` join `test`.`t1` `c_sq1_alias2` join `test`.`t1` `c_sq1_alias3`) where ((`test`.`c_sq1_alias3`.`col_int_nokey` <> `test`.`c_sq1_alias2`.`col_int_nokey`) and multiple equal('t', NULL) and multiple equal('n', `test`.`c_sq1_alias1`.`col_varchar_nokey`) and multiple equal('l', `test`.`c_sq1_alias1`.`col_varchar_key`) and multiple equal(`test`.`c_sq1_alias3`.`pk`, `test`.`c_sq1_alias2`.`pk`) and multiple equal(`test`.`c_sq1_alias3`.`col_varchar_key`, `test`.`c_sq1_alias2`.`col_varchar_key`)))) `alias2` join `test`.`t3` `alias3` where multiple equal(`test`.`alias3`.`col_varchar_key`, `alias2`.`col_varchar_key`, `test`.`alias3`.`col_varchar_nokey`)
+Note	1003	/* select#1 */ select straight_join NULL AS `field1` from `test`.`t1` `alias1` join (/* select#2 */ select NULL AS `col_varchar_key` from `test`.`t2` `sq1_alias2` semi join (`test`.`t3` `c_sq1_alias1` join `test`.`t1` `c_sq1_alias2` join `test`.`t1` `c_sq1_alias3`) where ((`test`.`c_sq1_alias3`.`col_int_nokey` <> `test`.`c_sq1_alias2`.`col_int_nokey`) and multiple equal('t', NULL) and multiple equal('n', `test`.`c_sq1_alias1`.`col_varchar_nokey`) and multiple equal('l', `test`.`c_sq1_alias1`.`col_varchar_key`) and multiple equal(`test`.`c_sq1_alias3`.`pk`, `test`.`c_sq1_alias2`.`pk`) and multiple equal(`test`.`c_sq1_alias3`.`col_varchar_key`, `test`.`c_sq1_alias2`.`col_varchar_key`))) `alias2` join `test`.`t3` `alias3` where multiple equal(`test`.`alias3`.`col_varchar_key`, `alias2`.`col_varchar_key`, `test`.`alias3`.`col_varchar_nokey`)
 SELECT STRAIGHT_JOIN alias1.col_date_key AS field1
 FROM t1 AS alias1
 INNER JOIN
@@ -3802,6 +3802,41 @@ t1_inv_date
 s:1
 s:1
 s:3
+explain SELECT /*+ MERGE(periods) */ t1_inv_date
+FROM t1 LEFT JOIN
+(SELECT curr.t2_end_date As end_date,
+(SELECT prev.t2_end_date
+FROM t2 AS prev
+WHERE prev.t2_end_date < curr.t2_end_date
+ORDER BY prev.t2_end_date DESC LIMIT 1) AS prev_end_date
+FROM t2 AS curr
+WHERE curr.t2_end_date >= 's:1'
+     ) AS periods
+ON periods.prev_end_date < t1_inv_date AND
+periods.end_date >= t1_inv_date;
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	PRIMARY	t1	NULL	index	NULL	invdate	6	NULL	3	100.00	Using index
+1	PRIMARY	curr	NULL	index	end_date	end_date	3	NULL	3	100.00	Using where; Using index; Using join buffer (Block Nested Loop)
+3	DEPENDENT SUBQUERY	prev	NULL	index	end_date	end_date	3	NULL	1	33.33	Using where; Using index
+Warnings:
+Note	1276	Field or reference 'test.curr.t2_end_date' of SELECT #3 was resolved in SELECT #2
+Note	1003	/* select#1 */ select /*+ MERGE(`periods`@`select#1`) */ `test`.`t1`.`t1_inv_date` AS `t1_inv_date` from `test`.`t1` left join (`test`.`t2` `curr`) on((((/* select#3 */ select `test`.`prev`.`t2_end_date` from `test`.`t2` `prev` where (`test`.`prev`.`t2_end_date` < `test`.`curr`.`t2_end_date`) order by `test`.`prev`.`t2_end_date` desc limit 1) < `test`.`t1`.`t1_inv_date`) and (`test`.`curr`.`t2_end_date` >= `test`.`t1`.`t1_inv_date`) and (`test`.`curr`.`t2_end_date` >= 's:1'))) where 1
+SELECT /*+ MERGE(periods) */ t1_inv_date
+FROM t1 LEFT JOIN
+(SELECT curr.t2_end_date As end_date,
+(SELECT prev.t2_end_date
+FROM t2 AS prev
+WHERE prev.t2_end_date < curr.t2_end_date
+ORDER BY prev.t2_end_date DESC LIMIT 1) AS prev_end_date
+FROM t2 AS curr
+WHERE curr.t2_end_date >= 's:1'
+     ) AS periods
+ON periods.prev_end_date < t1_inv_date AND
+periods.end_date >= t1_inv_date;
+t1_inv_date
+s:1
+s:1
+s:3
 DROP TABLE t1, t2;
 # Bug#22176604: Wrong result on outer join with uncorrelated subquery
 CREATE TABLE t1 (a INT, KEY(a));
@@ -3874,6 +3909,13 @@ WHERE t2.position < users.position)
 WHERE id = 3;
 ERROR HY000: You can't specify target table 'users' for update in FROM clause
 DROP TABLE users;
+# Bug#22783011 assertion failed: base_select != removed_select &&
+#              aggr_select != removed_select
+CREATE TABLE t(a INTEGER) engine=innodb;
+INSERT INTO t VALUES(1);
+SELECT (SELECT 1 FROM (SELECT 1 FROM t WHERE SUM(1)) AS t);
+ERROR HY000: Invalid use of group function
+DROP TABLE t;
 # Bug#23074801: Delete from joined tables with where using derived table
 #               fails with error 1093
 CREATE TABLE t1 (id INTEGER, d1 INTEGER);

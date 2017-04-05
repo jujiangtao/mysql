@@ -372,19 +372,21 @@
 
 
 #define MYSQL_SERVER 1
+#include "ha_federated.h"
+
 #include "sql_servers.h"         // FOREIGN_SERVER, get_server_by_name
-#include "sql_class.h"           // SSV
 #include "sql_analyse.h"         // append_escaped
 #include <mysql/plugin.h>
-
-#include "ha_federated.h"
 #include "probes_mysql.h"
-
 #include "m_string.h"
 #include "key.h"                                // key_copy
 #include "myisam.h"                             // TT_USEFRM
-
-#include <mysql/plugin.h>
+#include "current_thd.h"
+#include "mysqld.h"                             // my_localhost
+#include "sql_class.h"
+#include "mysql/psi/mysql_mutex.h"
+#include "mysql/psi/mysql_memory.h"
+#include "template_utils.h"
 
 #include <algorithm>
 
@@ -424,39 +426,47 @@ static handler *federated_create_handler(handlerton *hton,
 
 /* Function we use in the creation of our hash to get key */
 
-static uchar *federated_get_key(FEDERATED_SHARE *share, size_t *length,
-                                my_bool not_used MY_ATTRIBUTE ((unused)))
+static const uchar *federated_get_key(const uchar *arg, size_t *length)
 {
+  const FEDERATED_SHARE *share= pointer_cast<const FEDERATED_SHARE*>(arg);
   *length= share->share_key_length;
   return (uchar*) share->share_key;
 }
 
-static PSI_memory_key fe_key_memory_federated_share;
-
-#ifdef HAVE_PSI_INTERFACE
+#ifdef HAVE_PSI_MUTEX_INTERFACE
 static PSI_mutex_key fe_key_mutex_federated, fe_key_mutex_FEDERATED_SHARE_mutex;
 
 static PSI_mutex_info all_federated_mutexes[]=
 {
-  { &fe_key_mutex_federated, "federated", PSI_FLAG_GLOBAL},
-  { &fe_key_mutex_FEDERATED_SHARE_mutex, "FEDERATED_SHARE::mutex", 0}
+  { &fe_key_mutex_federated, "federated", PSI_FLAG_GLOBAL, 0},
+  { &fe_key_mutex_FEDERATED_SHARE_mutex, "FEDERATED_SHARE::mutex", 0, 0}
 };
+#endif /* HAVE_PSI_MUTEX_INTERFACE */
 
+static PSI_memory_key fe_key_memory_federated_share;
+
+#ifdef HAVE_PSI_MEMORY_INTERFACE
 static PSI_memory_info all_federated_memory[]=
 {
   { &fe_key_memory_federated_share, "FEDERATED_SHARE", PSI_FLAG_GLOBAL}
 };
+#endif /* HAVE_PSI_MEMORY_INTERFACE */
 
+#ifdef HAVE_PSI_INTERFACE
 static void init_federated_psi_keys(void)
 {
-  const char* category= "federated";
-  int count;
+  const char* category MY_ATTRIBUTE((unused)) = "federated";
+  int count MY_ATTRIBUTE((unused));
 
+#ifdef HAVE_PSI_MUTEX_INTERFACE
   count= array_elements(all_federated_mutexes);
   mysql_mutex_register(category, all_federated_mutexes, count);
+#endif /* HAVE_PSI_MUTEX_INTERFACE */
 
+#ifdef HAVE_PSI_MEMORY_INTERFACE
   count= array_elements(all_federated_memory);
   mysql_memory_register(category, all_federated_memory, count);
+#endif /* HAVE_PSI_MEMORY_INTERFACE */
 }
 #endif /* HAVE_PSI_INTERFACE */
 
@@ -472,7 +482,7 @@ static void init_federated_psi_keys(void)
     TRUE        Error
 */
 
-int federated_db_init(void *p)
+static int federated_db_init(void *p)
 {
   DBUG_ENTER("federated_db_init");
 
@@ -498,8 +508,8 @@ int federated_db_init(void *p)
   if (mysql_mutex_init(fe_key_mutex_federated,
                        &federated_mutex, MY_MUTEX_INIT_FAST))
     goto error;
-  if (!my_hash_init(&federated_open_tables, &my_charset_bin, 32, 0, 0,
-                    (my_hash_get_key) federated_get_key, 0, 0,
+  if (!my_hash_init(&federated_open_tables, &my_charset_bin, 32, 0,
+                    federated_get_key, nullptr, 0,
                     fe_key_memory_federated_share))
   {
     DBUG_RETURN(FALSE);
@@ -521,7 +531,7 @@ error:
     FALSE       OK
 */
 
-int federated_done(void *p)
+static int federated_done(void *p)
 {
   my_hash_free(&federated_open_tables);
   mysql_mutex_destroy(&federated_mutex);
@@ -603,7 +613,7 @@ static int parse_url_error(FEDERATED_SHARE *share, TABLE *table, int error_num)
   from the system table given a server's name, set share
   connection parameter members
 */
-int get_connection(MEM_ROOT *mem_root, FEDERATED_SHARE *share)
+static int get_connection(MEM_ROOT *mem_root, FEDERATED_SHARE *share)
 {
   int error_num= ER_FOREIGN_SERVER_DOESNT_EXIST;
   FOREIGN_SERVER *server, server_buffer;
@@ -620,8 +630,8 @@ int get_connection(MEM_ROOT *mem_root, FEDERATED_SHARE *share)
     error_num= ER_FOREIGN_DATA_STRING_INVALID_CANT_CREATE;
     goto error;
   }
-  DBUG_PRINT("info", ("get_server_by_name returned server at %lx",
-                      (long unsigned int) server));
+  DBUG_PRINT("info", ("get_server_by_name returned server at %p",
+                      server));
 
   /*
     Most of these should never be empty strings, error handling will
@@ -722,15 +732,15 @@ static int parse_url(MEM_ROOT *mem_root, FEDERATED_SHARE *share, TABLE *table,
 
   share->port= 0;
   share->socket= 0;
-  DBUG_PRINT("info", ("share at %lx", (long unsigned int) share));
+  DBUG_PRINT("info", ("share at %p", share));
   DBUG_PRINT("info", ("Length: %u", (uint) table->s->connect_string.length));
   DBUG_PRINT("info", ("String: '%.*s'", (int) table->s->connect_string.length,
                       table->s->connect_string.str));
   share->connection_string= strmake_root(mem_root, table->s->connect_string.str,
                                        table->s->connect_string.length);
 
-  DBUG_PRINT("info",("parse_url alloced share->connection_string %lx",
-                     (long unsigned int) share->connection_string));
+  DBUG_PRINT("info",("parse_url alloced share->connection_string %p",
+                     share->connection_string));
 
   DBUG_PRINT("info",("share->connection_string %s",share->connection_string));
   /*
@@ -743,9 +753,9 @@ static int parse_url(MEM_ROOT *mem_root, FEDERATED_SHARE *share, TABLE *table,
 
     DBUG_PRINT("info",
                ("share->connection_string %s internal format \
-                share->connection_string %lx",
+                share->connection_string %p",
                 share->connection_string,
-                (long unsigned int) share->connection_string));
+                share->connection_string));
 
     /* ok, so we do a little parsing, but not completely! */
     share->parsed= FALSE;
@@ -799,8 +809,8 @@ static int parse_url(MEM_ROOT *mem_root, FEDERATED_SHARE *share, TABLE *table,
     // Add a null for later termination of table name
     share->connection_string[table->s->connect_string.length]= 0;
     share->scheme= share->connection_string;
-    DBUG_PRINT("info",("parse_url alloced share->scheme %lx",
-                       (long unsigned int) share->scheme));
+    DBUG_PRINT("info",("parse_url alloced share->scheme %p",
+                       share->scheme));
 
     /*
       remove addition of null terminator and store length
@@ -1621,21 +1631,6 @@ ha_rows ha_federated::records_in_range(uint inx, key_range *start_key,
   DBUG_ENTER("ha_federated::records_in_range");
   DBUG_RETURN(FEDERATED_RECORDS_IN_RANGE);
 }
-/*
-  If frm_error() is called then we will use this to to find out
-  what file extentions exist for the storage engine. This is
-  also used by the default rename_table and delete_table method
-  in handler.cc.
-*/
-
-const char **ha_federated::bas_ext() const
-{
-  static const char *ext[]=
-  {
-    NullS
-  };
-  return ext;
-}
 
 
 /*
@@ -1832,7 +1827,7 @@ int ha_federated::write_row(uchar *buf)
 
   values_string.length(0);
   insert_field_value_string.length(0);
-  ha_statistic_increment(&SSV::ha_write_count);
+  ha_statistic_increment(&System_status_var::ha_write_count);
 
   /*
     start both our field and field values strings
@@ -2438,7 +2433,7 @@ int ha_federated::index_read_idx_with_result_set(uchar *buf, uint index,
   *result= 0;                                   // In case of errors
   index_string.length(0);
   sql_query.length(0);
-  ha_statistic_increment(&SSV::ha_read_key_count);
+  ha_statistic_increment(&System_status_var::ha_read_key_count);
 
   sql_query.append(share->select_query);
 
@@ -2573,7 +2568,7 @@ int ha_federated::index_next(uchar *buf)
   int retval;
   DBUG_ENTER("ha_federated::index_next");
   MYSQL_INDEX_READ_ROW_START(table_share->db.str, table_share->table_name.str);
-  ha_statistic_increment(&SSV::ha_read_next_count);
+  ha_statistic_increment(&System_status_var::ha_read_next_count);
   retval= read_next(buf, stored_result);
   MYSQL_INDEX_READ_ROW_DONE(retval);
   DBUG_RETURN(retval);
@@ -2790,7 +2785,7 @@ int ha_federated::rnd_pos(uchar *buf, uchar *pos)
 
   MYSQL_READ_ROW_START(table_share->db.str, table_share->table_name.str,
                        FALSE);
-  ha_statistic_increment(&SSV::ha_read_rnd_count);
+  ha_statistic_increment(&System_status_var::ha_read_rnd_count);
 
   /* Get stored result set. */
   memcpy(&result, pos, sizeof(MYSQL_RES *));
@@ -2941,7 +2936,7 @@ error:
   if (remote_error_number != -1 /* error already reported */)
   {
     error_code= remote_error_number;
-    my_error(error_code, MYF(0), ER(error_code));
+    my_error(error_code, MYF(0));
   }
   DBUG_RETURN(error_code);
 }
@@ -2990,7 +2985,7 @@ int ha_federated::extra(ha_extra_function operation)
 /**
   @brief Reset state of file to after 'open'.
 
-  @detail This function is called after every statement for all tables
+  @details This function is called after every statement for all tables
     used by that statement.
 
   @return Operation status

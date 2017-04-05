@@ -22,13 +22,18 @@
 #include "auth_common.h"                        // check_global_access
 #include "binlog.h"                             // mysql_bin_log
 #include "debug_sync.h"                         // DEBUG_SYNC
+#include "item_func.h"                          // user_var_entry
 #include "log.h"                                // sql_print_information
+#include "mysqld.h"                             // server_id
 #include "mysqld_thd_manager.h"                 // Global_THD_manager
+#include "psi_memory_key.h"
 #include "rpl_binlog_sender.h"                  // Binlog_sender
 #include "rpl_filter.h"                         // binlog_filter
 #include "rpl_handler.h"                        // RUN_HOOK
 #include "sql_class.h"                          // THD
 #include "rpl_group_replication.h"              // is_group_replication_running
+#include "current_thd.h"
+#include "template_utils.h"
 
 #include "pfs_file_provider.h"
 #include "mysql/psi/mysql_file.h"
@@ -38,7 +43,6 @@ int max_binlog_dump_events = 0; // unlimited
 my_bool opt_sporadic_binlog_dump_fail = 0;
 
 #define SLAVE_LIST_CHUNK 128
-#define SLAVE_ERRMSG_SIZE (FN_REFLEN+64)
 HASH slave_list;
 extern TYPELIB binlog_checksum_typelib;
 
@@ -62,25 +66,28 @@ extern TYPELIB binlog_checksum_typelib;
   p+= len; \
 }\
 
-extern "C" uint32
-*slave_list_key(SLAVE_INFO* si, size_t *len,
-		my_bool not_used MY_ATTRIBUTE((unused)))
+
+static const uchar
+*slave_list_key(const uchar *arg, size_t *len)
 {
+  const SLAVE_INFO *si= pointer_cast<const SLAVE_INFO*>(arg);
   *len = 4;
-  return &si->server_id;
+  return pointer_cast<const uchar*>(&si->server_id);
 }
 
-extern "C" void slave_info_free(void *s)
+static void slave_info_free(void *s)
 {
   my_free(s);
 }
 
+
+static mysql_mutex_t LOCK_slave_list;
 #ifdef HAVE_PSI_INTERFACE
 static PSI_mutex_key key_LOCK_slave_list;
 
 static PSI_mutex_info all_slave_list_mutexes[]=
 {
-  { &key_LOCK_slave_list, "LOCK_slave_list", PSI_FLAG_GLOBAL}
+  { &key_LOCK_slave_list, "LOCK_slave_list", PSI_FLAG_GLOBAL, 0}
 };
 
 static void init_all_slave_list_mutexes(void)
@@ -98,9 +105,9 @@ void init_slave_list()
   init_all_slave_list_mutexes();
 #endif
 
-  my_hash_init(&slave_list, system_charset_info, SLAVE_LIST_CHUNK, 0, 0,
-               (my_hash_get_key) slave_list_key,
-               (my_hash_free_key) slave_info_free, 0,
+  my_hash_init(&slave_list, system_charset_info, SLAVE_LIST_CHUNK, 0,
+               slave_list_key,
+               slave_info_free, 0,
                key_memory_SLAVE_INFO);
   mysql_mutex_init(key_LOCK_slave_list, &LOCK_slave_list, MY_MUTEX_INIT_FAST);
 }
@@ -734,7 +741,7 @@ bool show_binlogs(THD* thd)
     {
       /* this is an old log, open it and find the size */
       if ((file= mysql_file_open(key_file_binlog,
-                                 fname, O_RDONLY | O_SHARE | O_BINARY,
+                                 fname, O_RDONLY,
                                  MYF(0))) >= 0)
       {
         file_length= (ulonglong) mysql_file_seek(file, 0L, MY_SEEK_END, MYF(0));

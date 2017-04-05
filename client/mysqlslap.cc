@@ -96,6 +96,8 @@ TODO:
 #endif
 #include <ctype.h>
 #include <welcome_copyright_notice.h>   /* ORACLE_WELCOME_COPYRIGHT_NOTICE */
+#include "mysql/service_my_snprintf.h"
+#include "mysql/service_mysql_alloc.h"
 
 #ifdef _WIN32
 #define srandom  srand
@@ -749,8 +751,9 @@ static void usage(void)
 }
 
 
+extern "C" {
 static my_bool
-get_one_option(int optid, const struct my_option *opt MY_ATTRIBUTE((unused)),
+get_one_option(int optid, const struct my_option *opt,
                char *argument)
 {
   DBUG_ENTER("get_one_option");
@@ -817,6 +820,7 @@ get_one_option(int optid, const struct my_option *opt MY_ATTRIBUTE((unused)),
     break;
   }
   DBUG_RETURN(0);
+}
 }
 
 

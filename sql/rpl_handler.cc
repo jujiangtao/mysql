@@ -15,13 +15,16 @@
 
 #include "rpl_handler.h"
 
+#include "current_thd.h"
 #include "debug_sync.h"        // DEBUG_SYNC
+#include "item_func.h"         // user_var_entry
 #include "log.h"               // sql_print_error
+#include "psi_memory_key.h"
 #include "replication.h"       // Trans_param
 #include "rpl_mi.h"            // Master_info
 #include "sql_class.h"         // THD
 #include "sql_plugin.h"        // plugin_int_to_ref
-
+#include "mysqld.h"            // server_uuid
 
 #include <vector>
 
@@ -38,6 +41,25 @@ Observer_info::Observer_info(void *ob, st_plugin_int *p)
   : observer(ob), plugin_int(p)
 {
   plugin= plugin_int_to_ref(plugin_int);
+}
+
+
+Delegate::Delegate(
+#ifdef HAVE_PSI_INTERFACE
+         PSI_rwlock_key key
+#endif
+         )
+{
+  inited= FALSE;
+#ifdef HAVE_PSI_INTERFACE
+  if (mysql_rwlock_init(key, &lock))
+    return;
+#else
+  if (mysql_rwlock_init(0, &lock))
+    return;
+#endif
+  init_sql_alloc(key_memory_delegate, &memroot, 1024, 0);
+  inited= TRUE;
 }
 
 
@@ -329,8 +351,8 @@ int Trans_delegate::before_commit(THD *thd, bool all,
 /**
  Helper method to check if the given table has 'CASCADE' foreign key or not.
 
- @param[in]   TABLE     Table object that needs to be verified.
- @param[in]   THD       Current execution thread.
+ @param[in]   table     Table object that needs to be verified.
+ @param[in]   thd       Current execution thread.
 
  @return bool TRUE      If the table has 'CASCADE' foreign key.
               FALSE     If the table does not have 'CASCADE' foreign key.
@@ -454,10 +476,10 @@ Trans_delegate::prepare_table_info(THD* thd,
 /**
   Helper that gathers all table runtime information
 
-  @param[in]   THD       the current execution thread
+  @param[in]   thd       the current execution thread
   @param[out]  ctx_info  Trans_context_info in which the result is stored.
  */
-void prepare_transaction_context(THD* thd, Trans_context_info& ctx_info)
+static void prepare_transaction_context(THD* thd, Trans_context_info& ctx_info)
 {
   //Extracting the session value of SQL binlogging
   ctx_info.binlog_enabled= thd->variables.sql_log_bin;

@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2014, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2011, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -58,27 +58,12 @@ class Mock_field : public Field_long
   uchar null_byte;
 public:
 
-  Mock_field(utype unireg) :
-    Field_long(NULL, 0, &null_byte, 0, unireg, "", false,  false)
+  Mock_field(uchar auto_flags_arg) :
+    Field_long(NULL, 0, &null_byte, 0, auto_flags_arg, "", false,  false)
   {}
 
   MOCK_METHOD1(store_timestamp, void(const timeval*));
 };
-
-
-/*
-  Compares two COPY_INFO::Statistics and makes sure they are equal.
-*/
-void check_equality(const COPY_INFO::Statistics a,
-                    const COPY_INFO::Statistics b)
-{
-  EXPECT_EQ(a.records, b.records);
-  EXPECT_EQ(a.deleted, b.deleted);
-  EXPECT_EQ(a.updated, b.updated);
-  EXPECT_EQ(a.copied,  b.copied);
-  EXPECT_EQ(a.error_count, b.error_count);
-  EXPECT_EQ(a.touched, b.touched);
-}
 
 
 /*
@@ -235,7 +220,7 @@ TEST_F(CopyInfoTest, updateAccessors)
 }
 
 
-Field_long make_field()
+static Field_long make_field()
 {
   static uchar unused_null_byte;
 
@@ -243,7 +228,7 @@ Field_long make_field()
                0,
                &unused_null_byte,
                0,
-               Field::TIMESTAMP_DN_FIELD,
+               Field::DEFAULT_NOW,
                "a",
                false,
                false);
@@ -296,7 +281,11 @@ TEST_F(CopyInfoTest, getFunctionDefaultColumns)
     << "Not supposed to allocate a new bitmap on second call.";
 }
 
-
+/*
+  HAVE_UBSAN: undefined behaviour in gmock.
+  runtime error: member call on null pointer of type 'const struct ResultHolder'
+ */
+#if !defined(HAVE_UBSAN)
 /*
   Here we test that calling COPY_INFO::set_function_defaults() indeed causes
   store_timestamp to be called on the columns that are not on the list of
@@ -306,9 +295,9 @@ TEST_F(CopyInfoTest, getFunctionDefaultColumns)
 */
 TEST_F(CopyInfoTest, setFunctionDefaults)
 {
-  StrictMock<Mock_field> a(Field::TIMESTAMP_UN_FIELD);
-  StrictMock<Mock_field> b(Field::TIMESTAMP_DNUN_FIELD);
-  StrictMock<Mock_field> c(Field::TIMESTAMP_DNUN_FIELD);
+  StrictMock<Mock_field> a(Field::ON_UPDATE_NOW);
+  StrictMock<Mock_field> b(Field::DEFAULT_NOW|Field::ON_UPDATE_NOW);
+  StrictMock<Mock_field> c(Field::DEFAULT_NOW|Field::ON_UPDATE_NOW);
 
   EXPECT_TRUE(a.has_update_default_function());
   EXPECT_TRUE(b.has_update_default_function());
@@ -339,5 +328,6 @@ TEST_F(CopyInfoTest, setFunctionDefaults)
   EXPECT_CALL(c, store_timestamp(_)).Times(0);
   insert.set_function_defaults(&table);
 }
+#endif // HAVE_UBSAN
 
 }

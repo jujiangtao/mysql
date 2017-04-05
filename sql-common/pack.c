@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2014, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -16,6 +16,7 @@
 #include <my_global.h>
 #include <mysql_com.h>
 #include <mysql.h>
+#include "my_byteorder.h"
 
 /* Get the length of next field. Change parameter to point at fieldstart */
 ulong STDCALL net_field_length(uchar **packet)
@@ -122,7 +123,7 @@ uchar *net_store_length(uchar *packet, ulonglong length)
   dynamically allocate the buffer for a given number to be stored as length-
   encoded integer.
 
-  @param num [IN]   the input number
+  @param [in] num   the input number
 
   @return length of buffer needed to store this number [1, 3, 4, 9].
 */

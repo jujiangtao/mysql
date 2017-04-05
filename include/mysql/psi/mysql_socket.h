@@ -19,6 +19,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
 #ifndef MYSQL_SOCKET_H
 #define MYSQL_SOCKET_H
 
+#include "mysql/psi/psi_socket.h"
+
 /* For strlen() */
 #include <string.h>
 /* For MY_STAT */
@@ -36,19 +38,16 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
   #define SOCKBUF_T void
 #endif
 /**
-  @file mysql/psi/mysql_socket.h
-[...]
+  @file include/mysql/psi/mysql_socket.h
 */
 
-#include "mysql/psi/psi.h"
-
 #ifndef PSI_SOCKET_CALL
-#define PSI_SOCKET_CALL(M) PSI_DYNAMIC_CALL(M)
+#define PSI_SOCKET_CALL(M) psi_socket_service->M
 #endif
 
 /**
-  @defgroup Socket_instrumentation Socket Instrumentation
-  @ingroup Instrumentation_interface
+  @defgroup psi_api_socket Socket Instrumentation (API)
+  @ingroup psi_api
   @{
 */
 
@@ -106,7 +105,7 @@ mysql_socket_invalid()
 
 /**
   Set socket descriptor and address.
-  @param socket nstrumented socket
+  @param socket instrumented socket
   @param addr unformatted socket address
   @param addr_len length of socket addres
 */
@@ -1249,7 +1248,7 @@ inline_mysql_socket_shutdown
   return result;
 }
 
-/** @} (end of group Socket_instrumentation) */
+/** @} (end of group psi_api_socket) */
 
 #endif
 

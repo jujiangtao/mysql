@@ -16,7 +16,7 @@ INSERT INTO t1 VALUES (1), (2);
 <database name="test">
 	<table_structure name="t1">
 		<field Field="a" Type="int(11)" Null="YES" Key="MUL" Extra="" Comment="" />
-		<key Table="t1" Non_unique="1" Key_name="a" Seq_in_index="1" Column_name="a" Collation="A" Cardinality="filtered" Null="YES" Index_type="BTREE" Comment="" Index_comment="" />
+		<key Table="t1" Non_unique="1" Key_name="a" Seq_in_index="1" Column_name="a" Collation="A" Cardinality="filtered" Null="YES" Index_type="BTREE" Comment="" Index_comment="" Visible="YES" />
 	</table_structure>
 	<table_data name="t1">
 	<row>
@@ -2396,8 +2396,7 @@ UNLOCK TABLES;
 /*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
 /*!50003 SET sql_mode              = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION' */ ;
 DELIMITER ;;
-/*!50003 CREATE*/ /*!50017 DEFINER=`root`@`localhost`*/ /*!50003 trigger trg1 before insert on t1 for each row
-begin
+/*!50003 CREATE*/ /*!50017 DEFINER=`root`@`localhost`*/ /*!50003 TRIGGER `trg1` BEFORE INSERT ON `t1` FOR EACH ROW begin
 if new.a > 10 then
 set new.a := 10;
 set new.a := 11;
@@ -2417,7 +2416,7 @@ DELIMITER ;
 /*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
 /*!50003 SET sql_mode              = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION' */ ;
 DELIMITER ;;
-/*!50003 CREATE*/ /*!50017 DEFINER=`root`@`localhost`*/ /*!50003 trigger trg2 before update on t1 for each row begin
+/*!50003 CREATE*/ /*!50017 DEFINER=`root`@`localhost`*/ /*!50003 TRIGGER `trg2` BEFORE UPDATE ON `t1` FOR EACH ROW begin
 if old.a % 2 = 0 then set new.b := 12; end if;
 end */;;
 DELIMITER ;
@@ -2434,8 +2433,7 @@ DELIMITER ;
 /*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
 /*!50003 SET sql_mode              = 'STRICT_TRANS_TABLES,STRICT_ALL_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,TRADITIONAL,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION' */ ;
 DELIMITER ;;
-/*!50003 CREATE*/ /*!50017 DEFINER=`root`@`localhost`*/ /*!50003 trigger trg3 after update on t1 for each row
-begin
+/*!50003 CREATE*/ /*!50017 DEFINER=`root`@`localhost`*/ /*!50003 TRIGGER `trg3` AFTER UPDATE ON `t1` FOR EACH ROW begin
 if new.a = -1 then
 set @fired:= "Yes";
 end if;
@@ -2466,8 +2464,7 @@ UNLOCK TABLES;
 /*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
 /*!50003 SET sql_mode              = 'STRICT_TRANS_TABLES,STRICT_ALL_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,TRADITIONAL,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION' */ ;
 DELIMITER ;;
-/*!50003 CREATE*/ /*!50017 DEFINER=`root`@`localhost`*/ /*!50003 trigger trg4 before insert on t2 for each row
-begin
+/*!50003 CREATE*/ /*!50017 DEFINER=`root`@`localhost`*/ /*!50003 TRIGGER `trg4` BEFORE INSERT ON `t2` FOR EACH ROW begin
 if new.a > 10 then
 set @fired:= "No";
 end if;
@@ -2912,7 +2909,7 @@ UNLOCK TABLES;
 /*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
 /*!50003 SET sql_mode              = '' */ ;
 DELIMITER ;;
-/*!50003 CREATE*/ /*!50017 DEFINER=`root`@`localhost`*/ /*!50003 TRIGGER `test trig` BEFORE INSERT ON `t1 test` FOR EACH ROW BEGIN
+/*!50003 CREATE*/ /*!50017 DEFINER="root"@"localhost"*/ /*!50003 TRIGGER "test trig" BEFORE INSERT ON "t1 test" FOR EACH ROW BEGIN
 INSERT INTO `t2 test` SET a2 = NEW.a1; END */;;
 DELIMITER ;
 /*!50003 SET sql_mode              = @saved_sql_mode */ ;
@@ -3119,9 +3116,7 @@ UNLOCK TABLES;
 /*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
 /*!50003 SET sql_mode              = 'IGNORE_SPACE' */ ;
 DELIMITER ;;
-/*!50003 CREATE*/ /*!50017 DEFINER=`root`@`localhost`*/ /*!50003 TRIGGER tr1 BEFORE INSERT ON t1
-FOR EACH ROW
-BEGIN
+/*!50003 CREATE*/ /*!50017 DEFINER=`root`@`localhost`*/ /*!50003 TRIGGER `tr1` BEFORE INSERT ON `t1` FOR EACH ROW BEGIN
 SET new.a = 0;
 END */;;
 DELIMITER ;
@@ -3559,44 +3554,11 @@ drop user myDB_User@localhost;
 drop database mysqldump_myDB;
 use test;
 #
-# Bug #21527 mysqldump incorrectly tries to LOCK TABLES on the 
-# information_schema database.
-#
-# Bug #33762: mysqldump can not dump INFORMATION_SCHEMA
-#
-DROP TABLE IF EXISTS `TABLES`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
-CREATE TEMPORARY TABLE `TABLES` (
-  `TABLE_CATALOG` varchar(512) NOT NULL DEFAULT '',
-  `TABLE_SCHEMA` varchar(64) NOT NULL DEFAULT '',
-  `TABLE_NAME` varchar(64) NOT NULL DEFAULT '',
-  `TABLE_TYPE` varchar(64) NOT NULL DEFAULT '',
-  `ENGINE` varchar(64) DEFAULT NULL,
-  `VERSION` bigint(21) unsigned DEFAULT NULL,
-  `ROW_FORMAT` varchar(10) DEFAULT NULL,
-  `TABLE_ROWS` bigint(21) unsigned DEFAULT NULL,
-  `AVG_ROW_LENGTH` bigint(21) unsigned DEFAULT NULL,
-  `DATA_LENGTH` bigint(21) unsigned DEFAULT NULL,
-  `MAX_DATA_LENGTH` bigint(21) unsigned DEFAULT NULL,
-  `INDEX_LENGTH` bigint(21) unsigned DEFAULT NULL,
-  `DATA_FREE` bigint(21) unsigned DEFAULT NULL,
-  `AUTO_INCREMENT` bigint(21) unsigned DEFAULT NULL,
-  `CREATE_TIME` datetime DEFAULT NULL,
-  `UPDATE_TIME` datetime DEFAULT NULL,
-  `CHECK_TIME` datetime DEFAULT NULL,
-  `TABLE_COLLATION` varchar(32) DEFAULT NULL,
-  `CHECKSUM` bigint(21) unsigned DEFAULT NULL,
-  `CREATE_OPTIONS` varchar(255) DEFAULT NULL,
-  `TABLE_COMMENT` varchar(2048) NOT NULL DEFAULT ''
-) ENGINE=MEMORY DEFAULT CHARSET=utf8;
-/*!40101 SET character_set_client = @saved_cs_client */;
-#
 # Bug#19745 mysqldump --xml produces invalid xml
 #
 DROP TABLE IF EXISTS t1;
 CREATE TABLE t1 (f1 int(10), data MEDIUMBLOB);
-INSERT INTO t1 VALUES(1,0xff00fef0);
+INSERT INTO t1 VALUES(1, 0xff00fef0);
 <?xml version="1.0"?>
 <mysqldump xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
 <database name="test">
@@ -3704,7 +3666,7 @@ use test;
 #           defined by a different user
 #
 # Bug#22761 mysqldump reports no errors when using
-#           --routines without mysql.proc privileges
+#           --routines without proper privileges
 #
 create database mysqldump_test_db;
 grant all privileges on mysqldump_test_db.*  to user1;
@@ -4325,13 +4287,11 @@ DROP DATABASE mysqldump_test_db;
 # Bug#29938 wrong behavior of mysqldump --skip-events
 #           with --all-databases
 #
-TRUNCATE mysql.event;
 USE test;
 CREATE event e29938 ON SCHEDULE AT '2035-12-31 20:01:23' DO SET @bug29938=29938;
 SHOW EVENTS;
 Db	Name	Definer	Time zone	Type	Execute at	Interval value	Interval field	Starts	Ends	Status	Originator	character_set_client	collation_connection	Database Collation
 test	e29938	root@localhost	SYSTEM	ONE TIME	2035-12-31 20:01:23	NULL	NULL	NULL	NULL	ENABLED	1	latin1	latin1_swedish_ci	latin1_swedish_ci
-TRUNCATE mysql.event;
 SHOW EVENTS;
 Db	Name	Definer	Time zone	Type	Execute at	Interval value	Interval field	Starts	Ends	Status	Originator	character_set_client	collation_connection	Database Collation
 test	e29938	root@localhost	SYSTEM	ONE TIME	2035-12-31 20:01:23	NULL	NULL	NULL	NULL	ENABLED	1	latin1	latin1_swedish_ci	latin1_swedish_ci
@@ -4369,7 +4329,7 @@ CREATE VIEW v1(x, y) AS SELECT 'a', 'a';
 SELECT view_definition
 FROM INFORMATION_SCHEMA.VIEWS
 WHERE table_schema = 'mysqldump_test_db' AND table_name = 'v1';
-view_definition
+VIEW_DEFINITION
 select 'a' AS `x`,'a' AS `y`
 
 ---> Dumping mysqldump_test_db to bug30217.sql
@@ -4382,7 +4342,7 @@ use test;
 SELECT view_definition
 FROM INFORMATION_SCHEMA.VIEWS
 WHERE table_schema = 'mysqldump_test_db' AND table_name = 'v1';
-view_definition
+VIEW_DEFINITION
 select 'a' AS `x`,'a' AS `y`
 
 DROP DATABASE mysqldump_test_db;
@@ -4410,7 +4370,7 @@ count(*)
 drop table `load`;
 SET @@GLOBAL.CONCURRENT_INSERT = @OLD_CONCURRENT_INSERT;
 
-Bug #34861 - mysqldump with --tab gives weird output for triggers.
+Bug#34861 - mysqldump with --tab gives weird output for triggers.
 
 CREATE TABLE t1 (f1 INT);
 CREATE TRIGGER tr1 BEFORE UPDATE ON t1 FOR EACH ROW SET @f1 = 1;
@@ -4423,8 +4383,9 @@ tr1	UPDATE	t1	SET @f1 = 1	BEFORE	#		root@localhost	latin1	latin1_swedish_ci	lati
 SHOW EVENTS;
 Db	Name	Definer	Time zone	Type	Execute at	Interval value	Interval field	Starts	Ends	Status	Originator	character_set_client	collation_connection	Database Collation
 test	ev1	root@localhost	SYSTEM	ONE TIME	2030-01-01 00:00:00	NULL	NULL	NULL	NULL	ENABLED	1	latin1	latin1_swedish_ci	latin1_swedish_ci
-SELECT name,body FROM mysql.proc WHERE NAME = 'pr1';
-name	body
+SELECT routine_name, routine_definition FROM INFORMATION_SCHEMA.routines
+WHERE routine_name = 'pr1';
+routine_name	routine_definition
 pr1	SELECT "Meow"
 
 dump table; if anything goes to stdout, it ends up here: ---------------
@@ -4441,8 +4402,9 @@ Trigger	Event	Table	Statement	Timing	Created	sql_mode	Definer	character_set_clie
 tr1	UPDATE	t1	SET @f1 = 1	BEFORE	#		root@localhost	latin1	latin1_swedish_ci	latin1_swedish_ci
 SHOW EVENTS;
 Db	Name	Definer	Time zone	Type	Execute at	Interval value	Interval field	Starts	Ends	Status	Originator	character_set_client	collation_connection	Database Collation
-SELECT name,body FROM mysql.proc WHERE NAME = 'pr1';
-name	body
+SELECT routine_name, routine_definition FROM INFORMATION_SCHEMA.routines
+WHERE routine_name = 'pr1';
+routine_name	routine_definition
 
 reload db; this should restore routines and events
 SHOW TRIGGERS;
@@ -4451,8 +4413,9 @@ tr1	UPDATE	t1	SET @f1 = 1	BEFORE	#		root@localhost	latin1	latin1_swedish_ci	lati
 SHOW EVENTS;
 Db	Name	Definer	Time zone	Type	Execute at	Interval value	Interval field	Starts	Ends	Status	Originator	character_set_client	collation_connection	Database Collation
 test	ev1	root@localhost	SYSTEM	ONE TIME	2030-01-01 00:00:00	NULL	NULL	NULL	NULL	ENABLED	1	latin1	latin1_swedish_ci	latin1_swedish_ci
-SELECT name,body FROM mysql.proc WHERE NAME = 'pr1';
-name	body
+SELECT routine_name, routine_definition FROM INFORMATION_SCHEMA.routines
+WHERE routine_name = 'pr1';
+routine_name	routine_definition
 pr1	SELECT "Meow"
 
 cleanup
@@ -4646,7 +4609,7 @@ CREATE VIEW v2 AS SELECT * FROM t2;
 	<table_structure name="t1">
 		<field Field="c1" Type="int(11)" Null="YES" Key="" Extra="" Comment="" />
 		<field Field="c2" Type="varchar(20)" Null="YES" Key="" Extra="" Comment="" />
-		<options Name="t1" Engine="MyISAM" Version="10" Row_format="Dynamic" Rows="3" Avg_row_length="20" Data_length="60" Max_data_length="281474976710655" Index_length="1024" Data_free="0" Create_time="--TIME--" Update_time="--TIME--" Collation="latin1_swedish_ci" Create_options="" Comment="" />
+		<options Name="t1" Engine="MyISAM" Version="10" Row_format="Dynamic" Rows="3" Avg_row_length="20" Data_length="60" Max_data_length="281474976710655" Index_length="1024" Data_free="0" Auto_increment="1" Create_time="--TIME--" Update_time="--TIME--" Collation="latin1_swedish_ci" Create_options="" Comment="" />
 	</table_structure>
 	<table_data name="t1">
 	<row>
@@ -4664,7 +4627,7 @@ CREATE VIEW v2 AS SELECT * FROM t2;
 	</table_data>
 	<table_structure name="t2">
 		<field Field="c1" Type="int(11)" Null="YES" Key="" Extra="" Comment="" />
-		<options Name="t2" Engine="MyISAM" Version="10" Row_format="Fixed" Rows="3" Avg_row_length="7" Data_length="21" Max_data_length="1970324836974591" Index_length="1024" Data_free="0" Create_time="--TIME--" Update_time="--TIME--" Collation="latin1_swedish_ci" Create_options="" Comment="" />
+		<options Name="t2" Engine="MyISAM" Version="10" Row_format="Fixed" Rows="3" Avg_row_length="7" Data_length="21" Max_data_length="1970324836974591" Index_length="1024" Data_free="0" Auto_increment="1" Create_time="--TIME--" Update_time="--TIME--" Collation="latin1_swedish_ci" Create_options="" Comment="" />
 	</table_structure>
 	<table_data name="t2">
 	<row>
@@ -4680,16 +4643,14 @@ CREATE VIEW v2 AS SELECT * FROM t2;
 	<triggers name="t2">
 		<trigger Trigger="trig1" sql_mode="" character_set_client="latin1" collation_connection="latin1_swedish_ci" Database_Collation="latin1_swedish_ci" Created="--TIMESTAMP--">
 <![CDATA[
-CREATE DEFINER=`root`@`localhost` TRIGGER trig1 BEFORE INSERT ON t2
-FOR EACH ROW BEGIN
+CREATE DEFINER=`root`@`localhost` TRIGGER `trig1` BEFORE INSERT ON `t2` FOR EACH ROW BEGIN
 INSERT INTO t2 VALUES(1);
 END
 ]]>
 		</trigger>
 		<trigger Trigger="trig2" sql_mode="" character_set_client="latin1" collation_connection="latin1_swedish_ci" Database_Collation="latin1_swedish_ci" Created="--TIMESTAMP--">
 <![CDATA[
-CREATE DEFINER=`root`@`localhost` TRIGGER trig2 AFTER INSERT ON t2
-FOR EACH ROW BEGIN
+CREATE DEFINER=`root`@`localhost` TRIGGER `trig2` AFTER INSERT ON `t2` FOR EACH ROW BEGIN
 INSERT INTO t2 VALUES(1, ']]]]><![CDATA[>');
 INSERT INTO t2 VALUES(2, '<![CDATA]]]]><![CDATA[>');
 INSERT INTO t2 VALUES(3, '<![CDATA[');
@@ -4701,11 +4662,11 @@ END
 	<table_structure name="v1">
 		<field Field="c1" Type="int(11)" Null="YES" Key="" Extra="" Comment="" />
 		<field Field="c2" Type="varchar(20)" Null="YES" Key="" Extra="" Comment="" />
-		<options Name="v1" Comment="VIEW" />
+		<options Name="v1" Rows="0" Avg_row_length="0" Data_length="0" Max_data_length="0" Index_length="0" Data_free="0" Create_time="--TIME--" Comment="VIEW" />
 	</table_structure>
 	<table_structure name="v2">
 		<field Field="c1" Type="int(11)" Null="YES" Key="" Extra="" Comment="" />
-		<options Name="v2" Comment="VIEW" />
+		<options Name="v2" Rows="0" Avg_row_length="0" Data_length="0" Max_data_length="0" Index_length="0" Data_free="0" Create_time="--TIME--" Comment="VIEW" />
 	</table_structure>
 	<events>
 		<event Event="e1" sql_mode="" time_zone="SYSTEM" character_set_client="latin1" collation_connection="latin1_swedish_ci" Database_Collation="latin1_swedish_ci">
@@ -4769,7 +4730,7 @@ END
 	<table_structure name="t1">
 		<field Field="c1" Type="int(11)" Null="YES" Key="" Extra="" Comment="" />
 		<field Field="c2" Type="varchar(20)" Null="YES" Key="" Extra="" Comment="" />
-		<options Name="t1" Engine="MyISAM" Version="10" Row_format="Dynamic" Rows="3" Avg_row_length="20" Data_length="60" Max_data_length="281474976710655" Index_length="1024" Data_free="0" Create_time="--TIME--" Update_time="--TIME--" Collation="latin1_swedish_ci" Create_options="" Comment="" />
+		<options Name="t1" Engine="MyISAM" Version="10" Row_format="Dynamic" Rows="3" Avg_row_length="20" Data_length="60" Max_data_length="281474976710655" Index_length="1024" Data_free="0" Auto_increment="1" Create_time="--TIME--" Update_time="--TIME--" Collation="latin1_swedish_ci" Create_options="" Comment="" />
 	</table_structure>
 <!-- 
 -
@@ -4798,7 +4759,7 @@ END
  -->
 	<table_structure name="t2">
 		<field Field="c1" Type="int(11)" Null="YES" Key="" Extra="" Comment="" />
-		<options Name="t2" Engine="MyISAM" Version="10" Row_format="Fixed" Rows="3" Avg_row_length="7" Data_length="21" Max_data_length="1970324836974591" Index_length="1024" Data_free="0" Create_time="--TIME--" Update_time="--TIME--" Collation="latin1_swedish_ci" Create_options="" Comment="" />
+		<options Name="t2" Engine="MyISAM" Version="10" Row_format="Fixed" Rows="3" Avg_row_length="7" Data_length="21" Max_data_length="1970324836974591" Index_length="1024" Data_free="0" Auto_increment="1" Create_time="--TIME--" Update_time="--TIME--" Collation="latin1_swedish_ci" Create_options="" Comment="" />
 	</table_structure>
 <!-- 
 -
@@ -4819,16 +4780,14 @@ END
 	<triggers name="t2">
 		<trigger Trigger="trig1" sql_mode="" character_set_client="latin1" collation_connection="latin1_swedish_ci" Database_Collation="latin1_swedish_ci" Created="--TIMESTAMP--">
 <![CDATA[
-CREATE DEFINER=`root`@`localhost` TRIGGER trig1 BEFORE INSERT ON t2
-FOR EACH ROW BEGIN
+CREATE DEFINER=`root`@`localhost` TRIGGER `trig1` BEFORE INSERT ON `t2` FOR EACH ROW BEGIN
 INSERT INTO t2 VALUES(1);
 END
 ]]>
 		</trigger>
 		<trigger Trigger="trig2" sql_mode="" character_set_client="latin1" collation_connection="latin1_swedish_ci" Database_Collation="latin1_swedish_ci" Created="--TIMESTAMP--">
 <![CDATA[
-CREATE DEFINER=`root`@`localhost` TRIGGER trig2 AFTER INSERT ON t2
-FOR EACH ROW BEGIN
+CREATE DEFINER=`root`@`localhost` TRIGGER `trig2` AFTER INSERT ON `t2` FOR EACH ROW BEGIN
 INSERT INTO t2 VALUES(1, ']]]]><![CDATA[>');
 INSERT INTO t2 VALUES(2, '<![CDATA]]]]><![CDATA[>');
 INSERT INTO t2 VALUES(3, '<![CDATA[');
@@ -4846,7 +4805,7 @@ END
 	<table_structure name="v1">
 		<field Field="c1" Type="int(11)" Null="YES" Key="" Extra="" Comment="" />
 		<field Field="c2" Type="varchar(20)" Null="YES" Key="" Extra="" Comment="" />
-		<options Name="v1" Comment="VIEW" />
+		<options Name="v1" Rows="0" Avg_row_length="0" Data_length="0" Max_data_length="0" Index_length="0" Data_free="0" Create_time="--TIME--" Comment="VIEW" />
 	</table_structure>
 <!-- 
 -
@@ -4856,7 +4815,7 @@ END
  -->
 	<table_structure name="v2">
 		<field Field="c1" Type="int(11)" Null="YES" Key="" Extra="" Comment="" />
-		<options Name="v2" Comment="VIEW" />
+		<options Name="v2" Rows="0" Avg_row_length="0" Data_length="0" Max_data_length="0" Index_length="0" Data_free="0" Create_time="--TIME--" Comment="VIEW" />
 	</table_structure>
 <!-- 
 -
@@ -4927,7 +4886,7 @@ Warning	1287	Using GRANT for creating new user is deprecated and will be removed
 	<table_structure name="t1">
 		<field Field="c1" Type="int(11)" Null="YES" Key="" Extra="" Comment="" />
 		<field Field="c2" Type="varchar(20)" Null="YES" Key="" Extra="" Comment="" />
-		<options Name="t1" Engine="MyISAM" Version="10" Row_format="Dynamic" Rows="3" Avg_row_length="20" Data_length="60" Max_data_length="281474976710655" Index_length="1024" Data_free="0" Create_time="--TIME--" Update_time="--TIME--" Collation="latin1_swedish_ci" Create_options="" Comment="" />
+		<options Name="t1" Engine="MyISAM" Version="10" Row_format="Dynamic" Rows="3" Avg_row_length="20" Data_length="60" Max_data_length="281474976710655" Index_length="1024" Data_free="0" Auto_increment="1" Create_time="--TIME--" Update_time="--TIME--" Collation="latin1_swedish_ci" Create_options="" Comment="" />
 	</table_structure>
 	<table_data name="t1">
 	<row>
@@ -4945,7 +4904,7 @@ Warning	1287	Using GRANT for creating new user is deprecated and will be removed
 	</table_data>
 	<table_structure name="t2">
 		<field Field="c1" Type="int(11)" Null="YES" Key="" Extra="" Comment="" />
-		<options Name="t2" Engine="MyISAM" Version="10" Row_format="Fixed" Rows="3" Avg_row_length="7" Data_length="21" Max_data_length="1970324836974591" Index_length="1024" Data_free="0" Create_time="--TIME--" Update_time="--TIME--" Collation="latin1_swedish_ci" Create_options="" Comment="" />
+		<options Name="t2" Engine="MyISAM" Version="10" Row_format="Fixed" Rows="3" Avg_row_length="7" Data_length="21" Max_data_length="1970324836974591" Index_length="1024" Data_free="0" Auto_increment="1" Create_time="--TIME--" Update_time="--TIME--" Collation="latin1_swedish_ci" Create_options="" Comment="" />
 	</table_structure>
 	<table_data name="t2">
 	<row>
@@ -4961,16 +4920,14 @@ Warning	1287	Using GRANT for creating new user is deprecated and will be removed
 	<triggers name="t2">
 		<trigger Trigger="trig1" sql_mode="" character_set_client="latin1" collation_connection="latin1_swedish_ci" Database_Collation="latin1_swedish_ci" Created="--TIMESTAMP--">
 <![CDATA[
-CREATE DEFINER=`root`@`localhost` TRIGGER trig1 BEFORE INSERT ON t2
-FOR EACH ROW BEGIN
+CREATE DEFINER=`root`@`localhost` TRIGGER `trig1` BEFORE INSERT ON `t2` FOR EACH ROW BEGIN
 INSERT INTO t2 VALUES(1);
 END
 ]]>
 		</trigger>
 		<trigger Trigger="trig2" sql_mode="" character_set_client="latin1" collation_connection="latin1_swedish_ci" Database_Collation="latin1_swedish_ci" Created="--TIMESTAMP--">
 <![CDATA[
-CREATE DEFINER=`root`@`localhost` TRIGGER trig2 AFTER INSERT ON t2
-FOR EACH ROW BEGIN
+CREATE DEFINER=`root`@`localhost` TRIGGER `trig2` AFTER INSERT ON `t2` FOR EACH ROW BEGIN
 INSERT INTO t2 VALUES(1, ']]]]><![CDATA[>');
 INSERT INTO t2 VALUES(2, '<![CDATA]]]]><![CDATA[>');
 INSERT INTO t2 VALUES(3, '<![CDATA[');
@@ -4982,11 +4939,11 @@ END
 	<table_structure name="v1">
 		<field Field="c1" Type="int(11)" Null="YES" Key="" Extra="" Comment="" />
 		<field Field="c2" Type="varchar(20)" Null="YES" Key="" Extra="" Comment="" />
-		<options Name="v1" Comment="VIEW" />
+		<options Name="v1" Rows="0" Avg_row_length="0" Data_length="0" Max_data_length="0" Index_length="0" Data_free="0" Create_time="--TIME--" Comment="VIEW" />
 	</table_structure>
 	<table_structure name="v2">
 		<field Field="c1" Type="int(11)" Null="YES" Key="" Extra="" Comment="" />
-		<options Name="v2" Comment="VIEW" />
+		<options Name="v2" Rows="0" Avg_row_length="0" Data_length="0" Max_data_length="0" Index_length="0" Data_free="0" Create_time="--TIME--" Comment="VIEW" />
 	</table_structure>
 	<events>
 		<event Event="e1" sql_mode="" time_zone="SYSTEM" character_set_client="latin1" collation_connection="latin1_swedish_ci" Database_Collation="latin1_swedish_ci">
@@ -5069,8 +5026,7 @@ USE `test`;
 /*!50003 SET sql_mode              = '' */ ;
 /*!50032 DROP TRIGGER IF EXISTS tt1_t1 */;
 DELIMITER ;;
-/*!50003 CREATE*/ /*!50017 DEFINER=`root`@`localhost`*/ /*!50003 TRIGGER tt1_t1 BEFORE INSERT ON t1 FOR EACH ROW 
-SET NEW.b=NEW.a + 10 */;;
+/*!50003 CREATE*/ /*!50017 DEFINER=`root`@`localhost`*/ /*!50003 TRIGGER `tt1_t1` BEFORE INSERT ON `t1` FOR EACH ROW SET NEW.b=NEW.a + 10 */;;
 DELIMITER ;
 /*!50003 SET sql_mode              = @saved_sql_mode */ ;
 /*!50003 SET character_set_client  = @saved_cs_client */ ;
@@ -5325,46 +5281,6 @@ DROP DATABASE b12688860_db;
 #
 # Bug#45740 MYSQLDUMP DOESN'T DUMP GENERAL_LOG AND SLOW_QUERY CAUSES RESTORE PROBLEM
 #
-SET @old_log_output_state=       @@global.log_output;
-SET @old_general_log_state=      @@global.general_log;
-SET @old_slow_query_log_state=   @@global.slow_query_log;
-call mtr.add_suppression("Failed to write to mysql.general_log");
-SET @@global.log_output="TABLE";
-SET @@global.general_log='OFF';
-SET @@global.slow_query_log='OFF';
-DROP DATABASE mysql;
-Warnings:
-Error	1146	Table 'mysql.proc' doesn't exist
-Error	1146	Table 'mysql.event' doesn't exist
-SHOW CREATE TABLE mysql.general_log;
-Table	Create Table
-general_log	CREATE TABLE `general_log` (
-  `event_time` timestamp(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
-  `user_host` mediumtext NOT NULL,
-  `thread_id` bigint(21) unsigned NOT NULL,
-  `server_id` int(10) unsigned NOT NULL,
-  `command_type` varchar(64) NOT NULL,
-  `argument` mediumblob NOT NULL
-) ENGINE=CSV DEFAULT CHARSET=utf8 COMMENT='General log'
-SHOW CREATE TABLE mysql.slow_log;
-Table	Create Table
-slow_log	CREATE TABLE `slow_log` (
-  `start_time` timestamp(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
-  `user_host` mediumtext NOT NULL,
-  `query_time` time(6) NOT NULL,
-  `lock_time` time(6) NOT NULL,
-  `rows_sent` int(11) NOT NULL,
-  `rows_examined` int(11) NOT NULL,
-  `db` varchar(512) NOT NULL,
-  `last_insert_id` int(11) NOT NULL,
-  `insert_id` int(11) NOT NULL,
-  `server_id` int(10) unsigned NOT NULL,
-  `sql_text` mediumblob NOT NULL,
-  `thread_id` bigint(21) unsigned NOT NULL
-) ENGINE=CSV DEFAULT CHARSET=utf8 COMMENT='Slow log'
-SET @@global.log_output=       @old_log_output_state;
-SET @@global.slow_query_log=   @old_slow_query_log_state;
-SET @@global.general_log=      @old_general_log_state;
 #
 # End of 5.1 tests
 #
@@ -5513,16 +5429,40 @@ DROP DATABASE dump_generated;
 # Bug #21549860 MYSQLDUMP/MYSQLPUMP INCLUDES SYS SCHEMA STORED PROGRAMS
 #               EVEN IF SKIPPING SCHEMA
 #
-SELECT COUNT(*) FROM mysql.proc WHERE db = 'sys';
+SELECT COUNT(*) FROM INFORMATION_SCHEMA.routines WHERE routine_schema = 'sys';
 COUNT(*)
 48
 DROP DATABASE sys;
-SELECT COUNT(*) FROM mysql.proc WHERE db = 'sys';
+SELECT COUNT(*) FROM INFORMATION_SCHEMA.routines WHERE routine_schema = 'sys';
 COUNT(*)
 0
-SELECT COUNT(*) FROM mysql.proc WHERE db = 'sys';
+SELECT COUNT(*) FROM INFORMATION_SCHEMA.routines WHERE routine_schema = 'sys';
 COUNT(*)
 0
-SELECT COUNT(*) FROM mysql.proc WHERE db = 'sys';
+SELECT COUNT(*) FROM INFORMATION_SCHEMA.routines WHERE routine_schema = 'sys';
 COUNT(*)
 48
+#
+# WL#8697: Invisible Indexes
+# Test of mysqldump.
+#
+CREATE TABLE test.t1 (
+a INT,
+b INT,
+c INT,
+INDEX (a) VISIBLE,
+INDEX (b) INVISIBLE,
+INDEX (c)
+);
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `t1` (
+  `a` int(11) DEFAULT NULL,
+  `b` int(11) DEFAULT NULL,
+  `c` int(11) DEFAULT NULL,
+  KEY `a` (`a`),
+  KEY `b` (`b`) /*!50800 INVISIBLE */,
+  KEY `c` (`c`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+/*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE test.t1;

@@ -17,11 +17,9 @@ LET $INNODB_PAGE_SIZE = `select @@innodb_page_size`;
 --echo # It rejects all invalid input, as if strict mode is always ON.
 SHOW VARIABLES LIKE 'innodb_strict_mode';
 
---echo # Neither file_format=antelope nor file_per_table=OFF will prevent
---echo # CREATE TABLESPACE from working because the tablespace is an empty
---echo # shell that can contain multiple row formats.
-SET GLOBAL innodb_file_format = 'antelope';
-SHOW VARIABLES LIKE 'innodb_file_format';
+--echo # The setting innodb_file_per_table=OFF will not prevent
+--echo # CREATE TABLESPACE from working because the tablespace is
+--echo # an empty shell that can contain multiple row formats.
 SHOW VARIABLES LIKE 'innodb_file_per_table';
 
 --echo #
@@ -334,13 +332,13 @@ CREATE TABLE t_single (a int, b text);
 # A parse error occurs if an identifier contains a '/' unless the identifier is quoted.
 --error ER_PARSE_ERROR
 CREATE TABLE t_general (a int, b text) TABLESPACE test/t_single engine=InnoDB;
---error ER_WRONG_TABLESPACE_NAME
+--error ER_TABLESPACE_MISSING_WITH_NAME
 CREATE TABLE t_general (a int, b text) TABLESPACE `test/t_single` engine=InnoDB;
 SHOW WARNINGS;
---error ER_TABLESPACE_MISSING
+--error ER_TABLESPACE_MISSING_WITH_NAME
 CREATE TABLE t_general (a int, b text) TABLESPACE `S_Def` engine=InnoDB;
 SHOW WARNINGS;
---error ER_TABLESPACE_MISSING
+--error ER_TABLESPACE_MISSING_WITH_NAME
 CREATE TABLE t_general (a int, b text) TABLESPACE `S_DEF` engine=InnoDB;
 SHOW WARNINGS;
 
@@ -370,7 +368,7 @@ CREATE TABLESPACE s_red ADD DATAFILE 's_red.ibd' ROW_FORMAT=redundant;
 CREATE TABLE t_def_in_def (a int, b text) TABLESPACE s_def;
 CREATE TABLE t_red_in_def (a int, b text) ROW_FORMAT=Redundant TABLESPACE s_def;
 # Since these are creating tables within existing general tablespaces the value
-# of INNODB_FILE_FORMAT and INNODB_FILE_PER_TABLE do not matter.
+# of INNODB_FILE_PER_TABLE does not matter.
 SET GLOBAL innodb_file_per_table = OFF;
 CREATE TABLE t_dyn_in_def (a int, b text) ROW_FORMAT=Dynamic TABLESPACE s_def;
 
@@ -442,13 +440,12 @@ SHOW WARNINGS;
 --echo #
 --echo # Try to add a second table to a single-table tablespace
 --echo #
-SET GLOBAL innodb_file_format = 'barracuda';
 SET GLOBAL innodb_file_per_table = ON;
 CREATE TABLE s_single (a int, b text) ROW_FORMAT=dynamic;
---error ER_TABLESPACE_MISSING
+--error ER_TABLESPACE_MISSING_WITH_NAME
 CREATE TABLE t_second (a int, b text) TABLESPACE s_single;
 SHOW WARNINGS;
---error ER_WRONG_TABLESPACE_NAME
+--error ER_TABLESPACE_MISSING_WITH_NAME
 CREATE TABLE t_second (a int, b text) TABLESPACE=`test/s_single`;
 SHOW WARNINGS;
 --source suite/innodb/include/show_i_s_tablespaces.inc
@@ -457,9 +454,9 @@ DROP TABLE s_single;
 --echo #
 --echo # Try to use both TABLESPACE and DATA DIRECTORY in the same CREATE TABLE.
 --echo #
---echo # Strict mode, file_format and file_per_table should make no difference
+--echo # Strict mode and innodb_file_per_table should make no difference
 --echo # when using general tablespaces. If TABLESPACE=innodb_file-per-table,
---echo # innodb_strict_mode apply.
+--echo # innodb_strict_mode will apply.
 --echo #
 SET GLOBAL innodb_file_per_table = OFF;
 SET innodb_strict_mode = OFF;
@@ -489,20 +486,20 @@ DROP TABLE t4;
 
 --echo # An empty string in DATA DIRECTORY='' indicates the current directory,
 --echo # which is not allowed.
---error ER_WRONG_TABLE_NAME
+--error ER_WRONG_VALUE
 CREATE TABLE t4 (a int, b text) TABLESPACE=innodb_file_per_table DATA DIRECTORY='';
 SHOW WARNINGS;
 
 SET GLOBAL innodb_file_per_table = ON;
 SET innodb_strict_mode = ON;
 
---error ER_WRONG_TABLE_NAME
+--error ER_WRONG_VALUE
 CREATE TABLE t4 (a int, b text) TABLESPACE=innodb_file_per_table DATA DIRECTORY='';
 SHOW WARNINGS;
---error ER_WRONG_TABLE_NAME
+--error ER_WRONG_VALUE
 CREATE TABLE t4 (a int, b text) TABLESPACE=innodb_file_per_table DATA DIRECTORY='.';
 SHOW WARNINGS;
---error ER_WRONG_TABLE_NAME
+--error ER_WRONG_VALUE
 CREATE TABLE t4 (a int, b text) TABLESPACE=innodb_file_per_table DATA DIRECTORY='test';
 SHOW WARNINGS;
 
@@ -887,7 +884,7 @@ INSERT INTO t_nomad(b) VALUES(22);
 SHOW CREATE TABLE t_nomad;
 --source suite/innodb/include/show_i_s_tables.inc
 DROP TABLESPACE s_short_life;
---error ER_TABLESPACE_MISSING
+--error ER_TABLESPACE_MISSING_WITH_NAME
 ALTER TABLE t_nomad ENGINE=InnoDB;
 CREATE TABLESPACE s_shorter_life ADD DATAFILE 'shorter_life.ibd';
 ALTER TABLE t_nomad ENGINE=InnoDB TABLESPACE=s_shorter_life;
@@ -987,13 +984,6 @@ SET GLOBAL innodb_strict_mode=default;
 --rmdir $MYSQL_TMP_DIR/s2_#_dir
 --rmdir $MYSQL_TMP_DIR/test
 --rmdir $MYSQL_TMP_DIR/tablespace.ibd
-
---error 1
---remove_file $MYSQLD_DATADIR/s1.ibd.isl
---error 1
---remove_file $MYSQLD_DATADIR/s2.isl
---error 1
---remove_file $MYSQLD_DATADIR/s4.isl
 
 --disable_query_log
 call mtr.add_suppression("\\[ERROR\\] InnoDB: File .*\.ibd: 'create' returned OS error .*");

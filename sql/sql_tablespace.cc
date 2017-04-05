@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -13,54 +13,39 @@
    along with this program; if not, write to the Free Software Foundation,
    51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
 
-/* drop and alter of tablespaces */
-
 #include "sql_tablespace.h"
-#include "my_global.h"
+
+#include "derror.h"                             // ER_THD
 #include "lock.h"                               // lock_tablespace_name
-#include "sql_table.h"                          // write_bin_log
 #include "sql_class.h"                          // THD
+#include "sql_table.h"                          // write_bin_log
+#include "table.h"                              // ident_name_check
 
-/**
-  Check if tablespace name is valid
+#include "dd/dd_tablespace.h"                   // dd::create_tablespace
 
-  @param tablespace_name        Name of the tablespace
 
-  @note Tablespace names are not reflected in the file system, so
-        character case conversion or consideration is not relevant.
+static bool update_tablespace_dictionary(
+              THD *thd, st_alter_tablespace *ts_info, handlerton *hton);
 
-  @note Checking for path characters or ending space is not done.
-        The only checks are for identifier length, both in terms of
-        number of characters and number of bytes.
 
-  @retval  IDENT_NAME_OK        Identifier name is ok (Success)
-  @retval  IDENT_NAME_WRONG     Identifier name is wrong, if length == 0
-*                               (ER_WRONG_TABLESPACE_NAME)
-  @retval  IDENT_NAME_TOO_LONG  Identifier name is too long if it is greater
-                                than 64 characters (ER_TOO_LONG_IDENT)
-
-  @note In case of IDENT_NAME_TOO_LONG or IDENT_NAME_WRONG, the function
-        reports an error (using my_error()).
-*/
-
-enum_ident_name_check check_tablespace_name(const char *tablespace_name)
+Ident_name_check check_tablespace_name(const char *tablespace_name)
 {
-  size_t name_length= 0;                       //< Length as number of bytes
-  size_t name_length_symbols= 0;               //< Length as number of symbols
+  size_t name_length= 0;                       ///< Length as number of bytes
+  size_t name_length_symbols= 0;               ///< Length as number of symbols
 
   // Name must be != NULL and length must be > 0
   if (!tablespace_name || (name_length= strlen(tablespace_name)) == 0)
   {
     my_error(ER_WRONG_TABLESPACE_NAME, MYF(0), tablespace_name);
-    return IDENT_NAME_WRONG;
+    return Ident_name_check::WRONG;
   }
 
   // If we do not have too many bytes, we must check the number of symbols,
   // provided the system character set may use more than one byte per symbol.
   if (name_length <= NAME_LEN && use_mb(system_charset_info))
   {
-    const char *name= tablespace_name;   //< The actual tablespace name
-    const char *end= name + name_length; //< Pointer to first byte after name
+    const char *name= tablespace_name;   ///< The actual tablespace name
+    const char *end= name + name_length; ///< Pointer to first byte after name
 
     // Loop over all symbols as long as we don't have too many already
     while (name != end && name_length_symbols <= NAME_CHAR_LEN)
@@ -78,10 +63,10 @@ enum_ident_name_check check_tablespace_name(const char *tablespace_name)
   if (name_length_symbols > NAME_CHAR_LEN || name_length > NAME_LEN)
   {
     my_error(ER_TOO_LONG_IDENT, MYF(0), tablespace_name);
-    return IDENT_NAME_TOO_LONG;
+    return Ident_name_check::TOO_LONG;
   }
 
-  return IDENT_NAME_OK;
+  return Ident_name_check::OK;
 }
 
 
@@ -116,7 +101,8 @@ static bool is_tablespace_command(ts_command_type ts_cmd_type)
   }
 }
 
-int mysql_alter_tablespace(THD *thd, st_alter_tablespace *ts_info)
+
+bool mysql_alter_tablespace(THD *thd, st_alter_tablespace *ts_info)
 {
   int error= HA_ADMIN_NOT_IMPLEMENTED;
 
@@ -135,7 +121,7 @@ int mysql_alter_tablespace(THD *thd, st_alter_tablespace *ts_info)
     if (ts_info->storage_engine != 0)
       push_warning_printf(thd, Sql_condition::SL_WARNING,
                           ER_WARN_USING_OTHER_HANDLER,
-                          ER(ER_WARN_USING_OTHER_HANDLER),
+                          ER_THD(thd, ER_WARN_USING_OTHER_HANDLER),
                           ha_resolve_storage_engine_name(hton),
                           ts_info->tablespace_name ? ts_info->tablespace_name
                                                 : ts_info->logfile_group_name);
@@ -152,11 +138,13 @@ int mysql_alter_tablespace(THD *thd, st_alter_tablespace *ts_info)
   }
 
   // If this is a tablespace related command, check the tablespace name
-  // and acquire and MDL X lock on it.
+  // and acquire and MDL X lock on it. Also validate the data file path.
   if (is_tablespace_command(ts_info->ts_cmd_type) &&
-      (check_tablespace_name(ts_info->tablespace_name) != IDENT_NAME_OK ||
+      (check_tablespace_name(ts_info->tablespace_name) !=
+       Ident_name_check::OK ||
        lock_tablespace_name(thd, ts_info->tablespace_name)))
-    DBUG_RETURN(1);
+    DBUG_RETURN(true);
+
 
   if (hton->alter_tablespace)
   {
@@ -179,7 +167,7 @@ int mysql_alter_tablespace(THD *thd, st_alter_tablespace *ts_info)
       switch (error)
       {
       case 1:
-        DBUG_RETURN(1);
+        DBUG_RETURN(true);
       case HA_ADMIN_NOT_IMPLEMENTED:
         cmd_type = 1 + static_cast<uint>(ts_info->ts_cmd_type);
         my_error(ER_CHECK_NOT_IMPLEMENTED, MYF(0), sql_syntax[cmd_type]);
@@ -209,10 +197,23 @@ int mysql_alter_tablespace(THD *thd, st_alter_tablespace *ts_info)
         my_error(ER_TABLESPACE_EXISTS, MYF(0), ts_info->tablespace_name);
         break;
       default:
-        my_error(ER_GET_ERRNO, MYF(0), error);
+        char errbuf[MYSQL_ERRMSG_SIZE];
+        my_error(ER_GET_ERRNO, MYF(0), error,
+                 my_strerror(errbuf, MYSQL_ERRMSG_SIZE, error));
       }
-      DBUG_RETURN(error);
+      DBUG_RETURN((error != 0));
     }
+
+    // Update data dictionary tables
+    if (update_tablespace_dictionary(thd, ts_info, hton))
+    {
+      /*
+        In practice DD operations should not fail as respective
+        SE tablespace operations are already successfull at this point.
+      */
+      DBUG_RETURN(true);
+    }
+
   }
   else
   {
@@ -222,5 +223,71 @@ int mysql_alter_tablespace(THD *thd, st_alter_tablespace *ts_info)
     DBUG_RETURN(HA_ADMIN_NOT_IMPLEMENTED);
   }
   error= write_bin_log(thd, false, thd->query().str, thd->query().length);
-  DBUG_RETURN(error);
+  DBUG_RETURN((error != 0));
 }
+
+
+/*
+  Handle following operations,
+    - Create tablespace.
+    - Drop tablespace.
+    - Add/Drop datafile.
+
+  @param thd     - Thread executing the operation.
+  @param ts_info - Tablespace metadata from the DDL.
+  @param hton    - Handlerton in which tablespace reside.
+
+  @return false - On success.
+  @return true - On failure.
+*/
+static bool update_tablespace_dictionary(
+              THD *thd, st_alter_tablespace *ts_info, handlerton *hton)
+{
+  DBUG_ENTER("dd_alter_tablespace");
+
+  switch (ts_info->ts_cmd_type)
+  {
+  case CREATE_TABLESPACE:
+    DBUG_RETURN(dd::create_tablespace(thd, ts_info, hton));
+
+  case DROP_TABLESPACE:
+    DBUG_RETURN(dd::drop_tablespace(thd, ts_info, hton));
+
+  case ALTER_TABLESPACE:
+    DBUG_RETURN(dd::alter_tablespace(thd, ts_info, hton));
+
+
+  /*
+    Below tablespace alter operations are handled by SE
+    and data dictionary does not capture metadata related
+    to these operations. OR the operation is not implemented
+    by the SE. The server just returns success in these cases
+    letting the SE to take actions.
+  */
+
+  /*
+    Metadata related to LOGFILE GROUP are not stored in
+    dictionary as of now.
+  */
+  case CREATE_LOGFILE_GROUP:
+  case ALTER_LOGFILE_GROUP:
+  case DROP_LOGFILE_GROUP:
+
+  /*
+    Change file operation is not implemented by any storage
+    engine.
+  */
+  case CHANGE_FILE_TABLESPACE:
+
+  /*
+    Access mode of tablespace is set by SE operation and MySQL
+    ignores it.
+  */
+  case ALTER_ACCESS_MODE_TABLESPACE:
+  default:
+    ;
+  }
+
+  DBUG_RETURN(false);
+}
+

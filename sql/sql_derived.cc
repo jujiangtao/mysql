@@ -23,7 +23,6 @@
 #include "my_global.h"                          /* NO_EMBEDDED_ACCESS_CHECKS */
 #include "sql_derived.h"
 #include "sql_select.h"
-#include "sql_resolver.h"
 #include "sql_optimizer.h"                    // JOIN
 #include "sql_view.h"                         // check_duplicate_names
 #include "auth_common.h"                      // SELECT_ACL
@@ -60,8 +59,15 @@ bool TABLE_LIST::resolve_derived(THD *thd, bool apply_semijoin)
     DBUG_ASSERT(sl->context.outer_context == NULL);
   }
 #endif
-  if (!(derived_result= new (thd->mem_root) Query_result_union))
-    DBUG_RETURN(true);
+  if (!(derived_result= new (thd->mem_root) Query_result_union(thd)))
+    DBUG_RETURN(true);              /* purecov: inspected */
+
+  /*
+    Since derived tables do not allow outer references, they cannot allow
+    aggregation to occur in any outer query blocks.
+  */
+  nesting_map allow_sum_func_saved= thd->lex->allow_sum_func;
+  thd->lex->allow_sum_func= 0;
 
   /*
     Prepare the underlying query expression of the derived table.
@@ -85,6 +91,8 @@ bool TABLE_LIST::resolve_derived(THD *thd, bool apply_semijoin)
   if (is_derived())
     set_privileges(SELECT_ACL);
 #endif
+
+  thd->lex->allow_sum_func= allow_sum_func_saved;
 
   thd->derived_tables_processing= derived_tables_saved;
 
@@ -349,6 +357,5 @@ bool TABLE_LIST::materialize_derived(THD *thd)
 bool TABLE_LIST::cleanup_derived()
 {
   DBUG_ASSERT(is_view_or_derived() && uses_materialization());
-
   return derived_unit()->cleanup(false);
 }

@@ -225,6 +225,9 @@ name
 deallocate prepare stmt1;
 drop table t1;
 create table t1 ( a int primary key, b varchar(30)) engine = MYISAM ;
+analyze table t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	Table is already up to date
 prepare stmt1 from ' show table status from test like ''t1%'' ';
 execute stmt1;
 Name	Engine	Version	Row_format	Rows	Avg_row_length	Data_length	Max_data_length	Index_length	Data_free	Auto_increment	Create_time	Update_time	Check_time	Collation	Checksum	Create_options	Comment
@@ -1221,13 +1224,13 @@ SET @aux= "SELECT COUNT(*)
 prepare my_stmt from @aux;
 execute my_stmt;
 COUNT(*)
-45
+47
 execute my_stmt;
 COUNT(*)
-45
+47
 execute my_stmt;
 COUNT(*)
-45
+47
 deallocate prepare my_stmt;
 drop procedure if exists p1|
 drop table if exists t1|
@@ -1617,23 +1620,6 @@ DEALLOCATE PREPARE stmt;
 DROP VIEW v1;
 DROP TABLE t1;
 DROP PROCEDURE IF EXISTS p1;
-flush status;
-prepare sq from 'show status like "slow_queries"';
-execute sq;
-Variable_name	Value
-Slow_queries	0
-prepare no_index from 'select 1 from information_schema.tables limit 1';
-execute sq;
-Variable_name	Value
-Slow_queries	0
-execute no_index;
-1
-1
-execute sq;
-Variable_name	Value
-Slow_queries	1
-deallocate prepare no_index;
-deallocate prepare sq;
 CREATE TABLE t1 (a int);
 INSERT INTO t1 VALUES (1), (2);
 CREATE TABLE t2 (b int);
@@ -3955,3 +3941,30 @@ ERROR 42S22: Unknown column 't2.absent' in 'field list'
 PREPARE s FROM "UPDATE t1 JOIN t2 ON t1.a=t2.b SET t1.a=absent.absent";
 ERROR 42S22: Unknown column 'absent.absent' in 'field list'
 DROP TABLE t1, t2;
+#
+# Bug#19894382 - SERVER SIDE PREPARED STATEMENTS LEADS TO POTENTIAL OFF-BY-SECOND
+#                TIMESTAMP ON SLAVE.
+#
+CREATE TABLE bug19894382(f1 CHAR(64) DEFAULT 'slave',
+f2 TIME, f3 TIMESTAMP NULL, f4 DATETIME,
+f5 TIME(3), f6 TIMESTAMP(3) NULL, f7 DATETIME(3));
+# Execute prepared statements from mysql_client_test.
+# Insert tuples from the client_test_db.bug19894382 to the test.bug19894382.
+# Tuples in the client_test_db.bug19894382 are inserted from the mysql_client_test.
+INSERT INTO bug19894382 SELECT * FROM client_test_db.bug19894382;
+# Replay binlog events
+# Insert tuples from the client_test_db.bug19894382 to the test.bug19894382.
+# Tuples in the client_test_db.bug19894382 are inserted from the binlog.
+INSERT INTO bug19894382(f2, f3, f4, f5, f6, f7)
+SELECT f2, f3, f4, f5, f6, f7 FROM client_test_db.bug19894382;
+# With fix, tuples of "master" and "slave" will be same. There will not be any difference
+# in values inserted for time, timestamp and datetime type columns.
+SELECT * FROM bug19894382 ORDER BY f2;
+f1	f2	f3	f4	f5	f6	f7
+master	07:30:30	2015-04-24 13:30:30	2015-04-24 07:30:30	07:30:30.005	2015-04-24 13:30:30.005	2015-04-24 07:30:30.005
+slave	07:30:30	2015-04-24 13:30:30	2015-04-24 07:30:30	07:30:30.005	2015-04-24 13:30:30.005	2015-04-24 07:30:30.005
+master	07:30:31	2015-04-24 13:30:31	2015-04-24 07:30:31	07:30:30.502	2015-04-24 13:30:30.502	2015-04-24 07:30:30.502
+slave	07:30:31	2015-04-24 13:30:31	2015-04-24 07:30:31	07:30:30.502	2015-04-24 13:30:30.502	2015-04-24 07:30:30.502
+# Cleanup
+DROP DATABASE client_test_db;
+DROP TABLE bug19894382;

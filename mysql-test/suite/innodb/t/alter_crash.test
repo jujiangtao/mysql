@@ -90,8 +90,6 @@ EOF
 
 --echo # Manual recovery end
 
-FLUSH TABLES;
-
 --echo # Drop the orphaned original table.
 --disable_query_log
 eval DROP TABLE `#mysql50#$temp_table_name`;
@@ -207,8 +205,6 @@ rename($frm_file[0], $t1_frm);
 EOF
 
 --echo # Manual recovery end
-
-FLUSH TABLES;
 
 --echo # Drop the orphaned original table.
 --disable_query_log

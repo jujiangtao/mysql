@@ -6,20 +6,19 @@
 --echo #
 
 create table t1 (f1 int primary key) engine=InnoDB;
---error ER_CANNOT_ADD_FOREIGN
+--error ER_FK_DUP_NAME
 create table t2 (f1 int primary key,
 constraint c1 foreign key (f1) references t1(f1),
-constraint c1 foreign key (f1) references t1(f1)) engine=InnoDB; 
+constraint c1 foreign key (f1) references t1(f1)) engine=InnoDB;
 create table t2 (f1 int primary key,
    constraint c1 foreign key (f1) references t1(f1)) engine=innodb;
 
---replace_regex /#sql-[0-9a-f_]*'/#sql-temporary'/
---error ER_DUP_KEY
-alter table t2 add constraint c1 foreign key (f1) references t1(f1); 
+--error ER_FK_DUP_NAME
+alter table t2 add constraint c1 foreign key (f1) references t1(f1);
 
 set foreign_key_checks = 0;
 --error ER_FK_DUP_NAME
-alter table t2 add constraint c1 foreign key (f1) references t1(f1); 
+alter table t2 add constraint c1 foreign key (f1) references t1(f1);
 
 drop table t2, t1;
 
@@ -87,28 +86,36 @@ SELECT a, b FROM t2 ORDER BY a;
 DROP TABLE t2, t1;
 
 --echo #
---echo # bug#25126722 FOREIGN KEY CONSTRAINT NAME IS NULL AFTER RESTART
---echo # base bug#24818604 [GR]
+--echo # Bug#20752436: INNODB: FAILING ASSERTION: 0 IN FILE HANDLER0ALTER.CC
+--echo # LINE 6647
 --echo #
+--echo # Verify that index types that cannot be used as foreign keys are
+--echo # ignored when creating foreign keys.
 
-CREATE TABLE t1 (c1 INT PRIMARY KEY);
-CREATE TABLE t2 (c1 INT PRIMARY KEY, FOREIGN KEY (c1) REFERENCES t1(c1));
+let $SAVED_foreign_key_checks= `SELECT @@foreign_key_checks`;
+set @@foreign_key_checks=0;
 
-INSERT INTO t1 VALUES (1);
-INSERT INTO t2 VALUES (1);
+CREATE TABLE t1(a CHAR(100), b GEOMETRY NOT NULL) ENGINE InnoDB;
 
-SELECT unique_constraint_name FROM information_schema.referential_constraints
-WHERE table_name = 't2';
+--echo # Creating a foreign key on a GEOMETRY column is not supported
+--error ER_BLOB_KEY_WITHOUT_LENGTH
+ALTER TABLE t1 ADD CONSTRAINT fi_b FOREIGN KEY(b) REFERENCES ti2(b);
 
---source include/restart_mysqld.inc
+--echo # Adds FULLTEXT and SPATAL indices which cannot be used as foreign keys
+ALTER TABLE t1 ADD FULLTEXT INDEX(a), ADD SPATIAL INDEX(b);
 
-SELECT unique_constraint_name FROM information_schema.referential_constraints
-WHERE table_name = 't2';
+--echo # Adds a foreign key on column with FULLTEXT index.
+--echo # The FULLTEXT index cannot be used and the generated key must be kept
+ALTER TABLE t1 ADD CONSTRAINT fi_a FOREIGN KEY(a) REFERENCES ti2(a);
+ANALYZE TABLE t1;
+SHOW INDEXES FROM t1;
 
-SELECT * FROM t1;
+--echo # Attempt to add a foreign key on column with SPATIAL index.
+--echo # The SPATIAL index cannot be used so this becomes an attempt at
+--echo # creating a foreign key on a GEOMETRY column which is not supported
+--error ER_BLOB_KEY_WITHOUT_LENGTH
+ALTER TABLE t1 ADD CONSTRAINT fi_b FOREIGN KEY(b) REFERENCES ti2(b);
 
-SELECT unique_constraint_name FROM information_schema.referential_constraints
-WHERE table_name = 't2';
-
-DROP TABLE t2;
 DROP TABLE t1;
+eval set @@foreign_key_checks= $SAVED_foreign_key_checks;
+

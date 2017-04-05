@@ -55,9 +55,7 @@ void cleanup_program(void)
   global_program_container.cleanup();
 }
 
-C_MODE_START
-static uchar *program_hash_get_key(const uchar *entry, size_t *length,
-                                   my_bool)
+static const uchar *program_hash_get_key(const uchar *entry, size_t *length)
 {
   const PFS_program * const *typed_entry;
   const PFS_program *program;
@@ -68,9 +66,8 @@ static uchar *program_hash_get_key(const uchar *entry, size_t *length,
   DBUG_ASSERT(program != NULL);
   *length= program->m_key.m_key_length;
   result= program->m_key.m_hash_key;
-  return const_cast<uchar*> (reinterpret_cast<const uchar*> (result));
+  return reinterpret_cast<const uchar*> (result);
 }
-C_MODE_END
 
 /**
   Initialize the program hash.
@@ -205,7 +202,7 @@ search:
     (lf_hash_search(&program_hash, pins,
                     key.m_hash_key, key.m_key_length));
 
-  if (entry && (entry != MY_ERRPTR))
+  if (entry && (entry != MY_LF_ERRPTR))
   {
     /* If record already exists then return its pointer. */
     pfs= *entry;
@@ -292,7 +289,7 @@ void drop_program(PFS_thread *thread,
     (lf_hash_search(&program_hash, pins,
                     key.m_hash_key, key.m_key_length));
 
-  if (entry && (entry != MY_ERRPTR))
+  if (entry && (entry != MY_LF_ERRPTR))
   {
     PFS_program *pfs= NULL;
     pfs= *entry;

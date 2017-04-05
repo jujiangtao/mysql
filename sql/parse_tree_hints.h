@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -81,7 +81,9 @@ public:
     @param thd             Pointer to THD object
     @param str             Pointer to String object
   */
-  virtual void append_args(THD *thd, String *str) const {}
+  virtual void append_args(THD *thd MY_ATTRIBUTE((unused)),
+                           String *str MY_ATTRIBUTE((unused))) const
+  {}
 };
 
 
@@ -115,8 +117,10 @@ public:
 */
 class PT_qb_level_hint : public PT_hint
 {
-  const LEX_CSTRING qb_name;  //< Name of query block
-  uint args;                  //< Bit mask of arguments to hint
+  /** Name of query block. */
+  const LEX_CSTRING qb_name;
+  /** Bit mask of arguments to hint. */
+  uint args;
 
   typedef PT_hint super;
 public:
@@ -269,7 +273,7 @@ public:
              false otherwise
   */
   virtual bool contextualize(Parse_context *pc);
-  virtual void append_args(THD *thd, String *str) const
+  virtual void append_args(THD*, String *str) const
   {
     str->append_ulonglong(milliseconds);
   }

@@ -28,15 +28,21 @@
 
 #include "debug_sync.h"       // DEBUG_SYNC
 #include "item_sum.h"         // Item_sum
+#include "json_dom.h"         // Json_wrapper
 #include "key.h"              // key_cmp
 #include "log.h"              // sql_print_error
+#include "filesort.h"         // Filesort
+#include "opt_range.h"        // QUICK_SELECT_I
 #include "opt_trace.h"        // Opt_trace_object
+#include "psi_memory_key.h"
+#include "query_result.h"     // Query_result
+#include "record_buffer.h"    // Record_buffer
 #include "sql_base.h"         // fill_record
 #include "sql_join_buffer.h"  // st_cache_field
 #include "sql_optimizer.h"    // JOIN
 #include "sql_show.h"         // get_schema_tables_result
 #include "sql_tmp_table.h"    // create_tmp_table
-#include "json_dom.h"    // Json_wrapper
+#include "mysqld.h"           // stage_executing
 
 #include <algorithm>
 using std::max;
@@ -82,6 +88,19 @@ static int join_read_linked_first(QEP_TAB *tab);
 static int join_read_linked_next(READ_RECORD *info);
 static int do_sj_reset(SJ_TMP_TABLE *sj_tbl);
 static bool cmp_buffer_with_ref(THD *thd, TABLE *table, TABLE_REF *tab_ref);
+static bool alloc_group_fields(JOIN *join, ORDER *group);
+
+/// Maximum amount of space (in bytes) to allocate for a Record_buffer.
+static constexpr size_t MAX_RECORD_BUFFER_SIZE= 128 * 1024; // 128KB
+
+
+void Temp_table_param::cleanup(void)
+{
+  delete [] copy_field;
+  copy_field= NULL;
+  copy_field_end= NULL;
+}
+
 
 /**
   Execute select, executor entry point.
@@ -328,30 +347,26 @@ err:
                         - 1 = First group changed  (a)
                         - 2 = Second group changed (a,b)
 
-  @retval
-    0   ok
-  @retval
-    1   If send_data_failed()
+  @returns false if success, true if error
 */
 
-int JOIN::rollup_send_data(uint idx)
+bool JOIN::rollup_send_data(uint idx)
 {
-  uint i;
-  for (i= send_group_parts ; i-- > idx ; )
+  for (uint i= send_group_parts; i-- > idx; )
   {
-    /* Get reference pointers to sum functions in place */
-    copy_ref_ptr_array(ref_ptrs, rollup.ref_pointer_arrays[i]);
+    // Get references to sum functions in place
+    copy_ref_item_slice(ref_items[REF_SLICE_BASE], rollup.ref_item_arrays[i]);
     if ((!having_cond || having_cond->val_int()))
     {
       if (send_records < unit->select_limit_cnt && do_send_rows &&
 	  select_lex->query_result()->send_data(rollup.fields[i]))
-	return 1;
+	return true;
       send_records++;
     }
   }
-  /* Restore ref_pointer_array */
-  set_items_ref_array(current_ref_ptrs);
-  return 0;
+  // Restore ref_items array
+  set_ref_item_slice(current_ref_item_slice);
+  return false;
 }
 
 
@@ -367,21 +382,17 @@ int JOIN::rollup_send_data(uint idx)
                                - 0 = Total sum level
                                - 1 = First group changed  (a)
                                - 2 = Second group changed (a,b)
-  @param table               reference to temp table
+  @param table_arg           Reference to temp table
 
-  @retval
-    0   ok
-  @retval
-    1   if write_data_failed()
+  @returns false if success, true if error
 */
 
-int JOIN::rollup_write_data(uint idx, TABLE *table_arg)
+bool JOIN::rollup_write_data(uint idx, TABLE *table_arg)
 {
-  uint i;
-  for (i= send_group_parts ; i-- > idx ; )
+  for (uint i= send_group_parts; i-- > idx; )
   {
-    /* Get reference pointers to sum functions in place */
-    copy_ref_ptr_array(ref_ptrs, rollup.ref_pointer_arrays[i]);
+    // Get references to sum functions in place
+    copy_ref_item_slice(ref_items[REF_SLICE_BASE], rollup.ref_item_arrays[i]);
     if ((!having_cond || having_cond->val_int()))
     {
       int write_error;
@@ -395,17 +406,17 @@ int JOIN::rollup_write_data(uint idx, TABLE *table_arg)
       copy_sum_funcs(sum_funcs_end[i+1], sum_funcs_end[i]);
       if ((write_error= table_arg->file->ha_write_row(table_arg->record[0])))
       {
-  if (create_ondisk_from_heap(thd, table_arg, 
+        if (create_ondisk_from_heap(thd, table_arg,
                                     tmp_table_param.start_recinfo,
                                     &tmp_table_param.recinfo,
                                     write_error, FALSE, NULL))
-	  return 1;		     
+          return true;
       }
     }
   }
-  /* Restore ref_pointer_array */
-  set_items_ref_array(current_ref_ptrs);
-  return 0;
+  // Restore ref_items array
+  set_ref_item_slice(current_ref_item_slice);
+  return false;
 }
 
 
@@ -453,7 +464,7 @@ bool prepare_sum_aggregators(Item_sum **func_ptr, bool need_distinct)
 
 
 /**
-  Call ::setup for all sum functions.
+  Call @c setup() for all sum functions.
 
   @param thd           thread handler
   @param func_ptr      sum function list
@@ -667,7 +678,7 @@ static bool update_const_equal_items(THD *thd, Item *cond, JOIN_TAB *tab)
     }
   }
   else if (cond->type() == Item::FUNC_ITEM && 
-           ((Item_cond*) cond)->functype() == Item_func::MULT_EQUAL_FUNC)
+           down_cast<Item_func*>(cond)->functype() == Item_func::MULT_EQUAL_FUNC)
   {
     Item_equal *item_equal= (Item_equal *) cond;
     bool contained_const= item_equal->get_const() != NULL;
@@ -682,7 +693,7 @@ static bool update_const_equal_items(THD *thd, Item *cond, JOIN_TAB *tab)
       {
         Field *field= item_field->field;
         JOIN_TAB *stat= field->table->reginfo.join_tab;
-        key_map possible_keys= field->key_start;
+        Key_map possible_keys= field->key_start;
         possible_keys.intersect(field->table->keys_in_use_for_query);
         stat[0].const_keys.merge(possible_keys);
         stat[0].keys().merge(possible_keys);
@@ -777,7 +788,7 @@ return_zero_rows(JOIN *join, List<Item> &fields)
 /**
   @brief Setup write_func of QEP_tmp_table object
 
-  @param join_tab JOIN_TAB of a tmp table
+  @param tab QEP_TAB of a tmp table
 
   @details
   Function sets up write_func according to how QEP_tmp_table object that
@@ -852,6 +863,152 @@ Next_select_func JOIN::get_end_select_func()
   }
   DBUG_PRINT("info",("Using end_send"));
   return end_send;
+}
+
+
+/**
+  Find out how many bytes it takes to store the smallest prefix which
+  covers all the columns that will be read from a table.
+
+  @param qep_tab the table to read
+  @return the size of the smallest prefix that covers all records to be
+          read from the table
+*/
+static size_t record_prefix_size(const QEP_TAB *qep_tab)
+{
+  const TABLE *table= qep_tab->table();
+  const Field *last_field= nullptr;
+
+  // Go through all the columns in the read_set, and find the last field.
+  for (auto f= table->field, end= table->field + table->s->fields; f < end; ++f)
+  {
+    if (bitmap_is_set(table->read_set, (*f)->field_index) &&
+        (last_field == nullptr || last_field->ptr < (*f)->ptr))
+      last_field= *f;
+  }
+
+  /*
+    If this is an index merge, the primary key columns may be required
+    for positioning in a later stage, even though they are not in the
+    read_set here. Allocate space for them in case they are needed.
+  */
+  if (qep_tab->type() == JT_INDEX_MERGE &&
+      !table->s->is_missing_primary_key() &&
+      (table->file->ha_table_flags() & HA_PRIMARY_KEY_REQUIRED_FOR_POSITION))
+  {
+    const KEY &key= table->key_info[table->s->primary_key];
+    for (auto kp= key.key_part, end= kp + key.user_defined_key_parts;
+         kp < end; ++kp)
+    {
+      const Field *f= table->field[kp->fieldnr - 1];
+      if (last_field == nullptr || last_field->ptr < f->ptr)
+        last_field= f;
+    }
+  }
+
+  // If no column is read (for example, SELECT 1 FROM t), the prefix is 0.
+  if (last_field == nullptr)
+    return 0;
+
+  return last_field->offset(table->record[0]) + last_field->pack_length();
+}
+
+
+/**
+  Allocate a data buffer that the storage engine can use for fetching
+  batches of records.
+
+  A buffer is only allocated if ha_is_record_buffer_wanted() returns true
+  for the handler, and the scan in question is of a kind that could be
+  expected to benefit from fetching records in batches.
+
+  @param tab the table to read
+  @retval true if an error occurred when allocating the buffer
+  @retval false if a buffer was successfully allocated, or if a buffer
+  was not attempted allocated
+*/
+static bool set_record_buffer(const QEP_TAB *tab)
+{
+  TABLE *const table= tab->table();
+
+  DBUG_ASSERT(table->file->inited);
+  DBUG_ASSERT(table->file->ha_get_record_buffer() == nullptr);
+
+  // Skip temporary tables.
+  if (tab->position() == nullptr)
+    return false;
+
+  // Don't allocate a buffer for loose index scan.
+  if (tab->quick_optim() && tab->quick_optim()->is_loose_index_scan())
+    return false;
+
+  // Only create a buffer if the storage engine wants it.
+  ha_rows max_rows= 0;
+  if (!table->file->ha_is_record_buffer_wanted(&max_rows) || max_rows == 0)
+    return false;
+
+  // How many rows do we expect to fetch?
+  double rows_to_fetch= tab->position()->rows_fetched;
+
+  /*
+    If this is the outer table of a join and there is a limit defined
+    on the query block, adjust the buffer size accordingly.
+  */
+  const JOIN *const join= tab->join();
+  if (tab->idx() == 0 && join->m_select_limit != HA_POS_ERROR)
+  {
+    /*
+      Estimated number of rows returned by the join per qualifying row
+      in the outer table.
+    */
+    double fanout= 1.0;
+    for (uint i= 1; i < join->primary_tables; i++)
+    {
+      const auto p= join->qep_tab[i].position();
+      fanout*= p->rows_fetched * p->filter_effect;
+    }
+
+    /*
+      The number of qualifying rows to read from the outer table in
+      order to reach the limit is limit / fanout. Divide by
+      filter_effect to get the total number of qualifying and
+      non-qualifying rows to fetch to reach the limit.
+    */
+    rows_to_fetch= std::min(rows_to_fetch,
+                            join->m_select_limit / fanout /
+                            tab->position()->filter_effect);
+  }
+
+  ha_rows rows_in_buffer= static_cast<ha_rows>(std::ceil(rows_to_fetch));
+
+  // No need for a multi-row buffer if we don't expect multiple rows.
+  if (rows_in_buffer <= 1)
+    return false;
+
+  /*
+    How much space do we need to allocate for each record? Enough to
+    hold all columns from the beginning and up to the last one in the
+    read set. We don't need to allocate space for unread columns at
+    the end of the record.
+  */
+  const size_t record_size= record_prefix_size(tab);
+
+  // Do not allocate a buffer whose total size exceeds MAX_RECORD_BUFFER_SIZE.
+  if (record_size > 0)
+    rows_in_buffer= std::min<ha_rows>(MAX_RECORD_BUFFER_SIZE / record_size,
+                                      rows_in_buffer);
+
+  // Do not allocate space for more rows than the handler asked for.
+  rows_in_buffer= std::min(rows_in_buffer, max_rows);
+
+  const auto bufsize= Record_buffer::buffer_size(rows_in_buffer, record_size);
+  const auto ptr= static_cast<uchar*>(table->in_use->alloc(bufsize));
+  if (ptr == nullptr)
+    return true;                /* purecov: inspected */
+
+  table->m_record_buffer= Record_buffer{rows_in_buffer, record_size, ptr};
+  table->file->ha_set_record_buffer(&table->m_record_buffer);
+  return false;
 }
 
 
@@ -1012,8 +1169,8 @@ do_select(JOIN *join)
   operation's result further.
 
   @param join  pointer to the structure providing all context info for the query
-  @param join_tab the JOIN_TAB object to which the operation is attached
-  @param end_records  TRUE <=> all records were accumulated, send them further
+  @param qep_tab the QEP_TAB object to which the operation is attached
+  @param end_of_records  TRUE <=> all records were accumulated, send them further
 
   @details
   This function accumulates records, one by one, in QEP operation's buffer by
@@ -1083,13 +1240,6 @@ sub_select_op(JOIN *join, QEP_TAB *qep_tab, bool end_of_records)
 /**
   Retrieve records ends with a given beginning from the result of a join.
 
-  SYNPOSIS
-    sub_select()
-    join      pointer to the structure providing all context info for the query
-    join_tab  the first next table of the execution plan to be retrieved
-    end_records  true when we need to perform final steps of retrival   
-
-  DESCRIPTION
     For a given partial join record consisting of records from the tables 
     preceding the table join_tab in the execution plan, the function
     retrieves all matching full records from the result set and
@@ -1200,8 +1350,8 @@ sub_select_op(JOIN *join, QEP_TAB *qep_tab, bool end_of_records)
 
   @param join      pointer to the structure providing all context info for
                    the query
-  @param join_tab  the first next table of the execution plan to be retrieved
-  @param end_records  true when we need to perform final steps of retrival   
+  @param qep_tab  the first next table of the execution plan to be retrieved
+  @param end_of_records  true when we need to perform final steps of retreival   
 
   @return
     return one of enum_nested_loop_state, except NESTED_LOOP_NO_MORE_ROWS.
@@ -1461,8 +1611,8 @@ static int do_sj_reset(SJ_TMP_TABLE *sj_tbl)
   join_tab->return_tab may be modified to cause a return to a previous
   join_tab.
 
-  @param  join     - The join object
-  @param  join_tab - The most inner join_tab being processed
+  @param  join     The join object
+  @param  qep_tab The most inner qep_tab being processed
 
   @return Nested loop state
 */
@@ -1815,6 +1965,33 @@ int report_handler_error(TABLE *table, int error)
 }
 
 
+/**
+  Initialize an index scan and the record buffer to use in the scan.
+
+  @param qep_tab the table to read
+  @param file    the handler to initialize
+  @param idx     the index to use
+  @param sorted  use the sorted order of the index
+  @retval true   if an error occurred
+  @retval false  on success
+*/
+static bool init_index_and_record_buffer(const QEP_TAB *qep_tab, handler *file,
+                                         uint idx, bool sorted)
+{
+  if (file->inited)
+    return false;                               // OK, already initialized
+
+  int error= file->ha_index_init(idx, sorted);
+  if (error != 0)
+  {
+    (void) report_handler_error(qep_tab->table(), error);
+    return true;
+  }
+
+  return set_record_buffer(qep_tab);
+}
+
+
 int safe_index_read(QEP_TAB *tab)
 {
   int error;
@@ -2121,7 +2298,7 @@ join_read_key(QEP_TAB *tab)
   @sa join_read_key()
 */
 
-void
+static void
 join_read_key_unlock_row(QEP_TAB *tab)
 {
   DBUG_ASSERT(tab->ref().use_count);
@@ -2141,7 +2318,7 @@ join_read_key_unlock_row(QEP_TAB *tab)
 
   However, there may be situations where the prepared pushed join was not
   executed as assumed. It is the responsibility of the handler to handle
-  these situation by letting ::index_read_pushed() then effectively do a 
+  these situation by letting @c index_read_pushed() then effectively do a 
   plain old' index_read_map(..., HA_READ_KEY_EXACT);
   
   @param tab			Table to read
@@ -2237,12 +2414,9 @@ join_read_always_key(QEP_TAB *tab)
   TABLE *table= tab->table();
 
   /* Initialize the index first */
-  if (!table->file->inited &&
-      (error= table->file->ha_index_init(tab->ref().key, tab->use_order())))
-  {
-    (void) report_handler_error(table, error);
+  if (init_index_and_record_buffer(tab, table->file,
+                                   tab->ref().key, tab->use_order()))
     return 1;
-  }
 
   /* Perform "Late NULLs Filtering" (see internals manual for explanations) */
   TABLE_REF *ref= &tab->ref();
@@ -2278,12 +2452,9 @@ join_read_last_key(QEP_TAB *tab)
   int error;
   TABLE *table= tab->table();
 
-  if (!table->file->inited &&
-      (error= table->file->ha_index_init(tab->ref().key, tab->use_order())))
-  {
-    (void) report_handler_error(table, error);
-    return 1;
-  }
+  if (init_index_and_record_buffer(tab, table->file,
+                                   tab->ref().key, tab->use_order()))
+    return 1;                                   /* purecov: inspected */
   if (cp_buffer_from_ref(tab->join()->thd, table, &tab->ref()))
     return -1;
   if ((error=table->file->ha_index_read_last_map(table->record[0],
@@ -2391,7 +2562,7 @@ join_init_quick_read_record(QEP_TAB *tab)
       (tab->table()->file->inited != handler::NONE))
       tab->table()->file->ha_index_or_rnd_end();
 
-  key_map needed_reg_dummy;
+  Key_map needed_reg_dummy;
   QUICK_SELECT_I *old_qck= tab->quick();
   QUICK_SELECT_I *qck;
   DEBUG_SYNC(thd, "quick_not_created");
@@ -2465,6 +2636,12 @@ int join_init_read_record(QEP_TAB *tab)
   if (tab->filesort && tab->sort_table())     // Sort table.
     return 1;
 
+  /*
+    Only attempt to allocate a record buffer the first time the handler is
+    initialized.
+  */
+  const bool first_init= !tab->table()->file->inited;
+
   if (tab->quick() && (error= tab->quick()->reset()))
   {
     /* Ensures error status is propageted back to client */
@@ -2474,6 +2651,9 @@ int join_init_read_record(QEP_TAB *tab)
   if (init_read_record(&tab->read_record, tab->join()->thd, NULL, tab,
                        1, 1, FALSE))
     return 1;
+
+  if (first_init && tab->table()->file->inited && set_record_buffer(tab))
+    return 1;                                   /* purecov: inspected */
 
   return (*tab->read_record.read_record)(&tab->read_record);
 }
@@ -2627,12 +2807,9 @@ join_read_first(QEP_TAB *tab)
   tab->read_record.record=table->record[0];
   tab->read_record.read_record=join_read_next;
 
-  if (!table->file->inited &&
-      (error= table->file->ha_index_init(tab->index(), tab->use_order())))
-  {
-    (void) report_handler_error(table, error);
+  if (init_index_and_record_buffer(tab, table->file,
+                                   tab->index(), tab->use_order()))
     return 1;
-  }
   if ((error= table->file->ha_index_first(tab->table()->record[0])))
   {
     if (error != HA_ERR_KEY_NOT_FOUND && error != HA_ERR_END_OF_FILE)
@@ -2664,12 +2841,9 @@ join_read_last(QEP_TAB *tab)
   tab->read_record.read_record=join_read_prev;
   tab->read_record.table=table;
   tab->read_record.record=table->record[0];
-  if (!table->file->inited &&
-      (error= table->file->ha_index_init(tab->index(), tab->use_order())))
-  {
-    (void) report_handler_error(table, error);
-    return 1;
-  }
+  if (init_index_and_record_buffer(tab, table->file,
+                                   tab->index(), tab->use_order()))
+    return 1;                                   /* purecov: inspected */
   if ((error= table->file->ha_index_last(table->record[0])))
     return report_handler_error(table, error);
   return 0;
@@ -2990,10 +3164,10 @@ end_send_group(JOIN *join, QEP_TAB *qep_tab, bool end_of_records)
   DBUG_ENTER("end_send_group");
 
 
-  if (!join->items3.is_null() && !join->set_group_rpa)
+  if (!join->ref_items[JOIN::REF_SLICE_TMP3].is_null() && !join->set_group_rpa)
   {
     join->set_group_rpa= true;
-    join->set_items_ref_array(join->items3);
+    join->set_ref_item_slice(JOIN::REF_SLICE_TMP3);
   }
 
   if (!join->first_record || end_of_records ||
@@ -3160,7 +3334,7 @@ static bool cmp_field_value(Field *field, my_ptrdiff_t diff)
     false records are the same
 */
 
-bool group_rec_cmp(ORDER *group, uchar *rec0, uchar *rec1)
+static bool group_rec_cmp(ORDER *group, uchar *rec0, uchar *rec1)
 {
   my_ptrdiff_t diff= rec1 - rec0;
 
@@ -3183,7 +3357,7 @@ bool group_rec_cmp(ORDER *group, uchar *rec0, uchar *rec1)
     false records are the same
 */
 
-bool table_rec_cmp(TABLE *table)
+static bool table_rec_cmp(TABLE *table)
 {
   my_ptrdiff_t diff= table->record[1] - table->record[0];
   Field **fields= table->visible_field_ptr();
@@ -3252,7 +3426,7 @@ finish:
 
 /* Generate hash for unique constraint according to group-by list */
 
-ulonglong unique_hash_group(ORDER *group)
+static ulonglong unique_hash_group(ORDER *group)
 {
   ulonglong crc= 0;
   Field *field;
@@ -3271,7 +3445,7 @@ ulonglong unique_hash_group(ORDER *group)
 
 /* Generate hash for unique_constraint for all visible fields of a table */
 
-ulonglong unique_hash_fields(TABLE *table)
+static ulonglong unique_hash_fields(TABLE *table)
 {
   ulonglong crc= 0;
   Field **fields= table->visible_field_ptr();
@@ -3289,9 +3463,9 @@ ulonglong unique_hash_fields(TABLE *table)
   @details Calculates record's hash and checks whether the record given in
   table->record[0] is already present in the tmp table.
 
-  @param tab JOIN_TAB of tmp table to check
+  @param table JOIN_TAB of tmp table to check
 
-  @notes This function assumes record[0] is already filled by the caller.
+  @note This function assumes record[0] is already filled by the caller.
   Depending on presence of table->group, it's or full list of table's fields
   are used to calculate hash.
 
@@ -3910,8 +4084,8 @@ static bool remove_dup_with_hash_index(THD *thd, TABLE *table,
     extra_length= ALIGN_SIZE(key_length)-key_length;
   }
 
-  if (my_hash_init(&hash, &my_charset_bin, (uint) file->stats.records, 0, 
-                   key_length, (my_hash_get_key) 0, 0, 0,
+  if (my_hash_init(&hash, &my_charset_bin, (uint) file->stats.records,
+                   key_length, nullptr, nullptr, 0,
                    key_memory_hash_index_key_buffer))
   {
     my_free(key_buffer);
@@ -4038,7 +4212,7 @@ cp_buffer_from_ref(THD *thd, TABLE *table, TABLE_REF *ref)
   enum enum_check_fields save_count_cuted_fields= thd->count_cuted_fields;
   thd->count_cuted_fields= CHECK_FIELD_IGNORE;
   my_bitmap_map *old_map= dbug_tmp_use_all_columns(table, table->write_set);
-  bool result= 0;
+  bool result= false;
 
   for (uint part_no= 0; part_no < ref->key_parts; part_no++)
   {
@@ -4046,9 +4220,15 @@ cp_buffer_from_ref(THD *thd, TABLE *table, TABLE_REF *ref)
     if (!s_key)
       continue;
 
-    if (s_key->copy() & 1)
+    /*
+      copy() can return STORE_KEY_OK even when there are errors so need to
+      check thd->is_error().
+      @todo This is due to missing handling of error return value from
+      Field::store().
+    */
+    if (s_key->copy() != store_key::STORE_KEY_OK || thd->is_error())
     {
-      result= 1;
+      result= true;
       break;
     }
   }
@@ -4095,7 +4275,7 @@ make_group_fields(JOIN *main_join, JOIN *curr_join)
   Groups are saved in reverse order for easyer check loop.
 */
 
-bool
+static bool
 alloc_group_fields(JOIN *join, ORDER *group)
 {
   if (group)
@@ -4153,7 +4333,7 @@ int test_if_item_cache_changed(List<Cached_item> &list)
 
   @param thd                   THD pointer
   @param param                 temporary table parameters
-  @param ref_pointer_array     array of pointers to top elements of filed list
+  @param ref_item_array        array of pointers to top elements of filed list
   @param res_selected_fields   new list of items of select item list
   @param res_all_fields        new list of all items
   @param elements              number of elements in select item list
@@ -4165,15 +4345,12 @@ int test_if_item_cache_changed(List<Cached_item> &list)
     on how the value is to be used: In some cases this may be an
     argument in a group function, like: IF(ISNULL(col),0,COUNT(*))
 
-  @retval
-    0     ok
-  @retval
-    !=0   error
+  @returns false if success, true if error
 */
 
 bool
 setup_copy_fields(THD *thd, Temp_table_param *param,
-		  Ref_ptr_array ref_pointer_array,
+		  Ref_item_array ref_item_array,
 		  List<Item> &res_selected_fields, List<Item> &res_all_fields,
 		  uint elements, List<Item> &all_fields)
 {
@@ -4281,8 +4458,7 @@ setup_copy_fields(THD *thd, Temp_table_param *param,
 	goto err;
     }
     res_all_fields.push_back(pos);
-    ref_pointer_array[((i < border)? all_fields.elements-i-1 : i-border)]=
-      pos;
+    ref_item_array[((i < border) ? all_fields.elements-i-1 : i-border)]= pos;
   }
   param->copy_field_end= copy;
 
@@ -4340,20 +4516,17 @@ copy_fields(Temp_table_param *param, const THD *thd)
   new list of all items.
 
   @param thd                   THD pointer
-  @param ref_pointer_array     array of pointers to top elements of filed list
+  @param ref_item_array        array of pointers to top elements of filed list
   @param res_selected_fields   new list of items of select item list
   @param res_all_fields        new list of all items
   @param elements              number of elements in select item list
   @param all_fields            all fields list
 
-  @retval
-    0     ok
-  @retval
-    !=0   error
+  @returns false if success, true if error
 */
 
 bool
-change_to_use_tmp_fields(THD *thd, Ref_ptr_array ref_pointer_array,
+change_to_use_tmp_fields(THD *thd, Ref_item_array ref_item_array,
 			 List<Item> &res_selected_fields,
 			 List<Item> &res_all_fields,
 			 uint elements, List<Item> &all_fields)
@@ -4431,7 +4604,7 @@ change_to_use_tmp_fields(THD *thd, Ref_ptr_array ref_pointer_array,
       item_field= item;
 
     res_all_fields.push_back(item_field);
-    ref_pointer_array[((i < border)? all_fields.elements-i-1 : i-border)]=
+    ref_item_array[((i < border) ? all_fields.elements-i-1 : i-border)]=
       item_field;
   }
 
@@ -4448,20 +4621,17 @@ change_to_use_tmp_fields(THD *thd, Ref_ptr_array ref_pointer_array,
   Change all funcs to be fields in tmp table.
 
   @param thd                   THD pointer
-  @param ref_pointer_array     array of pointers to top elements of filed list
+  @param ref_item_array        array of pointers to top elements of filed list
   @param res_selected_fields   new list of items of select item list
   @param res_all_fields        new list of all items
   @param elements              number of elements in select item list
   @param all_fields            all fields list
 
-  @retval
-    0	ok
-  @retval
-    1	error
+  @returns false if success, true if error
 */
 
 bool
-change_refs_to_tmp_fields(THD *thd, Ref_ptr_array ref_pointer_array,
+change_refs_to_tmp_fields(THD *thd, Ref_item_array ref_item_array,
 			  List<Item> &res_selected_fields,
 			  List<Item> &res_all_fields, uint elements,
 			  List<Item> &all_fields)
@@ -4471,16 +4641,16 @@ change_refs_to_tmp_fields(THD *thd, Ref_ptr_array ref_pointer_array,
   res_selected_fields.empty();
   res_all_fields.empty();
 
-  uint i, border= all_fields.elements - elements;
-  for (i= 0; (item= it++); i++)
+  uint border= all_fields.elements - elements;
+  for (uint i= 0; (item= it++); i++)
   {
     res_all_fields.push_back(new_item= item->get_tmp_table_item(thd));
-    ref_pointer_array[((i < border)? all_fields.elements-i-1 : i-border)]=
+    ref_item_array[((i < border) ? all_fields.elements-i-1 : i-border)]=
       new_item;
   }
 
   List_iterator_fast<Item> itr(res_all_fields);
-  for (i= 0; i < border; i++)
+  for (uint i= 0; i < border; i++)
     itr++;
   itr.sublist(res_selected_fields, elements);
 
@@ -4618,7 +4788,7 @@ QEP_tmp_table::prepare_tmp_table()
 /**
   @brief Prepare table if necessary and call write_func to save record
 
-  @param end_of_record  the end_of_record signal to pass to the writer
+  @param end_of_records The end_of_record signal to pass to the writer
 
   @return return one of enum_nested_loop_state.
 */
@@ -4670,7 +4840,7 @@ QEP_tmp_table::end_send()
     return NESTED_LOOP_ERROR;
   }
   // Update ref array
-  join->set_items_ref_array(*qep_tab->ref_array);
+  join->set_ref_item_slice(qep_tab->ref_item_slice);
   table->reginfo.lock_type= TL_UNLOCK;
 
   bool in_first_read= true;

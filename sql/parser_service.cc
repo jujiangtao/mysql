@@ -1,4 +1,4 @@
-/*  Copyright (c) 2015, Oracle and/or its affiliates. All rights reserved.
+/*  Copyright (c) 2015, 2016, Oracle and/or its affiliates. All rights reserved.
 
     This program is free software; you can redistribute it and/or modify it
     under the terms of the GNU General Public License as published by the
@@ -19,7 +19,6 @@
 #include <mysql/service_parser.h>
 
 #include "item.h"
-#include "mysqld.h"
 #include "select_lex_visitor.h"
 #include "sp_cache.h"
 #include "sql_class.h"
@@ -33,6 +32,9 @@
 #include "sql_base.h" // close_thread_tables
 #include "mysqld_thd_manager.h"
 #include "template_utils.h"
+#include "current_thd.h"
+#include "mysqld.h"                             // my_localhost
+#include "error_handler.h"
 
 /**
   This class implements the parse tree visiting service.

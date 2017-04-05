@@ -13,6 +13,7 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
+
 #include "rows_event.h"
 #include <stdlib.h>
 #include <cstring>
@@ -27,7 +28,7 @@ namespace binary_log
   @param  packet pointer to a buffer containing the field in a row.
   @return pos    length of the next field
 */
-unsigned long get_field_length(unsigned char **packet)
+static unsigned long get_field_length(unsigned char **packet)
 {
   unsigned char *pos= *packet;
   uint32_t temp= 0;
@@ -374,18 +375,15 @@ void Rows_event::print_long_info(std::ostream& info)
   this->print_event_info(info);
 
   //TODO: Extract table names and column data.
-  if (this->get_event_type() == PRE_GA_WRITE_ROWS_EVENT ||
-      this->get_event_type() == WRITE_ROWS_EVENT_V1 ||
+  if (this->get_event_type() == WRITE_ROWS_EVENT_V1 ||
       this->get_event_type() == WRITE_ROWS_EVENT)
     info << "\nType: Insert" ;
 
-  if (this->get_event_type() == PRE_GA_DELETE_ROWS_EVENT ||
-      this->get_event_type() == DELETE_ROWS_EVENT_V1 ||
+  if (this->get_event_type() == DELETE_ROWS_EVENT_V1 ||
       this->get_event_type() == DELETE_ROWS_EVENT)
     info << "\nType: Delete" ;
 
-  if (this->get_event_type() == PRE_GA_UPDATE_ROWS_EVENT ||
-      this->get_event_type() == UPDATE_ROWS_EVENT_V1 ||
+  if (this->get_event_type() == UPDATE_ROWS_EVENT_V1 ||
       this->get_event_type() == UPDATE_ROWS_EVENT)
     info << "\nType: Update" ;
 }

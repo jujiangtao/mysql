@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -14,6 +14,48 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include <item_geofunc_internal.h>
+#include "sql_class.h"             // THD
+
+
+bool Srs_fetcher::lock(Geometry::srid_t srid)
+{
+  DBUG_ENTER("lock_srs");
+
+  DBUG_ASSERT(srid != 0);
+
+  char id_str[11]; // uint32 => max 10 digits + \0
+  int10_to_str(srid, id_str, 10);
+
+  MDL_request mdl_request;
+  mdl_request.init_with_source(MDL_key::SRID,
+                               "",
+                               id_str,
+                               MDL_SHARED_READ,
+                               MDL_TRANSACTION,
+                               __FILE__,
+                               __LINE__);
+  if (m_thd->mdl_context.acquire_lock(&mdl_request,
+                                      m_thd->variables.lock_wait_timeout))
+  {
+    // If locking fails, an error has already been flagged.
+    DBUG_RETURN(true);
+  }
+
+  DBUG_RETURN(false);
+}
+
+
+bool Srs_fetcher::acquire(Geometry::srid_t srid,
+                          const dd::Spatial_reference_system **srs)
+{
+  if (lock(srid))
+    return true;
+
+  if (m_ddc->acquire(srid, srs))
+    return true;
+  return false;
+}
+
 
 void handle_gis_exception(const char *funcname)
 {
@@ -51,49 +93,9 @@ void handle_gis_exception(const char *funcname)
   {
     my_error(ER_BOOST_GEOMETRY_UNKNOWN_EXCEPTION, MYF(0), funcname);
   }
-  catch (const std::bad_alloc &e)
+  catch (const std::exception &)
   {
-    my_error(ER_STD_BAD_ALLOC_ERROR, MYF(0), e.what(), funcname);
-  }
-  catch (const std::domain_error &e)
-  {
-    my_error(ER_STD_DOMAIN_ERROR, MYF(0), e.what(), funcname);
-  }
-  catch (const std::length_error &e)
-  {
-    my_error(ER_STD_LENGTH_ERROR, MYF(0), e.what(), funcname);
-  }
-  catch (const std::invalid_argument &e)
-  {
-    my_error(ER_STD_INVALID_ARGUMENT, MYF(0), e.what(), funcname);
-  }
-  catch (const std::out_of_range &e)
-  {
-    my_error(ER_STD_OUT_OF_RANGE_ERROR, MYF(0), e.what(), funcname);
-  }
-  catch (const std::overflow_error &e)
-  {
-    my_error(ER_STD_OVERFLOW_ERROR, MYF(0), e.what(), funcname);
-  }
-  catch (const std::range_error &e)
-  {
-    my_error(ER_STD_RANGE_ERROR, MYF(0), e.what(), funcname);
-  }
-  catch (const std::underflow_error &e)
-  {
-    my_error(ER_STD_UNDERFLOW_ERROR, MYF(0), e.what(), funcname);
-  }
-  catch (const std::logic_error &e)
-  {
-    my_error(ER_STD_LOGIC_ERROR, MYF(0), e.what(), funcname);
-  }
-  catch (const std::runtime_error &e)
-  {
-    my_error(ER_STD_RUNTIME_ERROR, MYF(0), e.what(), funcname);
-  }
-  catch (const std::exception &e)
-  {
-    my_error(ER_STD_UNKNOWN_EXCEPTION, MYF(0), e.what(), funcname);
+    handle_std_exception(funcname);
   }
   catch (...)
   {

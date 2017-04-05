@@ -1,6 +1,3 @@
-#ifndef AUTH_COMMON_INCLUDED
-#define AUTH_COMMON_INCLUDED
-
 /* Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
@@ -16,19 +13,41 @@
    along with this program; if not, write to the Free Software Foundation,
    51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
 
+#ifndef AUTH_COMMON_INCLUDED
+#define AUTH_COMMON_INCLUDED
+
 #include "my_global.h"                          /* NO_EMBEDDED_ACCESS_CHECKS */
 #include "auth_acls.h"                          /* ACL information */
 #include "sql_string.h"                         /* String */
-#include "table.h"                              /* TABLE_LIST */
-#include "field.h"
+#include "mysql_com.h"                          /* enum_server_command */
+#include "sql_list.h"                           /* List */
+#include "template_utils.h"
 #include <set>
-
+#include <vector>
+#include <list>
+#include <utility>
 /* Forward Declarations */
+class Alter_info;
+class Field_iterator_table_ref;
 class LEX_COLUMN;
 class THD;
+typedef struct st_grant_internal_info GRANT_INTERNAL_INFO;
+typedef struct st_lex_user LEX_USER;
+typedef struct st_ha_create_information HA_CREATE_INFO;
 struct GRANT_INFO;
+class Item;
 struct LEX;
 typedef struct user_conn USER_CONN;
+class Security_context;
+struct TABLE;
+struct TABLE_LIST;
+#ifndef NO_EMBEDDED_ACCESS_CHECKS
+/** user, host tuple which reference either acl_cache or g_default_roles */
+typedef std::pair< LEX_CSTRING, LEX_CSTRING > Auth_id_ref;
+typedef std::vector< Auth_id_ref >  List_of_auth_id_refs;
+
+bool operator<(const Auth_id_ref &a, const Auth_id_ref &b);
+#endif
 
 /* Classes */
 
@@ -236,6 +255,8 @@ enum mysql_user_table_field
   MYSQL_USER_FIELD_PASSWORD_LAST_CHANGED,
   MYSQL_USER_FIELD_PASSWORD_LIFETIME,
   MYSQL_USER_FIELD_ACCOUNT_LOCKED,
+  MYSQL_USER_FIELD_CREATE_ROLE_PRIV,
+  MYSQL_USER_FIELD_DROP_ROLE_PRIV,
   MYSQL_USER_FIELD_COUNT
 };
 
@@ -280,6 +301,8 @@ public:
   virtual uint event_priv_idx()= 0;
   virtual uint trigger_priv_idx()= 0;
   virtual uint create_tablespace_priv_idx()= 0;
+  virtual uint create_role_priv_idx()= 0;
+  virtual uint drop_role_priv_idx()= 0;
   virtual uint ssl_type_idx()= 0;
   virtual uint ssl_cipher_idx()= 0;
   virtual uint x509_issuer_idx()= 0;
@@ -324,6 +347,8 @@ public:
   uint alter_priv_idx() { return MYSQL_USER_FIELD_ALTER_PRIV; }
   uint show_db_priv_idx() { return MYSQL_USER_FIELD_SHOW_DB_PRIV; }
   uint super_priv_idx() { return MYSQL_USER_FIELD_SUPER_PRIV; }
+  uint create_role_priv_idx() { return MYSQL_USER_FIELD_CREATE_ROLE_PRIV; }
+  uint drop_role_priv_idx() { return MYSQL_USER_FIELD_DROP_ROLE_PRIV; }
   uint create_tmp_table_priv_idx()
   {
     return MYSQL_USER_FIELD_CREATE_TMP_TABLE_PRIV;
@@ -491,6 +516,8 @@ public:
   uint password_last_changed_idx() { return MYSQL_USER_FIELD_COUNT_56; }
   uint password_lifetime_idx() { return MYSQL_USER_FIELD_COUNT_56; }
   uint account_locked_idx() { return MYSQL_USER_FIELD_COUNT_56; }
+  uint create_role_priv_idx() { return MYSQL_USER_FIELD_COUNT_56; }
+  uint drop_role_priv_idx() { return MYSQL_USER_FIELD_COUNT_56; }
 };
 
 
@@ -500,20 +527,16 @@ public:
   virtual Acl_load_user_table_schema* get_user_table_schema(TABLE *table)
   {
     return is_old_user_table_schema(table) ?
-      (Acl_load_user_table_schema*) new Acl_load_user_table_old_schema():
-      (Acl_load_user_table_schema*) new Acl_load_user_table_current_schema();
+      implicit_cast<Acl_load_user_table_schema*>
+      (new Acl_load_user_table_old_schema()) :
+      implicit_cast<Acl_load_user_table_schema*>
+      (new Acl_load_user_table_current_schema());
   }
 
-  virtual bool is_old_user_table_schema(TABLE* table)
-  {
-    Field *password_field=
-      table->field[Acl_load_user_table_old_schema::MYSQL_USER_FIELD_PASSWORD_56];
-    return strncmp(password_field->field_name, "Password", 8) == 0;
-  }
+  virtual bool is_old_user_table_schema(TABLE* table);
   virtual ~Acl_load_user_table_schema_factory() {}
 };
 
-extern const TABLE_FIELD_DEF mysql_db_table_def;
 extern bool mysql_user_table_is_in_short_password_format;
 extern my_bool disconnect_on_expired_password;
 extern const char *any_db;	// Special symbol for check_access
@@ -532,7 +555,7 @@ void acl_log_connect(const char *user, const char *host, const char *auth_as,
 	const char *db, THD *thd,
 enum enum_server_command command);
 int acl_authenticate(THD *thd, enum_server_command command);
-bool acl_check_host(const char *host, const char *ip);
+bool acl_check_host(THD *thd, const char *host, const char *ip);
 
 /*
   User Attributes are the once which are defined during CREATE/ALTER/GRANT
@@ -551,8 +574,12 @@ bool acl_check_host(const char *host, const char *ip);
 
 /* rewrite CREATE/ALTER/GRANT user */
 void mysql_rewrite_create_alter_user(THD *thd, String *rlb,
-                                     std::set<LEX_USER *> *users_not_to_log= NULL);
+                                     std::set<LEX_USER *> *users_not_to_log= NULL,
+                                     bool for_binlog= false);
 void mysql_rewrite_grant(THD *thd, String *rlb);
+void mysql_rewrite_set_password(THD *thd, String *rlb,
+                                std::set<LEX_USER *> *users,
+                                bool for_binlog= false);
 
 /* sql_user */
 void append_user(THD *thd, String *str, LEX_USER *user,
@@ -562,7 +589,8 @@ int check_change_password(THD *thd, const char *host, const char *user,
                           const char *password, size_t password_len);
 bool change_password(THD *thd, const char *host, const char *user,
                      char *password);
-bool mysql_create_user(THD *thd, List <LEX_USER> &list, bool if_not_exists);
+bool mysql_create_user(THD *thd, List <LEX_USER> &list, bool if_not_exists,
+                       bool is_role);
 bool mysql_alter_user(THD *thd, List <LEX_USER> &list, bool if_exists);
 bool mysql_drop_user(THD *thd, List <LEX_USER> &list, bool if_exists);
 bool mysql_rename_user(THD *thd, List <LEX_USER> &list);
@@ -574,20 +602,30 @@ bool set_and_validate_user_attributes(THD *thd,
 
 /* sql_auth_cache */
 int wild_case_compare(CHARSET_INFO *cs, const char *str,const char *wildstr);
+int wild_case_compare(CHARSET_INFO *cs, const char *str, size_t str_len, 
+                      const char *wildstr, size_t wildstr_len);
 bool hostname_requires_resolving(const char *hostname);
 my_bool acl_init(bool dont_read_acl_tables);
 void acl_free(bool end=0);
-my_bool acl_reload(THD *thd); 
+my_bool acl_reload(THD *thd);
+bool check_engine_type_for_acl_table(THD *thd);
 bool grant_init(bool skip_grant_tables);
 void grant_free(void);
 my_bool grant_reload(THD *thd);
-ulong acl_get(const char *host, const char *ip,
+bool roles_init_from_tables(THD *thd);
+ulong acl_get(THD *thd, const char *host, const char *ip,
               const char *user, const char *db, my_bool db_is_pattern);
-bool is_acl_user(const char *host, const char *user);
-bool acl_getroot(Security_context *sctx, char *user,
+bool is_acl_user(THD *thd, const char *host, const char *user);
+bool acl_getroot(THD *thd, Security_context *sctx, char *user,
                  char *host, char *ip, const char *db);
 
 /* sql_authorization */
+bool has_grant_role_privilege(THD *thd);
+bool has_revoke_role_privilege(THD *thd);
+int mysql_set_active_role_none(THD *thd);
+int mysql_set_role_default(THD *thd);
+int mysql_set_active_role_all(THD *thd, const List <LEX_USER> *except_users);
+int mysql_set_active_role(THD *thd, const List<LEX_USER > *role_list);
 bool mysql_grant(THD *thd, const char *db, List <LEX_USER> &user_list,
                  ulong rights, bool revoke, bool is_proxy);
 bool mysql_routine_grant(THD *thd, TABLE_LIST *table, bool is_proc,
@@ -605,22 +643,23 @@ bool check_grant_column (THD *thd, GRANT_INFO *grant,
 bool check_column_grant_in_table_ref(THD *thd, TABLE_LIST * table_ref,
                                      const char *name, size_t length,
                                      ulong want_privilege);
-bool check_grant_all_columns(THD *thd, ulong want_access, 
+bool check_grant_all_columns(THD *thd, ulong want_access,
                              Field_iterator_table_ref *fields);
 bool check_grant_routine(THD *thd, ulong want_access,
                          TABLE_LIST *procs, bool is_proc, bool no_error);
-bool check_routine_level_acl(THD *thd, const char *db, const char *name,
-                             bool is_proc);
 bool check_grant_db(THD *thd,const char *db);
 bool acl_check_proxy_grant_access(THD *thd, const char *host, const char *user,
                                   bool with_grant);
 void get_privilege_desc(char *to, uint max_length, ulong access);
-void get_mqh(const char *user, const char *host, USER_CONN *uc);
+void get_mqh(THD *thd, const char *user, const char *host, USER_CONN *uc);
 ulong get_table_grant(THD *thd, TABLE_LIST *table);
 ulong get_column_grant(THD *thd, GRANT_INFO *grant,
                        const char *db_name, const char *table_name,
                        const char *field_name);
-bool mysql_show_grants(THD *thd, LEX_USER *user);
+#ifndef NO_EMBEDDED_ACCESS_CHECKS
+bool mysql_show_grants(THD *, LEX_USER *,
+                       const List_of_auth_id_refs &);
+#endif
 bool mysql_show_create_user(THD *thd, LEX_USER *user);
 bool mysql_revoke_all(THD *thd, List <LEX_USER> &list);
 bool sp_revoke_privileges(THD *thd, const char *sp_db, const char *sp_name,
@@ -639,6 +678,8 @@ get_cached_schema_access(GRANT_INTERNAL_INFO *grant_internal_info,
 
 bool select_precheck(THD *thd, LEX *lex, TABLE_LIST *tables,
                      TABLE_LIST *first_table);
+bool select_precheck(THD *thd, LEX *lex, TABLE_LIST *tables,
+                     TABLE_LIST *first_table, bool in_prepare_stage);
 bool multi_delete_precheck(THD *thd, TABLE_LIST *tables);
 bool delete_precheck(THD *thd, TABLE_LIST *tables);
 bool lock_tables_precheck(THD *thd, TABLE_LIST *tables);
@@ -668,6 +709,29 @@ bool check_table_access(THD *thd, ulong requirements,TABLE_LIST *tables,
                         bool any_combination_of_privileges_will_do,
                         uint number,
                         bool no_errors);
+bool mysql_grant_role(THD *thd, const List <LEX_USER > *users,
+                      const List <LEX_USER > *roles,
+                      bool with_admin_opt);
+bool mysql_revoke_role(THD *thd, const List <LEX_USER > *users,
+                       const List <LEX_USER > *roles);
+void get_default_roles(const Auth_id_ref &user, List_of_auth_id_refs *list);
+bool mysql_alter_user_set_default_roles(THD *thd, LEX_USER *user,
+                       const List_of_auth_id_refs &authids);
+bool mysql_alter_user_set_default_roles_all(THD *thd, LEX_USER *user);
+bool is_granted_table_access(THD *thd, ulong required_acl,
+                             TABLE_LIST *table);
+bool mysql_clear_default_roles(THD *thd, LEX_USER *user);
+void roles_graphml(THD *thd, String *);
+bool has_grant_role_privilege(THD *thd, const LEX_CSTRING &role_name,
+                              const LEX_CSTRING &role_host);
+Auth_id_ref create_authid_from(const LEX_USER *user);
+void append_identifier(String *packet, const char *name, size_t length);
+void append_identifier_with_q(int q, String *packet, const char *name,
+                              size_t length);
+bool is_role_id(LEX_USER *authid);
+void shutdown_acl_cache();
+bool is_granted_role(LEX_CSTRING user, LEX_CSTRING host,
+                     LEX_CSTRING role, LEX_CSTRING role_host);
 #else
 inline bool check_one_table_access(THD *thd, ulong privilege, TABLE_LIST *tables)
 { return false; }
@@ -677,11 +741,9 @@ inline bool check_single_table_access(THD *thd, ulong privilege,
 inline bool check_routine_access(THD *thd,ulong want_access,const char *db,
                                  char *name, bool is_proc, bool no_errors)
 { return false; }
-inline bool check_some_access(THD *thd, ulong want_access, TABLE_LIST *table)
-{
-  table->grant.privilege= want_access;
-  return false;
-}
+
+bool check_some_access(THD *thd, ulong want_access, TABLE_LIST *table);
+
 inline bool check_some_routine_access(THD *thd, const char *db,
                                       const char *name, bool is_proc)
 { return false; }
@@ -700,8 +762,6 @@ check_table_access(THD *thd, ulong requirements,TABLE_LIST *tables,
 { return false; }
 #endif /*NO_EMBEDDED_ACCESS_CHECKS*/
 
-/* These was under the INNODB_COMPATIBILITY_HOOKS */
-
 bool check_global_access(THD *thd, ulong want_access);
 
 #ifdef NO_EMBEDDED_ACCESS_CHECKS
@@ -710,7 +770,7 @@ bool check_global_access(THD *thd, ulong want_access);
 #endif
 
 /* sql_user_table */
-void close_acl_tables(THD *thd);
+void commit_and_close_mysql_tables(THD *thd);
 
 #ifndef EMBEDDED_LIBRARY
 typedef enum ssl_artifacts_status
@@ -721,10 +781,15 @@ typedef enum ssl_artifacts_status
   SSL_ARTIFACTS_AUTO_DETECTED
 } ssl_artifacts_status;
 
+ulong get_global_acl_cache_size();
+
+bool roles_init_from_tables(THD *thd, bool use_mutex_lock);
 #endif /* EMBEDDED_LIBRARY */
 
 #if defined(HAVE_OPENSSL) && !defined(HAVE_YASSL)
 extern my_bool opt_auto_generate_certs;
 bool do_auto_cert_generation(ssl_artifacts_status auto_detection_status);
 #endif /* HAVE_OPENSSL && !HAVE_YASSL */
+
 #endif /* AUTH_COMMON_INCLUDED */
+

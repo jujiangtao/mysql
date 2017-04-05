@@ -30,9 +30,6 @@
   respective deinitialization.
 */
 
-#ifdef HAVE_PSI_STATEMENT_INTERFACE
-extern PSI_statement_info stmt_info_new_packet;
-#endif
 
 class Srv_session
 {
@@ -125,7 +122,7 @@ public:
   /**
     Constructs a server session
 
-    @param error_cb       Default completion callback
+    @param err_cb         Default completion callback
     @param err_cb_ctx     Plugin's context, opaque pointer that would
                           be provided to callbacks. Might be NULL.
   */
@@ -290,6 +287,7 @@ private:
       Uses RAII.
 
       @param sess Session to backup
+      @param is_close_session
     */
     Session_backup_and_attach(Srv_session *sess, bool is_close_session);
 

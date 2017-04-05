@@ -32,17 +32,10 @@ The interface to the operating system file i/o primitives
 Created 10/21/1995 Heikki Tuuri
 *******************************************************/
 
-#ifndef UNIV_INNOCHECKSUM
-
 #include "ha_prototypes.h"
 #include "sql_const.h"
 
 #include "os0file.h"
-
-#ifdef UNIV_NONINL
-#include "os0file.ic"
-#endif
-
 #include "srv0srv.h"
 #include "srv0start.h"
 #include "fil0fil.h"
@@ -72,11 +65,6 @@ Created 10/21/1995 Heikki Tuuri
 
 #include <lz4.h>
 #include <zlib.h>
-
-#ifdef UNIV_DEBUG
-/** Set when InnoDB has invoked exit(). */
-bool	innodb_calling_exit;
-#endif /* UNIV_DEBUG */
 
 #include <my_aes.h>
 #include <my_rnd.h>
@@ -115,6 +103,11 @@ static const size_t	MAX_BLOCKS = 128;
 
 /** Block buffer size */
 #define BUFFER_BLOCK_SIZE ((ulint)(UNIV_PAGE_SIZE * 1.3))
+
+#if !defined(NO_FALLOCATE) && defined(UNIV_LINUX)
+/** Max disk sector size */
+static const ulint	MAX_SECTOR_SIZE = 4096;
+#endif /* !NO_FALLOCATE && UNIV_LINUX */
 
 /** Disk sector size of aligning write buffer for DIRECT_IO */
 static ulint	os_io_ptr_align = UNIV_SECTOR_SIZE;
@@ -300,9 +293,9 @@ class AIO {
 public:
 	/** Constructor
 	@param[in]	id		Latch ID
-	@param[in]	n_slots		Number of slots to configure
+	@param[in]	n		Number of slots to configure
 	@param[in]	segments	Number of segments to configure */
-	AIO(latch_id_t id, ulint n_slots, ulint segments);
+	AIO(latch_id_t id, ulint n, ulint segments);
 
 	/** Destructor */
 	~AIO();
@@ -341,7 +334,7 @@ public:
 	ulint pending_io_count() const;
 
 	/** Returns a pointer to the nth slot in the aio array.
-	@param[in]	index	Index of the slot in the array
+	@param[in]	i	Index of the slot in the array
 	@return pointer to slot */
 	const Slot* at(ulint i) const
 		MY_ATTRIBUTE((warn_unused_result))
@@ -523,13 +516,13 @@ public:
 
 	/** Create an instance using new(std::nothrow)
 	@param[in]	id		Latch ID
-	@param[in]	n_slots		The number of AIO request slots
-	@param[in]	segments	The number of segments
+	@param[in]	n		The number of AIO request slots
+	@param[in]	n_segments	The number of segments
 	@return a new AIO instance */
 	static AIO* create(
 		latch_id_t	id,
-		ulint		n_slots,
-		ulint		segments)
+		ulint		n,
+		ulint		n_segments)
 		MY_ATTRIBUTE((warn_unused_result));
 
 	/** Initializes the asynchronous io system. Creates one array each
@@ -747,18 +740,18 @@ static bool		os_aio_recommend_sleep_for_read_threads = false;
 #endif /* !UNIV_HOTBACKUP */
 
 ulint	os_n_file_reads		= 0;
-ulint	os_bytes_read_since_printout = 0;
+static ulint	os_bytes_read_since_printout = 0;
 ulint	os_n_file_writes	= 0;
 ulint	os_n_fsyncs		= 0;
-ulint	os_n_file_reads_old	= 0;
-ulint	os_n_file_writes_old	= 0;
-ulint	os_n_fsyncs_old		= 0;
+static ulint	os_n_file_reads_old	= 0;
+static ulint	os_n_file_writes_old	= 0;
+static ulint	os_n_fsyncs_old		= 0;
 /** Number of pending write operations */
 ulint	os_n_pending_writes = 0;
 /** Number of pending read operations */
 ulint	os_n_pending_reads = 0;
 
-time_t	os_last_printout;
+static time_t	os_last_printout;
 bool	os_has_said_disk_full	= false;
 
 /** Default Zip compression level */
@@ -788,14 +781,14 @@ os_file_handle_error(
 Does error handling when a file operation fails.
 @param[in]	name		File name or NULL
 @param[in]	operation	Name of operation e.g., "read", "write"
-@param[in]	silent	if true then don't print any message to the log.
+@param[in]	on_error_silent	if true then don't print any message to the log.
 @return true if we should retry the operation */
 static
 bool
 os_file_handle_error_no_exit(
 	const char*	name,
 	const char*	operation,
-	bool		silent);
+	bool		on_error_silent);
 
 /** Decompress after a read and punch a hole in the file if it was a write
 @param[in]	type		IO context
@@ -803,33 +796,36 @@ os_file_handle_error_no_exit(
 @param[in,out]	buf		Buffer to transform
 @param[in,out]	scratch		Scratch area for read decompression
 @param[in]	src_len		Length of the buffer before compression
+@param[in]	offset		file offset from the start where to read
 @param[in]	len		Compressed buffer length for write and size
 				of buf len for read
 @return DB_SUCCESS or error code */
 static
 dberr_t
 os_file_io_complete(
-	const IORequest&type,
-	os_file_t	fh,
-	byte*		buf,
-	byte*		scratch,
-	ulint		src_len,
-	ulint		offset,
-	ulint		len);
+	const IORequest&	type,
+	os_file_t		fh,
+	byte*			buf,
+	byte*			scratch,
+	ulint			src_len,
+	ulint			offset,
+	ulint			len);
 
 /** Does simulated AIO. This function should be called by an i/o-handler
 thread.
 
-@param[in]	segment	The number of the segment in the aio arrays to wait
-			for; segment 0 is the ibuf i/o thread, segment 1 the
-			log i/o thread, then follow the non-ibuf read threads,
-			and as the last are the non-ibuf write threads
-@param[out]	m1	the messages passed with the AIO request; note that
-			also in the case where the AIO operation failed, these
-			output parameters are valid and can be used to restart
-			the operation, for example
-@param[out]	m2	Callback argument
-@param[in]	type	IO context
+@param[in]	global_segment	The number of the segment in the aio arrays to
+				await for; segment 0 is the ibuf i/o thread,
+				segment 1 the log i/o thread, then follow the
+				non-ibuf read threads, and as the last are the
+				non-ibuf write threads
+@param[out]	m1		the messages passed with the AIO request; note
+				that also in the case where the AIO operation
+				failed, these output parameters are valid and
+				can be used to restart the operation, for
+				example
+@param[out]	m2		Callback argument
+@param[in]	type		IO context
 @return DB_SUCCESS or error code */
 static
 dberr_t
@@ -925,7 +921,7 @@ os_alloc_block()
 }
 
 /** Free a page after sync IO
-@param[in,own]	block		The block to free/release */
+@param[in,out]	block		The block to free/release */
 static
 void
 os_free_block(Block* block)
@@ -1030,7 +1026,7 @@ private:
 
 /** Helper class for doing synchronous file IO. Currently, the objective
 is to hide the OS specific code, so that the higher level functions aren't
-peppered with #ifdef. Makes the code flow difficult to follow.  */
+peppered with "#ifdef". Makes the code flow difficult to follow.  */
 class SyncFileIO {
 public:
 	/** Constructor
@@ -1289,7 +1285,8 @@ AIO::pending_io_count() const
 }
 
 /** Compress a data page
-#param[in]	block_size	File system block size
+@param[in]	compression	Compression algorithm
+@param[in]	block_size	File system block size
 @param[in]	src		Source contents to compress
 @param[in]	src_len		Length in bytes of the source
 @param[out]	dst		Compressed page contents
@@ -1437,6 +1434,7 @@ os_file_compress_page(
 # ifndef UNIV_HOTBACKUP
 /** Validates the consistency the aio system some of the time.
 @return true if ok or the check was skipped */
+static
 bool
 os_aio_validate_skip()
 {
@@ -1782,7 +1780,7 @@ os_file_make_new_pathname(
 	new_path = static_cast<char*>(ut_malloc_nokey(new_path_len));
 	memcpy(new_path, old_path, dir_len);
 
-	ut_snprintf(new_path + dir_len,
+	snprintf(new_path + dir_len,
 		    new_path_len - dir_len,
 		    "%c%s.ibd",
 		    OS_PATH_SEPARATOR,
@@ -1843,8 +1841,8 @@ os_file_make_data_dir_path(
 
 /** Check if the path refers to the root of a drive using a pointer
 to the last directory separator that the caller has fixed.
-@param[in]	path	path name
-@param[in]	path	last directory separator in the path
+@param[in]	path		path name
+@param[in]	last_slash	last directory separator in the path
 @return true if this path is a drive root, false if not */
 UNIV_INLINE
 bool
@@ -2668,7 +2666,7 @@ into segments. The thread specifies which segment or slot it wants to wait
 for. NOTE: this function will also take care of freeing the aio slot,
 therefore no other thread is allowed to do the freeing!
 
-@param[in]	global_seg	segment number in the aio array
+@param[in]	global_segment	segment number in the aio array
 				to wait for; segment 0 is the ibuf
 				i/o thread, segment 1 is log i/o thread,
 				then follow the non-ibuf read threads,
@@ -2679,7 +2677,7 @@ therefore no other thread is allowed to do the freeing!
 				AIO operation failed, these output
 				parameters are valid and can be used to
 				restart the operation.
-@param[out]xi	 request	IO context
+@param[out]	request		IO context
 @return DB_SUCCESS if the IO was successful */
 static
 dberr_t
@@ -3105,6 +3103,7 @@ os_file_fsync_posix(
 @param[out]	exists		true if the file exists
 @param[out]	type		Type of the file, if it exists
 @return true if call succeeded */
+static
 bool
 os_file_status_posix(
 	const char*	path,
@@ -3320,161 +3319,6 @@ os_file_create_directory(
 	return(true);
 }
 
-/**
-The os_file_opendir() function opens a directory stream corresponding to the
-directory named by the dirname argument. The directory stream is positioned
-at the first entry. In both Unix and Windows we automatically skip the '.'
-and '..' items at the start of the directory listing.
-@param[in]	dirname		directory name; it must not contain a trailing
-				'\' or '/'
-@param[in]	is_fatal	true if we should treat an error as a fatal
-				error; if we try to open symlinks then we do
-				not wish a fatal error if it happens not to be
-				a directory
-@return directory stream, NULL if error */
-os_file_dir_t
-os_file_opendir(
-	const char*	dirname,
-	bool		error_is_fatal)
-{
-	os_file_dir_t		dir;
-	dir = opendir(dirname);
-
-	if (dir == NULL && error_is_fatal) {
-		os_file_handle_error(dirname, "opendir");
-	}
-
-	return(dir);
-}
-
-/** Closes a directory stream.
-@param[in]	dir		directory stream
-@return 0 if success, -1 if failure */
-int
-os_file_closedir(
-	os_file_dir_t	dir)
-{
-	int	ret = closedir(dir);
-
-	if (ret != 0) {
-		os_file_handle_error_no_exit(NULL, "closedir", false);
-	}
-
-	return(ret);
-}
-
-/** This function returns information of the next file in the directory. We jump
-over the '.' and '..' entries in the directory.
-@param[in]	dirname		directory name or path
-@param[in]	dir		directory stream
-@param[out]	info		buffer where the info is returned
-@return 0 if ok, -1 if error, 1 if at the end of the directory */
-int
-os_file_readdir_next_file(
-	const char*	dirname,
-	os_file_dir_t	dir,
-	os_file_stat_t*	info)
-{
-	struct dirent*	ent;
-	char*		full_path;
-	int		ret;
-	struct stat	statinfo;
-
-#ifdef HAVE_READDIR_R
-	char		dirent_buf[sizeof(struct dirent)
-				   + _POSIX_PATH_MAX + 100];
-	/* In /mysys/my_lib.c, _POSIX_PATH_MAX + 1 is used as
-	the max file name len; but in most standards, the
-	length is NAME_MAX; we add 100 to be even safer */
-#endif /* HAVE_READDIR_R */
-
-next_file:
-
-#ifdef HAVE_READDIR_R
-	ret = readdir_r(dir, (struct dirent*) dirent_buf, &ent);
-
-	if (ret != 0) {
-
-		ib::error()
-			<< "Cannot read directory " << dirname
-			<< " error: " << ret;
-
-		return(-1);
-	}
-
-	if (ent == NULL) {
-		/* End of directory */
-
-		return(1);
-	}
-
-	ut_a(strlen(ent->d_name) < _POSIX_PATH_MAX + 100 - 1);
-#else
-	ent = readdir(dir);
-
-	if (ent == NULL) {
-
-		return(1);
-	}
-#endif /* HAVE_READDIR_R */
-	ut_a(strlen(ent->d_name) < OS_FILE_MAX_PATH);
-
-	if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0) {
-
-		goto next_file;
-	}
-
-	strcpy(info->name, ent->d_name);
-
-	full_path = static_cast<char*>(
-		ut_malloc_nokey(strlen(dirname) + strlen(ent->d_name) + 10));
-
-	sprintf(full_path, "%s/%s", dirname, ent->d_name);
-
-	ret = stat(full_path, &statinfo);
-
-	if (ret) {
-
-		if (errno == ENOENT) {
-			/* readdir() returned a file that does not exist,
-			it must have been deleted in the meantime. Do what
-			would have happened if the file was deleted before
-			readdir() - ignore and go to the next entry.
-			If this is the last entry then info->name will still
-			contain the name of the deleted file when this
-			function returns, but this is not an issue since the
-			caller shouldn't be looking at info when end of
-			directory is returned. */
-
-			ut_free(full_path);
-
-			goto next_file;
-		}
-
-		os_file_handle_error_no_exit(full_path, "stat", false);
-
-		ut_free(full_path);
-
-		return(-1);
-	}
-
-	info->size = statinfo.st_size;
-
-	if (S_ISDIR(statinfo.st_mode)) {
-		info->type = OS_FILE_TYPE_DIR;
-	} else if (S_ISLNK(statinfo.st_mode)) {
-		info->type = OS_FILE_TYPE_LINK;
-	} else if (S_ISREG(statinfo.st_mode)) {
-		info->type = OS_FILE_TYPE_FILE;
-	} else {
-		info->type = OS_FILE_TYPE_UNKNOWN;
-	}
-
-	ut_free(full_path);
-
-	return(0);
-}
-
 /** NOTE! Use the corresponding macro os_file_create(), not directly
 this function!
 Opens an existing file or creates a new.
@@ -3542,11 +3386,6 @@ os_file_create_func(
 
 		mode_str = "CREATE";
 		create_flag = O_RDWR | O_CREAT | O_EXCL;
-
-	} else if (create_mode == OS_FILE_OVERWRITE) {
-
-		mode_str = "OVERWRITE";
-		create_flag = O_RDWR | O_CREAT | O_TRUNC;
 
 	} else {
 		ib::error()
@@ -4067,7 +3906,7 @@ SyncFileIO::execute(Slot* slot)
 
 	}
 
-	return(ret ? static_cast<ssize_t>(slot->n_bytes) : -1);
+	return(ret ? slot->n_bytes : -1);
 }
 
 /** Check if the file system supports sparse files.
@@ -4135,6 +3974,7 @@ os_file_punch_hole_win32(
 @param[out]	exists		true if the file exists
 @param[out]	type		Type of the file, if it exists
 @return true if call succeeded */
+static
 bool
 os_file_status_win32(
 	const char*	path,
@@ -4479,154 +4319,6 @@ os_file_create_directory(
 	return(true);
 }
 
-/** The os_file_opendir() function opens a directory stream corresponding to the
-directory named by the dirname argument. The directory stream is positioned
-at the first entry. In both Unix and Windows we automatically skip the '.'
-and '..' items at the start of the directory listing.
-@param[in]	dirname		directory name; it must not contain a trailing
-				'\' or '/'
-@param[in]	is_fatal	true if we should treat an error as a fatal
-				error; if we try to open symlinks then we do
-				not wish a fatal error if it happens not to
-				be a directory
-@return directory stream, NULL if error */
-os_file_dir_t
-os_file_opendir(
-	const char*	dirname,
-	bool		error_is_fatal)
-{
-	os_file_dir_t		dir;
-	LPWIN32_FIND_DATA	lpFindFileData;
-	char			path[OS_FILE_MAX_PATH + 3];
-
-	ut_a(strlen(dirname) < OS_FILE_MAX_PATH);
-
-	strcpy(path, dirname);
-	strcpy(path + strlen(path), "\\*");
-
-	/* Note that in Windows opening the 'directory stream' also retrieves
-	the first entry in the directory. Since it is '.', that is no problem,
-	as we will skip over the '.' and '..' entries anyway. */
-
-	lpFindFileData = static_cast<LPWIN32_FIND_DATA>(
-		ut_malloc_nokey(sizeof(WIN32_FIND_DATA)));
-
-	dir = FindFirstFile((LPCTSTR) path, lpFindFileData);
-
-	ut_free(lpFindFileData);
-
-	if (dir == INVALID_HANDLE_VALUE) {
-
-		if (error_is_fatal) {
-			os_file_handle_error(dirname, "opendir");
-		}
-
-		return(NULL);
-	}
-
-	return(dir);
-}
-
-/** Closes a directory stream.
-@param[in]	dir	directory stream
-@return 0 if success, -1 if failure */
-int
-os_file_closedir(
-	os_file_dir_t	dir)
-{
-	BOOL		ret;
-
-	ret = FindClose(dir);
-
-	if (!ret) {
-		os_file_handle_error_no_exit(NULL, "closedir", false);
-
-		return(-1);
-	}
-
-	return(0);
-}
-
-/** This function returns information of the next file in the directory. We
-jump over the '.' and '..' entries in the directory.
-@param[in]	dirname		directory name or path
-@param[in]	dir		directory stream
-@param[out]	info		buffer where the info is returned
-@return 0 if ok, -1 if error, 1 if at the end of the directory */
-int
-os_file_readdir_next_file(
-	const char*	dirname,
-	os_file_dir_t	dir,
-	os_file_stat_t*	info)
-{
-	BOOL		ret;
-	int		status;
-	WIN32_FIND_DATA	find_data;
-
-next_file:
-
-	ret = FindNextFile(dir, &find_data);
-
-	if (ret > 0) {
-
-		const char* name;
-
-		name = static_cast<const char*>(find_data.cFileName);
-
-		ut_a(strlen(name) < OS_FILE_MAX_PATH);
-
-		if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) {
-
-			goto next_file;
-		}
-
-		strcpy(info->name, name);
-
-		info->size = find_data.nFileSizeHigh;
-		info->size <<= 32;
-		info->size |= find_data.nFileSizeLow;
-
-		if (find_data.dwFileAttributes
-		    & FILE_ATTRIBUTE_REPARSE_POINT) {
-
-			/* TODO: test Windows symlinks */
-			/* TODO: MySQL has apparently its own symlink
-			implementation in Windows, dbname.sym can
-			redirect a database directory:
-			REFMAN "windows-symbolic-links.html" */
-
-			info->type = OS_FILE_TYPE_LINK;
-
-		} else if (find_data.dwFileAttributes
-			   & FILE_ATTRIBUTE_DIRECTORY) {
-
-			info->type = OS_FILE_TYPE_DIR;
-
-		} else {
-
-			/* It is probably safest to assume that all other
-			file types are normal. Better to check them rather
-			than blindly skip them. */
-
-			info->type = OS_FILE_TYPE_FILE;
-		}
-
-		status = 0;
-
-	} else if (GetLastError() == ERROR_NO_MORE_FILES) {
-
-		status = 1;
-
-	} else {
-
-		os_file_handle_error_no_exit(NULL, "readdir_next_file", false);
-
-		status = -1;
-	}
-
-	return(status);
-}
-
 /** NOTE! Use the corresponding macro os_file_create(), not directly
 this function!
 Opens an existing file or creates a new.
@@ -4702,10 +4394,6 @@ os_file_create_func(
 	} else if (create_mode == OS_FILE_CREATE) {
 
 		create_flag = CREATE_NEW;
-
-	} else if (create_mode == OS_FILE_OVERWRITE) {
-
-		create_flag = CREATE_ALWAYS;
 
 	} else {
 		ib::error()
@@ -5255,7 +4943,7 @@ os_file_get_status_win32(
 		little benefit from compression out of the box. */
 
 		stat_info->block_size = (stat_info->block_size <= 4096)
-			?  stat_info->block_size * 16 : ULINT_UNDEFINED;
+			?  stat_info->block_size * 16 : ULINT32_UNDEFINED;
 	} else {
 		stat_info->type = OS_FILE_TYPE_UNKNOWN;
 	}
@@ -5367,7 +5055,7 @@ AIO::simulated_put_read_threads_to_sleep()
 /** Does a syncronous read or write depending upon the type specified
 In case of partial reads/writes the function tries
 NUM_RETRIES_ON_PARTIAL_IO times to read/write the complete data.
-@param[in]	type,		IO flags
+@param[in]	in_type		IO flags
 @param[in]	file		handle to an open file
 @param[out]	buf		buffer where to read
 @param[in]	offset		file offset from the start where to read
@@ -5523,6 +5211,8 @@ os_file_pwrite(
 
 /** Requests a synchronous write operation.
 @param[in]	type		IO flags
+@param[in]	name		name of the file or path as a null-terminated
+				string
 @param[in]	file		handle to an open file
 @param[out]	buf		buffer from which to write
 @param[in]	offset		file offset from the start where to read
@@ -5833,7 +5523,7 @@ os_file_handle_error_no_exit(
 /** Tries to disable OS caching on an opened file descriptor.
 @param[in]	fd		file descriptor to alter
 @param[in]	file_name	file name, used in the diagnostic message
-@param[in]	name		"open" or "create"; used in the diagnostic
+@param[in]	operation_name	"open" or "create"; used in the diagnostic
 				message */
 void
 os_file_set_nocache(
@@ -5848,7 +5538,7 @@ os_file_set_nocache(
 
 		ib::error()
 			<< "Failed to set DIRECTIO_ON on file "
-			<< file_name << ": " << operation_name
+			<< file_name << "; " << operation_name << ": "
 			<< strerror(errno_save) << ","
 			" continuing anyway.";
 	}
@@ -5862,9 +5552,9 @@ os_file_set_nocache(
 # ifdef UNIV_LINUX
 				ib::warn()
 					<< "Failed to set O_DIRECT on file"
-					<< file_name << ";" << operation_name
+					<< file_name << "; " << operation_name
 					<< ": " << strerror(errno_save) << ", "
-					<< "continuing anyway. O_DIRECT is "
+					"continuing anyway. O_DIRECT is "
 					"known to result in 'Invalid argument' "
 					"on Linux on tmpfs, "
 					"see MySQL Bug#26662.";
@@ -5880,7 +5570,7 @@ short_warning:
 				<< "Failed to set O_DIRECT on file "
 				<< file_name << "; " << operation_name
 				<< " : " << strerror(errno_save)
-				<< " continuing anyway.";
+				<< ", continuing anyway.";
 		}
 	}
 #endif /* defined(UNIV_SOLARIS) && defined(DIRECTIO_ON) */
@@ -6059,6 +5749,8 @@ os_file_read_no_error_handling_func(
 /** NOTE! Use the corresponding macro os_file_write(), not directly
 Requests a synchronous write operation.
 @param[in]	type		IO flags
+@param[in]	name		name of the file or path as a null-terminated
+				string
 @param[in]	file		handle to an open file
 @param[out]	buf		buffer from which to write
 @param[in]	offset		file offset from the start where to read
@@ -6138,7 +5830,7 @@ file.
 
 Note: On Windows we use the name and on Unices we use the file handle.
 
-@param[in]	name		File name
+@param[in]	path		File name
 @param[in]	fh		File handle for the file - if opened
 @return true if the file system supports sparse files */
 bool
@@ -6223,7 +5915,7 @@ therefore no other thread is allowed to do the freeing!
 				can be used to restart the operation,
 				for example
 @param[out]	m2		callback message
-@param[out]	type		OS_FILE_WRITE or ..._READ
+@param[out]	request		OS_FILE_WRITE or ..._READ
 @return DB_SUCCESS or error code */
 dberr_t
 os_aio_handler(
@@ -6598,10 +6290,6 @@ AIO::shutdown()
 }
 
 #if !defined(NO_FALLOCATE) && defined(UNIV_LINUX)
-
-/** Max disk sector size */
-static const ulint	MAX_SECTOR_SIZE = 4096;
-
 /**
 Try and get the FusionIO sector size. */
 void
@@ -7717,8 +7405,7 @@ public:
 		}
 	}
 
-	/** Do the I/O with ordinary, synchronous i/o functions:
-	@param[in]	len		Length of buffer for IO */
+	/** Do the I/O with ordinary, synchronous i/o functions: */
 	void io()
 	{
 		if (first_slot()->type.is_write()) {
@@ -7963,16 +7650,18 @@ SimulatedAIOHandler::check_pending(
 /** Does simulated AIO. This function should be called by an i/o-handler
 thread.
 
-@param[in]	segment	The number of the segment in the aio arrays to wait
-			for; segment 0 is the ibuf i/o thread, segment 1 the
-			log i/o thread, then follow the non-ibuf read threads,
-			and as the last are the non-ibuf write threads
-@param[out]	m1	the messages passed with the AIO request; note that
-			also in the case where the AIO operation failed, these
-			output parameters are valid and can be used to restart
-			the operation, for example
-@param[out]	m2	Callback argument
-@param[in]	type	IO context
+@param[in]	global_segment	The number of the segment in the aio arrays to
+				wait for; segment 0 is the ibuf i/o thread,
+				segment 1 the log i/o thread, then follow the
+				non-ibuf read threads, and as the last are the
+				non-ibuf write threads
+@param[out]	m1		the messages passed with the AIO request; note
+				that also in the case where the AIO operation
+				failed, these output parameters are valid and
+				can be used to restart
+				the operation, for example
+@param[out]	m2		Callback argument
+@param[in]	type		IO context
 @return DB_SUCCESS or error code */
 static
 dberr_t
@@ -8353,8 +8042,7 @@ os_aio_all_slots_free()
 
 #ifdef UNIV_DEBUG
 /** Prints all pending IO for the array
-@param[in]	file	file where to print
-@param[in]	array	array to process */
+@param[in]	file	file where to print */
 void
 AIO::to_file(FILE* file) const
 {
@@ -8428,284 +8116,6 @@ os_file_set_umask(ulint umask)
 	os_innodb_umask = umask;
 }
 
-#else
-
-#include "univ.i"
-#include "db0err.h"
-#include "mach0data.h"
-#include "fil0fil.h"
-#include "os0file.h"
-
-#include <lz4.h>
-#include <zlib.h>
-
-#include <my_aes.h>
-#include <my_rnd.h>
-#include <mysqld.h>
-#include <mysql/service_mysql_keyring.h>
-
-typedef byte	Block;
-
-/** Allocate a page for sync IO
-@return pointer to page */
-static
-Block*
-os_alloc_block()
-{
-	return(reinterpret_cast<byte*>(malloc(UNIV_PAGE_SIZE_MAX * 2)));
-}
-
-/** Free a page after sync IO
-@param[in,own]	block		The block to free/release */
-static
-void
-os_free_block(Block* block)
-{
-	ut_free(block);
-}
-
-#endif /* !UNIV_INNOCHECKSUM */
-
-/**
-@param[in]      type            The compression type
-@return the string representation */
-const char*
-Compression::to_string(Type type)
-{
-        switch(type) {
-        case NONE:
-                return("None");
-        case ZLIB:
-                return("Zlib");
-        case LZ4:
-                return("LZ4");
-        }
-
-        ut_ad(0);
-
-        return("<UNKNOWN>");
-}
-
-/**
-@param[in]      meta		Page Meta data
-@return the string representation */
-std::string Compression::to_string(const Compression::meta_t& meta)
-{
-	std::ostringstream	stream;
-
-	stream	<< "version: " << int(meta.m_version) << " "
-		<< "algorithm: " << meta.m_algorithm << " "
-		<< "(" << to_string(meta.m_algorithm) << ") "
-		<< "orginal_type: " << meta.m_original_type << " "
-		<< "original_size: " << meta.m_original_size << " "
-		<< "compressed_size: " << meta.m_compressed_size;
-
-	return(stream.str());
-}
-
-/** @return true if it is a compressed page */
-bool
-Compression::is_compressed_page(const byte* page)
-{
-	return(mach_read_from_2(page + FIL_PAGE_TYPE) == FIL_PAGE_COMPRESSED);
-}
-
-/** Deserizlise the page header compression meta-data
-@param[in]	page		Pointer to the page header
-@param[out]	control		Deserialised data */
-void
-Compression::deserialize_header(
-	const byte*		page,
-	Compression::meta_t*	control)
-{
-	ut_ad(is_compressed_page(page));
-
-	control->m_version = static_cast<uint8_t>(
-		mach_read_from_1(page + FIL_PAGE_VERSION));
-
-	control->m_original_type = static_cast<uint16_t>(
-		mach_read_from_2(page + FIL_PAGE_ORIGINAL_TYPE_V1));
-
-	control->m_compressed_size = static_cast<uint16_t>(
-		mach_read_from_2(page + FIL_PAGE_COMPRESS_SIZE_V1));
-
-	control->m_original_size = static_cast<uint16_t>(
-		mach_read_from_2(page + FIL_PAGE_ORIGINAL_SIZE_V1));
-
-	control->m_algorithm = static_cast<Type>(
-		mach_read_from_1(page + FIL_PAGE_ALGORITHM_V1));
-}
-
-/** Decompress the page data contents. Page type must be FIL_PAGE_COMPRESSED, if
-not then the source contents are left unchanged and DB_SUCCESS is returned.
-@param[in]	dblwr_recover	true of double write recovery in progress
-@param[in,out]	src		Data read from disk, decompressed data will be
-				copied to this page
-@param[in,out]	dst		Scratch area to use for decompression
-@param[in]	dst_len		Size of the scratch area in bytes
-@return DB_SUCCESS or error code */
-dberr_t
-Compression::deserialize(
-	bool		dblwr_recover,
-	byte*		src,
-	byte*		dst,
-	ulint		dst_len)
-{
-	if (!is_compressed_page(src)) {
-		/* There is nothing we can do. */
-		return(DB_SUCCESS);
-	}
-
-	meta_t	header;
-
-	deserialize_header(src, &header);
-
-	byte*	ptr = src + FIL_PAGE_DATA;
-
-	ut_ad(header.m_version == 1);
-
-	if (header.m_version != 1
-	    || header.m_original_size < UNIV_PAGE_SIZE_MIN - (FIL_PAGE_DATA + 8)
-	    || header.m_original_size > UNIV_PAGE_SIZE_MAX - FIL_PAGE_DATA
-	    || dst_len < header.m_original_size + FIL_PAGE_DATA) {
-
-		/* The last check could potentially return DB_OVERFLOW,
-		the caller should be able to retry with a larger buffer. */
-
-		return(DB_CORRUPTION);
-	}
-
-	Block*	block;
-
-	/* The caller doesn't know what to expect */
-	if (dst == NULL) {
-
-		block = os_alloc_block();
-
-#ifdef UNIV_INNOCHECKSUM
-		dst = block;
-#else
-		dst = block->m_ptr;
-#endif /* UNIV_INNOCHECKSUM */
-
-	} else {
-		block = NULL;
-	}
-
-	int		ret;
-	Compression	compression;
-	ulint		len = header.m_original_size;
-
-	compression.m_type = static_cast<Compression::Type>(header.m_algorithm);
-
-	switch(compression.m_type) {
-	case Compression::ZLIB: {
-
-		uLongf	zlen = header.m_original_size;
-
-		if (uncompress(dst, &zlen, ptr, header.m_compressed_size)
-		    != Z_OK) {
-
-			if (block != NULL) {
-				os_free_block(block);
-			}
-
-			return(DB_IO_DECOMPRESS_FAIL);
-		}
-
-		len = static_cast<ulint>(zlen);
-
-		break;
-	}
-
-	case Compression::LZ4:
-
-		if (dblwr_recover) {
-
-			ret = LZ4_decompress_safe(
-				reinterpret_cast<char*>(ptr),
-				reinterpret_cast<char*>(dst),
-				header.m_compressed_size,
-				header.m_original_size);
-
-		} else {
-
-			/* This can potentially read beyond the input
-			buffer if the data is malformed. According to
-			the LZ4 documentation it is a little faster
-			than the above function. When recovering from
-			the double write buffer we can afford to us the
-			slower function above. */
-
-			ret = LZ4_decompress_fast(
-				reinterpret_cast<char*>(ptr),
-				reinterpret_cast<char*>(dst),
-				header.m_original_size);
-		}
-
-		if (ret < 0) {
-
-			if (block != NULL) {
-				os_free_block(block);
-			}
-
-			return(DB_IO_DECOMPRESS_FAIL);
-		}
-
-		break;
-
-	default:
-#if !defined(UNIV_INNOCHECKSUM)
-		ib::error()
-			<< "Compression algorithm support missing: "
-			<< Compression::to_string(compression.m_type);
-#else
-		fprintf(stderr, "Compression algorithm support missing: %s\n",
-			Compression::to_string(compression.m_type));
-#endif /* !UNIV_INNOCHECKSUM */
-
-		if (block != NULL) {
-			os_free_block(block);
-		}
-
-		return(DB_UNSUPPORTED);
-	}
-
-	/* Leave the header alone */
-	memmove(src + FIL_PAGE_DATA, dst, len);
-
-	mach_write_to_2(src + FIL_PAGE_TYPE, header.m_original_type);
-
-	ut_ad(dblwr_recover
-	      || memcmp(src + FIL_PAGE_LSN + 4,
-			src + (header.m_original_size + FIL_PAGE_DATA)
-			- FIL_PAGE_END_LSN_OLD_CHKSUM + 4, 4) == 0);
-
-	if (block != NULL) {
-		os_free_block(block);
-	}
-
-	return(DB_SUCCESS);
-}
-
-/** Decompress the page data contents. Page type must be FIL_PAGE_COMPRESSED, if
-not then the source contents are left unchanged and DB_SUCCESS is returned.
-@param[in]	dblwr_recover	true of double write recovery in progress
-@param[in,out]	src		Data read from disk, decompressed data will be
-				copied to this page
-@param[in,out]	dst		Scratch area to use for decompression
-@param[in]	dst_len		Size of the scratch area in bytes
-@return DB_SUCCESS or error code */
-dberr_t
-os_file_decompress_page(
-	bool		dblwr_recover,
-	byte*		src,
-	byte*		dst,
-	ulint		dst_len)
-{
-	return(Compression::deserialize(dblwr_recover, src, dst, dst_len));
-}
-
 /**
 @param[in]      type            The encryption type
 @return the string representation */
@@ -8738,7 +8148,6 @@ void Encryption::random_value(byte* value)
 void
 Encryption::create_master_key(byte** master_key)
 {
-#ifndef UNIV_INNOCHECKSUM
 	char*	key_type = NULL;
 	size_t	key_len;
 	char	key_name[ENCRYPTION_MASTER_KEY_NAME_MAX_LEN];
@@ -8752,8 +8161,8 @@ Encryption::create_master_key(byte** master_key)
 	memset(key_name, 0, ENCRYPTION_MASTER_KEY_NAME_MAX_LEN);
 
 	/* Generate new master key */
-	ut_snprintf(key_name, ENCRYPTION_MASTER_KEY_NAME_MAX_LEN,
-		    "%s-%s-%lu", ENCRYPTION_MASTER_KEY_PRIFIX,
+	snprintf(key_name, ENCRYPTION_MASTER_KEY_NAME_MAX_LEN,
+		    "%s-%s-" ULINTPF, ENCRYPTION_MASTER_KEY_PRIFIX,
 		    uuid, master_key_id + 1);
 
 	/* We call key ring API to generate master key here. */
@@ -8762,8 +8171,7 @@ Encryption::create_master_key(byte** master_key)
 
 	/* We call key ring API to get master key here. */
 	ret = my_key_fetch(key_name, &key_type, NULL,
-			   reinterpret_cast<void**>(master_key),
-			   &key_len);
+			   reinterpret_cast<void**>(master_key), &key_len);
 
 	if (ret || *master_key == NULL) {
 		ib::error() << "Encryption can't find master key, please check"
@@ -8776,7 +8184,6 @@ Encryption::create_master_key(byte** master_key)
 	if (key_type) {
 		my_free(key_type);
 	}
-#endif
 }
 
 /** Get master key by key id.
@@ -8788,7 +8195,6 @@ Encryption::get_master_key(ulint master_key_id,
 			   char* srv_uuid,
 			   byte** master_key)
 {
-#ifndef UNIV_INNOCHECKSUM
 	char*	key_type = NULL;
 	size_t	key_len;
 	char	key_name[ENCRYPTION_MASTER_KEY_NAME_MAX_LEN];
@@ -8797,21 +8203,22 @@ Encryption::get_master_key(ulint master_key_id,
 	memset(key_name, 0, ENCRYPTION_MASTER_KEY_NAME_MAX_LEN);
 
 	if (srv_uuid != NULL) {
-		ut_snprintf(key_name, ENCRYPTION_MASTER_KEY_NAME_MAX_LEN,
-			    "%s-%s-%lu", ENCRYPTION_MASTER_KEY_PRIFIX,
+		snprintf(key_name, ENCRYPTION_MASTER_KEY_NAME_MAX_LEN,
+			    "%s-%s-" ULINTPF, ENCRYPTION_MASTER_KEY_PRIFIX,
 			    srv_uuid, master_key_id);
 	} else {
 		/* For compitable with 5.7.11, we need to get master key with
 		server id. */
 		memset(key_name, 0, ENCRYPTION_MASTER_KEY_NAME_MAX_LEN);
-		ut_snprintf(key_name, ENCRYPTION_MASTER_KEY_NAME_MAX_LEN,
-			    "%s-%lu-%lu", ENCRYPTION_MASTER_KEY_PRIFIX,
+		snprintf(key_name, ENCRYPTION_MASTER_KEY_NAME_MAX_LEN,
+			    "%s-%lu-" ULINTPF, ENCRYPTION_MASTER_KEY_PRIFIX,
 			    server_id, master_key_id);
 	}
 
 	/* We call key ring API to get master key here. */
 	ret = my_key_fetch(key_name, &key_type, NULL,
-			   reinterpret_cast<void**>(master_key), &key_len);
+			   reinterpret_cast<void**>(master_key),
+			   &key_len);
 
 	if (key_type) {
 		my_free(key_type);
@@ -8830,8 +8237,6 @@ Encryption::get_master_key(ulint master_key_id,
 		fprintf(stderr, "\n");
 	}
 #endif /* DEBUG_TDE */
-
-#endif
 }
 
 /** Current master key id */
@@ -8849,7 +8254,6 @@ Encryption::get_master_key(ulint* master_key_id,
 			   byte** master_key,
 			   Encryption::Version*  version)
 {
-#ifndef UNIV_INNOCHECKSUM
 	char*	key_type = NULL;
 	size_t	key_len;
 	char	key_name[ENCRYPTION_MASTER_KEY_NAME_MAX_LEN];
@@ -8866,7 +8270,7 @@ Encryption::get_master_key(ulint* master_key_id,
 		memcpy(uuid, server_uuid, ENCRYPTION_SERVER_UUID_LEN);
 
 		/* Prepare the server uuid. */
-		ut_snprintf(key_name, ENCRYPTION_MASTER_KEY_NAME_MAX_LEN,
+		snprintf(key_name, ENCRYPTION_MASTER_KEY_NAME_MAX_LEN,
 			    "%s-%s-1", ENCRYPTION_MASTER_KEY_PRIFIX,
 			    uuid);
 
@@ -8893,8 +8297,8 @@ Encryption::get_master_key(ulint* master_key_id,
 	} else {
 		*master_key_id = Encryption::master_key_id;
 
-		ut_snprintf(key_name, ENCRYPTION_MASTER_KEY_NAME_MAX_LEN,
-			    "%s-%s-%lu", ENCRYPTION_MASTER_KEY_PRIFIX,
+		snprintf(key_name, ENCRYPTION_MASTER_KEY_NAME_MAX_LEN,
+			    "%s-%s-" ULINTPF, ENCRYPTION_MASTER_KEY_PRIFIX,
 			    uuid, *master_key_id);
 
 		/* We call key ring API to get master key here. */
@@ -8911,8 +8315,8 @@ Encryption::get_master_key(ulint* master_key_id,
 
 			memset(key_name, 0,
 			       ENCRYPTION_MASTER_KEY_NAME_MAX_LEN);
-			ut_snprintf(key_name, ENCRYPTION_MASTER_KEY_NAME_MAX_LEN,
-				    "%s-%lu-%lu", ENCRYPTION_MASTER_KEY_PRIFIX,
+			snprintf(key_name, ENCRYPTION_MASTER_KEY_NAME_MAX_LEN,
+				    "%s-%lu-" ULINTPF, ENCRYPTION_MASTER_KEY_PRIFIX,
 				    server_id, *master_key_id);
 
 			ret = my_key_fetch(key_name, &key_type, NULL,
@@ -8939,7 +8343,6 @@ Encryption::get_master_key(ulint* master_key_id,
 	if (key_type) {
 		my_free(key_type);
 	}
-#endif
 }
 
 /** Check if page is encrypted page or not
@@ -9027,17 +8430,10 @@ Encryption::encrypt(
 			ulint	space_id = mach_read_from_4(
 				src + FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID);
 			*dst_len = src_len;
-#ifndef UNIV_INNOCHECKSUM
 				ib::warn()
 					<< " Can't encrypt data of page,"
 					<< " page no:" << page_no
 					<< " space id:" << space_id;
-#else
-				fprintf(stderr, " Can't encrypt data of page,"
-					" page no:" ULINTPF
-					" space id:" ULINTPF,
-					page_no, space_id);
-#endif /* !UNIV_INNOCHECKSUM */
 			return(src);
 		}
 
@@ -9064,21 +8460,15 @@ Encryption::encrypt(
 				false);
 
 			if (elen == MY_AES_BAD_DATA) {
-				ulint	page_no =mach_read_from_4(
+				ulint	page_no = mach_read_from_4(
 					src + FIL_PAGE_OFFSET);
 				ulint	space_id = mach_read_from_4(
 					src + FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID);
-#ifndef UNIV_INNOCHECKSUM
+
 				ib::warn()
 					<< " Can't encrypt data of page,"
 					<< " page no:" << page_no
 					<< " space id:" << space_id;
-#else
-				fprintf(stderr, " Can't encrypt data of page,"
-					" page no:" ULINTPF
-					" space id:" ULINTPF,
-					page_no, space_id);
-#endif /* !UNIV_INNOCHECKSUM */
 				*dst_len = src_len;
 				return(src);
 			}
@@ -9086,7 +8476,6 @@ Encryption::encrypt(
 			memcpy(dst + FIL_PAGE_DATA + data_len - remain_len,
 			       remain_buf, remain_len);
 		}
-
 
 		break;
 	}
@@ -9118,8 +8507,6 @@ Encryption::encrypt(
 	}
 
 #ifdef UNIV_ENCRYPT_DEBUG
-#ifndef UNIV_INNOCHECKSUM
-#if 0
 	byte*	check_buf = static_cast<byte*>(ut_malloc_nokey(src_len));
 	byte*	buf2 = static_cast<byte*>(ut_malloc_nokey(src_len));
 
@@ -9135,9 +8522,7 @@ Encryption::encrypt(
 	}
 	ut_free(buf2);
 	ut_free(check_buf);
-#endif
 	fprintf(stderr, "Encrypted page:%lu.%lu\n", space_id, page_no);
-#endif
 #endif
 	*dst_len = src_len;
 
@@ -9170,8 +8555,8 @@ Encryption::decrypt(
 	byte		remain_buf[MY_AES_BLOCK_SIZE * 2];
 	Block*		block;
 
-	/* Do nothing if it's not an encrypted table. */
 	if (!is_encrypted_page(src)) {
+		/* There is nothing we can do. */
 		return(DB_SUCCESS);
 	}
 
@@ -9182,10 +8567,9 @@ Encryption::decrypt(
 		src_len = static_cast<uint16_t>(
 			mach_read_from_2(src + FIL_PAGE_COMPRESS_SIZE_V1))
 			+ FIL_PAGE_DATA;
-#ifndef UNIV_INNOCHECKSUM
 		src_len = ut_calc_align(src_len, type.block_size());
-#endif
 	}
+
 #ifdef UNIV_ENCRYPT_DEBUG
 	ulint space_id =
 		mach_read_from_4(src + FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID);
@@ -9202,14 +8586,8 @@ Encryption::decrypt(
 
 	/* The caller doesn't know what to expect */
 	if (dst == NULL) {
-
 		block = os_alloc_block();
-#ifdef UNIV_INNOCHECKSUM
-		dst = block;
-#else
 		dst = block->m_ptr;
-#endif /* UNIV_INNOCHECKSUM */
-
 	} else {
 		block = NULL;
 	}
@@ -9288,16 +8666,9 @@ Encryption::decrypt(
 	}
 
 	default:
-		if (!type.is_dblwr_recover()) {
-#if !defined(UNIV_INNOCHECKSUM)
-			ib::error()
-				<< "Encryption algorithm support missing: "
-				<< Encryption::to_string(m_type);
-#else
-			fprintf(stderr, "Encryption algorithm support missing: %s\n",
-				Encryption::to_string(m_type));
-#endif /* !UNIV_INNOCHECKSUM */
-		}
+		ib::error()
+			<< "Encryption algorithm support missing: "
+			<< Encryption::to_string(m_type);
 
 		if (block != NULL) {
 			os_free_block(block);

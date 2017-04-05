@@ -15,18 +15,11 @@
 
 /* Pack MyISAM file */
 
-#ifndef USE_MY_FUNC
-#define USE_MY_FUNC			/* We need at least my_malloc */
-#endif
-
 #include "myisamdef.h"
 #include "my_default.h"
 #include <queues.h>
 #include <my_tree.h>
 #include "mysys_err.h"
-#ifndef __GNU_LIBRARY__
-#define __GNU_LIBRARY__			/* Skip warnings in getopt.h */
-#endif
 #include <my_getopt.h>
 #include <assert.h>
 #include <welcome_copyright_notice.h> // ORACLE_WELCOME_COPYRIGHT_NOTICE
@@ -131,8 +124,8 @@ static void free_counts_and_tree_and_queue(HUFF_TREE *huff_trees,
 					   uint trees,
 					   HUFF_COUNTS *huff_counts,
 					   uint fields);
-static int compare_tree(void* cmp_arg MY_ATTRIBUTE((unused)),
-			const uchar *s,const uchar *t);
+static int compare_tree(const void* cmp_arg MY_ATTRIBUTE((unused)),
+			const void *a, const void *b);
 static int get_statistic(PACK_MRG_INFO *mrg,HUFF_COUNTS *huff_counts);
 static void check_counts(HUFF_COUNTS *huff_counts,uint trees,
 			 my_off_t records);
@@ -176,7 +169,7 @@ static int mrg_rrnd(PACK_MRG_INFO *info,uchar *buf);
 static void mrg_reset(PACK_MRG_INFO *mrg);
 #if !defined(DBUG_OFF)
 static void fakebigcodes(HUFF_COUNTS *huff_counts, HUFF_COUNTS *end_count);
-static int fakecmp(my_off_t **count1, my_off_t **count2);
+static int fakecmp(const void *a, const void *b);
 #endif
 
 
@@ -260,7 +253,6 @@ int main(int argc, char **argv)
   my_end(verbose ? MY_CHECK_ERROR | MY_GIVE_INFO : MY_CHECK_ERROR);
   mysql_cond_destroy(&main_thread_keycache_var.suspend);
   exit(error ? 2 : 0);
-  return 0;					/* No compiler warning */
 }
 
 enum options_mp {OPT_CHARSETS_DIR_MP=256};
@@ -832,7 +824,7 @@ static HUFF_COUNTS *init_huff_count(MI_INFO *info,my_off_t records)
         'tree_pos'. It's keys are implemented by pointers into 'tree_buff'.
         This is accomplished by '-1' as the element size.
       */
-      init_tree(&count[i].int_tree,0,0,-1,(qsort_cmp2) compare_tree,0, NULL,
+      init_tree(&count[i].int_tree,0,0,-1, compare_tree,0, NULL,
 		NULL);
       if (records && type != FIELD_BLOB && type != FIELD_VARCHAR)
 	count[i].tree_pos=count[i].tree_buff =
@@ -1711,10 +1703,12 @@ static int make_huff_tree(HUFF_TREE *huff_tree, HUFF_COUNTS *huff_counts)
   return 0;
 }
 
-static int compare_tree(void* cmp_arg MY_ATTRIBUTE((unused)),
-			const uchar *s, const uchar *t)
+static int compare_tree(const void* cmp_arg MY_ATTRIBUTE((unused)),
+			const void *a, const void *b)
 {
   uint length;
+  const uchar *s= (const uchar*)a;
+  const uchar *t= (const uchar*)b;
   for (length=global_count->field_length; length-- ;)
     if (*s++ != *t++)
       return (int) s[-1] - (int) t[-1];
@@ -3197,7 +3191,7 @@ static void fakebigcodes(HUFF_COUNTS *huff_counts, HUFF_COUNTS *end_count)
     cur_sort_p= sort_counts;
     while (cur_count_p < end_count_p)
       *(cur_sort_p++)= cur_count_p++;
-    (void) my_qsort(sort_counts, 256, sizeof(my_off_t*), (qsort_cmp) fakecmp);
+    (void) my_qsort(sort_counts, 256, sizeof(my_off_t*), fakecmp);
 
     /*
       Assign faked counts.
@@ -3243,8 +3237,10 @@ static void fakebigcodes(HUFF_COUNTS *huff_counts, HUFF_COUNTS *end_count)
     -1                  count1 >  count2
 */
 
-static int fakecmp(my_off_t **count1, my_off_t **count2)
+static int fakecmp(const void *a, const void *b)
 {
+  my_off_t **count1= (my_off_t**)a;
+  my_off_t **count2= (my_off_t**)b;
   return ((**count1 < **count2) ? 1 :
           (**count1 > **count2) ? -1 : 0);
 }

@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2012, 2016, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -17,19 +17,19 @@
 #define MYSQL_MDL_H
 
 /**
-  @file mysql/psi/mysql_mdl.h
+  @file include/mysql/psi/mysql_mdl.h
   Instrumentation helpers for metadata locks.
 */
 
-#include "mysql/psi/psi.h"
+#include "mysql/psi/psi_mdl.h"
 
 #ifndef PSI_METADATA_CALL
-#define PSI_METADATA_CALL(M) PSI_DYNAMIC_CALL(M)
+#define PSI_METADATA_CALL(M) psi_mdl_service->M
 #endif
 
 /**
-  @defgroup Thread_instrumentation Metadata Instrumentation
-  @ingroup Instrumentation_interface
+  @defgroup psi_api_mdl Metadata Instrumentation (API)
+  @ingroup psi_api
   @{
 */
 
@@ -115,7 +115,7 @@ static inline void inline_mysql_mdl_destroy(
 }
 #endif /* HAVE_PSI_METADATA_INTERFACE */
 
-/** @} (end of group Metadata_instrumentation) */
+/** @} (end of group psi_api_mdl) */
 
 #endif
 

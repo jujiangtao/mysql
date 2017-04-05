@@ -17,6 +17,16 @@
 #define PFS_ENGINE_TABLE_H
 
 #include "auth_common.h"                            /* struct ACL_* */
+#include "my_thread_local.h"                        /* thread_local_key_t */
+#include "my_base.h"
+#include "key.h"
+
+class PFS_engine_key;
+class PFS_engine_index;
+
+typedef struct st_thr_lock THR_LOCK;
+typedef struct st_table_field_def TABLE_FIELD_DEF;
+
 /**
   @file storage/perfschema/pfs_engine_table.h
   Performance schema tables (declarations).
@@ -38,7 +48,7 @@ struct PFS_engine_table_share;
 struct time_normalizer;
 
 /**
-  @addtogroup Performance_schema_engine
+  @addtogroup performance_schema_engine
   @{
 */
 
@@ -98,10 +108,42 @@ public:
   int delete_row(TABLE *table, const unsigned char *buf, Field **fields);
 
   /** Initialize table scan. */
-  virtual int rnd_init(bool scan){return 0;};
+  virtual int rnd_init(bool scan){return 0;}
 
   /** Fetch the next row in this cursor. */
   virtual int rnd_next(void)= 0;
+
+  virtual int index_init(uint idx, bool sorted)
+  {
+    DBUG_ASSERT(false);
+    return HA_ERR_UNSUPPORTED;
+  }
+
+  virtual int index_read(KEY *key_infos,
+                         uint index,
+                         const uchar * key,
+                         uint key_len,
+                         enum ha_rkey_function find_flag);
+
+  virtual int index_read_last(KEY *key_infos,
+                              const uchar * key,
+                              uint key_len)
+  { return HA_ERR_UNSUPPORTED; }
+
+  /** Find key in index, read record. */
+  virtual int index_next() { return HA_ERR_UNSUPPORTED; }
+
+  virtual int index_next_same(const uchar *key,
+                              uint key_len);
+  virtual int index_prev()
+  { return HA_ERR_UNSUPPORTED; }
+
+  virtual int index_first()
+  { return HA_ERR_UNSUPPORTED; }
+
+  virtual int index_last()
+  { return HA_ERR_UNSUPPORTED; }
+
   /**
     Fetch a row by position.
     @param pos              position to fetch
@@ -154,14 +196,6 @@ public:
   /**
     Helper, assign a value to a varchar utf8 field.
     @param f the field to set
-    @param cs the string character set
-    @param str the string to assign
-    @param len the length of the string to assign
-  */
-  static void set_field_varchar(Field *f, const CHARSET_INFO *cs, const char *str, uint len);
-  /**
-    Helper, assign a value to a varchar utf8 field.
-    @param f the field to set
     @param str the string to assign
     @param len the length of the string to assign
   */
@@ -192,6 +226,10 @@ public:
     @param value the value to assign
   */
   static void set_field_timestamp(Field *f, ulonglong value);
+
+
+  static ulonglong get_field_ulonglong(Field *f);
+
   /**
     Helper, assign a value to a double field.
     @param f the field to set
@@ -219,7 +257,7 @@ public:
   */
   static String *get_field_varchar_utf8(Field *f, String *val);
 
-protected:
+  protected:
   /**
     Read the current row values.
     @param table            Table handle
@@ -255,10 +293,10 @@ protected:
   */
   PFS_engine_table(const PFS_engine_table_share *share, void *pos)
     : m_share_ptr(share), m_pos_ptr(pos),
-      m_normalizer(NULL), m_class_type(PFS_CLASS_NONE)
+      m_normalizer(NULL), m_class_type(PFS_CLASS_NONE), m_index(NULL)
   {}
 
-  /** Table share. */
+    /** Table share. */
   const PFS_engine_table_share *m_share_ptr;
   /** Opaque pointer to the m_pos position of this cursor. */
   void *m_pos_ptr;
@@ -266,6 +304,8 @@ protected:
   time_normalizer *m_normalizer;
   /** Current class type */
   enum PFS_class_type m_class_type;
+  /** Current index. */
+  PFS_engine_index *m_index;
 };
 
 /** Callback to open a table. */
@@ -277,6 +317,126 @@ typedef int (*pfs_write_row_t)(TABLE *table,
 typedef int (*pfs_delete_all_rows_t)(void);
 /** Callback to get a row count. */
 typedef ha_rows (*pfs_get_row_count_t)(void);
+
+/**
+  PFS_key_reader: Convert key into internal format.
+*/
+struct PFS_key_reader
+{
+  PFS_key_reader(const KEY *key_info, const uchar *key, uint key_len)
+    : m_key_info(key_info),
+    m_key_part_info(key_info->key_part),
+    m_key(key),
+    m_key_len(key_len),
+    m_remaining_key_part_info(key_info->key_part),
+    m_remaining_key(key),
+    m_remaining_key_len(key_len),
+    m_parts_found(0)
+  {}
+
+  enum ha_rkey_function read_uchar(enum ha_rkey_function find_flag,
+                                  bool &isnull,
+                                  uchar *value);
+
+  enum ha_rkey_function read_long_int(enum ha_rkey_function find_flag,
+                                      bool &isnull,
+                                      int32 *value);
+
+  enum ha_rkey_function read_ulonglong(enum ha_rkey_function find_flag,
+                                       bool &isnull,
+                                       ulonglong *value);
+  enum ha_rkey_function read_varchar_utf8(enum ha_rkey_function find_flag,
+                                          bool &isnull,
+                                          char *buffer, uint *buffer_length, uint buffer_capacity);
+
+  enum ha_rkey_function read_text_utf8(enum ha_rkey_function find_flag,
+                                       bool & isnull,
+                                       char *buffer, uint *buffer_length, uint buffer_capacity);
+
+  ha_base_keytype get_key_type(void)
+  {
+    return (enum ha_base_keytype)m_remaining_key_part_info->type;
+  }
+private:
+  const KEY *m_key_info;
+  const KEY_PART_INFO *m_key_part_info;
+  const uchar *m_key;
+  uint m_key_len;
+  const KEY_PART_INFO *m_remaining_key_part_info;
+  const uchar *m_remaining_key;
+  uint m_remaining_key_len;
+
+public:
+  uint m_parts_found;
+};
+
+class PFS_engine_key
+{
+public:
+  PFS_engine_key(const char* name)
+    : m_name(name), m_is_null(true)
+  {}
+
+  virtual ~PFS_engine_key()
+  {}
+
+  virtual void read(PFS_key_reader & reader, enum ha_rkey_function find_flag) = 0;
+
+  const char* m_name;
+
+protected:
+  enum ha_rkey_function m_find_flag;
+  bool m_is_null;
+};
+
+class PFS_engine_index
+{
+public:
+  PFS_engine_index(PFS_engine_key *key_1)
+    : m_key_ptr_1(key_1), m_key_ptr_2(NULL), m_key_ptr_3(NULL), m_key_ptr_4(NULL),
+    m_fields(0), m_key_info(NULL)
+  {}
+
+  PFS_engine_index(PFS_engine_key *key_1,
+                   PFS_engine_key *key_2)
+    : m_key_ptr_1(key_1), m_key_ptr_2(key_2), m_key_ptr_3(NULL), m_key_ptr_4(NULL),
+    m_fields(0), m_key_info(NULL)
+  {}
+
+  PFS_engine_index(PFS_engine_key *key_1,
+                   PFS_engine_key *key_2,
+                   PFS_engine_key *key_3)
+    : m_key_ptr_1(key_1), m_key_ptr_2(key_2), m_key_ptr_3(key_3), m_key_ptr_4(NULL),
+    m_fields(0), m_key_info(NULL)
+  {}
+
+  PFS_engine_index(PFS_engine_key *key_1,
+                   PFS_engine_key *key_2,
+                   PFS_engine_key *key_3,
+                   PFS_engine_key *key_4)
+    : m_key_ptr_1(key_1), m_key_ptr_2(key_2), m_key_ptr_3(key_3), m_key_ptr_4(key_4),
+    m_fields(0), m_key_info(NULL)
+  {}
+
+  virtual ~PFS_engine_index()
+  {}
+
+  void set_key_info(KEY *key_info)
+  {
+    m_key_info= key_info;
+  }
+
+  void read_key(const uchar *key, uint key_len,
+                enum ha_rkey_function find_flag);
+
+  PFS_engine_key *m_key_ptr_1;
+  PFS_engine_key *m_key_ptr_2;
+  PFS_engine_key *m_key_ptr_3;
+  PFS_engine_key *m_key_ptr_4;
+
+  uint m_fields;
+  KEY *m_key_info;
+};
 
 /**
   A PERFORMANCE_SCHEMA table share.
@@ -449,7 +609,6 @@ public:
 /** Singleton instance of PFS_readonly_world_acl */
 extern PFS_truncatable_world_acl pfs_truncatable_world_acl;
 
-
 /** Position of a cursor, for simple iterations. */
 struct PFS_simple_index
 {
@@ -475,14 +634,14 @@ struct PFS_simple_index
     Set this index at a given position.
     @param other a position
   */
-  void set_at(const struct PFS_simple_index *other)
+  void set_at(const PFS_simple_index *other)
   { m_index= other->m_index; }
 
   /**
     Set this index after a given position.
     @param other a position
   */
-  void set_after(const struct PFS_simple_index *other)
+  void set_after(const PFS_simple_index *other)
   { m_index= other->m_index + 1; }
 
   /** Set this index to the next record. */
@@ -520,7 +679,7 @@ struct PFS_double_index
     Set this index at a given position.
     @param other a position
   */
-  void set_at(const struct PFS_double_index *other)
+  void set_at(const PFS_double_index *other)
   {
     m_index_1= other->m_index_1;
     m_index_2= other->m_index_2;
@@ -530,7 +689,7 @@ struct PFS_double_index
     Set this index after a given position.
     @param other a position
   */
-  void set_after(const struct PFS_double_index *other)
+  void set_after(const PFS_double_index *other)
   {
     m_index_1= other->m_index_1;
     m_index_2= other->m_index_2 + 1;
@@ -571,7 +730,7 @@ struct PFS_triple_index
     Set this index at a given position.
     @param other a position
   */
-  void set_at(const struct PFS_triple_index *other)
+  void set_at(const PFS_triple_index *other)
   {
     m_index_1= other->m_index_1;
     m_index_2= other->m_index_2;
@@ -582,16 +741,13 @@ struct PFS_triple_index
     Set this index after a given position.
     @param other a position
   */
-  void set_after(const struct PFS_triple_index *other)
+  void set_after(const PFS_triple_index *other)
   {
     m_index_1= other->m_index_1;
     m_index_2= other->m_index_2;
     m_index_3= other->m_index_3 + 1;
   }
 };
-
-bool pfs_show_status(handlerton *hton, THD *thd,
-                     stat_print_fn *print, enum ha_stat_type stat);
 
 /** @} */
 #endif

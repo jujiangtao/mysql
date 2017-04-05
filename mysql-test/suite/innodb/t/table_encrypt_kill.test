@@ -34,6 +34,7 @@ call mtr.add_suppression("\\[ERROR\\] InnoDB: Table tde_db/t_encrypt.* in the In
 call mtr.add_suppression("\\[Warning\\] InnoDB: Please refer to .* for how to resolve the issue");
 call mtr.add_suppression("Cannot create keyring directory");
 call mtr.add_suppression("\\[ERROR\\] Plugin keyring_file reported: 'Could not create keyring directory");
+call mtr.add_suppression("\\[Warning\\] InnoDB: Database page corruption or a failed file read of page");
 
 
 

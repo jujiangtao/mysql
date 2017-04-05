@@ -13,8 +13,9 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-/* 
-   Data structures for mysys/my_alloc.c (root memory allocator)
+/**
+  @file include/my_alloc.h
+  Data structures for mysys/my_alloc.c (root memory allocator).
 */
 
 #ifndef _my_alloc_h

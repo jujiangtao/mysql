@@ -1,5 +1,5 @@
 # -*- cperl -*-
-# Copyright (c) 2005, 2016, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2005, 2016 Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -22,7 +22,7 @@ package mtr_cases;
 use strict;
 
 use base qw(Exporter);
-our @EXPORT= qw(collect_option collect_test_cases);
+our @EXPORT= qw(collect_option collect_test_cases init_pattern $suitedir);
 
 use mtr_report;
 use mtr_match;
@@ -46,8 +46,7 @@ our $quick_collect;
 # as default.  (temporary option used in connection
 # with the change of default storage engine to InnoDB)
 our $default_myisam= 0;
- 
-
+our $suitedir;
 sub collect_option {
   my ($opt, $value)= @_;
 
@@ -274,7 +273,7 @@ sub collect_one_suite($)
 
   mtr_verbose("Collecting: $suite");
 
-  my $suitedir= "$::glob_mysql_test_dir"; # Default
+  $suitedir= "$::glob_mysql_test_dir"; # Default
   if ( $suite ne "main" )
   {
     # Allow suite to be path to "some dir" if $suite has at least
@@ -607,7 +606,7 @@ sub optimize_cases {
 	# The test supports different binlog formats
 	# check if the selected one is ok
 	my $supported=
-	  grep { $_ eq $binlog_format } @{$tinfo->{'binlog_formats'}};
+	  grep { $_ eq lc $binlog_format } @{$tinfo->{'binlog_formats'}};
 	if ( !$supported )
 	{
 	  $tinfo->{'skip'}= 1;
@@ -625,15 +624,16 @@ sub optimize_cases {
       # Get binlog-format used by this test from master_opt
       my $test_binlog_format;
       foreach my $opt ( @{$tinfo->{master_opt}} ) {
+       (my $dash_opt = $opt) =~ s/_/-/g;
 	$test_binlog_format=
-	  mtr_match_prefix($opt, "--binlog-format=") || $test_binlog_format;
+	  mtr_match_prefix($dash_opt, "--binlog-format=") || $test_binlog_format;
       }
 
       if (defined $test_binlog_format and
 	  defined $tinfo->{binlog_formats} )
       {
 	my $supported=
-	  grep { $_ eq $test_binlog_format } @{$tinfo->{'binlog_formats'}};
+	  grep { My::Options::option_equals($_,$test_binlog_format) } @{$tinfo->{'binlog_formats'}};
 	if ( !$supported )
 	{
 	  $tinfo->{'skip'}= 1;
@@ -651,10 +651,11 @@ sub optimize_cases {
     my %builtin_engines = ('myisam' => 1, 'memory' => 1, 'csv' => 1);
 
     foreach my $opt ( @{$tinfo->{master_opt}} ) {
+     (my $dash_opt = $opt) =~ s/_/-/g;
       my $default_engine=
-	mtr_match_prefix($opt, "--default-storage-engine=");
+	mtr_match_prefix($dash_opt, "--default-storage-engine=");
       my $default_tmp_engine=
-	mtr_match_prefix($opt, "--default-tmp-storage-engine=");
+	mtr_match_prefix($dash_opt, "--default-tmp-storage-engine=");
 
       # Allow use of uppercase, convert to all lower case
       $default_engine =~ tr/A-Z/a-z/;
@@ -914,15 +915,6 @@ sub collect_one_test_case {
 
   #-----------------------------------------------------------------------
   # Check for test specific config file
-  #-----------------------------------------------------------------------
-  my $test_cnf_file= "$testdir/$tname.cnf";
-  if ( -f $test_cnf_file) {
-    # Specifies the configuration file to use for this test
-    $tinfo->{'template_path'}= $test_cnf_file;
-  }
-
-  # ----------------------------------------------------------------------
-  # Check for test specific config file
   # ----------------------------------------------------------------------
   my $test_cnf_file= "$testdir/$tname.cnf";
   if ( -f $test_cnf_file ) {
@@ -987,6 +979,13 @@ sub collect_one_test_case {
 
   }
 
+  if ( ! $tinfo->{'not_parallel'} and $::opt_run_non_parallel_tests )
+  {
+    $tinfo->{'skip'}= 1;
+    $tinfo->{'comment'}= "Test needs 'include/not_parallel.inc' include file when 'run-non-parallel-tests' option is set";
+    return $tinfo
+  }
+
   if ( $tinfo->{'big_test'} and ! $::opt_big_test )
   {
     $tinfo->{'skip'}= 1;
@@ -1041,7 +1040,7 @@ sub collect_one_test_case {
   }
   if ( $tinfo->{'need_binlog'} )
   {
-    if (grep(/^--skip-log-bin/,  @::opt_extra_mysqld_opt) )
+    if (grep(/^--skip[-_]log[-_]bin/,  @::opt_extra_mysqld_opt) )
     {
       $tinfo->{'skip'}= 1;
       $tinfo->{'comment'}= "Test needs binlog";
@@ -1095,18 +1094,6 @@ sub collect_one_test_case {
     }
   }
 
-  # Check for group replication tests
-  if ( $tinfo->{'grp_rpl_test'} )
-  {
-    $::group_replication= 1;
-  }
-
-  # Check for xplugin tests
-  if ( $tinfo->{'xplugin_test'} )
-  {
-    $::xplugin= 1;
-  }
-
   if ( $tinfo->{'not_windows'} && IS_WINDOWS )
   {
     $tinfo->{'skip'}= 1;
@@ -1132,6 +1119,9 @@ sub collect_one_test_case {
       # Suite has no config, autodetect which one to use
       if ( $tinfo->{rpl_test} ){
 	$config= "suite/rpl/my.cnf";
+      if ( $tinfo->{rpl_gtid_test} ){
+        $config= "suite/rpl_gtid/my.cnf";
+      }
 	if ( $tinfo->{ndb_test} ){
 	  $config= "suite/rpl_ndb/my.cnf";
 	}
@@ -1154,16 +1144,18 @@ sub collect_one_test_case {
   push(@{$tinfo->{'master_opt'}}, @::opt_extra_mysqld_opt);
   push(@{$tinfo->{'slave_opt'}}, @::opt_extra_mysqld_opt);
 
-  # ----------------------------------------------------------------------
-  # Add master opts, extra options only for master
-  # ----------------------------------------------------------------------
-  process_opts_file($tinfo, "$testdir/$tname-master.opt", 'master_opt');
+  if ( !$::start_only or @::opt_cases )
+  {
+    # ----------------------------------------------------------------------
+    # Add master opts, extra options only for master
+    # ----------------------------------------------------------------------
+    process_opts_file($tinfo, "$testdir/$tname-master.opt", 'master_opt');
 
-  # ----------------------------------------------------------------------
-  # Add slave opts, list of extra option only for slave
-  # ----------------------------------------------------------------------
-  process_opts_file($tinfo, "$testdir/$tname-slave.opt", 'slave_opt');
-
+    # ----------------------------------------------------------------------
+    # Add slave opts, list of extra option only for slave
+    # ----------------------------------------------------------------------
+    process_opts_file($tinfo, "$testdir/$tname-slave.opt", 'slave_opt');
+  }
   return $tinfo;
 }
 
@@ -1174,11 +1166,11 @@ my @tags=
 (
  ["include/have_binlog_format_row.inc", "binlog_formats", ["row"]],
  ["include/have_binlog_format_statement.inc", "binlog_formats", ["statement"]],
- ["include/have_binlog_format_mixed.inc", "binlog_formats", ["mixed"]],
+ ["include/have_binlog_format_mixed.inc", "binlog_formats", ["mixed", "mix"]],
  ["include/have_binlog_format_mixed_or_row.inc",
-  "binlog_formats", ["mixed", "row"]],
+  "binlog_formats", ["mixed", "mix", "row"]],
  ["include/have_binlog_format_mixed_or_statement.inc",
-  "binlog_formats", ["mixed", "statement"]],
+  "binlog_formats", ["mixed", "mix", "statement"]],
  ["include/have_binlog_format_row_or_statement.inc",
   "binlog_formats", ["row", "statement"]],
 
@@ -1189,20 +1181,23 @@ my @tags=
  ["include/have_debug.inc", "need_debug", 1],
  ["include/have_ndb.inc", "ndb_test", 1],
  ["include/have_multi_ndb.inc", "ndb_test", 1],
- ["include/master-slave.inc", "rpl_test", 1],
- ["include/ndb_master-slave.inc", "rpl_test", 1],
- ["include/ndb_master-slave.inc", "ndb_test", 1],
+
+#  The tests with below four .inc files are considered to be rpl tests.
+ ["include/rpl_init.inc", "rpl_test", 1],
+ ["include/rpl_ip_mix.inc", "rpl_test", 1],
+ ["include/rpl_ip_mix2.inc", "rpl_test", 1],
+ ["include/rpl_ipv6.inc", "rpl_test", 1],
+
+#  The tests with below .inc file are considered to be rpl_gtid tests.
+ ["include/have_gtid.inc", "rpl_gtid_test", 1],
+
+["include/ndb_master-slave.inc", "ndb_test", 1],
  ["federated.inc", "federated_test", 1],
  ["include/not_embedded.inc", "not_embedded", 1],
  ["include/have_ssl.inc", "need_ssl", 1],
  ["include/have_ssl_communication.inc", "need_ssl", 1],
  ["include/not_windows.inc", "not_windows", 1],
-
- # Tests with below .inc file are considered to be group replication tests
- ["have_group_replication_plugin_base.inc", "grp_rpl_test", 1],
-
- # Tests with below .inc file are considered to be xplugin tests
- ["include/have_mysqlx_plugin.inc", "xplugin_test", 1],
+ ["include/not_parallel.inc", "not_parallel", 1]
 );
 
 

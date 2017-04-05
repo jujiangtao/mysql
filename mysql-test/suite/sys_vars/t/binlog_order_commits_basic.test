@@ -107,7 +107,7 @@ SELECT @@session.binlog_order_commits;
 
 --disable_warnings
 SELECT IF(@@global.binlog_order_commits, "ON", "OFF") = VARIABLE_VALUE 
-FROM INFORMATION_SCHEMA.GLOBAL_VARIABLES 
+FROM performance_schema.global_variables 
 WHERE VARIABLE_NAME='binlog_order_commits';
 --enable_warnings
 

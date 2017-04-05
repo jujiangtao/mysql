@@ -1,4 +1,4 @@
-/* Copyright (c) 2002, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2002, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -16,9 +16,11 @@
 #ifndef _SP_HEAD_H_
 #define _SP_HEAD_H_
 
-#include "my_global.h"                          /* NO_EMBEDDED_ACCESS_CHECKS */
-#include "sql_class.h"                          // THD
-#include "mem_root_array.h"
+#include "my_global.h"
+#include "mem_root_array.h"    // Mem_root_array
+#include "sql_class.h"         // Query_arena
+
+struct PSI_sp_share;
 
 /**
   @defgroup Stored_Routines Stored Routines
@@ -28,6 +30,7 @@
 
 class sp_branch_instr;
 class sp_instr;
+class sp_label;
 class sp_lex_branch_instr;
 class sp_pcontext;
 
@@ -41,21 +44,6 @@ class sp_pcontext;
 void init_sp_psi_keys(void);
 #endif
 
-
-///////////////////////////////////////////////////////////////////////////
-
-/**
-  sp_printable defines an interface which should be implemented if a class wants
-  report some internal information about its state.
-*/
-class sp_printable
-{
-public:
-  virtual void print(String *str) = 0;
-
-  virtual ~sp_printable()
-  { }
-};
 
 ///////////////////////////////////////////////////////////////////////////
 
@@ -149,7 +137,6 @@ private:
 
 public:
   sp_parser_data() :
-    m_expr_start_ptr(NULL),
     m_current_stmt_start_ptr(NULL),
     m_option_start_ptr(NULL),
     m_param_start_ptr(NULL),
@@ -216,44 +203,6 @@ public:
   ///////////////////////////////////////////////////////////////////////
 
   void process_new_sp_instr(THD *thd, sp_instr *i);
-
-  ///////////////////////////////////////////////////////////////////////
-
-  /**
-    Retrieve expression start pointer in the query string.
-
-    This function is named 'pop' to highlight that it changes the internal
-    state, and two subsequent calls may not return same value.
-
-    @note It's true only in the debug mode, but this check is very useful in
-    the parser to ensure we "pop" every "pushed" pointer, because we have
-    lots of branches, and it's pretty easy to forget something somewhere.
-  */
-  const char *pop_expr_start_ptr()
-  {
-#ifndef DBUG_OFF
-    DBUG_ASSERT(m_expr_start_ptr);
-    const char *p= m_expr_start_ptr;
-    m_expr_start_ptr= NULL;
-    return p;
-#else
-    return m_expr_start_ptr;
-#endif
-  }
-
-  /**
-    Remember expression start pointer in the query string.
-
-    This function is named 'push' to highlight that the pointer must be
-    retrieved (pop) later.
-
-    @sa the note for pop_expr_start_ptr().
-  */
-  void push_expr_start_ptr(const char *expr_start_ptr)
-  {
-    DBUG_ASSERT(!m_expr_start_ptr);
-    m_expr_start_ptr= expr_start_ptr;
-  }
 
   ///////////////////////////////////////////////////////////////////////
 
@@ -372,9 +321,6 @@ public:
   void do_cont_backpatch(uint dest);
 
 private:
-  /// Start of the expression query string (any but SET-expression).
-  const char *m_expr_start_ptr;
-
   /// Start of the current statement's query string.
   const char *m_current_stmt_start_ptr;
 
@@ -513,7 +459,7 @@ public:
   */
   sql_mode_t m_sql_mode;
 
-  /// Fully qualified name (<db name>.<sp name>).
+  /// Fully qualified name (@<db name@>.@<sp name@>).
   LEX_STRING m_qname;
 
   bool m_explicit_name;         ///< Prepend the db name? */
@@ -601,10 +547,7 @@ public:
   class Table_trigger_dispatcher *m_trg_list;
 
 public:
-  static void *operator new(size_t size) throw ();
-  static void operator delete(void *ptr, size_t size) throw ();
-
-  ~sp_head();
+  static void destroy(sp_head *sp);
 
   /// Is this routine being executed?
   bool is_invoked() const
@@ -652,14 +595,14 @@ public:
     - restores security context
 
     @param thd               Thread context
-    @param db                database name
-    @param table             table name
+    @param db_name           database name
+    @param table_name        table name
     @param grant_info        GRANT_INFO structure to be filled with
                              information about definer's privileges
                              on subject table
 
     @todo
-      - TODO: we should create sp_rcontext once per command and reuse it
+      We should create sp_rcontext once per command and reuse it
       on subsequent executions of a trigger.
 
     @return Error status.
@@ -681,11 +624,11 @@ public:
      - restores security context
 
     @param thd               Thread context.
-    @param argp              Passed arguments (these are items from containing
+    @param args              Passed arguments (these are items from containing
                              statement?)
     @param argcount          Number of passed arguments. We need to check if
                              this is correct.
-    @param return_value_fld  Save result here.
+    @param return_fld        Save result here.
 
     @todo
       We should create sp_rcontext once per command and reuse
@@ -718,17 +661,6 @@ public:
   */
 
   bool execute_procedure(THD *thd, List<Item> *args);
-
-  /**
-    Implement SHOW CREATE statement for stored routines.
-
-    @param thd  Thread context.
-    @param type         Stored routine type
-                        (SP_TYPE_PROCEDURE or SP_TYPE_FUNCTION)
-
-    @return Error status.
-  */
-  bool show_create_routine(THD *thd, enum_sp_type type);
 
   /**
     Add instruction to SP.
@@ -779,8 +711,6 @@ public:
       *lenp= (uint) m_name.length;
     return m_name.str;
   }
-
-  char *create_string(THD *thd, ulong *lenp);
 
   /**
     Create Field-object corresponding to the RETURN field of a stored function.
@@ -942,9 +872,8 @@ public:
     Check if a user has access right to a SP.
 
     @param      thd          Thread context.
-    @param[out] full_access  Set to 1 if the user has SELECT
-                             to the 'mysql.proc' table or is
-                             the owner of the stored program.
+    @param[out] full_access  Set to 1 if the user is the owner
+                             of the stored program.
 
     @return Error status.
   */
@@ -970,7 +899,10 @@ public:
 
 private:
   /// Use sp_start_parsing() to create instances of sp_head.
-  sp_head(enum_sp_type type);
+  sp_head(MEM_ROOT mem_root, enum_sp_type type);
+
+  /// Use destroy() to destoy instances of sp_head.
+  ~sp_head();
 
   /// SP-persistent memory root (for instructions and expressions).
   MEM_ROOT main_mem_root;
@@ -1054,7 +986,7 @@ private:
   */
   bool merge_table_list(THD *thd, TABLE_LIST *table, LEX *lex_for_tmp_check);
 
-  friend sp_head *sp_start_parsing(THD *, enum_sp_type, sp_name *);
+  friend sp_head *sp_start_parsing(THD *thd, enum_sp_type sp_type, sp_name *sp_name);
 
   // Prevent use of copy constructor and assignment operator.
   sp_head(const sp_head &);

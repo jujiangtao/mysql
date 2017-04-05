@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2013, 2014, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2013, 2016 Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -15,18 +15,19 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 */
 
-#include "my_global.h"
-#include "sql_class.h"
-#include "my_bitmap.h"
-
 #include "trigger_chain.h"
-#include "table_trigger_dispatcher.h"
-#include "table.h"
-#include "sql_list.h"
-#include "trigger_loader.h"
-#include "trigger.h"
-#include "sp_head.h"                  // sp_head::mark_used_trigger_fields
 
+#include "mysqld_error.h"             // ER_*
+#include "mysqld.h"                   // table_alias_charset
+#include "sp_head.h"                  // sp_head
+#include "table.h"                    // GRANT_INFO
+#include "trigger.h"                  // Trigger
+
+
+Trigger_chain::~Trigger_chain()
+{
+  m_triggers.delete_elements();
+}
 
 /**
   Add a new trigger into the list of triggers with the same
@@ -49,7 +50,7 @@
 bool Trigger_chain::add_trigger(MEM_ROOT *mem_root,
                                 Trigger *new_trigger,
                                 enum_trigger_order_type ordering_clause,
-                                const LEX_STRING &referenced_trigger_name)
+                                const LEX_CSTRING &referenced_trigger_name)
 {
   switch (ordering_clause)
   {
@@ -154,7 +155,7 @@ bool Trigger_chain::execute_triggers(THD *thd)
   to the set of elements used by statement.
 
   @param [in]     thd               thread context
-  @param [in out] prelocking_ctx    prelocking context of the statement
+  @param [in,out] prelocking_ctx    prelocking context of the statement
   @param [in]     table_list        TABLE_LIST for the table
 */
 
@@ -215,23 +216,4 @@ bool Trigger_chain::has_updated_trigger_fields(const MY_BITMAP *used_fields)
   }
 
   return false;
-}
-
-
-/**
-  Recalculate action_order value for every trigger in the list.
-*/
-
-void Trigger_chain::renumerate_triggers()
-{
-  ulonglong action_order= 1;
-
-  List_iterator_fast<Trigger> it(m_triggers);
-  Trigger *t;
-
-  while ((t= it++))
-  {
-    t->set_action_order(action_order);
-    ++action_order;
-  }
 }

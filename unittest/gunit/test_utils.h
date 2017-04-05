@@ -17,6 +17,7 @@
 #ifndef TEST_UTILS_INCLUDED
 #define TEST_UTILS_INCLUDED
 
+#include "error_handler.h"
 #include "sql_error.h"
 #include "sql_class.h"
 #include "set_var.h"
@@ -99,6 +100,30 @@ private:
 };
 
 
+/*
+  Some compilers want to know the type of the NULL when expanding gunit's
+  EXPECT_EQ macros.
+*/
+template <typename T>
+void expect_null(T *t)
+{
+  T *t_null= NULL;
+  EXPECT_EQ(t_null, t);
+}
+
+/*
+  A class which wraps the necessary setup/teardown logic for
+  Data Dictionary.
+*/
+class DD_initializer
+{
+public:
+  static void SetUp();
+  static void TearDown();
+};
+
 }  // namespace my_testing
+
+
 
 #endif  // TEST_UTILS_INCLUDED

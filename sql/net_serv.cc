@@ -43,16 +43,12 @@
 #include <signal.h>
 #include <errno.h>
 #include "probes_mysql.h"
-/* key_memory_NET_buff */
-#include "mysqld.h"
+#include "mysql/service_mysql_alloc.h"
 
 #include <algorithm>
 
 using std::min;
 using std::max;
-
-PSI_memory_key key_memory_NET_buff;
-PSI_memory_key key_memory_NET_compress_packet;
 
 #ifdef EMBEDDED_LIBRARY
 #undef MYSQL_SERVER
@@ -60,6 +56,12 @@ PSI_memory_key key_memory_NET_compress_packet;
 #define MYSQL_CLIENT
 #endif /*EMBEDDED_LIBRARY */
 
+#ifndef MYSQL_CLIENT
+#include "psi_memory_key.h"
+#else
+#define key_memory_NET_buff 0
+#define key_memory_NET_compress_packet 0
+#endif
 
 /*
   The following handles the differences when this is linked between the
@@ -71,13 +73,12 @@ PSI_memory_key key_memory_NET_compress_packet;
 */
 
 #ifdef MYSQL_SERVER
+#include "sql_cache.h" // query_cache_insert
 /*
   The following variables/functions should really not be declared
   extern, but as it's hard to include sql_class.h here, we have to
   live with this for a while.
 */
-extern void query_cache_insert(const char *packet, ulong length,
-                               unsigned pkt_nr);
 extern void thd_increment_bytes_sent(size_t length);
 extern void thd_increment_bytes_received(size_t length);
 
@@ -240,7 +241,7 @@ my_bool net_flush(NET *net)
 */
 
 static my_bool
-net_should_retry(NET *net, uint *retry_count MY_ATTRIBUTE((unused)))
+net_should_retry(NET *net, uint *retry_count)
 {
   my_bool retry;
 
@@ -261,6 +262,100 @@ net_should_retry(NET *net, uint *retry_count MY_ATTRIBUTE((unused)))
 
   return retry;
 }
+
+
+/**
+  @page page_protocol_basic_packets MySQL Packets
+
+  If a MySQL client or server wants to send data, it:
+  - Splits the data into packets of size 2<sup>24</sup> bytes
+  - Prepends to each chunk a packet header
+
+  Protocol::Packet
+  ----------------
+
+  Data between client and server is exchanged in packets of max 16MByte size.
+
+  <table>
+  <caption>Payload</caption>
+  <tr><th>Type</th><th>Name</th><th>Description</th></tr>
+  <tr><td>@ref a_protocol_type_int1 "int&lt;3&gt;"</td>
+      <td>payload_length</td>
+      <td>Length of the payload. The number of bytes in the packet beyond
+          the initial 4 bytes that make up the packet header.</td></tr>
+  <tr><td>@ref a_protocol_type_int1 "int&lt;1&gt;"</td>
+      <td>sequence_id</td>
+      <td>@ref sect_protocol_basic_packets_sequence_id</td></tr>
+  <tr><td>@ref sect_protocol_basic_dt_string_var "string&lt;var&gt;"</td>
+      <td>payload</td>
+      <td>payload of the packet</td></tr>
+  </table>
+
+  Example:
+
+  @todo: Reference COM_QUIT
+  A COM_QUIT looks like this:
+  <table><tr>
+  <td>
+  ~~~~~~~~~~~~~~~~~~~~~
+  01 00 00 00 01
+  ~~~~~~~~~~~~~~~~~~~~~
+  </td><td>
+  - length: 1
+  - sequence_id: x00
+  - payload: 0x01
+  </td></tr></table>
+
+  @sa my_net_write(), net_write_command(), net_write_buff(), my_net_read(),
+  net_send_ok()
+
+  @section sect_protocol_basic_packets_sending_mt_16mb Sending More Than 16Mb
+
+  If the payload is larger than or equal to 2<sup>24</sup>-1 bytes the length
+  is set to 2<sup>24</sup>-1 (`ff ff ff`) and a additional packets are sent
+  with the rest of the payload until the payload of a packet is less
+  than 2<sup>24</sup>-1 bytes.
+
+  Sending a payload of 16 777 215 (2<sup>24</sup>-1) bytes looks like:
+
+  ~~~~~~~~~~~~~~~~
+  ff ff ff 00 ...
+  00 00 00 01
+  ~~~~~~~~~~~~~~~~
+
+  @section sect_protocol_basic_packets_sequence_id Sequence ID
+
+  The sequence-id is incremented with each packet and may wrap around.
+  It starts at 0 and is reset to 0 when a new command begins in the
+  @ref page_protocol_command_phase.
+
+  @section sect_protocol_basic_packets_describing_packets Describing Packets
+
+  In this document we describe each packet by first defining its payload and
+  provide an example showing each packet that is sent, including its packet
+  header:
+  <pre>
+  &lt;packetname&gt;
+    &lt;description&gt;
+
+    direction: client -&gt; server
+    response: &lt;response&gt;
+
+    payload:
+      &lt;type&gt;        &lt;description&gt;
+  </pre>
+
+  Example:
+  ~~~~~~~~~~~~~~~~~~~~~
+  01 00 00 00 01
+  ~~~~~~~~~~~~~~~~~~~~~
+
+  @note Some packets have optional fields or a different layout depending on
+  the @ref group_cs_capabilities_flags.
+
+  If a field has a fixed value, its description shows it as a hex value in
+  brackets like this: `[00]`
+*/
 
 
 /*****************************************************************************
@@ -474,7 +569,8 @@ net_write_buff(NET *net, const uchar *packet, size_t len)
       return net_write_packet(net, packet, len);
     /* Send out rest of the blocks as full sized blocks */
   }
-  memcpy(net->write_pos, packet, len);
+  if (len > 0)
+    memcpy(net->write_pos, packet, len);
   net->write_pos+= len;
   return 0;
 }
@@ -608,7 +704,7 @@ net_write_packet(NET *net, const uchar *packet, size_t length)
   DBUG_ENTER("net_write_packet");
 
 #if defined(MYSQL_SERVER)
-  query_cache_insert((char*) packet, length, net->pkt_nr);
+  query_cache_insert(packet, length, net->pkt_nr);
 #endif
 
   /* Socket can't be used */
@@ -617,7 +713,6 @@ net_write_packet(NET *net, const uchar *packet, size_t length)
 
   net->reading_or_writing= 2;
 
-#ifdef HAVE_COMPRESS
   const bool do_compress= net->compress;
   if (do_compress)
   {
@@ -630,7 +725,6 @@ net_write_packet(NET *net, const uchar *packet, size_t length)
       DBUG_RETURN(TRUE);
     }
   }
-#endif /* HAVE_COMPRESS */
 
 #ifdef DEBUG_DATA_PACKETS
   DBUG_DUMP("data", packet, length);
@@ -638,10 +732,8 @@ net_write_packet(NET *net, const uchar *packet, size_t length)
 
   res= net_write_raw_loop(net, packet, length);
 
-#ifdef HAVE_COMPRESS
   if (do_compress)
     my_free((void *) packet);
-#endif
 
   net->reading_or_writing= 0;
 
@@ -807,7 +899,7 @@ static my_bool net_read_packet_header(NET *net)
   @remark Long packets are handled by my_net_read().
   @remark The network buffer is expanded if necessary.
 
-  @return The length of the packet, or @packet_error on error.
+  @return The length of the packet, or @c packet_error on error.
 */
 
 static size_t net_read_packet(NET *net, size_t *complen)
@@ -824,7 +916,6 @@ static size_t net_read_packet(NET *net, size_t *complen)
 
   net->compress_pkt_nr= net->pkt_nr;
 
-#ifdef HAVE_COMPRESS
   if (net->compress)
   {
     /*
@@ -840,7 +931,6 @@ static size_t net_read_packet(NET *net, size_t *complen)
     */
     *complen= uint3korr(&(net->buff[net->where_b + NET_HEADER_SIZE]));
   }
-#endif
 
   /* The length of the packet that follows. */
   pkt_len= uint3korr(net->buff+net->where_b);
@@ -892,10 +982,8 @@ my_net_read(NET *net)
 
   MYSQL_NET_READ_START();
 
-#ifdef HAVE_COMPRESS
   if (!net->compress)
   {
-#endif
     len= net_read_packet(net, &complen);
     if (len == MAX_PACKET_LENGTH)
     {
@@ -917,7 +1005,6 @@ my_net_read(NET *net)
       net->read_pos[len]=0;		/* Safeguard for mysql_use_result */
     MYSQL_NET_READ_DONE(0, len);
     return static_cast<ulong>(len);
-#ifdef HAVE_COMPRESS
   }
   else
   {
@@ -1030,7 +1117,6 @@ my_net_read(NET *net)
     net->save_char= net->read_pos[len];	/* Must be saved */
     net->read_pos[len]=0;		/* Safeguard for mysql_use_result */
   }
-#endif /* HAVE_COMPRESS */
   MYSQL_NET_READ_DONE(0, len);
   return static_cast<ulong>(len);
 }
@@ -1057,3 +1143,13 @@ void my_net_set_write_timeout(NET *net, uint timeout)
   DBUG_VOID_RETURN;
 }
 
+
+void my_net_set_retry_count(NET *net, uint retry_count)
+{
+  DBUG_ENTER("my_net_set_retry_count");
+  DBUG_PRINT("enter", ("retry_count: %d", retry_count));
+  net->retry_count= retry_count;
+  if (net->vio)
+    net->vio->retry_count= retry_count;
+  DBUG_VOID_RETURN;
+}

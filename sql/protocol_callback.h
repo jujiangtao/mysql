@@ -133,8 +133,6 @@ public:
     Sends DECIMAL value
 
     @param d    value
-    @param prec field's precision, unused
-    @param dec  field's decimals, unused
 
     @return
       false  success
@@ -144,8 +142,6 @@ public:
 
   /**
     Sends string (CHAR/VARCHAR/TEXT/BLOB) value
-
-    @param d value
 
     @return
       false  success
@@ -234,7 +230,7 @@ public:
   /**
     Checks if the protocol supports a capability
 
-    @param cap the capability
+    @param capability the capability
 
     @return
       true   supports
@@ -348,7 +344,7 @@ public:
 
     @param server_status Bit field with different statuses. See SERVER_STATUS_*
     @param warn_count      Warning count from the execution
-    @param affected_row    Rows changed/deleted during the operation
+    @param affected_rows   Rows changed/deleted during the operation
     @param last_insert_id  ID of the last insert row, which has AUTO_INCROMENT
                            column
     @param message         Textual message from the execution. May be NULL.

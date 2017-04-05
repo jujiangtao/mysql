@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2011, 2016, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -12,6 +12,11 @@
   You should have received a copy of the GNU General Public License
   along with this program; if not, write to the Free Software Foundation,
   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+
+/**
+  @file storage/perfschema/table_accounts.cc
+  TABLE ACCOUNTS.
+*/
 
 #include "my_global.h"
 #include "my_thread.h"
@@ -70,6 +75,23 @@ table_accounts::m_share=
   false  /* perpetual */
 };
 
+bool PFS_index_accounts_by_user_host::match(PFS_account *pfs)
+{
+  if (m_fields >= 1)
+  {
+    if (!m_key_1.match(pfs))
+      return false;
+  }
+
+  if (m_fields >= 2)
+  {
+    if (!m_key_2.match(pfs))
+      return false;
+  }
+
+  return true;
+}
+
 PFS_engine_table* table_accounts::create()
 {
   return new table_accounts();
@@ -98,6 +120,15 @@ table_accounts::table_accounts()
   : cursor_by_account(& m_share),
   m_row_exists(false)
 {}
+
+int table_accounts::index_init(uint idx, bool sorted)
+{
+  PFS_index_accounts *result= NULL;
+  result= PFS_NEW(PFS_index_accounts_by_user_host);
+  m_opened_index= result;
+  m_index= result;
+  return 0;
+}
 
 void table_accounts::make_row(PFS_account *pfs)
 {

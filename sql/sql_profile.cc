@@ -31,6 +31,7 @@
 
 #include "sql_profile.h"
 #include "my_sys.h"
+#include "psi_memory_key.h"
 #include "sql_show.h"                     // schema_table_store_record
 #include "sql_class.h"                    // THD
 #include "log.h"
@@ -348,8 +349,8 @@ PROFILING::~PROFILING()
 
   @param  status_arg  name of this step
   @param  function_arg  calling function (usually supplied from compiler)
-  @param  function_arg  calling file (usually supplied from compiler)
-  @param  function_arg  calling line number (usually supplied from compiler)
+  @param  file_arg      calling file (usually supplied from compiler)
+  @param  line_arg      calling line number (usually supplied from compiler)
 */
 void PROFILING::status_change(const char *status_arg,
                               const char *function_arg,

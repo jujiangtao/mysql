@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2011, 2016, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -28,9 +28,28 @@
 #include "table_helper.h"
 
 /**
-  @addtogroup Performance_schema_tables
+  @addtogroup performance_schema_tables
   @{
 */
+
+class PFS_index_mems_by_thread_by_event_name : public PFS_engine_index
+{
+public:
+  PFS_index_mems_by_thread_by_event_name()
+    : PFS_engine_index(&m_key_1, &m_key_2),
+    m_key_1("THREAD_ID"), m_key_2("EVENT_NAME")
+  {}
+
+  ~PFS_index_mems_by_thread_by_event_name()
+  {}
+
+  bool match(PFS_thread *pfs);
+  bool match(PFS_memory_class *klass);
+
+private:
+  PFS_key_thread_id m_key_1;
+  PFS_key_event_name m_key_2;
+};
 
 /** A row of PERFORMANCE_SCHEMA.MEMORY_SUMMARY_BY_THREAD_BY_EVENT_NAME. */
 struct row_mems_by_thread_by_event_name
@@ -84,9 +103,13 @@ public:
   static int delete_all_rows();
   static ha_rows get_row_count();
 
+  virtual void reset_position(void);
+
   virtual int rnd_next();
   virtual int rnd_pos(const void *pos);
-  virtual void reset_position(void);
+
+  virtual int index_init(uint idx, bool sorted);
+  virtual int index_next();
 
 private:
   virtual int read_row_values(TABLE *table,
@@ -116,6 +139,8 @@ private:
   pos_mems_by_thread_by_event_name m_pos;
   /** Next position. */
   pos_mems_by_thread_by_event_name m_next_pos;
+
+  PFS_index_mems_by_thread_by_event_name *m_opened_index;
 };
 
 /** @} */

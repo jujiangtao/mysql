@@ -160,8 +160,8 @@ public:
       strmake(user, user_arg, sizeof(user) - 1);
     }
   }
-  /*
-    Returns user's size name. See @code get_user().
+  /**
+    Returns user's size name. See @c get_user().
 
     @return user's size name.
   */
@@ -192,7 +192,8 @@ public:
     Returns either user's password in the master.info repository or
     user's password used in START SLAVE.
 
-    @param password_arg is user's password.
+    @param[out] password_arg is user's password.
+    @param[out] password_arg_size is user's password size.
 
     @return false if there is no error, otherwise true is returned.
   */
@@ -221,8 +222,6 @@ public:
   }
   /**
     Stores the DEFAULT_AUTH defined by START SLAVE.
-
-    @param DEFAULT_AUTH.
   */
   void set_plugin_auth(const char* src)
   {
@@ -231,8 +230,6 @@ public:
   }
   /**
     Stores the DEFAULT_AUTH defined by START SLAVE.
-
-    @param DEFAULT_AUTH.
   */
   void set_plugin_dir(const char* src)
   {
@@ -421,10 +418,6 @@ private:
 public:
   Gtid *get_last_gtid_queued() { return &last_gtid_queued; }
   void set_last_gtid_queued(Gtid &gtid) { last_gtid_queued= gtid; }
-  void set_last_gtid_queued(rpl_sidno sno, rpl_gno gtidno)
-  {
-    last_gtid_queued.set(sno, gtidno);
-  }
   void clear_last_gtid_queued() { last_gtid_queued.clear(); }
 
   /*
@@ -498,11 +491,10 @@ public:
     It mush be called before deleting a channel and protected by
     channel_map_lock.wrlock().
 
-    @param THD thd the THD object of current thread
+    @param thd the THD object of current thread
   */
   void wait_until_no_reference(THD *thd);
 };
-int change_master_server_id_cmp(ulong *id1, ulong *id2);
 
 #endif /* HAVE_REPLICATION */
 #endif /* RPL_MI_H */

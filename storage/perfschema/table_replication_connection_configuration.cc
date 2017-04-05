@@ -1,5 +1,5 @@
 /*
-      Copyright (c) 2013, 2015, Oracle and/or its affiliates. All rights reserved.
+      Copyright (c) 2013, 2016, Oracle and/or its affiliates. All rights reserved.
 
       This program is free software; you can redistribute it and/or modify
       it under the terms of the GNU General Public License as published by
@@ -19,9 +19,12 @@
   Table replication_connection_configuration (implementation).
 */
 
-#define HAVE_REPLICATION
-
 #include "my_global.h"
+
+#ifndef EMBEDDED_LIBRARY
+#define HAVE_REPLICATION
+#endif /* EMBEDDED_LIBRARY */
+
 #include "table_replication_connection_configuration.h"
 #include "pfs_instr_class.h"
 #include "pfs_instr.h"
@@ -155,6 +158,25 @@ table_replication_connection_configuration::m_share=
 };
 
 
+#ifdef HAVE_REPLICATION
+bool PFS_index_rpl_connection_config::match(Master_info *mi)
+{
+  if (m_fields >= 1)
+  {
+    st_row_connect_config row;
+
+    /* Mutex locks not necessary for channel name. */
+    row.channel_name_length= mi->get_channel() ? (uint)strlen(mi->get_channel()) : 0;
+    memcpy(row.channel_name, mi->get_channel(), row.channel_name_length);
+
+    if (!m_key.match(row.channel_name, row.channel_name_length))
+      return false;
+  }
+
+  return true;
+}
+#endif
+
 PFS_engine_table* table_replication_connection_configuration::create(void)
 {
   return new table_replication_connection_configuration();
@@ -178,18 +200,23 @@ void table_replication_connection_configuration::reset_position(void)
 
 ha_rows table_replication_connection_configuration::get_row_count()
 {
+#ifdef HAVE_REPLICATION
   /*
      We actually give the MAX_CHANNELS rather than the current
      number of channels
   */
-
- return channel_map.get_max_channels();
+  return channel_map.get_max_channels();
+#else
+  return 0;
+#endif /* HAVE_REPLICATION */
 }
 
 int table_replication_connection_configuration::rnd_next(void)
 {
-  Master_info *mi;
   int res= HA_ERR_END_OF_FILE;
+
+#ifdef HAVE_REPLICATION
+  Master_info *mi;
 
   channel_map.rdlock();
 
@@ -208,13 +235,17 @@ int table_replication_connection_configuration::rnd_next(void)
   }
 
   channel_map.unlock();
+#endif /* HAVE_REPLICATION */
+
   return res;
 }
 
 int table_replication_connection_configuration::rnd_pos(const void *pos)
 {
-  Master_info *mi;
   int res= HA_ERR_RECORD_DELETED;
+
+#ifdef HAVE_REPLICATION
+  Master_info *mi;
 
   channel_map.rdlock();
 
@@ -227,15 +258,61 @@ int table_replication_connection_configuration::rnd_pos(const void *pos)
   }
 
   channel_map.unlock();
+#endif /* HAVE_REPLICATION */
+
   return res;
 }
 
+int table_replication_connection_configuration::index_init(uint idx, bool sorted)
+{
+#ifdef HAVE_REPLICATION
+  PFS_index_rpl_connection_config *result= NULL;
+  DBUG_ASSERT(idx == 0);
+  result= PFS_NEW(PFS_index_rpl_connection_config);
+  m_opened_index= result;
+  m_index= result;
+#endif
+  return 0;
+}
+
+int table_replication_connection_configuration::index_next(void)
+{
+  int res= HA_ERR_END_OF_FILE;
+
+#ifdef HAVE_REPLICATION
+  Master_info *mi;
+
+  channel_map.rdlock();
+
+  for (m_pos.set_at(&m_next_pos);
+       m_pos.m_index < channel_map.get_max_channels() && res != 0;
+       m_pos.next())
+  {
+    mi= channel_map.get_mi_at_pos(m_pos.m_index);
+
+    if (mi && mi->host[0])
+    {
+      if (m_opened_index->match(mi))
+      {
+        make_row(mi);
+        m_next_pos.set_after(&m_pos);
+        res= 0;
+      }
+    }
+  }
+
+  channel_map.unlock();
+#endif /* HAVE_REPLICATION */
+
+  return res;
+}
+
+#ifdef HAVE_REPLICATION
 void table_replication_connection_configuration::make_row(Master_info *mi)
 {
   char * temp_store;
 
   m_row_exists= false;
-
 
   DBUG_ASSERT(mi != NULL);
 
@@ -318,12 +395,14 @@ void table_replication_connection_configuration::make_row(Master_info *mi)
 
   m_row_exists= true;
 }
+#endif /* HAVE_REPLICATION */
 
 int table_replication_connection_configuration::read_row_values(TABLE *table,
                                                                 unsigned char *,
                                                                 Field **fields,
                                                                 bool read_all)
 {
+#ifdef HAVE_REPLICATION
   Field *f;
 
   if (unlikely(! m_row_exists))
@@ -407,4 +486,7 @@ int table_replication_connection_configuration::read_row_values(TABLE *table,
     }
   }
   return 0;
+#else
+  return HA_ERR_RECORD_DELETED;
+#endif /* HAVE_REPLICATION */
 }

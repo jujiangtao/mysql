@@ -31,7 +31,7 @@
 #define MEM(X) X
 
 /**
-  @addtogroup Performance_schema_buffers
+  @addtogroup performance_schema_buffers
   @{
 */
 
@@ -77,6 +77,71 @@ struct pfs_dirty_state
   Access to the record is not enforced here,
   it's up to the readers and writers to look at the record state
   before making an actual read or write operation.
+
+  The following state diagram shows the general states maintained by the lock.
+
+  @startuml
+
+  state PFS_LOCK_FREE
+
+  state PFS_LOCK_DIRTY
+
+  state PFS_LOCK_ALLOCATED
+
+  [*] -down-> PFS_LOCK_FREE
+
+  PFS_LOCK_FREE -down-> [*]
+
+  PFS_LOCK_FREE -right-> PFS_LOCK_DIRTY : free_to_dirty()
+  PFS_LOCK_DIRTY -right-> PFS_LOCK_ALLOCATED : dirty_to_allocated()
+
+  PFS_LOCK_ALLOCATED --> PFS_LOCK_FREE : allocated_to_free()
+  PFS_LOCK_ALLOCATED --> PFS_LOCK_DIRTY : allocated_to_dirty()
+
+  @enduml
+
+  An internal version counter is also incremented, to detect each modification done to a record.
+
+  The following diagram represent a fragment of all the states reached,
+  for an object creation, modification and destruction.
+
+  @startuml
+
+  state "..." as BEFORE
+
+  state "PFS_LOCK_FREE" as FREE_N
+  FREE_N : m_version = N
+
+  state "PFS_LOCK_DIRTY" as DIRTY_N
+  DIRTY_N : m_version = N
+
+  state "PFS_LOCK_ALLOCATED" as ALLOCATED_N1
+  ALLOCATED_N1 : m_version = N + 1
+
+  state "PFS_LOCK_DIRTY" as DIRTY_N1
+  DIRTY_N1 : m_version = N + 1
+
+  state "PFS_LOCK_ALLOCATED" as ALLOCATED_N2
+  ALLOCATED_N2: m_version = N + 2
+
+  state "PFS_LOCK_FREE" as FREE_N2
+  FREE_N2 : m_version = N + 2
+
+  state "..." as AFTER
+
+  BEFORE -down-> FREE_N
+  FREE_N -down-> DIRTY_N : free_to_dirty()
+  DIRTY_N -down-> ALLOCATED_N1 : dirty_to_allocated()
+  ALLOCATED_N1 -down-> DIRTY_N1 : allocated_to_dirty()
+  DIRTY_N1 -down-> ALLOCATED_N2 : dirty_to_allocated()
+  ALLOCATED_N2 -down-> FREE_N2 : allocated_to_free()
+  FREE_N2 -down-> AFTER
+
+  Note left of ALLOCATED_N1 : State after object creation
+  Note left of ALLOCATED_N2 : State after object modification
+  Note left of FREE_N2 : State after object destruction
+
+  @enduml
 */
 struct pfs_lock
 {
@@ -207,20 +272,6 @@ struct pfs_lock
   }
 
   /**
-    Initialize a lock to dirty.
-  */
-  void set_dirty(pfs_dirty_state *copy_ptr)
-  {
-    /* Do not set the version to 0, read the previous value. */
-    uint32 copy= PFS_atomic::load_u32(&m_version_state);
-    /* Increment the version, set the DIRTY state */
-    uint32 new_val= (copy & VERSION_MASK) + VERSION_INC + PFS_LOCK_DIRTY;
-    PFS_atomic::store_u32(&m_version_state, new_val);
-
-    copy_ptr->m_version_state= new_val;
-  }
-
-  /**
     Execute a dirty to free transition.
     This transition should be executed by the writer that owns the record.
   */
@@ -259,7 +310,7 @@ struct pfs_lock
     @param [out] copy Saved lock state
     @sa end_optimist_lock.
   */
-  void begin_optimistic_lock(struct pfs_optimistic_state *copy)
+  void begin_optimistic_lock(pfs_optimistic_state *copy)
   {
     copy->m_version_state= PFS_atomic::load_u32(&m_version_state);
   }
@@ -270,7 +321,7 @@ struct pfs_lock
     @param copy Saved lock state
     @return true if the data read is safe to use.
   */
-  bool end_optimistic_lock(const struct pfs_optimistic_state *copy)
+  bool end_optimistic_lock(const pfs_optimistic_state *copy)
   {
     uint32 version_state;
 

@@ -112,6 +112,17 @@ ADD_CUSTOM_COMMAND(
 )
 
 ADD_CUSTOM_COMMAND(
+  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/sql_commands_system_tables_data_fix.h
+  COMMAND comp_sql
+  mysql_system_tables_data_fix
+  ${CMAKE_CURRENT_SOURCE_DIR}/mysql_system_tables_data_fix.sql
+  sql_commands_system_tables_data_fix.h
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+  DEPENDS comp_sql
+  ${CMAKE_CURRENT_SOURCE_DIR}/mysql_system_tables_data_fix.sql
+)
+
+ADD_CUSTOM_COMMAND(
   OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/sql_commands_system_tables.h
   COMMAND comp_sql
   mysql_system_tables
@@ -140,6 +151,7 @@ IF(NOT WITHOUT_SERVER)
     DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/sql_commands_system_data.h
     ${CMAKE_CURRENT_BINARY_DIR}/sql_commands_system_tables.h
     ${CMAKE_CURRENT_BINARY_DIR}/sql_commands_help_data.h
+    ${CMAKE_CURRENT_BINARY_DIR}/sql_commands_system_tables_data_fix.h
   )
 ENDIF()
 
@@ -212,6 +224,7 @@ SET(REPLACE_OPTIONS
 
 # Note sequence of -W options here, most specific first.
 SET(REPLACE_REGEX_OPTIONS
+  "-W0,-stdhdrs_not_idempotent"
   "-Wp,[-=_A-Za-z0-9]*"
   "-Werror=[-A-Za-z]*"
   "-W[-A-Za-z]*"
@@ -229,6 +242,12 @@ FOREACH(option ${REPLACE_REGEX_OPTIONS})
   STRING(REGEX REPLACE "${option}" "" CXXFLAGS "${CXXFLAGS}")
 ENDFOREACH()
 
+# Do not remove -std=c++11 for Solaris Studio as it is required to get
+# the correct libraries. Only remove for GCC/Clang
+IF(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  STRING(REGEX REPLACE "-std=c..[0-9]+" "" CXXFLAGS "${CXXFLAGS}")
+ENDIF()
+
 FOREACH(option ${REPLACE_OPTIONS})
   STRING(REPLACE "${option}" " " CFLAGS   "${CFLAGS}")
   STRING(REPLACE "${option}" " " CXXFLAGS "${CXXFLAGS}")
@@ -244,13 +263,7 @@ STRING(REGEX REPLACE "[ ]+$" "" CFLAGS   "${CFLAGS}")
 STRING(REGEX REPLACE "[ ]+$" "" CXXFLAGS "${CXXFLAGS}")
 
 IF(UNIX)
-  # SHELL_PATH, FIND_PROC, CHECK_PID are used by mysqld_safe
-IF(CMAKE_SYSTEM_NAME MATCHES "SunOS")
-  SET (SHELL_PATH "/bin/bash")
-ELSE()
-  SET (SHELL_PATH "/bin/sh")
-ENDIF()
-
+  # FIND_PROC and CHECK_PID are used by mysqld_safe
 IF(CMAKE_SYSTEM_NAME MATCHES "Linux")
   SET (FIND_PROC 
     "ps wwwp $PID | grep -v mysqld_safe | grep -- $MYSQLD > /dev/null")
@@ -291,7 +304,6 @@ ENDIF(UNIX)
 
 SET(bindir ${prefix}/${INSTALL_BINDIR})
 SET(sbindir ${prefix}/${INSTALL_SBINDIR})
-SET(scriptdir ${prefix}/${INSTALL_BINDIR})
 SET(libexecdir ${prefix}/${INSTALL_SBINDIR})
 SET(pkgdatadir ${prefix}/${INSTALL_MYSQLSHAREDIR})
 IF(INSTALL_LAYOUT MATCHES "STANDALONE")
@@ -304,7 +316,6 @@ SET(prefix "${CMAKE_INSTALL_PREFIX}")
 SET(sysconfdir ${prefix})
 SET(bindir ${prefix}/${INSTALL_BINDIR})
 SET(libexecdir ${prefix}/${INSTALL_SBINDIR})
-SET(scriptdir ${prefix}/${INSTALL_BINDIR})
 SET(datadir ${prefix}/${INSTALL_MYSQLSHAREDIR})
 SET(pkgdatadir ${prefix}/${INSTALL_MYSQLSHAREDIR})
 SET(libsubdir  ${INSTALL_LIBDIR})
@@ -381,6 +392,12 @@ ENDIF()
 # See WITH_EMBEDDED_SHARED_LIBRARY, "mysqld" is generated from mysqlserver
 IF(WITH_EMBEDDED_SERVER)
   GET_TARGET_PROPERTY(LIBEMBED_OS_OUTPUT_NAME mysqlserver OUTPUT_NAME)
+ENDIF()
+
+# As per Solaris Studio documentation, these three libraries need to be
+# added explicitly for cc when using -std=c++11
+IF(CMAKE_C_COMPILER_ID MATCHES "SunPro")
+  SET(CLIENT_LIBS "${CLIENT_LIBS} -lstdc++ -lgcc_s -lCrunG3")
 ENDIF()
 
 SET(CONFIG_CLIENT_LIBS "${CLIENT_LIBS}")

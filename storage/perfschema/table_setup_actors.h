@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2008, 2016, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -22,11 +22,12 @@
 */
 
 #include "pfs_engine_table.h"
+#include "table_helper.h"
 
 struct PFS_setup_actor;
 
 /**
-  @addtogroup Performance_schema_tables
+  @addtogroup performance_schema_tables
   @{
 */
 
@@ -51,6 +52,25 @@ struct row_setup_actors
   bool *m_history_ptr;
 };
 
+class PFS_index_setup_actors : public PFS_engine_index
+{
+public:
+  PFS_index_setup_actors()
+    : PFS_engine_index(&m_key_1, &m_key_2, &m_key_3),
+    m_key_1("HOST"), m_key_2("USER"), m_key_3("ROLE")
+  {}
+
+  ~PFS_index_setup_actors()
+  {}
+
+  virtual bool match(PFS_setup_actor *pfs);
+
+private:
+  PFS_key_host m_key_1;
+  PFS_key_user m_key_2;
+  PFS_key_role m_key_3;
+};
+
 /** Table PERFORMANCE_SCHEMA.SETUP_ACTORS. */
 class table_setup_actors : public PFS_engine_table
 {
@@ -63,9 +83,13 @@ public:
   static int delete_all_rows();
   static ha_rows get_row_count();
 
+  virtual void reset_position(void);
+
   virtual int rnd_next();
   virtual int rnd_pos(const void *pos);
-  virtual void reset_position(void);
+
+  virtual int index_init(uint idx, bool sorted);
+  virtual int index_next();
 
 protected:
   virtual int read_row_values(TABLE *table,
@@ -104,6 +128,9 @@ private:
   PFS_simple_index m_pos;
   /** Next position. */
   PFS_simple_index m_next_pos;
+
+protected:
+  PFS_index_setup_actors *m_opened_index;
 };
 
 /** @} */

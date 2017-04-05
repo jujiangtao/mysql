@@ -26,11 +26,6 @@ Created 3/26/1996 Heikki Tuuri
 #include "ha_prototypes.h"
 
 #include "trx0purge.h"
-
-#ifdef UNIV_NONINL
-#include "trx0purge.ic"
-#endif
-
 #include "fsp0fsp.h"
 #include "fut0fut.h"
 #include "mach0data.h"
@@ -59,10 +54,6 @@ ulong		srv_max_purge_lag_delay = 0;
 /** The global data structure coordinating a purge */
 trx_purge_t*	purge_sys = NULL;
 
-/** A dummy undo record used as a return value when we have a whole undo log
-which needs no purge */
-trx_undo_rec_t	trx_purge_dummy_rec;
-
 #ifdef UNIV_DEBUG
 my_bool		srv_purge_view_update_only_debug;
 bool		trx_commit_disallowed = false;
@@ -70,6 +61,10 @@ bool		trx_commit_disallowed = false;
 
 /** Sentinel value */
 const TrxUndoRsegs TrxUndoRsegsIterator::NullElement(UINT64_UNDEFINED);
+
+/** A sentinel undo record used as a return value when we have a whole
+undo log which can be skipped by purge */
+static trx_undo_rec_t	trx_purge_ignore_rec;
 
 /** Constructor */
 TrxUndoRsegsIterator::TrxUndoRsegsIterator(trx_purge_t* purge_sys)
@@ -159,8 +154,8 @@ TrxUndoRsegsIterator::set_next()
 	/* We assume in purge of externally stored fields that
 	space id is in the range of UNDO tablespace space ids
 	unless space is system tablespace */
-	ut_a(m_purge_sys->rseg->space <= srv_undo_tablespaces_open
-		|| is_system_tablespace(
+	ut_a(srv_is_undo_tablespace(m_purge_sys->rseg->space)
+	     || is_system_tablespace(
 			m_purge_sys->rseg->space));
 
 	const page_size_t	page_size(m_purge_sys->rseg->page_size);
@@ -265,6 +260,9 @@ trx_purge_sys_create(
 	purge_sys->view_active = true;
 
 	purge_sys->rseg_iter = UT_NEW_NOKEY(TrxUndoRsegsIterator(purge_sys));
+
+	/* Allocate 8K bytes for the initial heap. */
+	purge_sys->heap = mem_heap_create(8 * 1024);
 }
 
 /************************************************************************
@@ -298,6 +296,10 @@ trx_purge_sys_close(void)
 	os_event_destroy(purge_sys->event);
 
 	purge_sys->event = NULL;
+
+	mem_heap_free(purge_sys->heap);
+
+	purge_sys->heap = nullptr;
 
 	UT_DELETE(purge_sys->rseg_iter);
 
@@ -395,34 +397,19 @@ trx_purge_add_update_undo_to_history(
 	}
 }
 
-/** Remove undo log header from the history list.
-@param[in,out]	rseg_hdr	rollback segment header
-@param[in]	log_hdr		undo log segment header
-@param[in,out]	mtr		mini transaction. */
-static
-void
-trx_purge_remove_log_hdr(
-	trx_rsegf_t*	rseg_hdr,
-	trx_ulogf_t*	log_hdr,
-	mtr_t*		mtr)
-{
-	flst_remove(rseg_hdr + TRX_RSEG_HISTORY,
-		    log_hdr + TRX_UNDO_HISTORY_NODE, mtr);
-
-	os_atomic_decrement_ulint(&trx_sys->rseg_history_len, 1);
-}
-
-/** Frees an undo log segment which is in the history list. Removes the
-undo log hdr from the history list.
-@param[in,out]	rseg		rollback segment
-@param[in]	hdr_addr	file address of log_hdr
-@param[in]	noredo		skip redo logging. */
+/**********************************************************************//**
+Frees an undo log segment which is in the history list. Cuts the end of the
+history list at the youngest undo log in this segment. */
 static
 void
 trx_purge_free_segment(
-	trx_rseg_t*	rseg,
-	fil_addr_t	hdr_addr,
-	bool		noredo)
+/*===================*/
+	trx_rseg_t*	rseg,		/*!< in: rollback segment */
+	fil_addr_t	hdr_addr,	/*!< in: the file address of log_hdr */
+	ulint		n_removed_logs,	/*!< in: count of how many undo logs we
+					will cut off from the end of the
+					history list */
+	bool		noredo)		/*!< in: skip redo logging */
 {
 	mtr_t		mtr;
 	trx_rsegf_t*	rseg_hdr;
@@ -438,6 +425,8 @@ trx_purge_free_segment(
 		mtr_start(&mtr);
 		if (noredo) {
 			mtr.set_log_mode(MTR_LOG_NO_REDO);
+		} else {
+			mtr.set_undo_space(rseg->space);
 		}
 		ut_ad(noredo == trx_sys_is_noredo_rseg_slot(rseg->id));
 
@@ -466,6 +455,8 @@ trx_purge_free_segment(
 				MLOG_2BYTES, &mtr);
 		}
 
+		ut_ad(mtr.is_undo_space(rseg->space));
+
 		if (fseg_free_step_not_header(
 			    seg_hdr + TRX_UNDO_FSEG_HEADER, false, &mtr)) {
 
@@ -488,7 +479,10 @@ trx_purge_free_segment(
 	history list: otherwise, in case of a database crash, the segment
 	could become inaccessible garbage in the file space. */
 
-	trx_purge_remove_log_hdr(rseg_hdr, log_hdr, &mtr);
+	flst_cut_end(rseg_hdr + TRX_RSEG_HISTORY,
+		     log_hdr + TRX_UNDO_HISTORY_NODE, n_removed_logs, &mtr);
+
+	os_atomic_decrement_ulint(&trx_sys->rseg_history_len, n_removed_logs);
 
 	do {
 
@@ -530,6 +524,7 @@ trx_purge_truncate_rseg_history(
 	page_t*		undo_page;
 	trx_ulogf_t*	log_hdr;
 	trx_usegf_t*	seg_hdr;
+	ulint		n_removed_logs	= 0;
 	mtr_t		mtr;
 	trx_id_t	undo_trx_no;
 	const bool	noredo		= trx_sys_is_noredo_rseg_slot(
@@ -538,7 +533,10 @@ trx_purge_truncate_rseg_history(
 	mtr_start(&mtr);
 	if (noredo) {
 		mtr.set_log_mode(MTR_LOG_NO_REDO);
+	} else {
+		mtr.set_undo_space(rseg->space);
 	}
+
 	mutex_enter(&(rseg->mutex));
 
 	rseg_hdr = trx_rsegf_get(rseg->space, rseg->page_no,
@@ -576,6 +574,13 @@ loop:
 				hdr_addr.boffset, limit->undo_no);
 		}
 
+		os_atomic_decrement_ulint(
+			&trx_sys->rseg_history_len, n_removed_logs);
+
+		flst_truncate_end(rseg_hdr + TRX_RSEG_HISTORY,
+				  log_hdr + TRX_UNDO_HISTORY_NODE,
+				  n_removed_logs, &mtr);
+
 		mutex_exit(&(rseg->mutex));
 		mtr_commit(&mtr);
 
@@ -584,6 +589,7 @@ loop:
 
 	prev_hdr_addr = trx_purge_get_log_from_hist(
 		flst_get_prev_addr(log_hdr + TRX_UNDO_HISTORY_NODE, &mtr));
+	n_removed_logs++;
 
 	seg_hdr = undo_page + TRX_UNDO_SEG_HDR;
 
@@ -595,14 +601,10 @@ loop:
 		mutex_exit(&(rseg->mutex));
 		mtr_commit(&mtr);
 
-		/* calls the trx_purge_remove_log_hdr()
-		inside trx_purge_free_segment(). */
-		trx_purge_free_segment(rseg, hdr_addr, noredo);
+		trx_purge_free_segment(rseg, hdr_addr, n_removed_logs, noredo);
 
+		n_removed_logs = 0;
 	} else {
-		/* Remove the log hdr from the rseg history. */
-		trx_purge_remove_log_hdr(rseg_hdr, log_hdr, &mtr);
-
 		mutex_exit(&(rseg->mutex));
 		mtr_commit(&mtr);
 	}
@@ -610,6 +612,8 @@ loop:
 	mtr_start(&mtr);
 	if (noredo) {
 		mtr.set_log_mode(MTR_LOG_NO_REDO);
+	} else {
+		mtr.set_undo_space(rseg->space);
 	}
 	mutex_enter(&(rseg->mutex));
 
@@ -630,10 +634,11 @@ namespace undo {
 
 	/** Populate log file name based on space_id
 	@param[in]	space_id	id of the undo tablespace.
+	@param[in]	log_file_name	name of the log file
 	@return DB_SUCCESS or error code */
 	dberr_t populate_log_file_name(
-		ulint	space_id,
-		char*&	log_file_name)
+		space_id_t	space_id,
+		char*&		log_file_name)
 	{
 		ulint log_file_name_sz =
 			strlen(srv_log_group_home_dir) + 22 + 1 /* NUL */
@@ -658,7 +663,7 @@ namespace undo {
 			log_file_name_len = strlen(log_file_name);
 		}
 
-		ut_snprintf(log_file_name + log_file_name_len,
+		snprintf(log_file_name + log_file_name_len,
 			    log_file_name_sz - log_file_name_len,
 			    "%s%lu_%s", undo::s_log_prefix,
 			    (ulong) space_id, s_log_ext);
@@ -669,7 +674,7 @@ namespace undo {
 	/** Create the truncate log file.
 	@param[in]	space_id	id of the undo tablespace to truncate.
 	@return DB_SUCCESS or error code. */
-	dberr_t init(ulint space_id)
+	dberr_t init(space_id_t space_id)
 	{
 		dberr_t		err;
 		char*		log_file_name;
@@ -726,8 +731,7 @@ namespace undo {
 	the link to the file even after unlink action is successfull and
 	ref-count = 0.
 	@param[in]	space_id	id of the undo tablespace to truncate.*/
-	void done(
-		ulint	space_id)
+	void done(space_id_t space_id)
 	{
 		dberr_t		err;
 		char*		log_file_name;
@@ -788,8 +792,7 @@ namespace undo {
 	/** Check if TRUNCATE_DDL_LOG file exist.
 	@param[in]	space_id	id of the undo tablespace.
 	@return true if exist else false. */
-	bool is_log_present(
-		ulint	space_id)
+	bool is_log_present(space_id_t space_id)
 	{
 		dberr_t		err;
 		char*		log_file_name;
@@ -881,7 +884,7 @@ namespace undo {
 
 		return(exist);
 	}
-};
+}
 
 /** Iterate over all the UNDO tablespaces and check if any of the UNDO
 tablespace qualifies for TRUNCATE (size > threshold).
@@ -911,7 +914,7 @@ trx_purge_mark_undo_for_truncate(
 
 	/* Avoid bias selection and so start the scan from immediate next
 	of last selected UNDO tablespace for truncate. */
-	ulint space_id = undo_trunc->get_scan_start();
+	space_id_t space_id = undo_trunc->get_scan_start();
 
 	for (ulint i = 1; i <= srv_undo_tablespaces_active; i++) {
 
@@ -920,15 +923,23 @@ trx_purge_mark_undo_for_truncate(
 			/* Tablespace qualifies for truncate. */
 			undo_trunc->mark(space_id);
 			undo::Truncate::add_space_to_trunc_list(space_id);
-			break;
 		}
 
-		space_id = ((space_id + 1) % (srv_undo_tablespaces_active + 1));
-		if (space_id == 0) {
-			/* Note: UNDO tablespace ids starts from 1. */
-			++space_id;
+		space_id++;
+
+		if (space_id >= (srv_undo_space_id_start
+				 + srv_undo_tablespaces_active)) {
+			/* Note: UNDO tablespace ids starts from
+			srv_undo_space_id_start variable value. */
+			space_id = srv_undo_space_id_start;
+		}
+
+		if (undo_trunc->is_marked()) {
+			break;
 		}
 	}
+
+	undo_trunc->set_scan_start(space_id);
 
 	/* Couldn't make any selection. */
 	if (!undo_trunc->is_marked()) {
@@ -1202,7 +1213,7 @@ trx_purge_truncate_history(
 	if (limit->trx_no >= view->low_limit_no()) {
 		limit->trx_no = view->low_limit_no();
 		limit->undo_no = 0;
-		limit->undo_rseg_space = ULINT_UNDEFINED;
+		limit->undo_rseg_space = SPACE_UNKNOWN;
 	}
 
 	ut_ad(limit->trx_no <= purge_sys->view.low_limit_no());
@@ -1259,7 +1270,7 @@ trx_purge_rseg_get_next_history_log(
 
 	purge_sys->iter.trx_no = rseg->last_trx_no + 1;
 	purge_sys->iter.undo_no = 0;
-	purge_sys->iter.undo_rseg_space = ULINT_UNDEFINED;
+	purge_sys->iter.undo_rseg_space = SPACE_UNKNOWN;
 	purge_sys->next_stored = FALSE;
 
 	mtr_start(&mtr);
@@ -1361,9 +1372,9 @@ trx_purge_read_undo_rec(
 	const page_size_t&	page_size)
 {
 	ulint		offset;
-	ulint		page_no;
+	page_no_t	page_no;
 	ib_uint64_t	undo_no;
-	ulint		undo_rseg_space;
+	space_id_t	undo_rseg_space;
 
 	purge_sys->hdr_offset = purge_sys->rseg->last_offset;
 	page_no = purge_sys->hdr_page_no = purge_sys->rseg->last_page_no;
@@ -1388,14 +1399,14 @@ trx_purge_read_undo_rec(
 		} else {
 			offset = 0;
 			undo_no = 0;
-			undo_rseg_space = ULINT_UNDEFINED;
+			undo_rseg_space = SPACE_UNKNOWN;
 		}
 
 		mtr_commit(&mtr);
 	} else {
 		offset = 0;
 		undo_no = 0;
-		undo_rseg_space = ULINT_UNDEFINED;
+		undo_rseg_space = SPACE_UNKNOWN;
 	}
 
 	purge_sys->offset = offset;
@@ -1445,8 +1456,8 @@ trx_purge_get_next_rec(
 	page_t*		undo_page;
 	page_t*		page;
 	ulint		offset;
-	ulint		page_no;
-	ulint		space;
+	page_no_t	page_no;
+	space_id_t	space;
 	mtr_t		mtr;
 
 	ut_ad(purge_sys->next_stored);
@@ -1459,6 +1470,7 @@ trx_purge_get_next_rec(
 	const page_size_t	page_size(purge_sys->rseg->page_size);
 
 	if (offset == 0) {
+
 		/* It is the dummy undo log record, which means that there is
 		no need to purge this undo log */
 
@@ -1469,7 +1481,7 @@ trx_purge_get_next_rec(
 
 		trx_purge_choose_next_log();
 
-		return(&trx_purge_dummy_rec);
+		return(&trx_purge_ignore_rec);
 	}
 
 	mtr_start(&mtr);
@@ -1560,7 +1572,7 @@ trx_purge_get_next_rec(
 /********************************************************************//**
 Fetches the next undo log record from the history list to purge. It must be
 released with the corresponding release function.
-@return copy of an undo log record or pointer to trx_purge_dummy_rec,
+@return copy of an undo log record or pointer to trx_purge_ignore_rec,
 if the whole undo log can skipped in purge; NULL if none left */
 static MY_ATTRIBUTE((warn_unused_result))
 trx_undo_rec_t*
@@ -1599,27 +1611,31 @@ trx_purge_fetch_next_rec(
 	return(trx_purge_get_next_rec(n_pages_handled, heap));
 }
 
-/*******************************************************************//**
-This function runs a purge batch.
+/** This function runs a purge batch.
+@param[in]	n_purge_threads	number of purge threads
+@param[in,out]	purge_sys	purge instance
+@param[in]	batch_size	no. of pages to purge
 @return number of undo log pages handled in the batch */
 static
 ulint
 trx_purge_attach_undo_recs(
-/*=======================*/
-	ulint		n_purge_threads,/*!< in: number of purge threads */
-	trx_purge_t*	purge_sys,	/*!< in/out: purge instance */
-	ulint		batch_size)	/*!< in: no. of pages to purge */
+	const ulint	n_purge_threads,
+	trx_purge_t*	purge_sys,
+	ulint		batch_size)
 {
 	que_thr_t*	thr;
-	ulint		i = 0;
 	ulint		n_pages_handled = 0;
-	ulint		n_thrs = UT_LIST_GET_LEN(purge_sys->query->thrs);
 
 	ut_a(n_purge_threads > 0);
+	ut_a(n_purge_threads <= MAX_PURGE_THREADS);
 
 	purge_sys->limit = purge_sys->iter;
 
-	/* Debug code to validate some pre-requisites and reset done flag. */
+	que_thr_t*	run_thrs[MAX_PURGE_THREADS];
+
+	/* Validate some pre-requisites and reset done flag. */
+	ulint		i = 0;
+
 	for (thr = UT_LIST_GET_FIRST(purge_sys->query->thrs);
 	     thr != NULL && i < n_purge_threads;
 	     thr = UT_LIST_GET_NEXT(thrs, thr), ++i) {
@@ -1627,40 +1643,38 @@ trx_purge_attach_undo_recs(
 		purge_node_t*		node;
 
 		/* Get the purge node. */
-		node = (purge_node_t*) thr->child;
+		node = static_cast<purge_node_t*>(thr->child);
 
 		ut_a(que_node_get_type(node) == QUE_NODE_PURGE);
-		ut_a(node->undo_recs == NULL);
+		ut_a(node->recs == nullptr);
 		ut_a(node->done);
 
-		node->done = FALSE;
+		node->done = false;
+
+		ut_a(!thr->is_active);
+
+		run_thrs[i] = thr;
 	}
 
 	/* There should never be fewer nodes than threads, the inverse
 	however is allowed because we only use purge threads as needed. */
 	ut_a(i == n_purge_threads);
-
-	/* Fetch and parse the UNDO records. The UNDO records are added
-	to a per purge node vector. */
-	thr = UT_LIST_GET_FIRST(purge_sys->query->thrs);
-	ut_a(n_thrs > 0 && thr != NULL);
-
 	ut_ad(trx_purge_check_limit());
 
-	i = 0;
+	mem_heap_t*	heap = purge_sys->heap;
 
-	for (;;) {
-		purge_node_t*		node;
-		trx_purge_rec_t*	purge_rec;
+	mem_heap_empty(heap);
 
-		ut_a(!thr->is_active);
+	using GroupBy = std::map<
+		table_id_t, purge_node_t::Recs*,
+		std::less<table_id_t>,
+		mem_heap_allocator<std::pair<table_id_t, purge_node_t::Recs*>>>;
 
-		/* Get the purge node. */
-		node = (purge_node_t*) thr->child;
-		ut_a(que_node_get_type(node) == QUE_NODE_PURGE);
+	GroupBy		group_by{
+		GroupBy::key_compare{},
+		mem_heap_allocator<GroupBy::value_type>{heap}};
 
-		purge_rec = static_cast<trx_purge_rec_t*>(
-			mem_heap_zalloc(node->heap, sizeof(*purge_rec)));
+	for (ulint i = 0; n_pages_handled < batch_size; ++i) {
 
 		/* Track the max {trx_id, undo_no} for truncating the
 		UNDO logs once we have purged the records. */
@@ -1669,38 +1683,75 @@ trx_purge_attach_undo_recs(
 			purge_sys->limit = purge_sys->iter;
 		}
 
+		purge_node_t::rec_t	rec;
+
 		/* Fetch the next record, and advance the purge_sys->iter. */
-		purge_rec->undo_rec = trx_purge_fetch_next_rec(
-			&purge_rec->roll_ptr, &n_pages_handled, node->heap);
+		rec.undo_rec = trx_purge_fetch_next_rec(
+			&rec.roll_ptr, &n_pages_handled, heap);
 
-		if (purge_rec->undo_rec != NULL) {
+		if (rec.undo_rec == &trx_purge_ignore_rec) {
 
-			if (node->undo_recs == NULL) {
-				node->undo_recs = ib_vector_create(
-					ib_heap_allocator_create(node->heap),
-					sizeof(trx_purge_rec_t),
-					batch_size);
-			} else {
-				ut_a(!ib_vector_is_empty(node->undo_recs));
-			}
+			continue;
 
-			ib_vector_push(node->undo_recs, purge_rec);
+		} else if (rec.undo_rec == nullptr) {
 
-			if (n_pages_handled >= batch_size) {
-
-				break;
-			}
-		} else {
 			break;
 		}
 
-		thr = UT_LIST_GET_NEXT(thrs, thr);
+		table_id_t	table_id;
 
-		if (!(++i % n_purge_threads)) {
-			thr = UT_LIST_GET_FIRST(purge_sys->query->thrs);
+		table_id = trx_undo_rec_get_table_id(rec.undo_rec);
+
+		GroupBy::iterator	lb = group_by.lower_bound(table_id);
+
+		if (lb != group_by.end()
+		    && !(group_by.key_comp()(table_id, lb->first))) {
+
+			lb->second->push_back(rec);
+
+		} else {
+			using value_type = GroupBy::value_type;
+
+			void*			ptr;
+			purge_node_t::Recs*	recs;
+
+			ptr = mem_heap_alloc(heap, sizeof(purge_node_t::Recs));
+
+			/* Call the destructor explicitly in row_purge_end() */
+			recs = new (ptr) purge_node_t::Recs{
+				mem_heap_allocator<purge_node_t::rec_t>{heap}};
+
+			recs->push_back(rec);
+
+			group_by.insert(lb, value_type(table_id, recs));
 		}
+	}
 
-		ut_a(thr != NULL);
+	/* Objective is to ensure that all the table entries in one
+	batch are handled by the same thread. Ths is to avoid contention
+	on the dict_index_t::lock */
+
+	GroupBy::const_iterator	end = group_by.cend();
+
+	for (GroupBy::const_iterator it = group_by.cbegin(); it != end; ) {
+
+		for (ulint i = 0; i < n_purge_threads && it != end; ++i, ++it) {
+
+			purge_node_t*	node;
+
+			node = static_cast<purge_node_t*>(run_thrs[i]->child);
+
+			ut_a(que_node_get_type(node) == QUE_NODE_PURGE);
+
+			if (node->recs == nullptr) {
+				node->recs = it->second;
+			} else {
+				node->recs->insert(
+					std::end(*node->recs),
+					std::begin(*it->second),
+					std::end(*it->second));
+			}
+		}
 	}
 
 	ut_ad(trx_purge_check_limit());
@@ -1756,17 +1807,24 @@ trx_purge_wait_for_workers_to_complete(
 /*===================================*/
 	trx_purge_t*	purge_sys)	/*!< in: purge instance */
 {
+	ulint		i = 0;
 	ulint		n_submitted = purge_sys->n_submitted;
 
 	/* Ensure that the work queue empties out. */
 	while (!os_compare_and_swap_ulint(
 			&purge_sys->n_completed, n_submitted, n_submitted)) {
 
-		if (srv_get_task_queue_length() > 0) {
-			srv_release_threads(SRV_WORKER, 1);
-		}
+		if (++i < 10) {
+			os_thread_yield();
+		} else {
 
-		os_thread_yield();
+			if (srv_get_task_queue_length() > 0) {
+				srv_release_threads(SRV_WORKER, 1);
+			}
+
+			os_thread_sleep(20);
+			i = 0;
+		}
 	}
 
 	/* None of the worker threads should be doing any work. */
@@ -1837,10 +1895,9 @@ trx_purge(
 
 	/* Do we do an asynchronous purge or not ? */
 	if (n_purge_threads > 1) {
-		ulint	i = 0;
 
 		/* Submit the tasks to the work queue. */
-		for (i = 0; i < n_purge_threads - 1; ++i) {
+		for (ulint i = 0; i < n_purge_threads - 1; ++i) {
 			thr = que_fork_scheduler_round_robin(
 				purge_sys->query, thr);
 

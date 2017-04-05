@@ -19,9 +19,12 @@
   Table replication_connection_status (implementation).
 */
 
-#define HAVE_REPLICATION
-
 #include "my_global.h"
+
+#ifndef EMBEDDED_LIBRARY
+#define HAVE_REPLICATION
+#endif /* EMBEDDED_LIBRARY */
+
 #include "table_replication_connection_status.h"
 #include "pfs_instr_class.h"
 #include "pfs_instr.h"
@@ -33,6 +36,8 @@
 #include "rpl_msr.h"           /* Multi source replication */
 #include "log.h"
 #include "rpl_group_replication.h"
+
+#ifdef HAVE_REPLICATION
 
 /*
   Callbacks implementation for GROUP_REPLICATION_CONNECTION_STATUS_CALLBACKS.
@@ -74,6 +79,8 @@ static void set_service_state(void* const context, bool value)
   row->service_state= value ? PS_RPL_CONNECT_SERVICE_STATE_YES
                             : PS_RPL_CONNECT_SERVICE_STATE_NO;
 }
+
+#endif /* HAVE_REPLICATION */
 
 
 THR_LOCK table_replication_connection_status::m_table_lock;
@@ -158,6 +165,58 @@ table_replication_connection_status::m_share=
   false  /* perpetual */
 };
 
+#ifdef HAVE_REPLICATION
+bool PFS_index_rpl_connection_status_by_channel::match(Master_info *mi)
+{
+  if (m_fields >= 1)
+  {
+    st_row_connect_status row;
+
+    /* Mutex locks not necessary for channel name. */
+    row.channel_name_length= mi->get_channel() ? (uint)strlen(mi->get_channel()) : 0;
+    memcpy(row.channel_name, mi->get_channel(), row.channel_name_length);
+
+    if (!m_key.match(row.channel_name, row.channel_name_length))
+      return false;
+  }
+
+  return true;
+}
+
+bool PFS_index_rpl_connection_status_by_thread::match(Master_info *mi)
+{
+  if (m_fields >= 1)
+  {
+    st_row_connect_status row;
+    row.thread_id_is_null= true;
+
+    /* See mutex comments in rpl_slave.h */
+    mysql_mutex_lock(&mi->rli->run_lock);
+
+    if (mi->rli->slave_running)
+    {
+      PSI_thread *psi= thd_get_psi(mi->rli->info_thd);
+      PFS_thread *pfs= reinterpret_cast<PFS_thread *> (psi);
+      if(pfs)
+      {
+        row.thread_id= pfs->m_thread_internal_id;
+        row.thread_id_is_null= false;
+      }
+    }
+
+    mysql_mutex_unlock(&mi->rli->run_lock);
+
+    if (row.thread_id_is_null)
+      return false;
+
+    if (!m_key.match(row.thread_id))
+      return false;
+  }
+
+  return true;
+}
+#endif
+
 PFS_engine_table* table_replication_connection_status::create(void)
 {
   return new table_replication_connection_status();
@@ -181,16 +240,20 @@ void table_replication_connection_status::reset_position(void)
 
 ha_rows table_replication_connection_status::get_row_count()
 {
+#ifdef HAVE_REPLICATION
   /*A lock is not needed for an estimate */
   return channel_map.get_max_channels();
+#else
+  return 0;
+#endif /* HAVE_REPLICATION */
 }
-
-
 
 int table_replication_connection_status::rnd_next(void)
 {
-  Master_info *mi= NULL;
   int res= HA_ERR_END_OF_FILE;
+
+#ifdef HAVE_REPLICATION
+  Master_info *mi= NULL;
 
   channel_map.rdlock();
 
@@ -209,13 +272,17 @@ int table_replication_connection_status::rnd_next(void)
   }
 
   channel_map.unlock();
+#endif /* HAVE_REPLICATION */
+
   return res;
 }
 
 int table_replication_connection_status::rnd_pos(const void *pos)
 {
-  Master_info *mi;
   int res= HA_ERR_RECORD_DELETED;
+
+#ifdef HAVE_REPLICATION
+  Master_info *mi;
 
   set_position(pos);
 
@@ -228,9 +295,67 @@ int table_replication_connection_status::rnd_pos(const void *pos)
   }
 
   channel_map.unlock();
+#endif /* HAVE_REPLICATION */
+
   return res;
 }
 
+int table_replication_connection_status::index_init(uint idx, bool sorted)
+{
+#ifdef HAVE_REPLICATION
+  PFS_index_rpl_connection_status *result= NULL;
+
+  switch(idx)
+  {
+  case 0:
+    result= PFS_NEW(PFS_index_rpl_connection_status_by_channel);
+    break;
+  case 1:
+    result= PFS_NEW(PFS_index_rpl_connection_status_by_thread);
+    break;
+  default:
+    DBUG_ASSERT(false);
+    break;
+  }
+  m_opened_index= result;
+  m_index= result;
+#endif
+  return 0;
+}
+
+int table_replication_connection_status::index_next(void)
+{
+  int res= HA_ERR_END_OF_FILE;
+
+#ifdef HAVE_REPLICATION
+  Master_info *mi= NULL;
+
+  channel_map.rdlock();
+
+  for (m_pos.set_at(&m_next_pos);
+       m_pos.m_index < channel_map.get_max_channels() && res != 0;
+       m_pos.next())
+  {
+    mi= channel_map.get_mi_at_pos(m_pos.m_index);
+
+    if (mi && mi->host[0])
+    {
+      if (m_opened_index->match(mi))
+      {
+        make_row(mi);
+        m_next_pos.set_after(&m_pos);
+        res= 0;
+      }
+    }
+  }
+
+  channel_map.unlock();
+#endif /* HAVE_REPLICATION */
+
+  return res;
+}
+
+#ifdef HAVE_REPLICATION
 void table_replication_connection_status::make_row(Master_info *mi)
 {
   DBUG_ENTER("table_replication_connection_status::make_row");
@@ -359,12 +484,14 @@ end:
     m_row_exists= true;
   DBUG_VOID_RETURN;
 }
+#endif /* HAVE_REPLICATION */
 
 int table_replication_connection_status::read_row_values(TABLE *table,
                                                          unsigned char *buf,
                                                          Field **fields,
                                                          bool read_all)
 {
+#ifdef HAVE_REPLICATION
   Field *f;
 
   if (unlikely(! m_row_exists))
@@ -431,4 +558,7 @@ int table_replication_connection_status::read_row_values(TABLE *table,
   m_row.cleanup();
 
   return 0;
+#else
+  return HA_ERR_RECORD_DELETED;
+#endif /* HAVE_REPLICATION */
 }

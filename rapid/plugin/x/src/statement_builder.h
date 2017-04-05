@@ -23,8 +23,8 @@
 #include "expr_generator.h"
 
 #include "ngs_common/protocol_protobuf.h"
-#include "ngs_common/bind.h"
 #include <algorithm>
+#include <boost/bind.hpp>
 
 namespace xpl
 {
@@ -32,133 +32,94 @@ namespace xpl
 class Statement_builder
 {
 public:
-  Statement_builder(const Expression_generator &gen) : m_builder(gen) {}
+  Statement_builder(Query_string_builder &qb, const Expression_generator::Args &args,
+                    const std::string &schema, bool is_relational)
+  : m_builder(qb, args, schema, is_relational),
+    m_is_relational(is_relational)
+  { }
+  virtual ~Statement_builder() {}
 
-protected:
-  typedef ::Mysqlx::Crud::Collection Collection;
+  ngs::Error_code build() const;
 
-  void add_collection(const Collection &table) const;
-
-  template<typename T>
-  void add_alias(const T &item) const
-  {
-    if (item.has_alias())
-      m_builder.put(" AS ").put_identifier(item.alias());
-  }
-
-  class Generator
+  class Builder
   {
   public:
-    explicit Generator(const Expression_generator &gen)
-    : m_gen(gen), m_qb(gen.query_string_builder())
-    {}
+    Builder(Query_string_builder &qb, const Expression_generator::Args &args,
+            const std::string &default_schema, bool is_relational)
+    : m_qb(qb), m_gen(qb, args, default_schema, is_relational)
+    { }
+
+    Builder(Query_string_builder &qb, const Expression_generator &gen)
+    : m_qb(qb), m_gen(qb, gen.get_args(), gen.get_default_schema(), gen.is_relational())
+    { }
 
     template<typename T>
-    const Generator &put_expr(const T &expr) const
-    {
-      m_gen.feed(expr);
-      return *this;
-    }
+    const Builder &gen(const T &expr) const { m_gen.feed(expr); return *this; }
 
     template<typename I, typename Op>
-    const Generator &put_each(I begin, I end, Op generate) const
+    const Builder &put_each(I begin, I end, Op generate) const
     {
       std::for_each(begin, end, generate);
       return *this;
     }
 
-    template<typename I, typename Op>
-    const Generator &put_list(I begin, I end, Op generate,
-                              const std::string &separator = ",") const
+    template<typename L, typename Op>
+    const Builder &put_list(const L &list, Op generate) const
     {
-      if (end - begin == 0)
+      if (list.size() == 0)
         return *this;
 
-      generate(*begin);
-      for (++begin; begin != end; ++begin)
+      typename L::const_iterator p = list.begin();
+      generate(*p);
+      for (++p; p != list.end(); ++p)
       {
-        m_qb.put(separator);
-        generate(*begin);
+        m_qb.put(",");
+        generate(*p);
       }
       return *this;
     }
 
-    template<typename L, typename Op>
-    const Generator &put_list(const L &list, Op generate,
-                              const std::string &separator = ",") const
+    const Builder &put_list(const ::google::protobuf::RepeatedPtrField<Expression_generator::Expr> &list) const
     {
-      return put_list(list.begin(), list.end(), generate, separator);
+      return put_list(list, boost::bind(&Expression_generator::feed<Expression_generator::Expr>, m_gen, _1));
     }
 
     template<typename T>
-    const Generator &put_list(const ::google::protobuf::RepeatedPtrField<T> &list,
-                              const Generator &(Generator::*put_fun)(const T &) const,
-                              const std::string &separator = ",") const
-    {
-      return put_list(list.begin(), list.end(),
-                      ngs::bind(put_fun, this, ngs::placeholders::_1),
-                      separator);
-    }
+    const Builder &put(const T &str) const { m_qb.put(str); return *this; }
 
-    template<typename T>
-    const Generator &put(const T &str) const
-    {
-      m_qb.put(str);
-      return *this;
-    }
+    const Builder &put(const Query_string_builder &str) const { m_qb.put(str.get()); return *this; }
 
-    const Generator &put(const Query_string_builder &str) const
-    {
-      m_qb.put(str.get());
-      return *this;
-    }
+    const Builder &put_identifier(const std::string &str) const { m_qb.quote_identifier(str); return *this; }
 
-    const Generator &put_identifier(const std::string &str) const
-    {
-      m_qb.quote_identifier(str);
-      return *this;
-    }
+    const Builder &put_quote(const std::string &str) const { m_qb.quote_string(str); return *this; }
 
-    const Generator &put_quote(const std::string &str) const
-    {
-      m_qb.quote_string(str);
-      return *this;
-    }
+    const Builder &dot() const { m_qb.dot(); return *this; }
 
-    const Generator &dot() const
-    {
-      m_qb.dot();
-      return *this;
-    }
+    const Expression_generator &get_generator() const { return m_gen; }
 
-    const Expression_generator &m_gen;
+  private:
     Query_string_builder &m_qb;
-  } m_builder;
-};
-
-
-class Crud_statement_builder : public Statement_builder
-{
-public:
-  Crud_statement_builder(const Expression_generator &gen) : Statement_builder(gen) {}
+    Expression_generator m_gen;
+  };
 
 protected:
   typedef ::Mysqlx::Expr::Expr Filter;
   typedef ::Mysqlx::Crud::Limit Limit;
+  typedef ::Mysqlx::Crud::Collection Collection;
   typedef ::Mysqlx::Crud::Order Order_item;
   typedef ::google::protobuf::RepeatedPtrField<Order_item> Order_list;
 
+  virtual void add_statement() const = 0;
+
+  void add_table(const Collection &table) const;
   void add_filter(const Filter &filter) const;
   void add_order(const Order_list &order) const;
-  void add_limit(const Limit &limit, const bool no_offset) const;
+  void add_limit(const Limit &limit, bool no_offset) const;
   void add_order_item(const Order_item &item) const;
-};
 
-template<typename T>
-inline bool is_table_data_model(const T &msg)
-{
-  return msg.data_model() == ::Mysqlx::Crud::TABLE;
-}
+  Builder m_builder;
+  bool m_is_relational;
+};
 
 } // namespace xpl
 

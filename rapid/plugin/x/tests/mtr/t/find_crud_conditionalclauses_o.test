@@ -642,7 +642,7 @@ Mysqlx.Crud.Find {
     }
   }
 }
--->expecterror 1146
+-->expecterror 1049
 -->recvresult
 
 -->echo Find using not available table name
@@ -1203,7 +1203,7 @@ Mysqlx.Crud.Find {
     }
   }
 }
--->expecterror 1146
+-->expecterror 1049
 -->recvresult
 
 -->echo Find with not available table name

@@ -29,6 +29,7 @@ class MDL_context;
 class MDL_lock;
 class MDL_ticket;
 typedef struct st_lf_pins LF_PINS;
+struct PSI_metadata_lock;
 
 /**
   @def ENTER_COND(C, M, S, O)
@@ -79,7 +80,6 @@ public:
                           int src_line) = 0;
 
   /**
-    @def EXIT_COND(S)
     End a wait on a condition
     @param [in] stage the new stage to enter
     @param src_function function name of the caller
@@ -120,15 +120,10 @@ public:
     Notify/get permission from interested storage engines before acquiring
     exclusive lock for the key.
 
-    The returned argument 'victimized' specify reason for lock
-    not granted. If 'true', lock was refused in an attempt to 
-    resolve a possible MDL->GSL deadlock. Locking may then be retried.
-
     @return False if notification was successful and it is OK to acquire lock,
             True if one of SEs asks to abort lock acquisition.
   */
-  virtual bool notify_hton_pre_acquire_exclusive(const MDL_key *mdl_key,
-                                                 bool *victimized) = 0;
+  virtual bool notify_hton_pre_acquire_exclusive(const MDL_key *mdl_key) = 0;
   /**
     Notify interested storage engines that we have just released exclusive
     lock for the key.
@@ -154,6 +149,10 @@ enum enum_mdl_type {
     An intention exclusive metadata lock. Used only for scoped locks.
     Owner of this type of lock can acquire upgradable exclusive locks on
     individual objects.
+    This lock type is also used when doing lookups in the dictionary
+    cache. When acquiring objects in a schema, we lock the schema with IX
+    to prevent the schema from being deleted. This should conceptually
+    be an IS lock, but it would have the same behavior as the current IX.
     Compatible with other IX locks, but is incompatible with scoped S and
     X locks.
   */
@@ -310,7 +309,7 @@ enum enum_mdl_duration {
   Metadata lock object key.
 
   A lock is requested or granted based on a fully qualified name and type.
-  E.g. They key for a table consists of <0 (=table)>+<database>+<table name>.
+  E.g. They key for a table consists of @<0 (=table)@>+@<database@>+@<table name@>.
   Elsewhere in the comments this triple will be referred to simply as "key"
   or "name".
 */
@@ -339,6 +338,8 @@ public:
      - COMMIT is for enabling the global read lock to block commits.
      - USER_LEVEL_LOCK is for user-level locks.
      - LOCKING_SERVICE is for the name plugin RW-lock service
+     - SRID is for spatial reference systems
+     - ACL_CACHE is for ACL caches
     Note that although there isn't metadata locking on triggers,
     it's necessary to have a separate namespace for them since
     MDL_key is also used outside of the MDL subsystem.
@@ -356,6 +357,8 @@ public:
                             COMMIT,
                             USER_LEVEL_LOCK,
                             LOCKING_SERVICE,
+                            SRID,
+                            ACL_CACHE,
                             /* This should be the last ! */
                             NAMESPACE_END };
 
@@ -375,7 +378,7 @@ public:
     Construct a metadata lock key from a triplet (mdl_namespace,
     database and name).
 
-    @remark The key for a table is <mdl_namespace>+<database name>+<table name>
+    @remark The key for a table is @<mdl_namespace@>+@<database name@>+@<table name@>
 
     @param  mdl_namespace Id of namespace of object to be locked
     @param  db            Name of database to which the object belongs
@@ -496,9 +499,14 @@ public:
   uint m_src_line;
 
 public:
-  static void *operator new(size_t size, MEM_ROOT *mem_root) throw ()
+  static void *operator new(size_t size, MEM_ROOT *mem_root,
+                            const std::nothrow_t &arg MY_ATTRIBUTE((unused))
+                            = std::nothrow) throw ()
   { return alloc_root(mem_root, size); }
-  static void operator delete(void *ptr, MEM_ROOT *mem_root) {}
+
+  static void operator delete(void*, MEM_ROOT*,
+                              const std::nothrow_t&) throw ()
+  {}
 
   void init_with_source(MDL_key::enum_mdl_namespace namespace_arg,
             const char *db_arg, const char *name_arg,
@@ -547,7 +555,7 @@ public:
     is mandatory. Can only be used before the request has been
     granted.
   */
-  MDL_request& operator=(const MDL_request &rhs)
+  MDL_request& operator=(const MDL_request&)
   {
     ticket= NULL;
     /* Do nothing, in particular, don't try to copy the key. */
@@ -915,8 +923,6 @@ public:
   }
 
   bool has_locks(MDL_key::enum_mdl_namespace mdl_namespace) const;
-
-  bool has_locks_waited_for() const;
 
   MDL_savepoint mdl_savepoint()
   {

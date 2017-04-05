@@ -87,18 +87,7 @@ enum enum_log_table_type
 
 class File_query_log
 {
-  File_query_log(enum_log_table_type log_type)
-  : m_log_type(log_type), name(NULL), write_error(false), log_open(false)
-  {
-    memset(&log_file, 0, sizeof(log_file));
-    mysql_mutex_init(key_LOG_LOCK_log, &LOCK_log, MY_MUTEX_INIT_SLOW);
-#ifdef HAVE_PSI_INTERFACE
-    if (log_type == QUERY_LOG_GENERAL)
-      m_log_file_key= key_file_general_log;
-    else if (log_type == QUERY_LOG_SLOW)
-      m_log_file_key= key_file_slow_log;
-#endif
-  }
+  File_query_log(enum_log_table_type log_type);
 
   ~File_query_log()
   {
@@ -137,7 +126,7 @@ class File_query_log
      Log given command to normal (not rotatable) log file.
 
      @param event_utime       Command start timestamp in micro seconds
-     @param user_host         The pointer to the string with user@host info
+     @param user_host         The pointer to the string with user\@host info
      @param user_host_len     Length of the user_host string. this is computed once
                               and passed to all general log event handlers
      @param thread_id         Id of the thread that issued the query
@@ -159,7 +148,7 @@ class File_query_log
      @param thd               THD of the query
      @param current_utime     Current timestamp in micro seconds
      @param query_start_arg   Command start timestamp
-     @param user_host         The pointer to the string with user@host info
+     @param user_host         The pointer to the string with user\@host info
      @param user_host_len     Length of the user_host string. this is computed once
                               and passed to all general log event handlers
      @param query_utime       Amount of time the query took to execute (in microseconds)
@@ -227,11 +216,11 @@ public:
      @param thd               THD of the query
      @param current_utime     Current timestamp in micro seconds
      @param query_start_arg   Command start timestamp in micro seconds
-     @param user_host         The pointer to the string with user@host info
+     @param user_host         The pointer to the string with user\@host info
      @param user_host_len     Length of the user_host string. this is computed once
                               and passed to all general log event handlers
-     @param query_time        Amount of time the query took to execute (in microseconds)
-     @param lock_time         Amount of time the query was locked (in microseconds)
+     @param query_utime       Amount of time the query took to execute (in microseconds)
+     @param lock_utime        Amount of time the query was locked (in microseconds)
      @param is_command        The flag which determines whether the sql_text is a
                               query or an administrator command (these are treated
                               differently by the old logging routines)
@@ -251,8 +240,9 @@ public:
   /**
      Log command to the general log.
 
+     @param  thd               THD of the query
      @param  event_utime       Command start timestamp in micro seconds
-     @param  user_host         The pointer to the string with user@host info
+     @param  user_host         The pointer to the string with user\@host info
      @param  user_host_len     Length of the user_host string. this is computed
                                once and passed to all general log event handlers
      @param  thread_id         Id of the thread, issued a query
@@ -260,6 +250,7 @@ public:
      @param  command_type_len  The length of the string above
      @param  sql_text          The very text of the query being executed
      @param  sql_text_len      The length of sql_text string
+     @param  client_cs         Character set to use for strings
 
      @return This function attempts to never call my_error(). This is
      necessary, because general logging happens already after a statement
@@ -422,15 +413,7 @@ public:
 
      @return true if table logging is on, false otherwise.
   */
-  bool is_log_table_enabled(enum_log_table_type log_type) const
-  {
-    if (log_type == QUERY_LOG_SLOW)
-      return (opt_slow_log && (log_output_options & LOG_TABLE));
-    else if (log_type == QUERY_LOG_GENERAL)
-      return (opt_general_log && (log_output_options & LOG_TABLE));
-    DBUG_ASSERT(false);
-    return false;                             /* make compiler happy */
-  }
+  bool is_log_table_enabled(enum_log_table_type log_type) const;
 
   /**
      Check if file logging is turned on for the given log type.
@@ -450,11 +433,7 @@ public:
      initialization, performed by MY_INIT(). This why this is done in
      this function.
   */
-  void init()
-  {
-    file_log_handler= new Log_to_file_event_handler; // Causes mutex init
-    mysql_rwlock_init(key_rwlock_LOCK_logger, &LOCK_logger);
-  }
+  void init();
 
   /** Free memory. Nothing could be logged after this function is called. */
   void cleanup();
@@ -556,16 +535,6 @@ extern Query_logger query_logger;
    @returns Pointer to new string containing the name.
 */
 char *make_query_log_name(char *buff, enum_log_table_type log_type);
-
-/**
-  Check given log name against certain blacklisted names/extensions.
-
-  @param name     Log name to check
-  @param len      Length of log name
-
-  @returns true if name is valid, false otherwise.
-*/
-bool is_valid_log_name(const char *name, size_t len);
 
 /**
   Check whether we need to write the current statement (or its rewritten
@@ -752,6 +721,7 @@ public:
 
   /**
     @param threshold     suppress after this many queries ...
+    @param lock          mutex to use for consistency of calculations
     @param window_usecs  ... in this many micro-seconds
     @param logger        call this function to log a single line (our summary)
     @param msg           use this template containing %lu as only non-literal
@@ -797,7 +767,7 @@ private:
   /**
     The routine we call to actually log a line (i.e. our summary).
   */
-  void (*log_summary)(const char *, ...);
+  void (*log_summary)(const char *, ...) MY_ATTRIBUTE((format(printf, 1, 2)));
 
   /**
     Actually print the prepared summary to log.
@@ -814,7 +784,8 @@ public:
     @param msg           use this template containing %lu as only non-literal
   */
   Error_log_throttle(ulong window_usecs,
-                     void (*logger)(const char*, ...),
+                     void (*logger)(const char*, ...)
+                       MY_ATTRIBUTE((format(printf, 1, 2))),
                      const char *msg)
   : Log_throttle(window_usecs, msg), log_summary(logger)
   {}
@@ -897,6 +868,10 @@ void init_error_log();
   Open the error log and redirect stderr and optionally stdout
   to the error log file. The streams are reopened only for
   appending (writing at end of file).
+
+  @note
+    On error, my_error() is not called here.
+    So, caller of this function should call my_error() to keep the protocol.
 
   @note This function also writes any error log messages that
   have been buffered by calling flush_error_log_messages().

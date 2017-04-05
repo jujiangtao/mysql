@@ -1,7 +1,7 @@
 #ifndef SQL_TMP_TABLE_INCLUDED
 #define SQL_TMP_TABLE_INCLUDED
 
-/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -27,6 +27,7 @@
 #include "my_global.h"
 #include "my_base.h"        // ha_rows
 #include "item.h"           // Item
+#include "mem_root_array.h"
 
 class Create_field;
 class Field;
@@ -35,13 +36,12 @@ class SJ_TMP_TABLE;
 class Temp_table_param;
 class THD;
 struct TABLE;
-template<typename Element_type, bool has_trivial_destructor>
+template<typename Element_type, bool has_trivial_destructor, typename Parent>
   class Mem_root_array;
 template <class T> class List;
 typedef struct st_columndef MI_COLUMNDEF;
-typedef struct st_key KEY;
+class KEY;
 typedef struct st_order ORDER;
-typedef Mem_root_array<Item*, true> Func_ptr_array;
 
 
 /*
@@ -54,14 +54,6 @@ create_tmp_table(THD *thd, Temp_table_param *param, List<Item> &fields,
 		 ORDER *group, bool distinct, bool save_sum_fields,
 		 ulonglong select_options, ha_rows rows_limit,
 		 const char *table_alias);
-/**
-  General routine to change field->ptr of a NULL-terminated array of Field
-  objects. Useful when needed to call val_int, val_str or similar and the
-  field data is not in table->record[0] but in some other structure.
-  set_key_field_ptr changes all fields of an index using a key_info object.
-  All methods presume that there is at least one field to change.
-*/
-
 TABLE *create_virtual_tmp_table(THD *thd, List<Create_field> &field_list);
 bool create_ondisk_from_heap(THD *thd, TABLE *table,
                              MI_COLUMNDEF *start_recinfo,
@@ -78,7 +70,7 @@ bool instantiate_tmp_table(TABLE *table, KEY *keyinfo,
                            ulonglong options, my_bool big_tables,
                            Opt_trace_context *trace);
 Field *create_tmp_field(THD *thd, TABLE *table,Item *item, Item::Type type,
-                        Func_ptr_array *copy_func, Field **from_field,
+                        Mem_root_array<Item *> *copy_func, Field **from_field,
                         Field **default_field,
                         bool group, bool modify_item,
                         bool table_cant_handle_bit_fields,

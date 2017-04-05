@@ -48,6 +48,18 @@ Mysqlx.Connection.Capabilities {
     }
   }
   capabilities {
+    name: "plugin.version"
+    value {
+      type: SCALAR
+      scalar {
+        type: V_STRING
+        v_string {
+          value: "1.0.2"
+        }
+      }
+    }
+  }
+  capabilities {
     name: "client.pwd_expire_ok"
     value {
       type: SCALAR
@@ -82,7 +94,32 @@ Mysqlx.Error {
   sql_state: "HY000"
 }
 
-try setting read only doc.formats capabilities
+try setting Read only plugin.version capabilities,expect error
+send Mysqlx.Connection.CapabilitiesSet {
+  capabilities {
+    capabilities {
+      name: "plugin.version"
+      value {
+        type: SCALAR
+        scalar {
+          type: V_STRING
+          v_string {
+            value: "1.0.0"
+          }
+        }
+      }
+    }
+  }
+}
+
+Mysqlx.Error {
+  severity: ERROR
+  code: 5001
+  msg: "Capability prepare failed for \'plugin.version\'"
+  sql_state: "HY000"
+}
+
+try setting read only doc.formats capabilites
 send Mysqlx.Connection.CapabilitiesSet {
   capabilities {
     capabilities {
@@ -563,6 +600,18 @@ Mysqlx.Connection.Capabilities {
     }
   }
   capabilities {
+    name: "plugin.version"
+    value {
+      type: SCALAR
+      scalar {
+        type: V_STRING
+        v_string {
+          value: "1.0.2"
+        }
+      }
+    }
+  }
+  capabilities {
     name: "client.pwd_expire_ok"
     value {
       type: SCALAR
@@ -772,6 +821,18 @@ Mysqlx.Connection.Capabilities {
     }
   }
   capabilities {
+    name: "plugin.version"
+    value {
+      type: SCALAR
+      scalar {
+        type: V_STRING
+        v_string {
+          value: "1.0.2"
+        }
+      }
+    }
+  }
+  capabilities {
     name: "client.pwd_expire_ok"
     value {
       type: SCALAR
@@ -980,6 +1041,18 @@ Mysqlx.Connection.Capabilities {
     }
   }
   capabilities {
+    name: "plugin.version"
+    value {
+      type: SCALAR
+      scalar {
+        type: V_STRING
+        v_string {
+          value: "1.0.2"
+        }
+      }
+    }
+  }
+  capabilities {
     name: "client.pwd_expire_ok"
     value {
       type: SCALAR
@@ -1014,7 +1087,32 @@ Mysqlx.Error {
   sql_state: "HY000"
 }
 
-try setting read only doc.formats capabilities
+try setting Read only plugin.version capabilities,expect error
+send Mysqlx.Connection.CapabilitiesSet {
+  capabilities {
+    capabilities {
+      name: "plugin.version"
+      value {
+        type: SCALAR
+        scalar {
+          type: V_STRING
+          v_string {
+            value: "1.0.0"
+          }
+        }
+      }
+    }
+  }
+}
+
+Mysqlx.Error {
+  severity: ERROR
+  code: 5001
+  msg: "Capability prepare failed for \'plugin.version\'"
+  sql_state: "HY000"
+}
+
+try setting read only doc.formats capabilites
 send Mysqlx.Connection.CapabilitiesSet {
   capabilities {
     capabilities {
@@ -1231,6 +1329,18 @@ Mysqlx.Connection.Capabilities {
         type: V_STRING
         v_string {
           value: "mysql"
+        }
+      }
+    }
+  }
+  capabilities {
+    name: "plugin.version"
+    value {
+      type: SCALAR
+      scalar {
+        type: V_STRING
+        v_string {
+          value: "1.0.2"
         }
       }
     }

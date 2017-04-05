@@ -42,8 +42,10 @@ This file contains the implementation of error and warnings related
 ***********************************************************************/
 
 #include "sql_error.h"
-#include "sp_rcontext.h"
+
+#include "derror.h"       // ER_THD
 #include "log.h"          // sql_print_warning
+#include "sql_class.h"    // THD
 
 using std::min;
 using std::max;
@@ -423,10 +425,10 @@ void Diagnostics_area::set_eof_status(THD *thd)
 }
 
 
-void Diagnostics_area::set_error_status(uint mysql_errno)
+void Diagnostics_area::set_error_status(THD *thd, uint mysql_errno)
 {
   set_error_status(mysql_errno,
-                   ER(mysql_errno),
+                   ER_THD(thd, mysql_errno),
                    mysql_errno_to_sqlstate(mysql_errno));
 }
 
@@ -746,7 +748,7 @@ void push_warning(THD *thd, Sql_condition::enum_severity_level severity,
   @param thd      Thread handle
   @param severity Severity of warning (note, warning)
   @param code     Error number
-  @param msg      Clear error message
+  @param format   Error message printf format
 */
 
 void push_warning_printf(THD *thd, Sql_condition::enum_severity_level severity,
@@ -929,12 +931,12 @@ ErrConvString::ErrConvString(const struct st_mysql_time *ltime, uint dec)
 /**
    Convert value for dispatch to error message(see WL#751).
 
-   @param to          buffer for converted string, 0-terminated
+   @param buff        buffer for converted string, 0-terminated
    @param to_length   size of the buffer
    @param from        string which should be converted
    @param from_length string length
    @param from_cs     charset from convert
- 
+
    @retval
    number of bytes written to "to"
 */

@@ -61,22 +61,6 @@ typedef ulint (*log_checksum_func_t)(const byte* log_block);
 log_sys->mutex. */
 extern log_checksum_func_t log_checksum_algorithm_ptr;
 
-/*******************************************************************//**
-Calculates where in log files we find a specified lsn.
-@return log file number */
-ulint
-log_calc_where_lsn_is(
-/*==================*/
-	int64_t*	log_file_offset,	/*!< out: offset in that file
-						(including the header) */
-	ib_uint64_t	first_header_lsn,	/*!< in: first log file start
-						lsn */
-	ib_uint64_t	lsn,			/*!< in: lsn whose position to
-						determine */
-	ulint		n_log_files,		/*!< in: total number of log
-						files */
-	int64_t		log_file_size);		/*!< in: log file size
-						(including the header) */
 #ifndef UNIV_HOTBACKUP
 /** Append a string to the log.
 @param[in]	str		string
@@ -169,10 +153,10 @@ MY_ATTRIBUTE((warn_unused_result))
 bool
 log_group_init(
 /*===========*/
-	ulint	id,			/*!< in: group id */
-	ulint	n_files,		/*!< in: number of log files */
-	lsn_t	file_size,		/*!< in: log file size in bytes */
-	ulint	space_id);		/*!< in: space id of the file space
+	ulint		id,		/*!< in: group id */
+	ulint		n_files,	/*!< in: number of log files */
+	lsn_t		file_size,	/*!< in: log file size in bytes */
+	space_id_t	space_id);	/*!< in: space id of the file space
 					which contains the log files of this
 					group */
 /******************************************************//**
@@ -181,19 +165,20 @@ void
 log_io_complete(
 /*============*/
 	log_group_t*	group);	/*!< in: log group */
-/******************************************************//**
-This function is called, e.g., when a transaction wants to commit. It checks
-that the log has been written to the log file up to the last log entry written
-by the transaction. If there is a flush running, it waits and checks if the
-flush flushed enough. If not, starts a new flush. */
+
+/** This function is called, e.g., when a transaction wants to commit. It
+checks that the log has been written to the log file up to the last log entry
+written by the transaction. If there is a flush running, it waits and checks if
+the flush flushed enough. If not, starts a new flush.
+@param[in]	lsn		log sequence number up to which the log should
+				be written, LSN_MAX if not specified
+@param[in]	flush_to_disk	true if we want the written log also to be
+				flushed to disk */
 void
 log_write_up_to(
-/*============*/
-	lsn_t	lsn,	/*!< in: log sequence number up to which
-			the log should be written, LSN_MAX if not specified */
+	lsn_t	lsn,
 	bool	flush_to_disk);
-			/*!< in: true if we want the written log
-			also to be flushed to disk */
+
 /** write to the log file up to the last log entry.
 @param[in]	sync	whether we want the written log
 also to be flushed to disk. */
@@ -208,7 +193,7 @@ the write (+ possible flush) to finish. */
 void
 log_buffer_sync_in_background(
 /*==========================*/
-	bool	flush);	/*<! in: flush the logs to disk */
+	bool	flush);	/*!< in: flush the logs to disk */
 /** Make a checkpoint. Note that this function does not flush dirty
 blocks from the buffer pool: it only checks what is lsn of the oldest
 modification in the pool, and writes information about the lsn in
@@ -242,7 +227,7 @@ logs_empty_and_mark_files_at_shutdown(void);
 /*=======================================*/
 /** Read a log group header page to log_sys->checkpoint_buf.
 @param[in]	group	log group
-@param[in]	header	0 or LOG_CHEKCPOINT_1 or LOG_CHECKPOINT2 */
+@param[in]	header	0 or LOG_CHECKPOINT_1 or LOG_CHECKPOINT2 */
 void
 log_group_header_read(
 	const log_group_t*	group,
@@ -299,14 +284,6 @@ log_group_set_fields(
 	log_group_t*	group,	/*!< in/out: group */
 	lsn_t		lsn);	/*!< in: lsn for which the values should be
 				set */
-/******************************************************//**
-Calculates the data capacity of a log group, when the log file headers are not
-included.
-@return capacity in bytes */
-lsn_t
-log_group_get_capacity(
-/*===================*/
-	const log_group_t*	group);	/*!< in: log group */
 #endif /* !UNIV_HOTBACKUP */
 /************************************************************//**
 Gets a log block flush bit.
@@ -332,14 +309,16 @@ ulint
 log_block_get_data_len(
 /*===================*/
 	const byte*	log_block);	/*!< in: log block */
-/************************************************************//**
-Sets the log block data length. */
+
+/** Sets the log block data length.
+@param[in,out]	log_block	log block
+@param[in]	len		data length */
 UNIV_INLINE
 void
 log_block_set_data_len(
-/*===================*/
-	byte*	log_block,	/*!< in/out: log block */
-	ulint	len);		/*!< in: data length */
+	byte*	log_block,
+	ulint	len);
+
 /************************************************************//**
 Calculates the checksum for a log block.
 @return checksum */
@@ -372,14 +351,16 @@ ulint
 log_block_get_checksum(
 /*===================*/
 	const byte*	log_block);	/*!< in: log block */
-/************************************************************//**
-Sets a log block checksum field value. */
+
+/** Sets a log block checksum field value.
+@param[in,out]	log_block	log block
+@param[in]	checksum	checksum */
 UNIV_INLINE
 void
 log_block_set_checksum(
-/*===================*/
-	byte*	log_block,	/*!< in/out: log block */
-	ulint	checksum);	/*!< in: checksum */
+	byte*	log_block,
+	ulint	checksum);
+
 /************************************************************//**
 Gets a log block first mtr log record group offset.
 @return first mtr log record group byte offset from the block start, 0
@@ -389,14 +370,16 @@ ulint
 log_block_get_first_rec_group(
 /*==========================*/
 	const byte*	log_block);	/*!< in: log block */
-/************************************************************//**
-Sets the log block first mtr log record group offset. */
+
+/** Sets the log block first mtr log record group offset.
+@param[in,out]	log_block	log block
+@param[in]	offset		offset, 0 if none */
 UNIV_INLINE
 void
 log_block_set_first_rec_group(
-/*==========================*/
-	byte*	log_block,	/*!< in/out: log block */
-	ulint	offset);	/*!< in: offset, 0 if none */
+	byte*	log_block,
+	ulint	offset);
+
 /************************************************************//**
 Gets a log block checkpoint number field (4 lowest bytes).
 @return checkpoint no (4 lowest bytes) */
@@ -405,14 +388,16 @@ ulint
 log_block_get_checkpoint_no(
 /*========================*/
 	const byte*	log_block);	/*!< in: log block */
-/************************************************************//**
-Initializes a log block in the log buffer. */
+
+/** Initializes a log block in the log buffer.
+@param[in]	log_block	pointer to the log buffer
+@param[in]	lsn		lsn within the log block */
 UNIV_INLINE
 void
 log_block_init(
-/*===========*/
-	byte*	log_block,	/*!< in: pointer to the log buffer */
-	lsn_t	lsn);		/*!< in: lsn within the log block */
+	byte*	log_block,
+	lsn_t	lsn);
+
 #ifdef UNIV_HOTBACKUP
 /************************************************************//**
 Initializes a log block in the log buffer in the old, < 3.23.52 format, where
@@ -532,12 +517,10 @@ extern my_bool	innodb_log_checksums;
 This used to be called LOG_GROUP_ID and always written as 0,
 because InnoDB never supported more than one copy of the redo log. */
 #define LOG_HEADER_FORMAT	0
-/** 4 unused (zero-initialized) bytes. In format version 0, the
-LOG_FILE_START_LSN started here, 4 bytes earlier than LOG_HEADER_START_LSN,
-which the LOG_FILE_START_LSN was renamed to. */
+/** 4 unused (zero-initialized) bytes. */
 #define LOG_HEADER_PAD1		4
-/** LSN of the start of data in this log file (with format version 1;
-in format version 0, it was called LOG_FILE_START_LSN and at offset 4). */
+/** LSN of the start of data in this log file
+(with format version 1 and 2). */
 #define LOG_HEADER_START_LSN	8
 /** A null-terminated string which will contain either the string 'ibbackup'
 and the creation time if the log file was created by mysqlbackup --restore,
@@ -548,9 +531,16 @@ or the MySQL version that created the redo log file. */
 /** Contents of the LOG_HEADER_CREATOR field */
 #define LOG_HEADER_CREATOR_CURRENT	"MySQL " INNODB_VERSION_STR
 
-/** The redo log format identifier corresponding to the current format version.
-Stored in LOG_HEADER_FORMAT. */
-#define LOG_HEADER_FORMAT_CURRENT	1
+/** Supported redo log formats. Stored in LOG_HEADER_FORMAT. */
+enum log_header_format_t
+{
+	/** The MySQL 5.7.9 redo log format identifier. We can support recovery
+	from this format if the redo log is clean (logically empty). */
+	LOG_HEADER_FORMAT_5_7_9 = 1,
+	/** The redo log format identifier
+	corresponding to the current format version. */
+	LOG_HEADER_FORMAT_CURRENT = 2
+};
 /* @} */
 
 #define LOG_CHECKPOINT_1	OS_FILE_LOG_BLOCK_SIZE
@@ -590,7 +580,7 @@ struct log_group_t{
 	/** individual log file size in bytes, including the header */
 	lsn_t				file_size
 	/** file space which implements the log group */;
-	ulint				space_id;
+	space_id_t			space_id;
 	/** corruption status */
 	log_group_state_t		state;
 	/** lsn used to fix coordinates within the log group */
@@ -808,8 +798,6 @@ log_group_calc_lsn_offset(
 	lsn_t			lsn,
 	const log_group_t*	group);
 
-#ifndef UNIV_NONINL
 #include "log0log.ic"
-#endif
 
 #endif

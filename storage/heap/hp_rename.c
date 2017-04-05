@@ -18,6 +18,7 @@
 */
 
 #include "heapdef.h"
+#include "mysql/service_mysql_alloc.h"
 
 int heap_rename(const char *old_name, const char *new_name)
 {

@@ -1,9 +1,7 @@
--- source include/have_sjis.inc
--- source include/big_test.inc
-
 #
 # Tests with the sjis character set
 #
+--source include/no_valgrind_without_big.inc
 --disable_warnings
 drop table if exists t1;
 --enable_warnings

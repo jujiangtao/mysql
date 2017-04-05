@@ -15,6 +15,8 @@
 
 
 #include <gtest/gtest.h>
+#include <boost/scoped_ptr.hpp>
+#include <boost/shared_ptr.hpp>
 #include <mysql/service_my_snprintf.h>
 #include <limits>
 #include <string>
@@ -38,16 +40,17 @@ namespace test
 typedef ngs::Output_buffer Output_buffer;
 typedef ngs::Row_builder Row_builder;
 typedef ngs::Page_pool Page_pool;
+#define unique_ptr boost::scoped_ptr
 
 const ngs::Pool_config default_pool_config = { 0, 0, BUFFER_PAGE_SIZE };
 
-static std::vector<ngs::shared_ptr<ngs::Page> > page_del;
+static std::vector<boost::shared_ptr<ngs::Page> > page_del;
 
 static void add_pages(Output_buffer *ob, const size_t no_of_pages, const size_t page_size)
 {
   for (size_t i = 0; i < no_of_pages; i++)
   {
-    page_del.push_back(ngs::shared_ptr<ngs::Page>(new ngs::Page(static_cast<uint32_t>(page_size))));
+    page_del.push_back(boost::shared_ptr<ngs::Page>(new ngs::Page(static_cast<uint32_t>(page_size))));
     ngs::Resource<ngs::Page> page(page_del.back().get());
     ob->push_back(page);
   }
@@ -56,8 +59,8 @@ static void add_pages(Output_buffer *ob, const size_t no_of_pages, const size_t 
 TEST(row_builder, row_start)
 {
   Row_builder rb;
-  ngs::unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
-  ngs::unique_ptr<Output_buffer> obuffer(new Output_buffer(*page_pool));
+  unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
+  unique_ptr<Output_buffer> obuffer(new Output_buffer(*page_pool));
 
   rb.start_row(obuffer.get());
 
@@ -74,8 +77,8 @@ TEST(row_builder, row_start)
 TEST(row_builder, row_msg_size)
 {
   Row_builder rb;
-  ngs::unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
-  ngs::unique_ptr<Output_buffer> obuffer(new Output_buffer(*page_pool));
+  unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
+  unique_ptr<Output_buffer> obuffer(new Output_buffer(*page_pool));
   add_pages(obuffer.get(),2, 8);
 
   rb.start_row(obuffer.get());
@@ -98,8 +101,8 @@ TEST(row_builder, row_msg_size)
 TEST(row_builder, row_abort)
 {
   Row_builder rb;
-  ngs::unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
-  ngs::unique_ptr<Output_buffer> obuffer(new Output_buffer(*page_pool));
+  unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
+  unique_ptr<Output_buffer> obuffer(new Output_buffer(*page_pool));
 
   rb.start_row(obuffer.get());
 
@@ -115,8 +118,8 @@ TEST(row_builder, row_abort)
 TEST(row_builder, fields_qty)
 {
   Row_builder rb;
-  ngs::unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
-  ngs::unique_ptr<Output_buffer> obuffer(new Output_buffer(*page_pool));
+  unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
+  unique_ptr<Output_buffer> obuffer(new Output_buffer(*page_pool));
 
   rb.start_row(obuffer.get());
 
@@ -141,8 +144,8 @@ TEST(row_builder, fields_qty)
 TEST(row_builder, null_field)
 {
   Row_builder rb;
-  ngs::unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
-  ngs::unique_ptr<Output_buffer> obuffer(new Output_buffer(*page_pool));
+  unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
+  unique_ptr<Output_buffer> obuffer(new Output_buffer(*page_pool));
 
   rb.start_row(obuffer.get());
 
@@ -150,7 +153,7 @@ TEST(row_builder, null_field)
 
   rb.end_row();
 
-  ngs::unique_ptr<Mysqlx::Resultset::Row> row (message_from_buffer<Mysqlx::Resultset::Row>(obuffer.get()));
+  unique_ptr<Mysqlx::Resultset::Row> row (message_from_buffer<Mysqlx::Resultset::Row>(obuffer.get()));
 
   ASSERT_EQ(0u, row->mutable_field(0)->length());
 }
@@ -161,8 +164,8 @@ TEST(row_builder, unsigned64_field)
   Row_builder rb;
   std::string* buffer;
   int idx = 0;
-  ngs::unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
-  ngs::unique_ptr<Output_buffer> obuffer(new Output_buffer(*page_pool));
+  unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
+  unique_ptr<Output_buffer> obuffer(new Output_buffer(*page_pool));
 
   rb.start_row(obuffer.get());
 
@@ -175,7 +178,7 @@ TEST(row_builder, unsigned64_field)
 
 
   rb.end_row();
-  ngs::unique_ptr<Mysqlx::Resultset::Row> row(message_from_buffer<Mysqlx::Resultset::Row>(obuffer.get()));
+  unique_ptr<Mysqlx::Resultset::Row> row(message_from_buffer<Mysqlx::Resultset::Row>(obuffer.get()));
 
   buffer = row->mutable_field(idx++);
   ASSERT_EQ(0u, mysqlx::Row_decoder::u64_from_buffer(*buffer));
@@ -197,8 +200,8 @@ TEST(row_builder, signed64_field)
   Row_builder rb;
   std::string* buffer;
   int idx = 0;
-  ngs::unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
-  ngs::unique_ptr<Output_buffer> obuffer(new Output_buffer(*page_pool));
+  unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
+  unique_ptr<Output_buffer> obuffer(new Output_buffer(*page_pool));
 
   rb.start_row(obuffer.get());
 
@@ -209,7 +212,7 @@ TEST(row_builder, signed64_field)
   rb.add_longlong_field(-1, false);
 
   rb.end_row();
-  ngs::unique_ptr<Mysqlx::Resultset::Row> row(message_from_buffer<Mysqlx::Resultset::Row>(obuffer.get()));
+  unique_ptr<Mysqlx::Resultset::Row> row(message_from_buffer<Mysqlx::Resultset::Row>(obuffer.get()));
 
   buffer = row->mutable_field(idx++);
   ASSERT_EQ(0, mysqlx::Row_decoder::s64_from_buffer(*buffer));
@@ -228,8 +231,8 @@ TEST(row_builder, float_field)
   Row_builder rb;
   std::string* buffer;
   int idx = 0;
-  ngs::unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
-  ngs::unique_ptr<Output_buffer> obuffer(new Output_buffer(*page_pool));
+  unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
+  unique_ptr<Output_buffer> obuffer(new Output_buffer(*page_pool));
 
   rb.start_row(obuffer.get());
 
@@ -241,7 +244,7 @@ TEST(row_builder, float_field)
   rb.add_float_field(std::numeric_limits<float>::max());
 
   rb.end_row();
-  ngs::unique_ptr<Mysqlx::Resultset::Row> row(message_from_buffer<Mysqlx::Resultset::Row>(obuffer.get()));
+  unique_ptr<Mysqlx::Resultset::Row> row(message_from_buffer<Mysqlx::Resultset::Row>(obuffer.get()));
 
   buffer = row->mutable_field(idx++);
   ASSERT_FLOAT_EQ(0.0f, mysqlx::Row_decoder::float_from_buffer(*buffer));
@@ -262,8 +265,8 @@ TEST(row_builder, double_field)
   Row_builder rb;
   std::string* buffer;
   int idx = 0;
-  ngs::unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
-  ngs::unique_ptr<Output_buffer> obuffer(new Output_buffer(*page_pool));
+  unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
+  unique_ptr<Output_buffer> obuffer(new Output_buffer(*page_pool));
 
   rb.start_row(obuffer.get());
 
@@ -275,7 +278,7 @@ TEST(row_builder, double_field)
   rb.add_double_field(std::numeric_limits<double>::max());
 
   rb.end_row();
-  ngs::unique_ptr<Mysqlx::Resultset::Row> row(message_from_buffer<Mysqlx::Resultset::Row>(obuffer.get()));
+  unique_ptr<Mysqlx::Resultset::Row> row(message_from_buffer<Mysqlx::Resultset::Row>(obuffer.get()));
 
   buffer = row->mutable_field(idx++);
   ASSERT_DOUBLE_EQ(0.0, mysqlx::Row_decoder::double_from_buffer(*buffer));
@@ -298,8 +301,8 @@ TEST(row_builder, string_field)
   int idx = 0;
   size_t len;
   const char* const STR1 = "ABBABABBBAAA-09-0900--==0,\0\0\0\0\0";
-  ngs::unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
-  ngs::unique_ptr<Output_buffer> obuffer(new Output_buffer(*page_pool));
+  unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
+  unique_ptr<Output_buffer> obuffer(new Output_buffer(*page_pool));
 
   rb.start_row(obuffer.get());
 
@@ -307,7 +310,7 @@ TEST(row_builder, string_field)
   rb.add_string_field(STR1, strlen(STR1), NULL);
 
   rb.end_row();
-  ngs::unique_ptr<Mysqlx::Resultset::Row> row(message_from_buffer<Mysqlx::Resultset::Row>(obuffer.get()));
+  unique_ptr<Mysqlx::Resultset::Row> row(message_from_buffer<Mysqlx::Resultset::Row>(obuffer.get()));
 
   buffer = row->mutable_field(idx++);
   ASSERT_STREQ("", mysqlx::Row_decoder::string_from_buffer(*buffer, len));
@@ -327,8 +330,8 @@ TEST(row_builder, date_field)
   Row_builder rb;
   std::string* buffer;
   int idx = 0;
-  ngs::unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
-  ngs::unique_ptr<Output_buffer> obuffer(new Output_buffer(*page_pool));
+  unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
+  unique_ptr<Output_buffer> obuffer(new Output_buffer(*page_pool));
 
   MYSQL_TIME time;
   time.year  = 2006; time.month = 3; time.day   = 24;
@@ -338,7 +341,7 @@ TEST(row_builder, date_field)
   rb.add_date_field(&time);
 
   rb.end_row();
-  ngs::unique_ptr<Mysqlx::Resultset::Row> row(message_from_buffer<Mysqlx::Resultset::Row>(obuffer.get()));
+  unique_ptr<Mysqlx::Resultset::Row> row(message_from_buffer<Mysqlx::Resultset::Row>(obuffer.get()));
 
   buffer = row->mutable_field(idx++);
   mysqlx::DateTime xtime = mysqlx::Row_decoder::datetime_from_buffer(*buffer);
@@ -352,8 +355,8 @@ TEST(row_builder, time_field)
   Row_builder rb;
   std::string* buffer;
   int idx = 0;
-  ngs::unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
-  ngs::unique_ptr<Output_buffer> obuffer(new Output_buffer(*page_pool));
+  unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
+  unique_ptr<Output_buffer> obuffer(new Output_buffer(*page_pool));
 
   MYSQL_TIME time;
   time.neg = false; time.hour = 12; time.minute = 0; time.second = 0; time.second_part = 999999;
@@ -371,7 +374,7 @@ TEST(row_builder, time_field)
   rb.add_time_field(&time3, 0);
 
   rb.end_row();
-  ngs::unique_ptr<Mysqlx::Resultset::Row> row(message_from_buffer<Mysqlx::Resultset::Row>(obuffer.get()));
+  unique_ptr<Mysqlx::Resultset::Row> row(message_from_buffer<Mysqlx::Resultset::Row>(obuffer.get()));
 
   buffer = row->mutable_field(idx++);
   mysqlx::Time xtime = mysqlx::Row_decoder::time_from_buffer(*buffer);
@@ -403,8 +406,8 @@ TEST(row_builder, datetime_field)
   Row_builder rb;
   std::string* buffer;
   int idx = 0;
-  ngs::unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
-  ngs::unique_ptr<Output_buffer> obuffer(new Output_buffer(*page_pool));
+  unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
+  unique_ptr<Output_buffer> obuffer(new Output_buffer(*page_pool));
 
   MYSQL_TIME time;
   time.year = 2016; time.month = 12; time.day = 24;
@@ -422,7 +425,7 @@ TEST(row_builder, datetime_field)
   rb.add_datetime_field(&time2, 0);
 
   rb.end_row();
-  ngs::unique_ptr<Mysqlx::Resultset::Row> row(message_from_buffer<Mysqlx::Resultset::Row>(obuffer.get()));
+  unique_ptr<Mysqlx::Resultset::Row> row(message_from_buffer<Mysqlx::Resultset::Row>(obuffer.get()));
 
   buffer = row->mutable_field(idx++);
   mysqlx::DateTime xtime = mysqlx::Row_decoder::datetime_from_buffer(*buffer);
@@ -452,8 +455,8 @@ TEST(row_builder, decimal_field)
   std::string* buffer;
   int idx = 0;
   mysqlx::Decimal xdecimal;
-  ngs::unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
-  ngs::unique_ptr<Output_buffer> obuffer(new Output_buffer(*page_pool));
+  unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
+  unique_ptr<Output_buffer> obuffer(new Output_buffer(*page_pool));
 
   rb.start_row(obuffer.get());
 
@@ -466,7 +469,7 @@ TEST(row_builder, decimal_field)
   rb.add_decimal_field(&dec2);
 
   rb.end_row();
-  ngs::unique_ptr<Mysqlx::Resultset::Row> row(message_from_buffer<Mysqlx::Resultset::Row>(obuffer.get()));
+  unique_ptr<Mysqlx::Resultset::Row> row(message_from_buffer<Mysqlx::Resultset::Row>(obuffer.get()));
 
   buffer = row->mutable_field(idx++);
   xdecimal = mysqlx::Row_decoder::decimal_from_buffer(*buffer);
@@ -482,8 +485,8 @@ TEST(row_builder, set_field)
   Row_builder rb;
   std::string* buffer;
   int idx = 0;
-  ngs::unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
-  ngs::unique_ptr<Output_buffer> obuffer(new Output_buffer(*page_pool));
+  unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
+  unique_ptr<Output_buffer> obuffer(new Output_buffer(*page_pool));
 
   rb.start_row(obuffer.get());
 
@@ -492,7 +495,7 @@ TEST(row_builder, set_field)
   rb.add_set_field("A", strlen("A"), NULL);
 
   rb.end_row();
-  ngs::unique_ptr<Mysqlx::Resultset::Row> row(message_from_buffer<Mysqlx::Resultset::Row>(obuffer.get()));
+  unique_ptr<Mysqlx::Resultset::Row> row(message_from_buffer<Mysqlx::Resultset::Row>(obuffer.get()));
 
   buffer = row->mutable_field(idx++);
   ASSERT_EQ(mysqlx::Row_decoder::set_from_buffer_as_str(*buffer), "A,B,C,D");
@@ -521,8 +524,8 @@ TEST(row_builder, bit_field)
   Row_builder rb;
   std::string* buffer;
   int idx = 0;
-  ngs::unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
-  ngs::unique_ptr<Output_buffer> obuffer(new Output_buffer(*page_pool));
+  unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
+  unique_ptr<Output_buffer> obuffer(new Output_buffer(*page_pool));
 
   rb.start_row(obuffer.get());
 
@@ -533,7 +536,7 @@ TEST(row_builder, bit_field)
   rb.add_bit_field("\xff\xff\xff\xff\xff\xff\xff\xff", 8, NULL);
 
   rb.end_row();
-  ngs::unique_ptr<Mysqlx::Resultset::Row> row(message_from_buffer<Mysqlx::Resultset::Row>(obuffer.get()));
+  unique_ptr<Mysqlx::Resultset::Row> row(message_from_buffer<Mysqlx::Resultset::Row>(obuffer.get()));
 
   buffer = row->mutable_field(idx++);
   ASSERT_EQ(0x0u, mysqlx::Row_decoder::u64_from_buffer(*buffer));

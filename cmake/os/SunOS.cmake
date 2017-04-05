@@ -18,13 +18,13 @@ INCLUDE(CheckCSourceRuns)
 INCLUDE(CheckCSourceCompiles) 
 INCLUDE(CheckCXXSourceCompiles)
 
-# We require at least GCC 4.4 or SunStudio 12u2 (CC 5.11)
+# We require at least GCC 4.8 or SunStudio 12.4 (CC 5.13)
 IF(NOT FORCE_UNSUPPORTED_COMPILER)
   IF(CMAKE_COMPILER_IS_GNUCC)
     EXECUTE_PROCESS(COMMAND ${CMAKE_C_COMPILER} -dumpversion
                     OUTPUT_VARIABLE GCC_VERSION)
-    IF(GCC_VERSION VERSION_LESS 4.4)
-      MESSAGE(FATAL_ERROR "GCC 4.4 or newer is required!")
+    IF(GCC_VERSION VERSION_LESS 4.8)
+      MESSAGE(FATAL_ERROR "GCC 4.8 or newer is required!")
     ENDIF()
   ELSEIF(CMAKE_C_COMPILER_ID MATCHES "SunPro")
     # CC -V yields
@@ -43,8 +43,8 @@ IF(NOT FORCE_UNSUPPORTED_COMPILER)
         VERSION_STRING ${stderr})
     ENDIF()
     SET(CC_MINOR_VERSION ${CMAKE_MATCH_1})
-    IF(${CC_MINOR_VERSION} LESS 11)
-      MESSAGE(FATAL_ERROR "SunStudio 12u2 or newer is required!")
+    IF(${CC_MINOR_VERSION} LESS 13)
+      MESSAGE(FATAL_ERROR "SunStudio 12.4 or newer is required!")
     ENDIF()
   ELSE()
     MESSAGE(FATAL_ERROR "Unsupported compiler!")
@@ -60,6 +60,16 @@ ADD_DEFINITIONS(-D__EXTENSIONS__)
 # Solaris threads with POSIX semantics:
 # http://docs.oracle.com/cd/E19455-01/806-5257/6je9h033k/index.html
 ADD_DEFINITIONS(-D_POSIX_PTHREAD_SEMANTICS -D_REENTRANT -D_PTHREADS)
+
+# Workaround for Bug 22973151
+# Cannot include <math.h> then <cmath> w/ Studio 12.4 in -std=c++11 mode
+IF(CMAKE_SYSTEM_VERSION VERSION_EQUAL "5.11" AND CC_MINOR_VERSION EQUAL 13)
+  EXEC_PROGRAM(uname ARGS -v OUTPUT_VARIABLE MY_OS_MINOR_VERSION)
+  IF(MY_OS_MINOR_VERSION MATCHES "11.3")
+    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -W0,-stdhdrs_not_idempotent")
+    MESSAGE("Adding -W0,-stdhdrs_not_idempotent")
+  ENDIF()
+ENDIF()
 
 IF (NOT "${CMAKE_C_FLAGS}${CMAKE_CXX_FLAGS}" MATCHES "-m32|-m64")
   EXECUTE_PROCESS(COMMAND isainfo -b

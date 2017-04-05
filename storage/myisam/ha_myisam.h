@@ -15,11 +15,15 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 
-/* class for the the myisam handler */
+/**
+  @file storage/myisam/ha_myisam.h
+  MyISAM storage engine.
+*/
 
 #include <myisam.h>
 #include <ft_global.h>
 #include "handler.h"                            /* handler */
+#include "sql_string.h"
 #include "table.h"                              /* TABLE_SHARE */
 
 struct TABLE_SHARE;
@@ -34,6 +38,15 @@ typedef struct st_ha_create_information HA_CREATE_INFO;
 extern TYPELIB myisam_recover_typelib;
 extern const char *myisam_recover_names[];
 extern ulonglong myisam_recover_options;
+extern const char *myisam_stats_method_names[];
+
+int table2myisam(TABLE *table_arg, MI_KEYDEF **keydef_out,
+                 MI_COLUMNDEF **recinfo_out, uint *records_out);
+int check_definition(MI_KEYDEF *t1_keyinfo, MI_COLUMNDEF *t1_recinfo,
+                     uint t1_keys, uint t1_recs,
+                     MI_KEYDEF *t2_keyinfo, MI_COLUMNDEF *t2_recinfo,
+                     uint t2_keys, uint t2_recs, bool strict,
+                     TABLE *table_arg);
 
 C_MODE_START
 ICP_RESULT index_cond_func_myisam(void *arg);
@@ -60,8 +73,10 @@ class ha_myisam: public handler
   ~ha_myisam() {}
   handler *clone(const char *name, MEM_ROOT *mem_root);
   const char *table_type() const { return "MyISAM"; }
-  const char *index_type(uint key_number);
-  const char **bas_ext() const;
+  virtual enum ha_key_alg get_default_index_algorithm() const
+  { return HA_KEY_ALG_BTREE; }
+  virtual bool is_index_algorithm_supported(enum ha_key_alg key_alg) const
+  { return key_alg == HA_KEY_ALG_BTREE || key_alg == HA_KEY_ALG_RTREE; }
   ulonglong table_flags() const { return int_table_flags; }
   int index_init(uint idx, bool sorted);
   int index_end();

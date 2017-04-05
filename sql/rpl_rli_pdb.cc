@@ -16,11 +16,15 @@
 #include "debug_sync.h"
 #include "rpl_rli_pdb.h"
 
+#include "current_thd.h"
+#include "psi_memory_key.h"
 #include "log.h"                            // sql_print_error
+#include "mysqld.h"                         // key_mutex_slave_parallel_worker
 #include "rpl_slave_commit_order_manager.h" // Commit_order_manager
 
 #include "pfs_file_provider.h"
 #include "mysql/psi/mysql_file.h"
+#include "template_utils.h"
 
 #ifndef DBUG_OFF
   ulong w_rr= 0;
@@ -538,7 +542,7 @@ bool Slave_worker::set_info_search_keys(Rpl_info_handler *to)
 
 bool Slave_worker::write_info(Rpl_info_handler *to)
 {
-  DBUG_ENTER("Master_info::write_info");
+  DBUG_ENTER("Slave_worker::write_info");
 
   ulong nbytes= (ulong) no_bytes_in_map(&group_executed);
   uchar *buffer= (uchar*) group_executed.bitmap;
@@ -569,7 +573,7 @@ bool Slave_worker::write_info(Rpl_info_handler *to)
    This worker won't contribute to recovery bitmap at future
    slave restart (see @c mts_recovery_groups).
 
-   @retrun FALSE as success TRUE as failure
+   @return FALSE as success TRUE as failure
 */
 bool Slave_worker::reset_recovery_info()
 {
@@ -685,8 +689,7 @@ void Slave_worker::rollback_positions(Slave_job_group* ptr_g)
   }
 }
 
-extern "C" uchar *get_key(const uchar *record, size_t *length,
-                          my_bool not_used MY_ATTRIBUTE((unused)))
+static const uchar *get_key(const uchar *record, size_t *length)
 {
   DBUG_ENTER("get_key");
 
@@ -699,8 +702,9 @@ extern "C" uchar *get_key(const uchar *record, size_t *length,
 }
 
 
-static void free_entry(db_worker_hash_entry *entry)
+static void free_entry(void *arg)
 {
+  db_worker_hash_entry *entry= pointer_cast<db_worker_hash_entry*>(arg);
   THD *c_thd= current_thd;
 
   DBUG_ENTER("free_entry");
@@ -732,8 +736,8 @@ bool init_hash_workers(Relay_log_info *rli)
 
   rli->inited_hash_workers=
     (my_hash_init(&rli->mapping_db_to_worker, &my_charset_bin,
-                 0, 0, 0, get_key,
-                 (my_hash_free_key) free_entry, 0,
+                 0, 0, get_key,
+                 free_entry, 0,
                  key_memory_db_worker_hash_entry) == 0);
   if (rli->inited_hash_workers)
   {
@@ -1157,7 +1161,10 @@ err:
 /**
    Get the least occupied worker.
 
+   @param rli pointer to Relay_log_info of Coordinator
    @param ws  dynarray of pointers to Slave_worker
+   @param ev event for which we are searching for a worker
+
    @return a pointer to chosen Slave_worker instance
 
 */
@@ -1468,6 +1475,26 @@ bool circular_buffer_queue<Element_type>::gt(ulong i, ulong k)
       return i > k;
 }
 
+Slave_committed_queue::Slave_committed_queue(const char *log, ulong max, uint n)
+  : circular_buffer_queue<Slave_job_group>(max), inited(false),
+    last_done(key_memory_Slave_job_group_group_relay_log_name)
+{
+  if (max >= (ulong) -1 || !inited_queue)
+    return;
+  else
+    inited= TRUE;
+
+  last_done.resize(n);
+
+  lwm.group_relay_log_name=
+    (char *) my_malloc(key_memory_Slave_job_group_group_relay_log_name,
+                       FN_REFLEN + 1, MYF(0));
+  lwm.group_relay_log_name[0]= 0;
+  lwm.sequence_number= SEQ_UNINIT;
+}
+
+
+
 #ifndef DBUG_OFF
 bool Slave_committed_queue::count_done(Relay_log_info* rli)
 {
@@ -1617,7 +1644,7 @@ ulong Slave_committed_queue::move_queue_head(Slave_worker_array *ws)
    A mutex protecting from concurrent LWM change by
    move_queue_head() (by Coordinator) should be taken by the caller.
 
-   @param arg_g [out]  a double pointer to Slave job descriptor item
+   @param [out] arg_g  a double pointer to Slave job descriptor item
                        last marked with done-as-true boolean.
    @param start_index  a GAQ index to start/resume searching.
                        Caller is to make sure the index points into
@@ -1807,12 +1834,8 @@ static int64 get_sequence_number(Log_event *ev)
   The worker thread loops in waiting for an event, executing it and
   fixing statistics counters.
 
-  @param worker    a pointer to the assigned Worker struct
-  @param rli       a pointer to Relay_log_info of Coordinator
-                   to update statistics.
-
   @return 0 success
-         -1 got killed or an error happened during appying
+         -1 got killed or an error happened during applying
 */
 int Slave_worker::slave_worker_exec_event(Log_event *ev)
 {
@@ -2498,8 +2521,8 @@ static void remove_item_from_jobs(slave_job_item *job_item,
    @return NULL failure or
            a-pointer to an item.
 */
-struct slave_job_item* pop_jobs_item(Slave_worker *worker,
-                                     Slave_job_item *job_item)
+static struct slave_job_item* pop_jobs_item(Slave_worker *worker,
+                                            Slave_job_item *job_item)
 {
   THD *thd= worker->info_thd;
 

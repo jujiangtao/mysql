@@ -1,4 +1,4 @@
-/* Copyright (c) 2013, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2013, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -13,7 +13,8 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA */
 
-/*
+/**
+  @file mysys_ssl/my_murmur3.cc
   Implementation of 32-bit version of MurmurHash3 - fast non-cryptographic
   hash function with good statistical properties, which is based on public
   domain code by Austin Appleby.
@@ -21,6 +22,7 @@
 
 #include <my_murmur3.h>
 
+#include "my_byteorder.h"
 
 /*
   Platform-specific implementations of ROTL32 helper.

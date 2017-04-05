@@ -21,7 +21,7 @@
 
 #include "my_global.h"
 #include "my_tree.h"          // TREE
-#include "sql_class.h"        // Query_result_send
+#include "query_result.h"     // Query_result_send
 
 class Item_proc;
 
@@ -55,18 +55,14 @@ typedef struct st_tree_info
 } TREE_INFO;
 
 uint check_ulonglong(const char *str, uint length);
-bool get_ev_num_info(EV_NUM_INFO *ev_info, NUM_INFO *info, const char *num);
 bool test_if_number(NUM_INFO *info, const char *str, uint str_len);
-int compare_double(const double *s, const double *t);
-int compare_double2(void* cmp_arg MY_ATTRIBUTE((unused)),
-		    const double *s, const double *t);
-int compare_longlong(const longlong *s, const longlong *t);
-int compare_longlong2(void* cmp_arg MY_ATTRIBUTE((unused)),
-		      const longlong *s, const longlong *t);
-int compare_ulonglong(const ulonglong *s, const ulonglong *t);
-int compare_ulonglong2(void* cmp_arg MY_ATTRIBUTE((unused)),
-		       const ulonglong *s, const ulonglong *t);
-int compare_decimal2(int* len, const char *s, const char *t);
+int compare_double2(const void* cmp_arg MY_ATTRIBUTE((unused)),
+		    const void *s, const void *t);
+int compare_longlong2(const void* cmp_arg MY_ATTRIBUTE((unused)),
+		      const void *s, const void *t);
+int compare_ulonglong2(const void* cmp_arg MY_ATTRIBUTE((unused)),
+		       const void *s, const void *t);
+int compare_decimal2(const void* len, const void *s, const void *t);
 void free_string(String*);
 class Query_result_analyse;
 
@@ -102,8 +98,8 @@ public:
 int collect_string(String *element, element_count count,
 		   TREE_INFO *info);
 
-int sortcmp2(void* cmp_arg MY_ATTRIBUTE((unused)),
-	     const String *a,const String *b);
+int sortcmp2(const void* cmp_arg MY_ATTRIBUTE((unused)),
+	     const void *a,const void *b);
 
 class field_str :public field_info
 {
@@ -120,7 +116,7 @@ public:
     max_arg("",default_charset_info), sum(0),
     must_be_blob(0), was_zero_fill(0),
     was_maybe_zerofill(0), can_be_still_num(1)
-    { init_tree(&tree, 0, 0, sizeof(String), (qsort_cmp2) sortcmp2,
+    { init_tree(&tree, 0, 0, sizeof(String), sortcmp2,
 		0, (tree_element_free) free_string, NULL); };
 
   void	 add();
@@ -161,7 +157,7 @@ public:
   field_decimal(Item* a, Query_result_analyse* b) :field_info(a,b)
   {
     bin_size= my_decimal_get_binary_size(a->max_length, a->decimals);
-    init_tree(&tree, 0, 0, bin_size, (qsort_cmp2)compare_decimal2,
+    init_tree(&tree, 0, 0, bin_size, compare_decimal2,
               0, 0, (void *)&bin_size);
   };
 
@@ -190,7 +186,7 @@ public:
   field_real(Item* a, Query_result_analyse* b) :field_info(a,b),
     min_arg(0), max_arg(0),  sum(0), sum_sqr(0), max_notzero_dec_len(0)
     { init_tree(&tree, 0, 0, sizeof(double),
-		(qsort_cmp2) compare_double2, 0, NULL, NULL); }
+		compare_double2, 0, NULL, NULL); }
 
   void	 add();
   void	 get_opt_type(String*, ha_rows);
@@ -244,7 +240,7 @@ public:
   field_longlong(Item* a, Query_result_analyse* b) :field_info(a,b),
     min_arg(0), max_arg(0), sum(0), sum_sqr(0)
     { init_tree(&tree, 0, 0, sizeof(longlong),
-		(qsort_cmp2) compare_longlong2, 0, NULL, NULL); }
+		compare_longlong2, 0, NULL, NULL); }
 
   void	 add();
   void	 get_opt_type(String*, ha_rows);
@@ -289,7 +285,7 @@ public:
   field_ulonglong(Item* a, Query_result_analyse * b) :field_info(a,b),
     min_arg(0), max_arg(0), sum(0),sum_sqr(0)
     { init_tree(&tree, 0, 0, sizeof(ulonglong),
-		(qsort_cmp2) compare_ulonglong2, 0, NULL, NULL); }
+		compare_ulonglong2, 0, NULL, NULL); }
   void	 add();
   void	 get_opt_type(String*, ha_rows);
   String *get_min_arg(String *s) { s->set(min_arg,my_thd_charset); return s; }
@@ -330,22 +326,24 @@ public:
 
 class Query_result_analyse : public Query_result_send
 {
-  Query_result *result; //< real output stream
-  
-  Item_proc    *func_items[10]; //< items for output metadata and column data
-  List<Item>   result_fields; //< same as func_items but capable for send_data()
-  field_info   **f_info, **f_end; //< bounds for column data accumulator array
-  
-  ha_rows      rows; //< counter of original SELECT query output rows
-  size_t       output_str_length; //< max.width for the Optimal_fieldtype column
+  Query_result *result; ///< real output stream
+
+  Item_proc    *func_items[10]; ///< items for output metadata and column data
+  List<Item>   result_fields; ///< same as func_items but capable for send_data()
+  field_info   **f_info, **f_end; ///< bounds for column data accumulator array
+
+  ha_rows      rows; ///< counter of original SELECT query output rows
+  size_t       output_str_length; ///< max.width for the Optimal_fieldtype column
 
 public:
-  const uint max_tree_elements; //< maximum number of distinct values per column
-  const uint max_treemem; //< maximum amount of memory to allocate per column
+  const uint max_tree_elements; ///< maximum number of distinct values per column
+  const uint max_treemem; ///< maximum amount of memory to allocate per column
 
 public:
-  Query_result_analyse(Query_result *result, const Proc_analyse_params *params)
-  : result(result), f_info(NULL), f_end(NULL), rows(0), output_str_length(0),
+  Query_result_analyse(THD *thd, Query_result *result,
+                     const Proc_analyse_params *params)
+  : Query_result_send(thd),
+    result(result), f_info(NULL), f_end(NULL), rows(0), output_str_length(0),
     max_tree_elements(params->max_tree_elements),
     max_treemem(params->max_treemem)
   {}

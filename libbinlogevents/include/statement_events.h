@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -19,7 +19,7 @@
 
   @file statement_events.h
 
-  @brief Contains the classes representing statement events occuring in the
+  @brief Contains the classes representing statement events occurring in the
   replication stream. Each event is represented as a byte sequence with logical
   divisions as event header, event specific data and event footer. The header
   and footer are common to all the events and are represented as two different
@@ -636,7 +636,7 @@ public:
     </pre>
 
     @param buf                Containing the event header and data
-    @param even_len           The length upto which buf contains Query event data
+    @param event_len          The length upto which buf contains Query event data
     @param description_event  FDE specific to the binlog version
 
     @param event_type         Required to determine whether the event type is
@@ -790,7 +790,7 @@ public:
   };
 
   /**
-    This constructor will initialize the instance variablesi and the type_code,
+    This constructor will initialize the instance variables and the type_code,
     it will be used only by the server code.
   */
   User_var_event(const char *name_arg, unsigned int name_len_arg, char *val_arg,
@@ -824,7 +824,7 @@ public:
     </pre>
 
     @param buf                Contains the serialized event.
-    @param length             Length of the serialized event.
+    @param event_len          Length of the serialized event.
     @param description_event  An FDE event, used to get the
                               following information
                               -binlog_version
@@ -847,9 +847,9 @@ public:
 #ifndef HAVE_MYSYS
   void print_event_info(std::ostream& info);
   void print_long_info(std::ostream& info);
-  const char* get_value_type_string(enum Value_type type) const
+  const char* get_value_type_string(enum Value_type type_arg) const
   {
-    switch(type)
+    switch(type_arg)
     {
       case STRING_TYPE:return "String";
       case REAL_TYPE:return "Real";

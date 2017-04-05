@@ -28,14 +28,16 @@
 #endif
 
 #include "ngs_common/protocol_protobuf.h"
+#include <boost/scoped_ptr.hpp>
 #include "mysqlx_resultset.h"
 #include "mysqlx_protocol.h"
+#include "mysqlx_crud.h"
 #include "mysqlx_row.h"
 #include "mysqlx_error.h"
 
 #include "my_config.h"
 
-#include "ngs_common/bind.h"
+#include <boost/bind.hpp>
 #if __GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 6)
 #pragma GCC diagnostic pop
 #elif defined _MSC_VER
@@ -66,7 +68,30 @@ static void throw_server_error(const Mysqlx::Error &error)
   throw Error(error.code(), error.msg());
 }
 
-Result::Result(ngs::shared_ptr<XProtocol>owner, bool expect_data, bool expect_ok)
+
+Document::Document()
+{
+  m_expression = false;
+}
+
+Document::Document(const std::string &doc, bool expression, const std::string& id)
+  : m_data(new std::string(doc)), m_expression(expression), m_id(id)
+{
+}
+
+Document::Document(const Document &doc)
+  : m_data(doc.m_data), m_expression(doc.m_expression), m_id(doc.m_id)
+{
+}
+
+void Document::reset(const std::string &doc, bool expression, const std::string &id)
+{
+  m_data.reset(new std::string(doc));
+  m_expression = expression;
+  m_id = id;
+}
+
+Result::Result(boost::shared_ptr<XProtocol>owner, bool expect_data, bool expect_ok)
 : current_message(NULL), m_owner(owner), m_last_insert_id(-1), m_affected_rows(-1),
   m_result_index(0), m_state(expect_data ? ReadMetadataI :  expect_ok ? ReadStmtOkI : ReadDone), m_buffered(false), m_buffering(false)
 {
@@ -86,7 +111,7 @@ Result::~Result()
   delete current_message;
 }
 
-ngs::shared_ptr<std::vector<ColumnMetadata> > Result::columnMetadata()
+boost::shared_ptr<std::vector<ColumnMetadata> > Result::columnMetadata()
 {
   // If cached, works with the cache data
   if (m_buffered)
@@ -193,11 +218,11 @@ int Result::get_message_id()
     return current_message_id;
   }
 
-  ngs::shared_ptr<XProtocol>owner = m_owner.lock();
+  boost::shared_ptr<XProtocol>owner = m_owner.lock();
 
   if (owner)
   {
-    owner->push_local_notice_handler(ngs::bind(&Result::handle_notice, this, ngs::placeholders::_1, ngs::placeholders::_2));
+    owner->push_local_notice_handler(boost::bind(&Result::handle_notice, this, _1, _2));
 
     try
     {
@@ -420,16 +445,16 @@ void Result::read_metadata()
     if (msgid == Mysqlx::ServerMessages::RESULTSET_COLUMN_META_DATA)
     {
       msgid = -1;
-      ngs::unique_ptr<Mysqlx::Resultset::ColumnMetaData> column_data(static_cast<Mysqlx::Resultset::ColumnMetaData*>(pop_message()));
+      boost::scoped_ptr<Mysqlx::Resultset::ColumnMetaData> column_data(static_cast<Mysqlx::Resultset::ColumnMetaData*>(pop_message()));
 
       m_columns->push_back(unwrap_column_metadata(*column_data));
     }
   }
 }
 
-ngs::shared_ptr<Row> Result::read_row()
+boost::shared_ptr<Row> Result::read_row()
 {
-  ngs::shared_ptr<Row> ret_val;
+  boost::shared_ptr<Row> ret_val;
 
   if (m_state != ReadRows)
     throw std::logic_error("read_row() called at wrong time");
@@ -466,7 +491,7 @@ void Result::read_stmt_ok()
   if (Mysqlx::ServerMessages::SQL_STMT_EXECUTE_OK != get_message_id())
     throw std::runtime_error("Unexpected message id");
 
-  ngs::unique_ptr<mysqlx::Message> msg(pop_message());
+  boost::scoped_ptr<mysqlx::Message> msg(pop_message());
 }
 
 bool Result::rewind()
@@ -568,9 +593,9 @@ bool Result::nextDataSet()
   return false;
 }
 
-ngs::shared_ptr<Row> Result::next()
+boost::shared_ptr<Row> Result::next()
 {
-  ngs::shared_ptr<Row> ret_val;
+  boost::shared_ptr<Row> ret_val;
 
   if (m_buffered)
     ret_val = m_current_result->next();
@@ -632,19 +657,19 @@ Result& Result::buffer()
   return *this;
 }
 
-ResultData::ResultData(ngs::shared_ptr<std::vector<ColumnMetadata> > columns) :
+ResultData::ResultData(boost::shared_ptr<std::vector<ColumnMetadata> > columns) :
 m_columns(columns), m_row_index(0)
 {
 }
 
-void ResultData::add_row(ngs::shared_ptr<Row> row)
+void ResultData::add_row(boost::shared_ptr<Row> row)
 {
   m_rows.push_back(row);
 }
 
-ngs::shared_ptr<Row> ResultData::next()
+boost::shared_ptr<Row> ResultData::next()
 {
-  ngs::shared_ptr<Row> ret_val;
+  boost::shared_ptr<Row> ret_val;
 
   if (m_row_index < m_rows.size())
     ret_val = m_rows[m_row_index++];
@@ -670,7 +695,7 @@ void ResultData::seek(size_t record)
     m_row_index = record;
 }
 
-Row::Row(ngs::shared_ptr<std::vector<ColumnMetadata> > columns, Mysqlx::Resultset::Row *data)
+Row::Row(boost::shared_ptr<std::vector<ColumnMetadata> > columns, Mysqlx::Resultset::Row *data)
 : m_columns(columns), m_data(data)
 {
 }

@@ -22,8 +22,11 @@
 #ifndef  HASH_FILO_H
 #define  HASH_FILO_H
 
-#include "hash.h"        /* my_hash_get_key, my_hash_free_key, HASH */
-#include "mysqld.h"      /* key_hash_filo_lock */
+#include "hash.h"        /* hash_get_key_function, my_hash_free_key, HASH */
+
+#ifdef HAVE_PSI_INTERFACE
+extern PSI_mutex_key key_hash_filo_lock;
+#endif // HAVE_PSI_INTERFACE
 
 struct hash_filo_element
 {
@@ -44,11 +47,11 @@ class hash_filo
 {
 private:
   PSI_memory_key m_psi_key;
-  const uint key_offset, key_length;
-  const my_hash_get_key get_key;
+  const uint key_length;
+  const hash_get_key_function get_key;
   /** Size of this hash table. */
   uint m_size;
-  my_hash_free_key free_element;
+  hash_free_element_function free_element;
   CHARSET_INFO *hash_charset;
 
   hash_filo_element *first_link,*last_link;
@@ -57,11 +60,12 @@ public:
   HASH cache;
 
   hash_filo(PSI_memory_key psi_key,
-            uint size, uint key_offset_arg , uint key_length_arg,
-	    my_hash_get_key get_key_arg, my_hash_free_key free_element_arg,
+            uint size, uint key_length_arg,
+	    hash_get_key_function get_key_arg,
+            hash_free_element_function free_element_arg,
 	    CHARSET_INFO *hash_charset_arg)
     : m_psi_key(psi_key),
-    key_offset(key_offset_arg), key_length(key_length_arg),
+    key_length(key_length_arg),
     get_key(get_key_arg), m_size(size),
     free_element(free_element_arg),
     hash_charset(hash_charset_arg),
@@ -85,7 +89,7 @@ public:
     first_link= NULL;
     last_link= NULL;
     my_hash_free(&cache);
-    (void) my_hash_init(&cache, hash_charset, m_size, key_offset,
+    (void) my_hash_init(&cache, hash_charset, m_size,
                         key_length, get_key, free_element, 0, m_psi_key);
     if (!locked)
       mysql_mutex_unlock(&lock);

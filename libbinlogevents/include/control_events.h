@@ -131,7 +131,7 @@ public:
     </pre>
 
     @param buf                Contains the serialized event.
-    @param length             Length of the serialized event.
+    @param event_len          Length of the serialized event.
     @param description_event  An FDE event, used to get the
                               following information
                               -binlog_version
@@ -264,6 +264,7 @@ public:
     </pre>
 
     @param buf                Contains the serialized event.
+    @param event_len          Length of the serialized event.
     @param description_event  An FDE event, used to get the
                               following information
                               -binlog_version
@@ -395,7 +396,7 @@ public:
           +=====================================+
     </pre>
     @param buf                Contains the serialized event.
-    @param length             Length of the serialized event.
+    @param event_len          Length of the serialized event.
     @param description_event  An FDE event, used to get the
                               following information
                               -binlog_version
@@ -563,7 +564,7 @@ public:
     databases to be resynchronized.
 
     @param buf                Contains the serialized event.
-    @param length             Length of the serialized event.
+    @param event_len          Length of the serialized event.
     @param description_event  An FDE event, used to get the
                               following information
                               -binlog_version
@@ -641,7 +642,7 @@ public:
                               The content of this object
                               depends on the binlog-version currently in use.
   */
-  Xid_event(const char *buf, const Format_description_event *fde);
+  Xid_event(const char *buf, const Format_description_event *description_event);
   uint64_t xid;
 #ifndef HAVE_MYSYS
   void print_event_info(std::ostream& info);
@@ -729,7 +730,7 @@ public:
     An XID event is generated for a commit of a transaction that modifies one or
     more tables of an XA-capable storage engine
     @param buf    Contains the serialized event.
-    @param fde    An FDE event, used to get the following information
+    @param description_event    An FDE event, used to get the following information
                      -binlog_version
                      -server_version
                      -post_header_len
@@ -737,7 +738,7 @@ public:
                      The content of this object
                      depends on the binlog-version currently in use.
   */
-  XA_prepare_event(const char *buf, const Format_description_event *fde);
+  XA_prepare_event(const char *buf, const Format_description_event *description_event);
 #ifndef HAVE_MYSYS
   /*
     todo: we need to find way how to exploit server's code of
@@ -854,11 +855,12 @@ struct gtid_info
     <th>Description</th>
   </tr>
   <tr>
-    <td>byte</th>
-    <td>unsigned char array</th>
+    <td>byte</td>
+    <td>unsigned char array</td>
     <td>This stores the Uuid of the server on which transaction
-        is originated</th>
+        is originated</td>
   </tr>
+  </table>
 */
 
 struct Uuid
@@ -880,19 +882,63 @@ struct Uuid
   bool equals(const Uuid &other) const
   { return memcmp(bytes, other.bytes, BYTE_LENGTH) == 0; }
   /**
-    Return true if parse() would return succeed, but don't actually
-    store the result anywhere.
+    Returns true if parse() would succeed, but doesn't store the result.
+
+     @param string String that needs to be checked.
+     @param len    Length of that string.
+
+     @retval true  valid string.
+     @retval false invalid string.
   */
-  static bool is_valid(const char *string);
+  static bool is_valid(const char *string, size_t len);
 
   /**
-    Stores the UUID represented by a string on the form
-    XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX in this object.
+    Stores the UUID represented by a string of the form
+    XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX or
+    XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX or
+    {XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}
+    in this object.
 
-     @return  0   success.
-             >0   failure
+     @param string String to be parsed and stored.
+     @param len    Length of that string.
+
+     @retval   0   success.
+     @retval  >0   failure.
   */
-  int parse(const char *string);
+  int parse(const char *string, size_t len);
+
+  /**
+    Parses the UUID passed as argument in in_string and functions and writes
+    the binary representation in out_binary_string.
+    Depends on UUID's read_section method and the constants for text length.
+
+     @param[in] in_string           String to be parsed.
+     @param[in] len                 Length of that string.
+     @param[out] out_binary_string  String where the binary UUID will be stored
+
+     @retval   0   success.
+     @retval  >0   failure.
+  */
+  static int parse(const char *in_string, size_t len,
+                   const unsigned char *out_binary_string);
+  /**
+    Helper method used to validate and parse one section of a uuid.
+    If the last parameter, out_binary_str, is NULL then the function will
+    just validate the section.
+
+     @param[in]      section_len      Length of the section to be parsed.
+     @param[in,out]  section_str      Pointer to a string containing the
+                                      section. It will be updated during the
+                                      execution as the string is parsed.
+     @param[out]     out_binary_str   String where the section will be stored
+                                      in binary format. If null, the function
+                                      will just validate the input string.
+
+     @retval  false   success.
+     @retval  true    failure.
+  */
+  static bool read_section(int section_len, const char **section_str,
+                           const unsigned char **out_binary_str);
   /** The number of bytes in the data of a Uuid. */
   static const size_t BYTE_LENGTH= 16;
   /** The data for this Uuid. */
@@ -937,8 +983,6 @@ struct Uuid
         (file, offset)
 
   @section Gtid_event_binary_format Binary Format
-
-  @todo
 */
 class Gtid_event: public Binary_log_event
 {
@@ -962,7 +1006,7 @@ public:
 
     @param buffer             Contains the serialized event.
     @param event_len          Length of the serialized event.
-    @param description_event  An FDE event, used to get the
+    @param descr_event        An FDE event, used to get the
                               following information
                               -binlog_version
                               -server_version
@@ -1059,9 +1103,9 @@ public:
     | Gtids executed in the last binary log file |
     +--------------------------------------------+
     </pre>
-    @param buffer             Contains the serialized event.
+    @param buf                Contains the serialized event.
     @param event_len          Length of the serialized event.
-    @param description_event  An FDE event, used to get the
+    @param descr_event        An FDE event, used to get the
                               following information
                               -binlog_version
                               -server_version
@@ -1106,7 +1150,7 @@ protected:
 
   <tr>
     <td>thread_id</td>
-    <td>4 byte integer</td>
+    <td>unsigned 8 byte integer</td>
     <td>The identifier for the thread executing the transaction.</td>
   </tr>
 
@@ -1156,9 +1200,9 @@ public:
     The buffer layout is as follows
     </pre>
 
-    @param buf                Contains the serialized event.
+    @param buffer             Contains the serialized event.
     @param event_len          Length of the serialized event.
-    @param descr_event        An FDE event, used to get the
+    @param description_event  An FDE event, used to get the
                               following information
                               -binlog_version
                               -server_version
@@ -1167,8 +1211,8 @@ public:
                               The content of this object
                               depends on the binlog-version currently in use.
   */
-  Transaction_context_event(const char *buf, unsigned int event_len,
-                            const Format_description_event *descr_event);
+  Transaction_context_event(const char *buffer, unsigned int event_len,
+                            const Format_description_event *description_event);
 
   Transaction_context_event(unsigned int thread_id_arg,
                             bool is_gtid_specified_arg)
@@ -1178,7 +1222,7 @@ public:
 
   virtual ~Transaction_context_event();
 
-  static const char *read_data_set(const char *pos, uint32_t set_len,
+  static const char *read_data_set(const char *pos, uint16_t set_len,
                                    std::list<const char*> *set);
 
   static void clear_set(std::list<const char*> *set);
@@ -1190,7 +1234,10 @@ public:
 
 protected:
   const char *server_uuid;
-  uint32_t thread_id;
+  // Despite thread_id is 32 bits size maximum, to keep compatibility
+  // with MySQL 5.7 Transaction_context_event, which encodes it as a
+  // 64 bits integer, we use the same 64 bits size.
+  uint64_t thread_id;
   bool gtid_specified;
   const unsigned char *encoded_snapshot_version;
   uint32_t encoded_snapshot_version_length;
@@ -1202,16 +1249,16 @@ protected:
 
   // 1 byte length.
   static const int ENCODED_SERVER_UUID_LEN_OFFSET= 0;
-  // 4 bytes length.
+  // 8 bytes length.
   static const int ENCODED_THREAD_ID_OFFSET= 1;
   // 1 byte length.
-  static const int ENCODED_GTID_SPECIFIED_OFFSET= 5;
+  static const int ENCODED_GTID_SPECIFIED_OFFSET= 9;
   // 4 bytes length
-  static const int ENCODED_SNAPSHOT_VERSION_LEN_OFFSET= 6;
-  // 4 bytes length.
-  static const int ENCODED_WRITE_SET_ITEMS_OFFSET= 10;
-  // 4 bytes length.
-  static const int ENCODED_READ_SET_ITEMS_OFFSET=  14;
+  static const int ENCODED_SNAPSHOT_VERSION_LEN_OFFSET= 10;
+  // 2 bytes length.
+  static const int ENCODED_WRITE_SET_ITEMS_OFFSET= 14;
+  // 2 bytes length.
+  static const int ENCODED_READ_SET_ITEMS_OFFSET=  16;
 
   // The values mentioned on the next class's constants is the length of the
   // data that will be copied in the buffer.

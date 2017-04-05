@@ -89,12 +89,16 @@ support cross-platform development and expose comonly used SQL names. */
 
 # include <my_global.h>
 # include <my_thread.h>
-
-# ifndef UNIV_INNOCHECKSUM
-#  include <m_string.h>
-#  include <mysqld_error.h>
-# endif /* !UNIV_INNOCHECKSUM */
+# include <m_string.h>
+# include <mysqld_error.h>
 #endif /* !UNIV_HOTBACKUP  */
+
+#ifdef HAVE_PSI_INTERFACE
+
+/** Define for performance schema registration key */
+using mysql_pfs_key_t = unsigned int;
+
+#endif /* HAVE_PFS_INTERFACE */
 
 /* Include <sys/stat.h> to get S_I... macros defined for os0file.cc */
 #include <sys/stat.h>
@@ -120,20 +124,30 @@ support cross-platform development and expose comonly used SQL names. */
 /* Following defines are to enable performance schema
 instrumentation in each of five InnoDB modules if
 HAVE_PSI_INTERFACE is defined. */
-#if defined(HAVE_PSI_INTERFACE) && !defined(UNIV_HOTBACKUP)
+#if defined(HAVE_PSI_INTERFACE) && !defined(UNIV_LIBRARY)
+#ifdef HAVE_PSI_MUTEX_INTERFACE
 # define UNIV_PFS_MUTEX
+#endif /* HAVE_PSI_MUTEX_INTERFACE */
+
+#ifdef HAVE_PSI_RWLOCK_INTERFACE
 # define UNIV_PFS_RWLOCK
+#endif /* HAVE_PSI_RWLOCK_INTERFACE */
+
 /* For I/O instrumentation, performance schema rely
 on a native descriptor to identify the file, this
 descriptor could conflict with our OS level descriptor.
 Disable IO instrumentation on Windows until this is
 resolved */
+#ifdef HAVE_PSI_FILE_INTERFACE
 # ifndef _WIN32
 #  define UNIV_PFS_IO
 # endif
-# define UNIV_PFS_THREAD
+#endif /* HAVE_PSI_FILE_INTERFACE */
 
-# include "mysql/psi/psi.h" /* HAVE_PSI_MEMORY_INTERFACE */
+#ifdef HAVE_PSI_THREAD_INTERFACE
+# define UNIV_PFS_THREAD
+#endif /* HAVE_PSI_THREAD_INTERFACE */
+
 # ifdef HAVE_PSI_MEMORY_INTERFACE
 #  define UNIV_PFS_MEMORY
 # endif /* HAVE_PSI_MEMORY_INTERFACE */
@@ -150,6 +164,10 @@ be excluded from instrumentation. */
 /* For PSI_MUTEX_CALL() and similar. */
 #include "pfs_thread_provider.h"
 #include "mysql/psi/mysql_thread.h"
+#include "pfs_mutex_provider.h"
+#include "mysql/psi/mysql_mutex.h"
+#include "pfs_rwlock_provider.h"
+#include "mysql/psi/mysql_rwlock.h"
 /* For PSI_FILE_CALL(). */
 #include "pfs_file_provider.h"
 #include "mysql/psi/mysql_file.h"
@@ -187,6 +205,13 @@ command. */
 #if defined HAVE_VALGRIND
 # define UNIV_DEBUG_VALGRIND
 #endif /* HAVE_VALGRIND */
+
+#ifdef DBUG_OFF
+# undef UNIV_DEBUG
+#elif !defined UNIV_DEBUG
+# define UNIV_DEBUG
+#endif
+
 #if 0
 #define UNIV_DEBUG_VALGRIND			/* Enable extra
 						Valgrind instrumentation */
@@ -198,8 +223,6 @@ command. */
 						debugging without UNIV_DEBUG */
 #define UNIV_BLOB_LIGHT_DEBUG			/* Enable off-page column
 						debugging without UNIV_DEBUG */
-#define UNIV_DEBUG				/* Enable ut_ad() assertions
-						and disable UNIV_INLINE */
 #define UNIV_DEBUG_LOCK_VALIDATE		/* Enable
 						ut_ad(lock_rec_validate_page())
 						assertions. */
@@ -257,19 +280,7 @@ rarely invoked function for size instead for speed. */
 # define UNIV_COLD /* empty */
 #endif
 
-#ifndef UNIV_MUST_NOT_INLINE
-/* Definition for inline version */
-
 #define UNIV_INLINE static inline
-
-#else /* !UNIV_MUST_NOT_INLINE */
-/* If we want to compile a noninlined version we use the following macro
-definitions: */
-
-#define UNIV_NONINL
-#define UNIV_INLINE
-
-#endif /* !UNIV_MUST_NOT_INLINE */
 
 #ifdef _WIN32
 # ifdef _WIN64
@@ -290,30 +301,6 @@ management to ensure correct alignment for doubles etc. */
 			DATABASE VERSION CONTROL
 			========================
 */
-
-/** There are currently two InnoDB file formats which are used to group
-features with similar restrictions and dependencies. Using an enum allows
-switch statements to give a compiler warning when a new one is introduced. */
-enum innodb_file_formats_enum {
-	/** Antelope File Format: InnoDB/MySQL up to 5.1.
-	This format includes REDUNDANT and COMPACT row formats */
-	UNIV_FORMAT_A		= 0,
-
-	/** Barracuda File Format: Introduced in InnoDB plugin for 5.1:
-	This format includes COMPRESSED and DYNAMIC row formats.  It
-	includes the ability to create secondary indexes from data that
-	is not on the clustered index page and the ability to store more
-	data off the clustered index page. */
-	UNIV_FORMAT_B		= 1
-};
-
-typedef enum innodb_file_formats_enum innodb_file_formats_t;
-
-/** Minimum supported file format */
-#define UNIV_FORMAT_MIN		UNIV_FORMAT_A
-
-/** Maximum supported file format */
-#define UNIV_FORMAT_MAX		UNIV_FORMAT_B
 
 /** The 2-logarithm of UNIV_PAGE_SIZE: */
 #define UNIV_PAGE_SIZE_SHIFT	srv_page_size_shift
@@ -408,8 +395,13 @@ mysql_com.h if you are to use this macro. */
 
 /** The maximum length in bytes that a table name can occupy when stored in
 UTF8, including the terminating '\0', see dict_fs2utf8(). You must include
-mysql_com.h if you are to use this macro. */
-#define MAX_TABLE_UTF8_LEN	(NAME_LEN + sizeof(srv_mysql50_table_name_prefix))
+mysql_com.h if you are to use this macro. NAME_LEN is multiplied by 3 because
+when partitioning is used a table name from InnoDB point of view could be
+table_name#P#partition_name#SP#subpartition_name where each of the 3 names can
+be up to NAME_LEN. So the maximum is:
+NAME_LEN + strlen(#P#) + NAME_LEN + strlen(#SP#) + NAME_LEN + strlen(\0).
+This macro only applies to table name, without any database name prefixed. */
+#define MAX_TABLE_UTF8_LEN	(NAME_LEN * 3 + sizeof("#P##SP#"))
 
 /*
 			UNIVERSAL TYPE DEFINITIONS
@@ -422,7 +414,9 @@ mysql_com.h if you are to use this macro. */
 /* Another basic type we use is unsigned long integer which should be equal to
 the word size of the machine, that is on a 32-bit platform 32 bits, and on a
 64-bit platform 64 bits. We also give the printf format for the type as a
-macro ULINTPF. */
+macro ULINTPF. We also give the printf format suffix (without '%') macro
+ULINTPFS, this one can be useful if we want to put something between % and
+lu/llu, like in %03lu. */
 
 #ifdef _WIN32
 /* Use the integer types and formatting strings defined in Visual Studio. */
@@ -445,12 +439,14 @@ typedef uint32_t ib_uint32_t;
 #ifdef _WIN64
 typedef unsigned __int64	ulint;
 typedef __int64			lint;
-# define ULINTPF		UINT64PF
+# define ULINTPFS		"llu"
 #else
 typedef unsigned long int	ulint;
 typedef long int		lint;
-# define ULINTPF		"%lu"
+# define ULINTPFS		"lu"
 #endif /* _WIN64 */
+
+#define ULINTPF			"%" ULINTPFS
 
 #ifndef _WIN32
 #if SIZEOF_LONG != SIZEOF_VOIDP
@@ -480,6 +476,15 @@ typedef long int		lint;
 /** The generic InnoDB system object identifier data type */
 typedef ib_uint64_t		ib_id_t;
 #define IB_ID_MAX		IB_UINT64_MAX
+
+/** Page number */
+typedef uint32			page_no_t;
+/** Tablespace identifier */
+typedef uint32			space_id_t;
+
+#define SPACE_ID_PF UINT32PF
+#define PAGE_NO_PF UINT32PF
+#define PAGE_ID_PF "page " SPACE_ID_PF ":" PAGE_NO_PF
 
 /** This 'ibool' type is used within Innobase. Remember that different included
 headers may define 'bool' differently. Do not assume that 'bool' is a ulint! */
@@ -576,15 +581,13 @@ functions. */
 
 #ifdef _WIN32
 typedef ulint os_thread_ret_t;
-# define OS_THREAD_DUMMY_RETURN		return(0)
 # define OS_PATH_SEPARATOR		'\\'
 # define OS_PATH_SEPARATOR_ALT		'/'
 #else
 typedef void* os_thread_ret_t;
-# define OS_THREAD_DUMMY_RETURN		return(NULL)
 # define OS_PATH_SEPARATOR		'/'
 # define OS_PATH_SEPARATOR_ALT		'\\'
-#endif
+#endif /* _WIN32 */
 
 #include <stdio.h>
 #include "db0err.h"

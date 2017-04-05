@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2016, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -27,7 +27,7 @@
 */
 
 /**
-  @addtogroup Performance_schema_buffers
+  @addtogroup performance_schema_buffers
   @{
 */
 
@@ -59,6 +59,13 @@ void PFS_connection_slice::reset_transactions_stats()
 {
   PFS_transaction_stat *stat=
                     &m_instr_class_transactions_stats[GLOBAL_TRANSACTION_INDEX];
+  if (stat)
+    stat->reset();
+}
+
+void PFS_connection_slice::reset_errors_stats()
+{
+  PFS_error_stat *stat=  &m_instr_class_errors_stats[GLOBAL_ERROR_INDEX];
   if (stat)
     stat->reset();
 }

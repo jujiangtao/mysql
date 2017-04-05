@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2011, 2016, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -16,6 +16,11 @@
 #ifndef TABLE_USERS_H
 #define TABLE_USERS_H
 
+/**
+  @file storage/perfschema/table_users.h
+  TABLE USERS.
+*/
+
 #include "pfs_column_types.h"
 #include "cursor_by_user.h"
 #include "table_helper.h"
@@ -23,7 +28,7 @@
 struct PFS_user;
 
 /**
-  \addtogroup Performance_schema_tables
+  @addtogroup performance_schema_tables
   @{
 */
 
@@ -36,6 +41,22 @@ struct row_users
   PFS_user_row m_user;
   /** Columns CURRENT_CONNECTIONS, TOTAL_CONNECTIONS. */
   PFS_connection_stat_row m_connection_stat;
+};
+
+class PFS_index_users_by_user : public PFS_index_users
+{
+public:
+  PFS_index_users_by_user()
+    : PFS_index_users(&m_key), m_key("USER")
+  {}
+
+  ~PFS_index_users_by_user()
+  {}
+
+  virtual bool match(PFS_user *pfs);
+
+private:
+  PFS_key_user m_key;
 };
 
 /** Table PERFORMANCE_SCHEMA.USERS. */
@@ -61,6 +82,8 @@ protected:
 public:
   ~table_users()
   {}
+
+  int index_init(uint idx, bool sorted);
 
 private:
   virtual void make_row(PFS_user *pfs);

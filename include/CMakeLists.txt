@@ -18,7 +18,6 @@ ${CMAKE_CURRENT_BINARY_DIR}/mysql_version.h
 ${CMAKE_CURRENT_BINARY_DIR}/my_config.h
 ${CMAKE_CURRENT_BINARY_DIR}/mysqld_ername.h
 ${CMAKE_CURRENT_BINARY_DIR}/mysqld_error.h
-${CMAKE_CURRENT_BINARY_DIR}/sql_state.h
 )
 SET(HEADERS_ABI 
   mysql.h 
@@ -42,7 +41,6 @@ SET(HEADERS
   m_string.h
   my_sys.h 
   my_xml.h
-  mysql_embed.h
   my_thread.h
   my_thread_local.h
   decimal.h

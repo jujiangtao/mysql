@@ -68,7 +68,7 @@ int sha256_password_deinit(void)
   @return Pointer to the RSA public key storage buffer
 */
 
-RSA *rsa_init(MYSQL *mysql)
+static RSA *rsa_init(MYSQL *mysql)
 {
   static RSA *g_public_key= NULL;
   RSA *key= NULL;
@@ -84,7 +84,7 @@ RSA *rsa_init(MYSQL *mysql)
 
   if (mysql->options.extension != NULL &&
       mysql->options.extension->server_public_key_path != NULL &&
-      mysql->options.extension->server_public_key_path != '\0')
+      mysql->options.extension->server_public_key_path[0] != '\0')
   {
     pub_key_file= fopen(mysql->options.extension->server_public_key_path,
                         "r");
@@ -263,7 +263,7 @@ int sha256_password_auth_client(MYSQL_PLUGIN_VIO *vio, MYSQL *mysql)
         DBUG_RETURN(CR_ERROR);
 #else
       set_mysql_extended_error(mysql, CR_AUTH_PLUGIN_ERR, unknown_sqlstate,
-                                ER(CR_AUTH_PLUGIN_ERR), "sha256_password",
+                                ER_CLIENT(CR_AUTH_PLUGIN_ERR), "sha256_password",
                                 "Authentication requires SSL encryption");
       DBUG_RETURN(CR_ERROR); // If no openssl support
 #endif

@@ -26,7 +26,7 @@ namespace ngs
 {
 
 class IOptions_session;
-typedef ngs::shared_ptr<IOptions_session> IOptions_session_ptr;
+typedef boost::shared_ptr<IOptions_session> IOptions_session_ptr;
 
 }  // namespace ngs
 

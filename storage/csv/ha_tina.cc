@@ -41,12 +41,18 @@ TODO:
  -Brian
 */
 
+#include "ha_tina.h"
 #include "my_global.h"
-#include "sql_class.h"                          // SSV
 #include <mysql/plugin.h>
 #include <mysql/psi/mysql_file.h>
-#include "ha_tina.h"
 #include "probes_mysql.h"
+#include "hash.h"
+#include "table.h"
+#include "field.h"
+#include "system_variables.h"
+#include "sql_class.h"
+#include "mysql/psi/mysql_memory.h"
+#include "template_utils.h"
 
 #include <algorithm>
 
@@ -91,8 +97,10 @@ static handler *tina_create_handler(handlerton *hton,
 /*
   Used for sorting chains with qsort().
 */
-int sort_set (tina_set *a, tina_set *b)
+static int sort_set(const void *a_arg, const void *b_arg)
 {
+  const tina_set *a= pointer_cast<const tina_set*>(a_arg);
+  const tina_set *b= pointer_cast<const tina_set*>(b_arg);
   /*
     We assume that intervals do not intersect. So, it is enought to compare
     any two points. Here we take start of intervals for comparison.
@@ -100,9 +108,9 @@ int sort_set (tina_set *a, tina_set *b)
   return ( a->begin > b->begin ? 1 : ( a->begin < b->begin ? -1 : 0 ) );
 }
 
-static uchar* tina_get_key(TINA_SHARE *share, size_t *length,
-                          my_bool not_used MY_ATTRIBUTE((unused)))
+static const uchar* tina_get_key(const uchar *arg, size_t *length)
 {
+  const TINA_SHARE *share= pointer_cast<const TINA_SHARE*>(arg);
   *length=share->table_name_length;
   return (uchar*) share->table_name;
 }
@@ -118,8 +126,8 @@ static PSI_mutex_key csv_key_mutex_tina, csv_key_mutex_TINA_SHARE_mutex;
 
 static PSI_mutex_info all_tina_mutexes[]=
 {
-  { &csv_key_mutex_tina, "tina", PSI_FLAG_GLOBAL},
-  { &csv_key_mutex_TINA_SHARE_mutex, "TINA_SHARE::mutex", 0}
+  { &csv_key_mutex_tina, "tina", PSI_FLAG_GLOBAL, 0},
+  { &csv_key_mutex_TINA_SHARE_mutex, "TINA_SHARE::mutex", 0, 0}
 };
 
 static PSI_file_key csv_key_file_metadata, csv_key_file_data,
@@ -157,6 +165,18 @@ static void init_tina_psi_keys(void)
 }
 #endif /* HAVE_PSI_INTERFACE */
 
+
+/*
+  If frm_error() is called in table.cc this is called to find out what file
+  extensions exist for this handler.
+*/
+static const char *ha_tina_exts[] = {
+  CSV_EXT,
+  CSM_EXT,
+  NullS
+};
+
+
 static int tina_init_func(void *p)
 {
   handlerton *tina_hton;
@@ -167,14 +187,16 @@ static int tina_init_func(void *p)
 
   tina_hton= (handlerton *)p;
   mysql_mutex_init(csv_key_mutex_tina, &tina_mutex, MY_MUTEX_INIT_FAST);
-  (void) my_hash_init(&tina_open_tables,system_charset_info,32,0,0,
-                      (my_hash_get_key) tina_get_key,0,0,
+  (void) my_hash_init(&tina_open_tables,system_charset_info,32,0,
+                      tina_get_key, nullptr, 0,
                       csv_key_memory_tina_share);
   tina_hton->state= SHOW_OPTION_YES;
   tina_hton->db_type= DB_TYPE_CSV_DB;
   tina_hton->create= tina_create_handler;
   tina_hton->flags= (HTON_CAN_RECREATE | HTON_SUPPORT_LOG_TABLES | 
                      HTON_NO_PARTITION);
+  tina_hton->file_extensions= ha_tina_exts;
+  tina_hton->rm_tmp_tables= default_rm_tmp_tables;
   return 0;
 }
 
@@ -462,8 +484,8 @@ static int free_share(TINA_SHARE *share)
   '\r''\n' --  DOS\Windows line ending
 */
 
-my_off_t find_eoln_buff(Transparent_file *data_buff, my_off_t begin,
-                     my_off_t end, int *eoln_len)
+static my_off_t find_eoln_buff(Transparent_file *data_buff, my_off_t begin,
+                               my_off_t end, int *eoln_len)
 {
   *eoln_len= 0;
 
@@ -844,21 +866,6 @@ err:
 }
 
 /*
-  If frm_error() is called in table.cc this is called to find out what file
-  extensions exist for this handler.
-*/
-static const char *ha_tina_exts[] = {
-  CSV_EXT,
-  CSM_EXT,
-  NullS
-};
-
-const char **ha_tina::bas_ext() const
-{
-  return ha_tina_exts;
-}
-
-/*
   Three functions below are needed to enable concurrent insert functionality
   for CSV engine. For more details see mysys/thr_lock.c
 */
@@ -1006,7 +1013,7 @@ int ha_tina::write_row(uchar * buf)
   if (share->crashed)
       DBUG_RETURN(HA_ERR_CRASHED_ON_USAGE);
 
-  ha_statistic_increment(&SSV::ha_write_count);
+  ha_statistic_increment(&System_status_var::ha_write_count);
 
   size= encode_quote(buf);
 
@@ -1068,7 +1075,7 @@ int ha_tina::update_row(const uchar * old_data, uchar * new_data)
   int rc= -1;
   DBUG_ENTER("ha_tina::update_row");
 
-  ha_statistic_increment(&SSV::ha_update_count);
+  ha_statistic_increment(&System_status_var::ha_update_count);
 
   size= encode_quote(new_data);
 
@@ -1112,7 +1119,7 @@ err:
 int ha_tina::delete_row(const uchar * buf)
 {
   DBUG_ENTER("ha_tina::delete_row");
-  ha_statistic_increment(&SSV::ha_delete_count);
+  ha_statistic_increment(&System_status_var::ha_delete_count);
 
   if (chain_append())
     DBUG_RETURN(-1);
@@ -1234,7 +1241,7 @@ int ha_tina::rnd_next(uchar *buf)
     goto end;
   }
 
-  ha_statistic_increment(&SSV::ha_read_rnd_next_count);
+  ha_statistic_increment(&System_status_var::ha_read_rnd_next_count);
 
   current_position= next_position;
 
@@ -1283,7 +1290,7 @@ int ha_tina::rnd_pos(uchar * buf, uchar *pos)
   DBUG_ENTER("ha_tina::rnd_pos");
   MYSQL_READ_ROW_START(table_share->db.str, table_share->table_name.str,
                        FALSE);
-  ha_statistic_increment(&SSV::ha_read_rnd_count);
+  ha_statistic_increment(&System_status_var::ha_read_rnd_count);
   current_position= my_get_ptr(pos,ref_length);
   rc= find_current_row(buf);
   MYSQL_READ_ROW_DONE(rc);
@@ -1367,7 +1374,7 @@ int ha_tina::rnd_end()
       It sorts so that we move the firts blocks to the beginning.
     */
     my_qsort(chain, (size_t)(chain_ptr - chain), sizeof(tina_set),
-             (qsort_cmp)sort_set);
+             sort_set);
 
     my_off_t write_begin= 0, write_end;
 

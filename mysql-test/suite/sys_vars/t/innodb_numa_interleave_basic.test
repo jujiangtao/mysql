@@ -11,3 +11,4 @@ SELECT @@GLOBAL.innodb_numa_interleave;
 
 --error ER_INCORRECT_GLOBAL_LOCAL_VAR
 SELECT @@SESSION.innodb_numa_interleave;
+

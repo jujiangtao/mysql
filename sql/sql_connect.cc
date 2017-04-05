@@ -25,13 +25,17 @@
 #include "m_string.h"                   // my_stpcpy
 #include "probes_mysql.h"               // MYSQL_CONNECTION_START
 #include "auth_common.h"                // SUPER_ACL
+#include "derror.h"                     // ER_THD
 #include "hostname.h"                   // Host_errors
+#include "item_func.h"                  // mqh_used
 #include "log.h"                        // sql_print_information
+#include "psi_memory_key.h"
 #include "mysqld.h"                     // LOCK_user_conn
 #include "sql_audit.h"                  // MYSQL_AUDIT_NOTIFY_CONNECTION_CONNECT
 #include "sql_class.h"                  // THD
 #include "sql_parse.h"                  // sql_command_flags
 #include "sql_plugin.h"                 // plugin_thdvar_cleanup
+#include "template_utils.h"
 
 #include <algorithm>
 #include <string.h>
@@ -102,7 +106,7 @@ int get_or_create_user_conn(THD *thd, const char *user,
     uc->len= temp_len;
     uc->connections= uc->questions= uc->updates= uc->conn_per_hour= 0;
     uc->user_resources= *mqh;
-    uc->reset_utime= thd->thr_create_utime;
+    uc->reset_utime= thd->start_utime;
     if (my_hash_insert(&hash_user_connections, (uchar*) uc))
     {
       /* The only possible error is out of memory, MY_WME sets an error. */
@@ -332,26 +336,28 @@ void release_user_connection(THD *thd)
 
   DBUG_VOID_RETURN;
 }
-
 #endif /* NO_EMBEDDED_ACCESS_CHECKS */
 
+#ifndef NO_EMBEDDED_ACCESS_CHECKS
 /*
   Check for maximum allowable user connections, if the mysqld server is
   started with corresponding variable that is greater then 0.
 */
 
-extern "C" uchar *get_key_conn(user_conn *buff, size_t *length,
-            my_bool not_used MY_ATTRIBUTE((unused)))
+static const uchar *get_key_conn(const uchar *arg, size_t *length)
 {
+  const user_conn *buff= pointer_cast<const user_conn*>(arg);
   *length= buff->len;
   return (uchar*) buff->user;
 }
 
 
-extern "C" void free_user(struct user_conn *uc)
+static void free_user(void *arg)
 {
+  struct user_conn *uc= pointer_cast<user_conn*>(arg);
   my_free(uc);
 }
+#endif
 
 
 void init_max_user_conn(void)
@@ -359,8 +365,8 @@ void init_max_user_conn(void)
 #ifndef NO_EMBEDDED_ACCESS_CHECKS
   (void)
     my_hash_init(&hash_user_connections,system_charset_info,max_connections,
-                 0,0, (my_hash_get_key) get_key_conn,
-                 (my_hash_free_key) free_user, 0,
+                 0, get_key_conn,
+                 free_user, 0,
                  key_memory_user_conn);
 #endif
 }
@@ -374,7 +380,7 @@ void free_max_user_conn(void)
 }
 
 
-void reset_mqh(LEX_USER *lu, bool get_them= 0)
+void reset_mqh(THD *thd, LEX_USER *lu, bool get_them= 0)
 {
 #ifndef NO_EMBEDDED_ACCESS_CHECKS
   mysql_mutex_lock(&LOCK_user_conn);
@@ -392,7 +398,7 @@ void reset_mqh(LEX_USER *lu, bool get_them= 0)
                                                    temp_len)))
     {
       uc->questions=0;
-      get_mqh(temp_user,&temp_user[lu->user.length+1],uc);
+      get_mqh(thd, temp_user,&temp_user[lu->user.length+1],uc);
       uc->updates=0;
       uc->conn_per_hour=0;
     }
@@ -405,7 +411,7 @@ void reset_mqh(LEX_USER *lu, bool get_them= 0)
       USER_CONN *uc=(struct user_conn *)
         my_hash_element(&hash_user_connections, idx);
       if (get_them)
-  get_mqh(uc->user,uc->host,uc);
+  get_mqh(thd, uc->user,uc->host,uc);
       uc->questions=0;
       uc->updates=0;
       uc->conn_per_hour=0;
@@ -496,8 +502,9 @@ static int check_connection(THD *thd)
   uint connect_errors= 0;
   int auth_rc;
   NET *net= thd->get_protocol_classic()->get_net();
-  DBUG_PRINT("info",
-             ("New connection received on %s", vio_description(net->vio)));
+  char desc[VIO_DESCRIPTION_SIZE];
+  vio_description(net->vio, desc);
+  DBUG_PRINT("info", ("New connection received on %s", desc));
 
   thd->set_active_vio(net->vio);
 
@@ -534,7 +541,6 @@ static int check_connection(THD *thd)
                     }
                     );
 
-#ifdef HAVE_IPV6
     DBUG_EXECUTE_IF("vio_peer_addr_fake_ipv6",
                     {
                       struct sockaddr_in6 *sa= (sockaddr_in6 *) &net->vio->remote;
@@ -563,7 +569,6 @@ static int check_connection(THD *thd)
                       peer_rc= 0;
                     }
                     );
-#endif /* HAVE_IPV6 */
 
     /*
     ===========================================================================
@@ -637,7 +642,7 @@ static int check_connection(THD *thd)
            (thd->m_main_security_ctx.host().length ?
               thd->m_main_security_ctx.host().str : "unknown host"),
            (main_sctx_ip.length ? main_sctx_ip.str : "unknown ip")));
-    if (acl_check_host(thd->m_main_security_ctx.host().str, main_sctx_ip.str))
+    if (acl_check_host(thd, thd->m_main_security_ctx.host().str, main_sctx_ip.str))
     {
       /* HOST_CACHE stats updated by acl_check_host(). */
       my_error(ER_HOST_NOT_PRIVILEGED, MYF(0),
@@ -783,14 +788,14 @@ void end_connection(THD *thd)
     {
       Security_context *sctx= thd->security_context();
       LEX_CSTRING sctx_user= sctx->user();
-      sql_print_information(ER(ER_NEW_ABORTING_CONNECTION),
+      sql_print_information(ER_DEFAULT(ER_NEW_ABORTING_CONNECTION),
                             thd->thread_id(),
                             (thd->db().str ? thd->db().str : "unconnected"),
                             sctx_user.str ? sctx_user.str : "unauthenticated",
                             sctx->host_or_ip().str,
                             (thd->get_stmt_da()->is_error() ?
                              thd->get_stmt_da()->message_text() :
-                             ER(ER_UNKNOWN_ERROR)));
+                             ER_DEFAULT(ER_UNKNOWN_ERROR)));
     }
   }
 }
@@ -818,8 +823,7 @@ static void prepare_new_connection_state(THD* thd)
   */
   thd->proc_info= 0;
   thd->set_command(COM_SLEEP);
-  thd->set_time();
-  thd->init_for_queries();
+  thd->init_query_mem_roots();
 
   if (opt_init_connect.length && !(sctx->check_access(SUPER_ACL)))
   {
@@ -830,7 +834,7 @@ static void prepare_new_connection_state(THD* thd)
       ulong packet_length;
       LEX_CSTRING sctx_user= sctx->user();
 
-      sql_print_warning(ER(ER_NEW_ABORTING_CONNECTION),
+      sql_print_warning(ER_DEFAULT(ER_NEW_ABORTING_CONNECTION),
                         thd->thread_id(),
                         thd->db().str ? thd->db().str : "unconnected",
                         sctx_user.str ? sctx_user.str : "unauthenticated",
@@ -862,8 +866,7 @@ static void prepare_new_connection_state(THD* thd)
     }
 
     thd->proc_info=0;
-    thd->set_time();
-    thd->init_for_queries();
+    thd->init_query_mem_roots();
   }
 }
 
@@ -891,7 +894,7 @@ bool thd_prepare_connection(THD *thd)
 
   @param thd        Thread handle.
   @param sql_errno  The error code to send before disconnect.
-  @param server_shutdown Argument passed to the THD's disconnect method.
+  @param server_shutdown True for a server shutdown
   @param generate_event  Generate Audit API disconnect event.
 
   @note
@@ -905,7 +908,6 @@ void close_connection(THD *thd, uint sql_errno,
 
   if (sql_errno)
     net_send_error(thd, sql_errno, ER_DEFAULT(sql_errno));
-
   thd->disconnect(server_shutdown);
 
   MYSQL_CONNECTION_DONE((int) sql_errno, thd->thread_id());
@@ -920,6 +922,7 @@ void close_connection(THD *thd, uint sql_errno,
                        AUDIT_EVENT(MYSQL_AUDIT_CONNECTION_DISCONNECT),
                        sql_errno);
 
+  thd->security_context()->logout();
   DBUG_VOID_RETURN;
 }
 

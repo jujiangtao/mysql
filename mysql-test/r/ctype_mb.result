@@ -31,9 +31,12 @@ t1	CREATE TABLE `t1` (
   `a` char(4) CHARACTER SET utf8 DEFAULT NULL,
   KEY `key_a` (`a`(3))
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
 SHOW KEYS FROM t1;
-Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment
-t1	1	key_a	1	a	A	0	3	NULL	YES	BTREE		
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible
+t1	1	key_a	1	a	A	0	3	NULL	YES	BTREE			YES
 ALTER TABLE t1 CHANGE a a CHAR(4);
 SHOW CREATE TABLE t1;
 Table	Create Table
@@ -41,9 +44,12 @@ t1	CREATE TABLE `t1` (
   `a` char(4) DEFAULT NULL,
   KEY `key_a` (`a`(3))
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
 SHOW KEYS FROM t1;
-Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment
-t1	1	key_a	1	a	A	0	3	NULL	YES	BTREE		
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible
+t1	1	key_a	1	a	A	0	3	NULL	YES	BTREE			YES
 ALTER TABLE t1 CHANGE a a CHAR(4) CHARACTER SET utf8;
 SHOW CREATE TABLE t1;
 Table	Create Table
@@ -51,7 +57,10 @@ t1	CREATE TABLE `t1` (
   `a` char(4) CHARACTER SET utf8 DEFAULT NULL,
   KEY `key_a` (`a`(3))
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
 SHOW KEYS FROM t1;
-Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment
-t1	1	key_a	1	a	A	0	3	NULL	YES	BTREE		
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible
+t1	1	key_a	1	a	A	0	3	NULL	YES	BTREE			YES
 DROP TABLE t1;

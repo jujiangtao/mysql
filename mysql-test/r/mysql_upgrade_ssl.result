@@ -1,10 +1,12 @@
 #
 # Bug#55672 mysql_upgrade dies with internal error 
 #
+mysql.column_stats                                 OK
 mysql.columns_priv                                 OK
+mysql.component                                    OK
 mysql.db                                           OK
+mysql.default_roles                                OK
 mysql.engine_cost                                  OK
-mysql.event                                        OK
 mysql.func                                         OK
 mysql.general_log                                  OK
 mysql.gtid_executed                                OK
@@ -14,11 +16,10 @@ mysql.help_relation                                OK
 mysql.help_topic                                   OK
 mysql.innodb_index_stats                           OK
 mysql.innodb_table_stats                           OK
-mysql.ndb_binlog_index                             OK
 mysql.plugin                                       OK
-mysql.proc                                         OK
 mysql.procs_priv                                   OK
 mysql.proxies_priv                                 OK
+mysql.role_edges                                   OK
 mysql.server_cost                                  OK
 mysql.servers                                      OK
 mysql.slave_master_info                            OK
@@ -42,6 +43,8 @@ DROP TABLE IF EXISTS tmp_user;
 Warnings:
 Note	1051	Unknown table 'test.tmp_user'
 CREATE TEMPORARY TABLE tmp_user AS (SELECT * FROM mysql.user);
+ALTER TABLE mysql.user DROP COLUMN Drop_role_priv;
+ALTER TABLE mysql.user DROP COLUMN Create_role_priv;
 ALTER TABLE mysql.user ADD COLUMN Password
 char(41) character set latin1 collate latin1_bin DEFAULT '' NOT NULL
 AFTER user;
@@ -61,10 +64,12 @@ FLUSH PRIVILEGES;
 #have 5.7 layout thus no need to restore the dropped columns from
 #the begining of the test
 mysql_upgrade: [Warning] Using a password on the command line interface can be insecure.
+mysql.column_stats                                 OK
 mysql.columns_priv                                 OK
+mysql.component                                    OK
 mysql.db                                           OK
+mysql.default_roles                                OK
 mysql.engine_cost                                  OK
-mysql.event                                        OK
 mysql.func                                         OK
 mysql.general_log                                  OK
 mysql.gtid_executed                                OK
@@ -74,11 +79,10 @@ mysql.help_relation                                OK
 mysql.help_topic                                   OK
 mysql.innodb_index_stats                           OK
 mysql.innodb_table_stats                           OK
-mysql.ndb_binlog_index                             OK
 mysql.plugin                                       OK
-mysql.proc                                         OK
 mysql.procs_priv                                   OK
 mysql.proxies_priv                                 OK
+mysql.role_edges                                   OK
 mysql.server_cost                                  OK
 mysql.servers                                      OK
 mysql.slave_master_info                            OK
@@ -98,4 +102,5 @@ sys.sys_config                                     OK
 DROP USER 'user_sha_pass_wp'@'%';
 TRUNCATE TABLE mysql.user;
 INSERT INTO mysql.user SELECT * FROM tmp_user;
+FLUSH PRIVILEGES;
 DROP TABLE tmp_user;

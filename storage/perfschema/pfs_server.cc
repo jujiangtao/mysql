@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2008, 2016, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -42,6 +42,7 @@
 #include "pfs_program.h"
 #include "template_utils.h"
 #include "pfs_prepared_stmt.h"
+#include "pfs_error.h"
 
 PFS_global_param pfs_param;
 
@@ -89,13 +90,47 @@ void pre_initialize_performance_schema()
   THR_PFS_initialized= true;
 }
 
-struct PSI_bootstrap*
-initialize_performance_schema(PFS_global_param *param)
+void set_embedded_performance_schema_param(PFS_global_param *param)
 {
+  memset(param, 0, sizeof(PFS_global_param));
+}
+
+int
+initialize_performance_schema(PFS_global_param *param,
+  PSI_thread_bootstrap ** thread_bootstrap,
+  PSI_mutex_bootstrap ** mutex_bootstrap,
+  PSI_rwlock_bootstrap ** rwlock_bootstrap,
+  PSI_cond_bootstrap ** cond_bootstrap,
+  PSI_file_bootstrap ** file_bootstrap,
+  PSI_socket_bootstrap ** socket_bootstrap,
+  PSI_table_bootstrap ** table_bootstrap,
+  PSI_mdl_bootstrap ** mdl_bootstrap,
+  PSI_idle_bootstrap ** idle_bootstrap,
+  PSI_stage_bootstrap ** stage_bootstrap,
+  PSI_statement_bootstrap ** statement_bootstrap,
+  PSI_transaction_bootstrap ** transaction_bootstrap,
+  PSI_memory_bootstrap ** memory_bootstrap,
+  PSI_error_bootstrap ** error_bootstrap)
+{
+  *thread_bootstrap= NULL;
+  *mutex_bootstrap= NULL;
+  *rwlock_bootstrap= NULL;
+  *cond_bootstrap= NULL;
+  *file_bootstrap= NULL;
+  *socket_bootstrap= NULL;
+  *table_bootstrap= NULL;
+  *mdl_bootstrap= NULL;
+  *idle_bootstrap= NULL;
+  *stage_bootstrap= NULL;
+  *statement_bootstrap= NULL;
+  *transaction_bootstrap= NULL;
+  *memory_bootstrap= NULL;
+  *error_bootstrap= NULL;
+
   if (!THR_PFS_initialized)
   {
     /* Pre-initialization failed. */
-    return NULL;
+    return 1;
   }
 
   pfs_enabled= param->m_enabled;
@@ -142,14 +177,15 @@ initialize_performance_schema(PFS_global_param *param)
       init_digest_hash(param) ||
       init_program(param) ||
       init_program_hash(param) ||
-      init_prepared_stmt(param))
+      init_prepared_stmt(param) ||
+      init_error(param))
   {
     /*
       The performance schema initialization failed.
       Free the memory used, and disable the instrumentation.
     */
     cleanup_performance_schema();
-    return NULL;
+    return 2;
   }
 
   if (param->m_enabled)
@@ -194,11 +230,24 @@ initialize_performance_schema(PFS_global_param *param)
 
   if (param->m_enabled)
   {
-    install_default_setup(&PFS_bootstrap);
-    return &PFS_bootstrap;
+    install_default_setup(& pfs_thread_bootstrap);
+    *thread_bootstrap= & pfs_thread_bootstrap;
+    *mutex_bootstrap= & pfs_mutex_bootstrap;
+    *rwlock_bootstrap= & pfs_rwlock_bootstrap;
+    *cond_bootstrap= & pfs_cond_bootstrap;
+    *file_bootstrap= & pfs_file_bootstrap;
+    *socket_bootstrap= & pfs_socket_bootstrap;
+    *table_bootstrap= & pfs_table_bootstrap;
+    *mdl_bootstrap= & pfs_mdl_bootstrap;
+    *idle_bootstrap= & pfs_idle_bootstrap;
+    *stage_bootstrap= & pfs_stage_bootstrap;
+    *statement_bootstrap= & pfs_statement_bootstrap;
+    *transaction_bootstrap= & pfs_transaction_bootstrap;
+    *memory_bootstrap= & pfs_memory_bootstrap;
+    *error_bootstrap= & pfs_error_bootstrap;
   }
 
-  return NULL;
+  return 0;
 }
 
 static void destroy_pfs_thread(void *key)
@@ -273,6 +322,7 @@ static void cleanup_performance_schema(void)
     find_XXX_class(key)
     will return PSI_NOT_INSTRUMENTED
   */
+  cleanup_error();
   cleanup_program();
   cleanup_prepared_stmt();
   cleanup_sync_class();
@@ -314,6 +364,7 @@ void shutdown_performance_schema(void)
   global_table_lock_class.m_enabled= false;
   global_idle_class.m_enabled= false;
   global_metadata_class.m_enabled= false;
+  global_error_class.m_enabled= false;
   global_transaction_class.m_enabled= false;
 
   cleanup_performance_schema();

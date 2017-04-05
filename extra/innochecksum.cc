@@ -32,35 +32,32 @@
 #include <time.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <iostream>
 #ifdef HAVE_UNISTD_H
 # include <unistd.h>
 #endif
 #include <my_getopt.h>
 #include <m_string.h>
 #include <welcome_copyright_notice.h>	/* ORACLE_WELCOME_COPYRIGHT_NOTICE */
+#include "typelib.h"
+#include "prealloced_array.h"
 
 /* Only parts of these files are included from the InnoDB codebase.
 The parts not included are excluded by #ifndef UNIV_INNOCHECKSUM. */
 
 #include "univ.i"			/* include all of this */
 #include "page0size.h"			/* page_size_t */
-#include "page0zip.h"			/* page_zip_calc_checksum() */
+#include "page0zip.h"
 #include "page0page.h"			/* PAGE_* */
 #include "trx0undo.h"			/* TRX_UNDO_* */
 #include "fut0lst.h"			/* FLST_NODE_SIZE */
-#include "buf0checksum.h"		/* buf_calc_page_*() */
-#include "fil0fil.h"			/* FIL_* */
+#include "buf0checksum.h"
 #include "os0file.h"
+#include "fil0types.h"
 #include "fsp0fsp.h"			/* fsp_flags_get_page_size() &
 					   fsp_flags_get_zip_size() */
 #include "mach0data.h"			/* mach_read_from_4() */
 #include "ut0crc32.h"			/* ut_crc32_init() */
-
-#ifdef UNIV_NONINL
-# include "fsp0fsp.ic"
-# include "mach0data.ic"
-# include "ut0rnd.ic"
-#endif
 
 /* Global variables */
 static bool			verbose;
@@ -72,8 +69,10 @@ static bool			use_end_page;
 static bool			do_one_page;
 /* replaces declaration in srv0srv.c */
 ulong				srv_page_size;
+ulong				srv_page_size_shift;
 page_size_t			univ_page_size(0, 0, false);
 extern ulong			srv_checksum_algorithm;
+
 /* Current page number (0 based). */
 uintmax_t			cur_page_num;
 /* Skip the checksum verification. */
@@ -132,6 +131,9 @@ struct innodb_page_type {
 	int n_fil_page_type_zblob;
 	int n_fil_page_type_other;
 	int n_fil_page_type_zblob2;
+	int n_fil_page_sdi_index;
+	int n_fil_page_sdi_blob;
+	int n_fil_page_sdi_zblob;
 } page_type;
 
 /* Possible values for "--strict-check" for strictly verify checksum
@@ -152,6 +154,57 @@ static TYPELIB innochecksum_algorithms_typelib = {
 	innochecksum_algorithms, NULL
 };
 
+/** Error logging classes. */
+namespace ib {
+	info::~info()
+	{
+		std::cerr << "[INFO] innochecksum: " << m_oss.str()
+			<< std::endl;
+	}
+
+	warn::~warn()
+	{
+		std::cerr << "[WARNING] innochecksum: " <<  m_oss.str()
+			<< std::endl;
+	}
+
+	error::~error()
+	{
+		std::cerr << "[ERROR] innochecksum: " << m_oss.str()
+			<< std::endl;
+	}
+
+	fatal::~fatal()
+	{
+		std::cerr << "[FATAL] innochecksum: " << m_oss.str()
+			<< std::endl;
+		ut_error;
+	}
+}
+
+/** Check that a page_size is correct for InnoDB. If correct, set the
+associated page_size_shift which is the power of 2 for this page size.
+@param[in]	page_isze	page size to evaluate
+@return an associated page_size_shift if valid, 0 if invalid. */
+static
+int
+innodb_page_size_validate(
+	ulong	page_size)
+{
+	ulong	n;
+
+	DBUG_ENTER("innodb_page_size_validate");
+
+	for (n = UNIV_PAGE_SIZE_SHIFT_MIN; n <= UNIV_PAGE_SIZE_SHIFT_MAX;
+	     n++) {
+		if (page_size == (ulong) (1 << n)) {
+			DBUG_RETURN(n);
+		}
+	}
+
+	DBUG_RETURN(0);
+}
+
 /** Get the page size of the filespace from the filespace header.
 @param[in]	buf	buffer used to read the page.
 @return page size */
@@ -170,6 +223,10 @@ get_page_size(
 	} else {
 		srv_page_size = ((UNIV_ZIP_SIZE_MIN >> 1) << ssize);
 	}
+
+	srv_page_size_shift = innodb_page_size_validate(srv_page_size);
+
+	ut_ad(srv_page_size_shift != 0);
 
 	univ_page_size.copy_from(
 		page_size_t(srv_page_size, srv_page_size, false));
@@ -223,6 +280,7 @@ error_message(
  @retval file pointer; file pointer is NULL when error occured.
 */
 
+static
 FILE*
 open_file(
 	const char*	name)
@@ -293,24 +351,27 @@ open_file(
 	return (fil_in);
 }
 
-/************************************************************//*
- Read the content of file
-
- @param  [in,out]	buf			read the file in buffer
- @param  [in]		partial_page_read	enable when to read the
-						remaining buffer for first page.
- @param  [in]		physical_page_size	Physical/Commpressed page size.
- @param  [in,out]	fil_in			file pointer created for the
-						tablespace.
- @retval no. of bytes read.
+ /** Read the contents of file. If a page is compressed, the page
+is decompressed.
+@param[in,out]	buf			read the file in buffer
+@param[in]	partial_page_read	enable when to read the
+					remaining buffer for first page
+@param[in]	page_size		page size
+@param[in,out]	fil_in			file pointer created for the
+					tablespace
+@retval number of bytes read
 */
+static
 ulong read_file(
-	byte*	buf,
-	bool	partial_page_read,
-	ulong	physical_page_size,
-	FILE*	fil_in)
+	byte*			buf,
+	bool			partial_page_read,
+	const page_size_t&	page_size,
+	FILE*			fil_in)
 {
 	ulong bytes = 0;
+
+	size_t physical_page_size =
+		static_cast<size_t>(page_size.physical());
 
 	DBUG_ASSERT(physical_page_size >= UNIV_ZIP_SIZE_MIN);
 
@@ -322,8 +383,298 @@ ulong read_file(
 
 	bytes += ulong(fread(buf, 1, physical_page_size, fil_in));
 
-	return bytes;
+	if (!page_size.is_compressed()
+	    || mach_read_from_4(buf + FIL_PAGE_OFFSET) < 3) {
+		return(bytes);
+	}
+
+	return(bytes);
 }
+
+/** Class to check if a page is corrupted and print calculated
+checksum values. */
+class InnocheckReporter : public BlockReporter
+{
+public:
+
+	/** Constructor
+	@param[in]	check_lsn	checks lsn of the page with the
+					current lsn (only in recovery)
+	@param[in]	read_buf	buffer holding the page
+	@param[in]	page_size	page size
+	@param[in]	skip_checksum	skip checksum verification
+	@param[in]	strict_check	true if strict checksum option enabled
+	@param[in]	is_log_enabled	true if the log file is passed to
+					innochecksum by user
+	@param[in,out]	log_file	the log file to write checksum values
+					and checksum mismatch messages */
+	InnocheckReporter(
+		bool			check_lsn,
+		const byte*		read_buf,
+		const page_size_t&	page_size,
+		bool			skip_checksum,
+		bool			strict_check,
+		bool			is_log_enabled,
+		FILE*			log_file) :
+		BlockReporter(check_lsn, read_buf, page_size, skip_checksum),
+		m_strict_check(strict_check), m_is_log_enabled(is_log_enabled),
+		m_log_file(log_file)
+	{
+		m_page_no = mach_read_from_4(read_buf + FIL_PAGE_OFFSET);
+	}
+
+	/** Print message if page is empty.
+	@param[in]	empty		true if page is empty */
+	virtual inline
+	void
+	report_empty_page(
+		bool	empty) const
+	{
+		if (empty && m_is_log_enabled) {
+			fprintf(m_log_file, "Page::%" PRIuMAX
+				" is empty and uncorrupted\n",
+				m_page_no);
+		}
+	}
+
+	/** Print crc32 checksum and the checksum fields in page.
+	@param[in]	checksum_field1	Checksum in page header
+	@param[in]	checksum_field2	Checksum in page trailer
+	@param[in]	crc32		Calculated crc32 checksum */
+	virtual inline
+	void
+	print_strict_crc32(
+		ulint				checksum_field1,
+		ulint				checksum_field2,
+		uint32_t			crc32,
+		srv_checksum_algorithm_t	algo) const
+	{
+		if (algo != SRV_CHECKSUM_ALGORITHM_STRICT_CRC32
+		    || !m_is_log_enabled) {
+			return;
+		}
+
+		fprintf(m_log_file, "page::%" PRIuMAX ";"
+			" crc32 calculated = %u;"
+			" recorded checksum field1 = " ULINTPF
+			" recorded checksum field2 = " ULINTPF "\n",
+			m_page_no, crc32,
+			checksum_field1, checksum_field2);
+	}
+
+	/** Print innodb checksum and the checksum fields in page.
+	@param[in]	checksum_field1	Checksum in page header
+	@param[in]	checksum_field2	Checksum in page trailer */
+	virtual inline
+	void
+	print_strict_innodb(
+		ulint	checksum_field1,
+		ulint	checksum_field2) const
+	{
+		if (!m_is_log_enabled) {
+			return;
+		}
+
+		fprintf(m_log_file, "page::%" PRIuMAX ";"
+			" old style: calculated = " ULINTPF
+			"; recorded checksum = " ULINTPF "\n",
+			m_page_no, buf_calc_page_old_checksum(m_read_buf),
+			checksum_field2);
+		fprintf(m_log_file, "page::%" PRIuMAX ";"
+			" new style: calculated = " ULINTPF
+			"; recorded checksum = " ULINTPF "\n",
+			m_page_no, buf_calc_page_new_checksum(m_read_buf),
+			checksum_field1);
+	}
+
+	/** Print none checksum and the checksum fields in page.
+	@param[in]	checksum_field1	Checksum in page header
+	@param[in]	checksum_field2	Checksum in page trailer */
+	virtual inline
+	void
+	print_strict_none(
+		ulint				checksum_field1,
+		ulint				checksum_field2,
+		srv_checksum_algorithm_t	algo) const
+	{
+		if (!m_is_log_enabled
+		    || algo != SRV_CHECKSUM_ALGORITHM_STRICT_NONE) {
+			return;
+		}
+
+		fprintf(m_log_file,
+			"page::%" PRIuMAX
+			"; none checksum: calculated = %lu;"
+			" recorded checksum_field1 = " ULINTPF
+			" recorded checksum_field2 = " ULINTPF "\n",
+			m_page_no, BUF_NO_CHECKSUM_MAGIC,
+			checksum_field1, checksum_field2);
+	}
+
+	/** Print a message that none check failed. */
+	virtual inline
+	void
+	print_none_fail() const
+	{
+		fprintf(m_log_file, "Fail; page %" PRIuMAX
+			" invalid (fails none checksum)\n",
+			m_page_no);
+	}
+
+	/** Print innodb checksum value stored in page trailer.
+	@param[in]	old_checksum	checksum value according to old style
+	@param[in]	new_checksum	checksum value according to new style
+	@param[in]	checksum_field1	Checksum in page header
+	@param[in]	checksum_field2	Checksum in page trailer
+	@param[in]	algo		current checksum algorithm */
+	virtual inline
+	void
+	print_innodb_checksum(
+		ulint				old_checksum,
+		ulint				new_checksum,
+		ulint				checksum_field1,
+		ulint				checksum_field2,
+		srv_checksum_algorithm_t	algo) const
+	{
+		if (!m_is_log_enabled) {
+			return;
+		}
+
+		switch (algo) {
+		case SRV_CHECKSUM_ALGORITHM_INNODB:
+			fprintf(m_log_file, "page::%" PRIuMAX ";"
+				" old style: calculated = " ULINTPF
+				"; recorded = " ULINTPF "\n",
+				m_page_no, old_checksum,
+				checksum_field2);
+			fprintf(m_log_file, "page::%" PRIuMAX ";"
+				" new style: calculated = " ULINTPF
+				"; crc32 = %u; recorded = " ULINTPF "\n",
+				m_page_no, new_checksum,
+				buf_calc_page_crc32(m_read_buf),
+				checksum_field1);
+			break;
+
+		case SRV_CHECKSUM_ALGORITHM_STRICT_INNODB:
+			fprintf(log_file, "page::%" PRIuMAX ";"
+				" old style: calculated = " ULINTPF
+				"; recorded checksum = " ULINTPF "\n",
+				m_page_no, old_checksum,
+				checksum_field2);
+			fprintf(log_file, "page::%" PRIuMAX ";"
+				" new style: calculated = " ULINTPF
+				"; recorded checksum = " ULINTPF "\n",
+				m_page_no, new_checksum,
+				checksum_field1);
+			break;
+		case SRV_CHECKSUM_ALGORITHM_CRC32:
+		case SRV_CHECKSUM_ALGORITHM_STRICT_CRC32:
+		case SRV_CHECKSUM_ALGORITHM_NONE:
+		case SRV_CHECKSUM_ALGORITHM_STRICT_NONE:
+			return;
+		}
+	}
+
+	/** Print the message that checksum mismatch happened in
+	page header. */
+	virtual inline
+	void
+	print_innodb_fail() const
+	{
+		if (!m_is_log_enabled) {
+			return;
+		}
+
+		fprintf(m_log_file,"Fail; page %" PRIuMAX
+			" invalid (fails innodb and"
+			" crc32 checksum\n",
+			m_page_no);
+	}
+
+	/** Print both new-style, old-style & crc32 checksum values.
+	@param[in]	checksum_field1	Checksum in page header
+	@param[in]	checksum_field2	Checksum in page trailer */
+	virtual inline
+	void
+	print_crc32_checksum(
+		ulint	checksum_field1,
+		ulint	checksum_field2) const
+	{
+		if (m_is_log_enabled) {
+
+			fprintf(m_log_file, "page::%" PRIuMAX
+				"; old style: calculated = " ULINTPF
+				"; recorded = " ULINTPF "\n",
+				m_page_no,
+				buf_calc_page_old_checksum(m_read_buf),
+				checksum_field2);
+			fprintf(m_log_file, "page::%" PRIuMAX
+				"; new style: calculated = " ULINTPF
+				"; crc32 = %u;"
+				" recorded = " ULINTPF "\n",
+				m_page_no,
+				buf_calc_page_new_checksum(m_read_buf),
+				buf_calc_page_crc32(m_read_buf),
+				checksum_field1);
+		}
+	}
+
+	/** Print a message that crc32 check failed. */
+	virtual inline
+	void
+	print_crc32_fail() const
+	{
+		if (!m_is_log_enabled) {
+			return;
+		}
+
+		fprintf(m_log_file, "Fail; page %" PRIuMAX
+			" invalid (fails crc32 checksum)\n",
+			m_page_no);
+	}
+
+	/** Print checksum values on a compressed page.
+	@param[in]	calc	the calculated checksum value
+	@param[in]	stored	the stored checksum in header. */
+	virtual inline
+	void
+	print_compressed_checksum(
+		ib_uint32_t	calc,
+		ib_uint32_t	stored) const
+	{
+		if (!m_is_log_enabled) {
+			return;
+		}
+
+		fprintf(m_log_file, "page::%" PRIuMAX ";"
+			" %s checksum: calculated = %u;"
+			" recorded = %u\n", m_page_no,
+			buf_checksum_algorithm_name(
+				static_cast<srv_checksum_algorithm_t>(
+					srv_checksum_algorithm)),
+			calc, stored);
+
+		if (!m_strict_check) {
+			return;
+		}
+
+		const uint32_t	crc32 = calc_zip_checksum(
+			SRV_CHECKSUM_ALGORITHM_CRC32);
+
+		fprintf(m_log_file, "page::%" PRIuMAX ": crc32 checksum:"
+			" calculated = %u; recorded = %u\n",
+			m_page_no, crc32, stored);
+		fprintf(m_log_file, "page::%" PRIuMAX ": none checksum:"
+			" calculated = %lu; recorded = %u\n",
+			m_page_no, BUF_NO_CHECKSUM_MAGIC, stored);
+	}
+
+private:
+	bool			m_strict_check;
+	bool			m_is_log_enabled;
+	FILE*			m_log_file;
+	uintmax_t		m_page_no;
+};
 
 /** Check if page is corrupted or not.
 @param[in]	buf		page frame
@@ -335,9 +686,6 @@ is_page_corrupted(
 	const byte*		buf,
 	const page_size_t&	page_size)
 {
-
-	/* enable if page is corrupted. */
-	bool is_corrupted;
 	/* use to store LSN values. */
 	ulint logseq;
 	ulint logseqfield;
@@ -366,11 +714,10 @@ is_page_corrupted(
 		}
 	}
 
-	is_corrupted = buf_page_is_corrupted(
-		true, buf, page_size, false, cur_page_num, strict_verify,
-		is_log_enabled, log_file);
+	InnocheckReporter reporter(true, buf, page_size, false, strict_check,
+				   is_log_enabled, log_file);
 
-	return(is_corrupted);
+	return(reporter.is_corrupted());
 }
 
 /********************************************//*
@@ -415,23 +762,21 @@ is_page_empty(
         return (true);
 }
 
-/********************************************************************//**
-Rewrite the checksum for the page.
-@param	[in/out] page			page buffer
-@param	[in] physical_page_size		page size in bytes on disk.
-@param	[in] iscompressed		Is compressed/Uncompressed Page.
-
-@retval true  : do rewrite
-@retval false : skip the rewrite as checksum stored match with
-		calculated or page is doublwrite buffer.
-*/
-
+/** Rewrite the checksum for the page.
+@param[in,out]	page			page buffer
+@param[in]	page_size		page size in bytes on disk.
+@retval		true			do rewrite
+@retval		false			skip the rewrite as checksum stored
+match with calculated or page is doublwrite buffer. */
+static
 bool
 update_checksum(
-	byte*	page,
-	ulong	physical_page_size,
-	bool	iscompressed)
+	byte*			page,
+	const page_size_t&	page_size)
 {
+	size_t		physical_page_size
+		 = static_cast<size_t>(page_size.physical());
+	bool		iscompressed = page_size.is_compressed();
 	ib_uint32_t	checksum = 0;
 	byte		stored1[4];	/* get FIL_PAGE_SPACE_OR_CHKSUM field checksum */
 	byte		stored2[4];	/* get FIL_PAGE_END_LSN_OLD_CHKSUM field checksum */
@@ -459,8 +804,10 @@ update_checksum(
 
 	if (iscompressed) {
 		/* page is compressed */
-		checksum = page_zip_calc_checksum(
-			page, physical_page_size,
+		BlockReporter	reporter = BlockReporter(
+			false, page, page_size, false);
+
+		checksum = reporter.calc_zip_checksum(
 			static_cast<srv_checksum_algorithm_t>(write_check));
 
 		mach_write_to_4(page + FIL_PAGE_SPACE_OR_CHKSUM, checksum);
@@ -537,33 +884,28 @@ update_checksum(
 	return (true);
 }
 
-/**
- Write the content to the file
+/** Write the content to the file
 @param[in]		filename	name of the file.
 @param[in,out]		file		file pointer where content
 					have to be written
 @param[in]		buf		file buffer read
-@param[in]		compressed	Enabled if tablespace is
-					compressed.
 @param[in,out]		pos		current file position.
-@param[in]		page_size	page size in bytes on disk.
-
-@retval true	if successfully written
-@retval false	if a non-recoverable error occurred
-*/
+@param[in]		page_size	page size
+@retval			true		if successfully written
+@retval			false		if a non-recoverable error occurred */
 static
 bool
 write_file(
-	const char*	filename,
-	FILE*		file,
-	byte*		buf,
-	bool		compressed,
-	fpos_t*		pos,
-	ulong		page_size)
+	const char*			filename,
+	FILE*				file,
+	byte*				buf,
+	fpos_t*				pos,
+	const page_size_t&		page_size)
 {
 	bool	do_update;
+	ulint	phys_page_size = page_size.physical();
 
-	do_update = update_checksum(buf, page_size, compressed);
+	do_update = update_checksum(buf, page_size);
 
 	if (file != stdin) {
 		if (do_update) {
@@ -583,8 +925,8 @@ write_file(
 		}
 	}
 
-	if (page_size
-		!= fwrite(buf, 1, page_size, file == stdin ? stdout : file)) {
+	if (phys_page_size
+		!= fwrite(buf, 1, phys_page_size, file == stdin ? stdout : file)) {
 		fprintf(stderr, "Failed to write page %" PRIuMAX " to %s: %s\n",
 			cur_page_num, filename, strerror(errno));
 
@@ -607,6 +949,7 @@ Parse the page and collect/dump the information about page type
 @param [in] page	buffer page
 @param [in] file	file for diagnosis.
 */
+static
 void
 parse_page(
 	const byte*	page,
@@ -631,6 +974,24 @@ parse_page(
 		if (page_type_dump) {
 			fprintf(file, "#::%8" PRIuMAX "\t\t|\t\tIndex page\t\t\t|"
 				"\tindex id=%llu,", cur_page_num, id);
+
+			fprintf(file,
+				" page level=" ULINTPF
+				", No. of records=" ULINTPF
+				", garbage=" ULINTPF ", %s\n",
+				page_header_get_field(page, PAGE_LEVEL),
+				page_header_get_field(page, PAGE_N_RECS),
+				page_header_get_field(page, PAGE_GARBAGE), str);
+		}
+		break;
+
+	case FIL_PAGE_SDI:
+		page_type.n_fil_page_sdi_index++;
+		id = mach_read_from_8(page + PAGE_HEADER + PAGE_INDEX_ID);
+		if (page_type_dump) {
+			fprintf(file, "#::%8" PRIuMAX "\t\t|\t\tSDI Index page"
+				"\t\t\t|\tindex id=%llu (copy_num=%llu),",
+				cur_page_num, id, IB_UINT64_MAX - id);
 
 			fprintf(file,
 				" page level=" ULINTPF
@@ -790,6 +1151,14 @@ parse_page(
 		}
 		break;
 
+	case FIL_PAGE_SDI_BLOB:
+		page_type.n_fil_page_sdi_blob++;
+		if (page_type_dump) {
+			fprintf(file, "#::%8" PRIuMAX "\t\t|\t\tSDI BLOB page"
+				"\t\t\t|\t%s\n", cur_page_num, str);
+		}
+		break;
+
 	case FIL_PAGE_TYPE_ZBLOB:
 		page_type.n_fil_page_type_zblob++;
 		if (page_type_dump) {
@@ -804,7 +1173,14 @@ parse_page(
 			fprintf(file, "#::%8" PRIuMAX "\t\t|\t\tSubsequent Compressed "
 				"BLOB page\t|\t%s\n", cur_page_num, str);
 		}
-			break;
+		break;
+	case FIL_PAGE_SDI_ZBLOB:
+		page_type.n_fil_page_sdi_zblob++;
+		if (page_type_dump) {
+			fprintf(file, "#::%8" PRIuMAX "\t\t|\t\tCompressed SDI"
+				" BLOB page\t\t|\t%s\n", cur_page_num, str);
+		}
+		break;
 
 	default:
 		page_type.n_fil_page_type_other++;
@@ -816,6 +1192,7 @@ parse_page(
 
 @retval FILE pointer if successfully created else NULL when error occured.
 */
+static
 FILE*
 create_file(
 	char*	file_name)
@@ -858,6 +1235,7 @@ create_file(
  Print the page type count of a tablespace.
  @param [in] fil_out	stream where the output goes.
 */
+static
 void
 print_summary(
 	FILE*	fil_out)
@@ -867,6 +1245,8 @@ print_summary(
 	fprintf(fil_out, "\n===============================================\n");
 	fprintf(fil_out, "%8d\tIndex page\n",
 		page_type.n_fil_page_index);
+	fprintf(fil_out, "%8d\tSDI Index page\n",
+		page_type.n_fil_page_sdi_index);
 	fprintf(fil_out, "%8d\tUndo log page\n",
 		page_type.n_fil_page_undo_log);
 	fprintf(fil_out, "%8d\tInode page\n",
@@ -889,6 +1269,12 @@ print_summary(
 		page_type.n_fil_page_type_blob);
 	fprintf(fil_out, "%8d\tCompressed BLOB page\n",
 		page_type.n_fil_page_type_zblob);
+	fprintf(fil_out, "%8d\tSubsequent Compressed BLOB page\n",
+		page_type.n_fil_page_type_zblob2);
+	fprintf(fil_out, "%8d\tSDI BLOB page\n",
+		page_type.n_fil_page_sdi_blob);
+	fprintf(fil_out, "%8d\tCompressed SDI BLOB page\n",
+		page_type.n_fil_page_sdi_zblob);
 	fprintf(fil_out, "%8d\tOther type of page",
 		page_type.n_fil_page_type_other);
 	fprintf(fil_out, "\n===============================================\n");
@@ -1090,7 +1476,7 @@ int main(
 	/* our input filename. */
 	char*		filename;
 	/* Buffer to store pages read. */
-	byte*		buf = NULL;
+	Prealloced_array<byte, 1> buf(PSI_NOT_INSTRUMENTED);
 	/* bytes read count */
 	ulong		bytes;
 	/* Buffer to decompress page.*/
@@ -1170,8 +1556,8 @@ int main(
 	}
 
 
-	buf = (byte*) malloc(UNIV_PAGE_SIZE_MAX * 2);
-	tbuf = buf + UNIV_PAGE_SIZE_MAX;
+	buf.reserve(UNIV_PAGE_SIZE_MAX * 2);
+	tbuf = buf.begin() + UNIV_PAGE_SIZE_MAX;
 
 	/* The file name is not optional. */
 	for (int i = 0; i < argc; ++i) {
@@ -1241,7 +1627,7 @@ int main(
 #endif /* _WIN32 */
 
 		/* Read the minimum page size. */
-		bytes = ulong(fread(buf, 1, UNIV_ZIP_SIZE_MIN, fil_in));
+		bytes = ulong(fread(buf.begin(), 1, UNIV_ZIP_SIZE_MIN, fil_in));
 		partial_page_read = true;
 
 		if (bytes != UNIV_ZIP_SIZE_MIN) {
@@ -1250,18 +1636,17 @@ int main(
 			fprintf(stderr, "of %d bytes.  Bytes read was %lu\n",
 				UNIV_ZIP_SIZE_MIN, bytes);
 
-			free(buf);
 			DBUG_RETURN(1);
 		}
 
 		/* enable variable is_system_tablespace when space_id of given
 		file is zero. Use to skip the checksum verification and rewrite
 		for doublewrite pages. */
-		is_system_tablespace = (!memcmp(&space_id, buf +
+		is_system_tablespace = (!memcmp(&space_id, buf.begin() +
 					FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID, 4))
 					? true : false;
 
-		const page_size_t&	page_size = get_page_size(buf);
+		const page_size_t&	page_size = get_page_size(buf.begin());
 
 		pages = (ulint) (size / page_size.physical());
 
@@ -1309,7 +1694,6 @@ int main(
 					perror("Error: Unable to seek to "
 						"necessary offset");
 
-					free(buf);
 					DBUG_RETURN(1);
 				}
 				/* Save the current file pointer in
@@ -1317,7 +1701,6 @@ int main(
 				if (0 != fgetpos(fil_in, &pos)) {
 					perror("fgetpos");
 
-					free(buf);
 					DBUG_RETURN(1);
 				}
 			} else {
@@ -1335,10 +1718,9 @@ int main(
 					(fseeko() on stdin doesn't work). So
 					read only the remaining part of page,
 					if partial_page_read is enable. */
-					bytes = read_file(buf,
+					bytes = read_file(buf.begin(),
 							  partial_page_read,
-							  static_cast<ulong>(
-							  page_size.physical()),
+							  page_size,
 							  fil_in);
 
 					partial_page_read = false;
@@ -1349,7 +1731,6 @@ int main(
 							"to seek to necessary "
 							"offset");
 
-						free(buf);
 						DBUG_RETURN(1);
 					}
 				}
@@ -1375,9 +1756,8 @@ int main(
 		lastt = 0;
 		while (!feof(fil_in)) {
 
-			bytes = read_file(buf, partial_page_read,
-					  static_cast<ulong>(
-					  page_size.physical()), fil_in);
+			bytes = read_file(buf.begin(), partial_page_read,
+					  page_size, fil_in);
 			partial_page_read = false;
 
 			if (!bytes && feof(fil_in)) {
@@ -1389,7 +1769,6 @@ int main(
 					page_size.physical());
 				perror(" ");
 
-				free(buf);
 				DBUG_RETURN(1);
 			}
 
@@ -1397,22 +1776,20 @@ int main(
 				fprintf(stderr, "Error: bytes read (%lu) "
 					"doesn't match page size (" ULINTPF ")\n",
 					bytes, page_size.physical());
-				free(buf);
 				DBUG_RETURN(1);
 			}
 
 			if (is_system_tablespace) {
 				/* enable when page is double write buffer.*/
-				skip_page = is_page_doublewritebuffer(buf);
+				skip_page = is_page_doublewritebuffer(buf.begin());
 			} else {
 				skip_page = false;
 
-				if (!page_decompress(buf, tbuf, page_size)) {
+				if (!page_decompress(buf.begin(), tbuf, page_size)) {
 
 					fprintf(stderr,
 						"Page decompress failed");
 
-					free(buf);
 					DBUG_RETURN(1);
 				}
 			}
@@ -1423,7 +1800,7 @@ int main(
 				/* Checksum verification */
 				if (!skip_page) {
 					is_corrupted = is_page_corrupted(
-						buf, page_size);
+						buf.begin(), page_size);
 
 					if (is_corrupted) {
 						fprintf(stderr, "Fail: page "
@@ -1440,7 +1817,6 @@ int main(
 								"count::%" PRIuMAX "\n",
 								allow_mismatches);
 
-							free(buf);
 							DBUG_RETURN(1);
 						}
 					}
@@ -1449,11 +1825,9 @@ int main(
 
 			/* Rewrite checksum */
 			if (do_write
-			    && !write_file(filename, fil_in, buf,
-					   page_size.is_compressed(), &pos,
-					   static_cast<ulong>(page_size.physical()))) {
+			    && !write_file(filename, fil_in, buf.begin(),
+					    &pos, page_size)) {
 
-				free(buf);
 				DBUG_RETURN(1);
 			}
 
@@ -1463,7 +1837,7 @@ int main(
 			}
 
 			if (page_type_summary || page_type_dump) {
-				parse_page(buf, fil_page_type);
+				parse_page(buf.begin(), fil_page_type);
 			}
 
 			/* do counter increase and progress printing */
@@ -1507,6 +1881,28 @@ int main(
 		fclose(log_file);
 	}
 
-	free(buf);
 	DBUG_RETURN(0);
+}
+
+/** Report a failed assertion
+@param[in]	expr	the failed assertion (optional)
+@param[in]	file	source file containting the assertion
+@param[in]	line	line number of the assertion */
+void
+ut_dbg_assertion_failed(
+	const char*	expr,
+	const char*	file,
+	ulint		line)
+{
+	fprintf(stderr, "Innochecksum: Assertion failure in"
+		" file %s line " ULINTPF "\n", file, line);
+
+	if (expr) {
+		fprintf(stderr,
+			"Innochecksum: Failing assertion: %s\n", expr);
+	}
+
+	fflush(stderr);
+	fflush(stdout);
+	abort();
 }

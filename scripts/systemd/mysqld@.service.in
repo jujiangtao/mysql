@@ -18,8 +18,6 @@
 
 [Unit]
 Description=MySQL Server
-Documentation=man:mysqld(8)
-Documentation=http://dev.mysql.com/doc/refman/en/using-systemd.html
 After=network.target
 After=syslog.target
 

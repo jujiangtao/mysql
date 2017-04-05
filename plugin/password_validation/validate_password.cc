@@ -14,6 +14,7 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include <my_sys.h>
+#include <typelib.h>
 #include <string>
 #include <mysql/plugin_validate_password.h>
 #include <mysql/service_my_plugin_log.h>
@@ -42,7 +43,7 @@ static PSI_rwlock_info all_validate_password_rwlocks[]=
   { &key_validate_password_LOCK_dict_file, "LOCK_dict_file", 0}
 };
 
-void init_validate_password_psi_keys()
+static void init_validate_password_psi_keys()
 {
   const char* category= "validate";
   int count;
@@ -166,7 +167,7 @@ static void read_dictionary_file()
     {
       dictionary_stream.close();
       my_plugin_log_message(&plugin_info_ptr, MY_WARNING_LEVEL,
-                            "Dictionary file size exceeded",
+                            "Dictionary file size exceeded "
                             "MAX_DICTIONARY_FILE_LENGTH, not loaded");
       return;
     }
@@ -614,7 +615,7 @@ static MYSQL_SYSVAR_BOOL(check_user_name, check_user_name,
   PLUGIN_VAR_NOCMDARG,
   "Check if the password matches the login or the effective user names "
   "or the reverse of them",
-  NULL, NULL, FALSE);
+  NULL, NULL, TRUE);
 
 static struct st_mysql_sys_var* validate_password_system_variables[]= {
   MYSQL_SYSVAR(length),

@@ -193,6 +193,7 @@ int channel_stop(const char* channel,
 /**
   Purges the channel logs
 
+  @param channel    The channel name
   @param reset_all  If true, the method will purge logs and remove the channel
                     If false, only the channel information will be reset.
 
@@ -259,8 +260,9 @@ int channel_add_executed_gtids_to_received_gtids(const char* channel);
 /**
   Queues a event packet into the current active channel.
 
+  @param channel     the channel name
   @param buf         the event buffer
-  @param event_len  the event buffer length
+  @param len         the event buffer length
 
   @return the operation status
     @retval 0      OK
@@ -275,6 +277,7 @@ int channel_queue_packet(const char* channel, const char* buf, unsigned long len
         If it is still receiving, then the method should wait for execution of
         transactions that were present when this method was invoked.
 
+  @param channel  the channel name
   @param timeout  the time (seconds) after which the method returns if the
                   above condition was not satisfied
 
@@ -360,16 +363,4 @@ int channel_get_retrieved_gtid_set(const char* channel,
     @retval false   No, no type was specified or the channel does not exist.
 */
 bool channel_is_stopping(const char* channel, enum_channel_thread_types type);
-
-/**
-  Checks if the given channel's relaylog contains a partial transaction.
-
-  @param channel  The channel name
-
-  @return
-    @retval true    If relaylog contains partial transcation.
-    @retval false   If relaylog does not contain partial transaction.
-*/
-bool is_partial_transaction_on_channel_relay_log(const char* channel);
-
 #endif //RPL_SERVICE_INTERFACE_INCLUDE

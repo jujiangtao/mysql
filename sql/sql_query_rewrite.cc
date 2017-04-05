@@ -17,7 +17,6 @@
 #include "mysql/plugin_audit.h"
 #include "mysql/service_rules_table.h"
 #include "mysql/service_ssl_wrapper.h"
-#include "sql_cache.h"
 #include "sql_error.h"
 #include "sql_parse.h"
 #include "sql_plugin.h"
@@ -27,17 +26,17 @@
 #include "sql_class.h"
 #include "sql_audit.h"
 
-void raise_query_rewritten_note(THD *thd,
-                                const char *original_query,
-                                const char *rewritten_query)
+#ifndef EMBEDDED_LIBRARY
+static void raise_query_rewritten_note(THD *thd,
+                                       const char *original_query,
+                                       const char *rewritten_query)
 {
   Sql_condition::enum_severity_level sl= Sql_condition::SL_NOTE;
   const char *message= "Query '%s' rewritten to '%s' by a query rewrite plugin";
   push_warning_printf(thd, sl, ER_UNKNOWN_ERROR, message,
                       original_query, rewritten_query);
-};
+}
 
-#ifndef EMBEDDED_LIBRARY
 
 void invoke_pre_parse_rewrite_plugins(THD *thd)
 {

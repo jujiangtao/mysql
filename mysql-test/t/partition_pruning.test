@@ -2,8 +2,11 @@
 # Partition pruning tests. Currently we only detect which partitions to
 # prune, so the test is EXPLAINs.
 #
+
+# Skipping the test when log-bin is enabled due to Bug#22508362
+--source include/not_log_bin.inc
+
 --source include/no_valgrind_without_big.inc
---source include/have_partition.inc
 let $verify_without_partitions=0;
 
 --echo #
@@ -1967,6 +1970,7 @@ ALTER TABLE t1 REMOVE PARTITIONING;
 }
 select * from t1 where s1 = 0 or s1 is null;
 insert into t1 values ('aa'),('bb'),('0');
+analyze table t1;
 --replace_column 10 #
 explain partitions select * from t1 where s1 = 0 or s1 is null;
 drop table t1;

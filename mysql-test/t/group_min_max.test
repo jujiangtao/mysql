@@ -865,10 +865,13 @@ SELECT MIN(c) FROM t2 WHERE b = 2 and a = 1 and c > 1 GROUP BY a;
 
 DROP TABLE t1,t2;
 
+# HANDLER_READ_KEY count differs when using ps protocol because of prepare
+# phase of ps protocol results in call to innodb storage engine apis to check
+# for table existence.
+--disable_ps_protocol
 #
 # Bug#24156: Loose index scan not used with CREATE TABLE ...SELECT and similar statements
 #
-
 CREATE TABLE t1 (a INT, b INT, INDEX (a,b));
 INSERT INTO t1 (a, b) VALUES (1,1), (1,2), (1,3), (1,4), (1,5),
        (2,2), (2,3), (2,1), (3,1), (4,1), (4,2), (4,3), (4,4), (4,5), (4,6),
@@ -926,6 +929,7 @@ DELETE FROM t3 WHERE (SELECT (SELECT MAX(b) FROM t1 GROUP BY a HAVING a < 2) x
 SHOW STATUS LIKE 'handler_read__e%';
 
 DROP TABLE t1,t2,t3;
+--enable_ps_protocol
 
 #
 # Bug#25602: queries with DISTINCT and SQL_BIG_RESULT hint 
@@ -1452,3 +1456,39 @@ SHOW SESSION STATUS LIKE 'Handler_read%';
 DROP TABLE t1;
 
 --echo # End of test for Bug#18109609
+
+--echo #
+--echo # Bug#22661012 - "USING INDEX FOR GROUP-BY" QUERIES CAN RETURN
+--echo #                NO DATA WITH LE/LEQ AND ROUNDING
+--echo #
+
+CREATE TABLE t1 (a INT, b INT, KEY(a,b));
+INSERT INTO t1 VALUES (1,1000), (1,1001), (1,2000),
+                      (1,2001), (1,3000), (1,3002);
+
+ANALYZE TABLE t1;
+
+let query= SELECT a, MAX(b) FROM t1 WHERE a = 1 AND b < 1999.5 GROUP BY a;
+eval EXPLAIN $query;
+eval $query;
+
+let query= SELECT a, MAX(b) FROM t1 WHERE a = 1 AND b <= 1999.5 GROUP BY a;
+eval EXPLAIN $query;
+eval $query;
+
+let query= SELECT a, MAX(b) FROM t1 WHERE a = 1 AND b between 0 and 1999.5
+           GROUP BY a;
+eval EXPLAIN $query;
+eval $query;
+
+let query= SELECT a, MIN(b) FROM t1 WHERE a = 1 AND b > 2000.1 GROUP BY a;
+eval EXPLAIN $query;
+eval $query;
+
+let query= SELECT a, MIN(b) FROM t1 WHERE a = 1 AND b >= 2000.1 GROUP BY a;
+eval EXPLAIN $query;
+eval $query;
+
+DROP TABLE t1;
+
+--echo # End of test for Bug#22661012

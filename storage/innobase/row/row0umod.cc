@@ -26,11 +26,6 @@ Created 2/27/1997 Heikki Tuuri
 #include "ha_prototypes.h"
 
 #include "row0umod.h"
-
-#ifdef UNIV_NONINL
-#include "row0umod.ic"
-#endif
-
 #include "dict0dict.h"
 #include "dict0boot.h"
 #include "trx0undo.h"
@@ -74,7 +69,7 @@ introduced where a call to log_free_check() is bypassed. */
 /***********************************************************//**
 Undoes a modify in a clustered index record.
 @return DB_SUCCESS, DB_FAIL, or error code: we may run out of file space */
-static MY_ATTRIBUTE((nonnull, warn_unused_result))
+static MY_ATTRIBUTE((warn_unused_result))
 dberr_t
 row_undo_mod_clust_low(
 /*===================*/
@@ -156,7 +151,7 @@ This is attempted when the record was inserted by updating a
 delete-marked record and there no longer exist transactions
 that would see the delete-marked record.
 @return	DB_SUCCESS, DB_FAIL, or error code: we may run out of file space */
-static MY_ATTRIBUTE((nonnull, warn_unused_result))
+static MY_ATTRIBUTE((warn_unused_result))
 dberr_t
 row_undo_mod_remove_clust_low(
 /*==========================*/
@@ -191,8 +186,8 @@ row_undo_mod_remove_clust_low(
 		const ulint*	offsets;
 		ulint		len;
 
-		trx_id_col = dict_index_get_sys_col_pos(
-			btr_cur_get_index(btr_cur), DATA_TRX_ID);
+		trx_id_col =
+			btr_cur_get_index(btr_cur)->get_sys_col_pos(DATA_TRX_ID);
 		ut_ad(trx_id_col > 0);
 		ut_ad(trx_id_col != ULINT_UNDEFINED);
 
@@ -248,7 +243,7 @@ row_undo_mod_remove_clust_low(
 Undoes a modify in a clustered index record. Sets also the node state for the
 next round of undo.
 @return DB_SUCCESS or error code: we may run out of file space */
-static MY_ATTRIBUTE((nonnull, warn_unused_result))
+static MY_ATTRIBUTE((warn_unused_result))
 dberr_t
 row_undo_mod_clust(
 /*===============*/
@@ -383,6 +378,12 @@ row_undo_mod_clust(
 		btr_pcur_commit_specify_mtr(pcur, &mtr);
 	}
 
+	/* If table is SDI table, we will try to flush as early
+	as possible. */
+	if (dict_table_is_sdi(node->table->id)) {
+		buf_flush_sync_all_buf_pools();
+	}
+
 	node->state = UNDO_NODE_FETCH_NEXT;
 
 	if (offsets_heap) {
@@ -395,7 +396,7 @@ row_undo_mod_clust(
 /***********************************************************//**
 Delete marks or removes a secondary index entry if found.
 @return DB_SUCCESS, DB_FAIL, or DB_OUT_OF_FILE_SPACE */
-static MY_ATTRIBUTE((nonnull, warn_unused_result))
+static MY_ATTRIBUTE((warn_unused_result))
 dberr_t
 row_undo_mod_del_mark_or_remove_sec_low(
 /*====================================*/
@@ -525,7 +526,7 @@ row_undo_mod_del_mark_or_remove_sec_low(
 			because we are deleting a secondary index record:
 			the distinction only matters when deleting a
 			record that contains externally stored columns. */
-			ut_ad(!dict_index_is_clust(index));
+			ut_ad(!index->is_clustered());
 			btr_cur_pessimistic_delete(&err, FALSE, btr_cur, 0,
 						   false, &mtr);
 
@@ -554,7 +555,7 @@ not cause problems because in row0sel.cc, in queries we always retrieve the
 clustered index record or an earlier version of it, if the secondary index
 record through which we do the search is delete-marked.
 @return DB_SUCCESS or DB_OUT_OF_FILE_SPACE */
-static MY_ATTRIBUTE((nonnull, warn_unused_result))
+static MY_ATTRIBUTE((warn_unused_result))
 dberr_t
 row_undo_mod_del_mark_or_remove_sec(
 /*================================*/
@@ -587,7 +588,7 @@ fields but alphabetically they stayed the same, e.g., 'abc' -> 'aBc'.
 @retval DB_OUT_OF_FILE_SPACE when running out of tablespace
 @retval DB_DUPLICATE_KEY if the value was missing
 	and an insert would lead to a duplicate exists */
-static MY_ATTRIBUTE((nonnull, warn_unused_result))
+static MY_ATTRIBUTE((warn_unused_result))
 dberr_t
 row_undo_mod_del_unmark_sec_and_undo_update(
 /*========================================*/
@@ -795,24 +796,19 @@ func_exit_no_pcur:
 
 /***********************************************************//**
 Flags a secondary index corrupted. */
-static MY_ATTRIBUTE((nonnull))
+static
 void
 row_undo_mod_sec_flag_corrupted(
 /*============================*/
 	trx_t*		trx,	/*!< in/out: transaction */
 	dict_index_t*	index)	/*!< in: secondary index */
 {
-	ut_ad(!dict_index_is_clust(index));
+	ut_ad(!index->is_clustered());
 
 	switch (trx->dict_operation_lock_mode) {
 	case RW_S_LATCH:
-		/* Because row_undo() is holding an S-latch
-		on the data dictionary during normal rollback,
-		we can only mark the index corrupted in the
-		data dictionary cache. TODO: fix this somehow.*/
-		mutex_enter(&dict_sys->mutex);
-		dict_set_corrupted_index_cache_only(index);
-		mutex_exit(&dict_sys->mutex);
+		/* This should be the normal rollback */
+		dict_set_corrupted(index);
 		break;
 	default:
 		ut_ad(0);
@@ -820,14 +816,14 @@ row_undo_mod_sec_flag_corrupted(
 	case RW_X_LATCH:
 		/* This should be the rollback of a data dictionary
 		transaction. */
-		dict_set_corrupted(index, trx, "rollback");
+		dict_set_corrupted(index);
 	}
 }
 
 /***********************************************************//**
 Undoes a modify in secondary indexes when undo record type is UPD_DEL.
 @return DB_SUCCESS or DB_OUT_OF_FILE_SPACE */
-static MY_ATTRIBUTE((nonnull, warn_unused_result))
+static MY_ATTRIBUTE((warn_unused_result))
 dberr_t
 row_undo_mod_upd_del_sec(
 /*=====================*/
@@ -894,7 +890,7 @@ row_undo_mod_upd_del_sec(
 /***********************************************************//**
 Undoes a modify in secondary indexes when undo record type is DEL_MARK.
 @return DB_SUCCESS or DB_OUT_OF_FILE_SPACE */
-static MY_ATTRIBUTE((nonnull, warn_unused_result))
+static MY_ATTRIBUTE((warn_unused_result))
 dberr_t
 row_undo_mod_del_mark_sec(
 /*======================*/
@@ -962,7 +958,7 @@ row_undo_mod_del_mark_sec(
 /***********************************************************//**
 Undoes a modify in secondary indexes when undo record type is UPD_EXIST.
 @return DB_SUCCESS or DB_OUT_OF_FILE_SPACE */
-static MY_ATTRIBUTE((nonnull, warn_unused_result))
+static MY_ATTRIBUTE((warn_unused_result))
 dberr_t
 row_undo_mod_upd_exist_sec(
 /*=======================*/
@@ -1021,8 +1017,7 @@ row_undo_mod_upd_exist_sec(
 			format.  REDUNDANT and COMPACT formats
 			store a local 768-byte prefix of each
 			externally stored column. */
-			ut_a(dict_table_get_format(index->table)
-			     >= UNIV_FORMAT_B);
+			ut_a(dict_table_has_atomic_blobs(index->table));
 
 			/* This is only legitimate when
 			rolling back an incomplete transaction
@@ -1102,7 +1097,7 @@ row_undo_mod_upd_exist_sec(
 
 /***********************************************************//**
 Parses the row reference and other info in a modify undo log record. */
-static MY_ATTRIBUTE((nonnull))
+static
 void
 row_undo_mod_parse_undo_rec(
 /*========================*/
@@ -1144,7 +1139,9 @@ row_undo_mod_parse_undo_rec(
 		return;
 	}
 
-	clust_index = dict_table_get_first_index(node->table);
+	ut_ad(!node->table->skip_alter_undo);
+
+	clust_index = node->table->first_index();
 
 	ptr = trx_undo_update_rec_get_sys_cols(ptr, &trx_id, &roll_ptr,
 					       &info_bits);
@@ -1207,10 +1204,10 @@ row_undo_mod(
 		return(DB_SUCCESS);
 	}
 
-	node->index = dict_table_get_first_index(node->table);
-	ut_ad(dict_index_is_clust(node->index));
+	node->index = node->table->first_index();
+	ut_ad(node->index->is_clustered());
 	/* Skip the clustered index (the first index) */
-	node->index = dict_table_get_next_index(node->index);
+	node->index = node->index->next();
 
 	/* Skip all corrupted secondary index */
 	dict_table_skip_corrupt_index(node->index);

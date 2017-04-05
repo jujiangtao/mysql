@@ -19,14 +19,22 @@
   Table replication_group_member_stats (implementation).
 */
 
-#define HAVE_REPLICATION
-
 #include "my_global.h"
+
+#ifndef EMBEDDED_LIBRARY
+#define HAVE_REPLICATION
+#endif /* EMBEDDED_LIBRARY */
+
 #include "table_replication_group_member_stats.h"
 #include "pfs_instr_class.h"
 #include "pfs_instr.h"
 #include "log.h"
 #include "rpl_group_replication.h"
+#include "thr_lock.h"
+#include "table.h"
+#include "field.h"
+
+#ifdef HAVE_REPLICATION
 
 /*
   Callbacks implementation for GROUP_REPLICATION_GROUP_MEMBER_STATS_CALLBACKS.
@@ -125,6 +133,7 @@ static void set_transactions_rows_in_validation(void* const context,
   row->trx_rows_validating= value;
 }
 
+#endif /* HAVE_REPLICATION */
 
 THR_LOCK table_replication_group_member_stats::m_table_lock;
 
@@ -206,16 +215,20 @@ table_replication_group_member_stats::table_replication_group_member_stats()
   : PFS_engine_table(&m_share, &m_pos),
     m_row_exists(false), m_pos(0), m_next_pos(0)
 {
+#ifdef HAVE_REPLICATION
   m_row.trx_committed= NULL;
+#endif /* HAVE_REPLICATION */
 }
 
 table_replication_group_member_stats::~table_replication_group_member_stats()
 {
+#ifdef HAVE_REPLICATION
   if (m_row.trx_committed != NULL)
   {
     my_free(m_row.trx_committed);
     m_row.trx_committed= NULL;
   }
+#endif /* HAVE_REPLICATION */
 }
 
 void table_replication_group_member_stats::reset_position(void)
@@ -228,14 +241,17 @@ ha_rows table_replication_group_member_stats::get_row_count()
 {
   uint row_count= 0;
 
+#ifdef HAVE_REPLICATION
   if (is_group_replication_plugin_loaded())
     row_count= 1;
+#endif /* HAVE_REPLICATION */
 
   return row_count;
 }
 
 int table_replication_group_member_stats::rnd_next(void)
 {
+#ifdef HAVE_REPLICATION
   if (!is_group_replication_plugin_loaded())
     return HA_ERR_END_OF_FILE;
 
@@ -246,12 +262,14 @@ int table_replication_group_member_stats::rnd_next(void)
     m_next_pos.set_after(&m_pos);
     return 0;
   }
+#endif /* HAVE_REPLICATION */
 
   return HA_ERR_END_OF_FILE;
 }
 
 int table_replication_group_member_stats::rnd_pos(const void *pos)
 {
+#ifdef HAVE_REPLICATION
   if (get_row_count() == 0)
     return HA_ERR_END_OF_FILE;
 
@@ -260,8 +278,12 @@ int table_replication_group_member_stats::rnd_pos(const void *pos)
   make_row();
 
   return 0;
+#else
+  return HA_ERR_END_OF_FILE;
+#endif /* HAVE_REPLICATION */
 }
 
+#ifdef HAVE_REPLICATION
 void table_replication_group_member_stats::make_row()
 {
   DBUG_ENTER("table_replication_group_member_stats::make_row");
@@ -304,6 +326,7 @@ void table_replication_group_member_stats::make_row()
 
   DBUG_VOID_RETURN;
 }
+#endif /* HAVE_REPLICATION */
 
 
 int table_replication_group_member_stats::read_row_values(TABLE *table,
@@ -311,6 +334,7 @@ int table_replication_group_member_stats::read_row_values(TABLE *table,
                                                    Field **fields,
                                                    bool read_all)
 {
+#ifdef HAVE_REPLICATION
   Field *f;
 
   if (unlikely(! m_row_exists))
@@ -362,4 +386,7 @@ int table_replication_group_member_stats::read_row_values(TABLE *table,
     }
   }
   return 0;
+#else
+  return HA_ERR_RECORD_DELETED;
+#endif /* HAVE_REPLICATION */
 }

@@ -17,15 +17,13 @@
   This code needs extra visibility in the lexer structures
 */
 
-#include "my_global.h"
-#include "my_sys.h"
-#include "my_md5.h"
-#include "sql_lex.h"
-#include "sql_signal.h"
-#include "sql_get_diagnostics.h"
-#include "sql_string.h"
 #include "sql_digest.h"
-#include "sql_digest_stream.h"
+
+#include "my_md5.h"                 // compute_md5_hash
+#include "mysqld.h"                 // max_digest_length
+#include "sql_digest_stream.h"      // sql_digest_state
+#include "sql_lex.h"                // LEX_YYSTYPE
+#include "sql_string.h"             // String
 
 /* Generated code */
 #include "sql_yacc.h"
@@ -529,6 +527,16 @@ sql_digest_state* digest_add_token(sql_digest_state *state,
           digest_storage->m_byte_count-= 2*SIZE_OF_A_TOKEN;
           token= TOK_ROW_SINGLE_VALUE_LIST;
         }
+        else if (last_token == IN_SYM)
+        {
+          /*
+            REDUCE:
+            TOK_IN_GENERIC_VALUE_EXPRESSION :=
+              IN_SYM TOK_ROW_SINGLE_VALUE
+          */
+          digest_storage->m_byte_count -= SIZE_OF_A_TOKEN;
+          token = TOK_IN_GENERIC_VALUE_EXPRESSION;
+        }
       }
       else if (last_token == TOK_GENERIC_VALUE_LIST &&
                last_token2 == '(')
@@ -560,6 +568,16 @@ sql_digest_state* digest_add_token(sql_digest_state *state,
           */
           digest_storage->m_byte_count-= 2*SIZE_OF_A_TOKEN;
           token= TOK_ROW_MULTIPLE_VALUE_LIST;
+        }
+        else if (last_token == IN_SYM)
+        {
+          /*
+          REDUCE:
+          TOK_IN_GENERIC_VALUE_EXPRESSION :=
+          IN_SYM TOK_ROW_MULTIPLE_VALUE
+          */
+          digest_storage->m_byte_count -= SIZE_OF_A_TOKEN;
+          token = TOK_IN_GENERIC_VALUE_EXPRESSION;
         }
       }
       /*

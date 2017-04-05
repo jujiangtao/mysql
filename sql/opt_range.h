@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -78,7 +78,7 @@ public:
      translating the minimum endpoint of the interval represented by this
      QUICK_RANGE into an index range endpoint specifier for the engine.
 
-     @param Pointer to an uninitialized key_range C struct.
+     @param kr Pointer to an uninitialized key_range C struct.
 
      @param prefix_length The length of the search key prefix to be used for
      lookup.
@@ -99,7 +99,7 @@ public:
      translating the minimum endpoint of the interval represented by this
      QUICK_RANGE into an index range endpoint specifier for the engine.
 
-     @param Pointer to an uninitialized key_range C struct.
+     @param kr Pointer to an uninitialized key_range C struct.
   */
   void make_min_endpoint(key_range *kr) {
     kr->key= (const uchar*)min_key;
@@ -116,7 +116,7 @@ public:
      translating the maximum endpoint of the interval represented by this
      QUICK_RANGE into an index range endpoint specifier for the engine.
 
-     @param Pointer to an uninitialized key_range C struct.
+     @param kr Pointer to an uninitialized key_range C struct.
 
      @param prefix_length The length of the search key prefix to be used for
      lookup.
@@ -137,7 +137,7 @@ public:
      translating the maximum endpoint of the interval represented by this
      QUICK_RANGE into an index range endpoint specifier for the engine.
 
-     @param Pointer to an uninitialized key_range C struct.
+     @param kr Pointer to an uninitialized key_range C struct.
   */
   void make_max_endpoint(key_range *kr) {
     kr->key= (const uchar*)max_key;
@@ -944,7 +944,6 @@ public:
   bool add_range(SEL_ARG *sel_range);
   void update_key_stat();
   void adjust_prefix_ranges();
-  bool alloc_buffers();
   int init();
   void need_sorted_output() { /* always do it */ }
   int reset();
@@ -1001,12 +1000,12 @@ private:
 
 class QEP_shared_owner;
 
-int test_quick_select(THD *thd, key_map keys, table_map prev_tables,
+int test_quick_select(THD *thd, Key_map keys, table_map prev_tables,
                       ha_rows limit, bool force_quick_range,
                       const ORDER::enum_order interesting_order,
                       const QEP_shared_owner *tab,
                       Item *cond,
-                      key_map *needed_reg,
+                      Key_map *needed_reg,
                       QUICK_SELECT_I **quick);
 
 class FT_SELECT: public QUICK_RANGE_SELECT 

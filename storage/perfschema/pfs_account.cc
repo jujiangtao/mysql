@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2016, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -31,9 +31,10 @@
 #include "pfs_global.h"
 #include "pfs_instr_class.h"
 #include "pfs_buffer_container.h"
+#include "mysqld.h"                             // global_status_var
 
 /**
-  @addtogroup Performance_schema_buffers
+  @addtogroup performance_schema_buffers
   @{
 */
 
@@ -59,9 +60,7 @@ void cleanup_account(void)
   global_account_container.cleanup();
 }
 
-C_MODE_START
-static uchar *account_hash_get_key(const uchar *entry, size_t *length,
-                                my_bool)
+static const uchar *account_hash_get_key(const uchar *entry, size_t *length)
 {
   const PFS_account * const *typed_entry;
   const PFS_account *account;
@@ -72,9 +71,8 @@ static uchar *account_hash_get_key(const uchar *entry, size_t *length,
   DBUG_ASSERT(account != NULL);
   *length= account->m_key.m_key_length;
   result= account->m_key.m_hash_key;
-  return const_cast<uchar*> (reinterpret_cast<const uchar*> (result));
+  return reinterpret_cast<const uchar*> (result);
 }
-C_MODE_END
 
 /**
   Initialize the user hash.
@@ -163,7 +161,7 @@ search:
   entry= reinterpret_cast<PFS_account**>
     (lf_hash_search(&account_hash, pins,
                     key.m_hash_key, key.m_key_length));
-  if (entry && (entry != MY_ERRPTR))
+  if (entry && (entry != MY_LF_ERRPTR))
   {
     pfs= *entry;
     pfs->inc_refcount();
@@ -251,6 +249,7 @@ void PFS_account::aggregate(bool alive, PFS_user *safe_user, PFS_host *safe_host
   aggregate_stages(safe_user, safe_host);
   aggregate_statements(safe_user, safe_host);
   aggregate_transactions(safe_user, safe_host);
+  aggregate_errors(safe_user, safe_host);
   aggregate_memory(alive, safe_user, safe_host);
   aggregate_status(safe_user, safe_host);
   aggregate_stats(safe_user, safe_host);
@@ -461,6 +460,59 @@ void PFS_account::aggregate_transactions(PFS_user *safe_user, PFS_host *safe_hos
   return;
 }
 
+void PFS_account::aggregate_errors(PFS_user *safe_user, PFS_host *safe_host)
+{
+  if (read_instr_class_errors_stats() == NULL)
+    return;
+
+  if (likely(safe_user != NULL && safe_host != NULL))
+  {
+    /*
+      Aggregate EVENTS_ERRORS_SUMMARY_BY_ACCOUNT_BY_ERROR to:
+      -  EVENTS_ERRORS_SUMMARY_BY_USER_BY_ERROR
+      -  EVENTS_ERRORS_SUMMARY_BY_HOST_BY_ERROR
+      in parallel.
+    */
+    aggregate_all_errors(write_instr_class_errors_stats(),
+                         safe_user->write_instr_class_errors_stats(),
+                         safe_host->write_instr_class_errors_stats());
+    return;
+  }
+
+  if (safe_user != NULL)
+  {
+    /*
+      Aggregate EVENTS_ERRORS_SUMMARY_BY_ACCOUNT_BY_ERROR to:
+      -  EVENTS_ERRORS_SUMMARY_BY_USER_BY_ERROR
+      -  EVENTS_ERRORS_SUMMARY_GLOBAL_BY_ERROR
+      in parallel.
+    */
+    aggregate_all_errors(write_instr_class_errors_stats(),
+                         safe_user->write_instr_class_errors_stats(),
+                         &global_error_stat);
+    return;
+  }
+
+  if (safe_host != NULL)
+  {
+    /*
+      Aggregate EVENTS_ERRORS_SUMMARY_BY_ACCOUNT_BY_ERROR to:
+      -  EVENTS_ERRORS_SUMMARY_BY_HOST_BY_ERROR
+    */
+    aggregate_all_errors(write_instr_class_errors_stats(),
+                         safe_host->write_instr_class_errors_stats());
+    return;
+  }
+
+  /*
+    Aggregate EVENTS_ERRORS_SUMMARY_BY_ACCOUNT_BY_ERROR to:
+    -  EVENTS_ERRORS_SUMMARY_GLOBAL_BY_ERROR
+  */
+  aggregate_all_errors(write_instr_class_errors_stats(),
+                       &global_error_stat);
+  return;
+}
+
 void PFS_account::aggregate_memory(bool alive, PFS_user *safe_user, PFS_host *safe_host)
 {
   if (read_instr_class_memory_stats() == NULL)
@@ -633,7 +685,7 @@ PFS_account *sanitize_account(PFS_account *unsafe)
   return global_account_container.sanitize(unsafe);
 }
 
-void purge_account(PFS_thread *thread, PFS_account *account)
+static void purge_account(PFS_thread *thread, PFS_account *account)
 {
   LF_PINS *pins= get_account_hash_pins(thread);
   if (unlikely(pins == NULL))
@@ -644,7 +696,7 @@ void purge_account(PFS_thread *thread, PFS_account *account)
     (lf_hash_search(&account_hash, pins,
                     account->m_key.m_hash_key,
                     account->m_key.m_key_length));
-  if (entry && (entry != MY_ERRPTR))
+  if (entry && (entry != MY_LF_ERRPTR))
   {
     DBUG_ASSERT(*entry == account);
     if (account->get_refcount() == 0)

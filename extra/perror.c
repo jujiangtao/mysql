@@ -104,12 +104,10 @@ get_one_option(int optid, const struct my_option *opt MY_ATTRIBUTE((unused)),
   case 'V':
     print_version();
     exit(0);
-    break;
   case 'I':
   case '?':
     usage();
     exit(0);
-    break;
   }
   return 0;
 }
@@ -152,12 +150,16 @@ typedef struct
   const char *name;
   uint        code;
   const char *text;
+  /* SQLSTATE */
+  const char *odbc_state;
+  const char *jdbc_state;
+  uint error_index;
 } st_error;
 
 static st_error global_error_names[] =
 {
 #include <mysqld_ername.h>
-  { 0, 0, 0 }
+  { 0, 0, 0, 0, 0, 0 }
 };
 
 /**
@@ -369,5 +371,4 @@ int main(int argc,char *argv[])
     free(unknown_error);
 
   exit(error);
-  return error;
 }

@@ -3,7 +3,6 @@
 ##################################################
 
 # Some tests in here requre partitioning
--- source include/have_partition.inc
 
 #################################################
 ############ Different Table Def Test ###########
@@ -430,15 +429,7 @@ if (`SELECT UPPER(LEFT($engine_type, 3)) != 'NDB'`)
   # they are declared without DEFAULT clause.
 
   sync_slave_with_master;
-  --replace_column 4 CURRENT_TIMESTAMP
   select * from t9;
-
-  # Bug #22916743 RBR DOES NOT USE DEFAULT CURRENT_TIMESTAMP FOR EXTRA COLUMN
-  # ON SLAVE
-  --let $assert_text= The values of column 'd' should have non-zero timetsamp.
-  --let $assert_cond= [SELECT COUNT(*) AS Val FROM t9 WHERE d = "0000-00-00 00:00:00", Val, 1] = 0
-  --source include/assert.inc
-  # End of test for Bug #22916743
 
   # todo: fix Bug #43992 slave sql thread can't tune own sql_mode ...
   # and add/restore waiting for stop test
@@ -865,9 +856,12 @@ sync_slave_with_master;
 --replace_column 7 CURRENT_TIMESTAMP
 SELECT * FROM t16 ORDER BY c1;
 
---echo *** Add Partition on master ***
+--echo *** Add Partition on master if native partitioning is supported ***
 connection master;
-ALTER TABLE t16 PARTITION BY KEY(c1) PARTITIONS 4;
+if (`SELECT UPPER($engine_type) IN ('INNODB','NDB')`)
+{
+  ALTER TABLE t16 PARTITION BY KEY(c1) PARTITIONS 4;
+}
 INSERT INTO t16 () VALUES(4,1.00,'Replication Rocks',@b1,'Omer');
 SHOW CREATE TABLE t16;
 

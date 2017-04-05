@@ -211,7 +211,7 @@ static int sql_start_row(void *ctx)
   DBUG_ENTER("sql_start_row");
   pctx->current_col= 0;
   DBUG_RETURN(false);
-};
+}
 
 
 static int sql_end_row(void *ctx)
@@ -235,7 +235,7 @@ static void sql_abort_row(void *ctx)
 static ulong sql_get_client_capabilities(void *ctx){
   DBUG_ENTER("sql_get_client_capabilities");
   DBUG_RETURN(0);
-};
+}
 
 
 static int sql_get_null(void *ctx)

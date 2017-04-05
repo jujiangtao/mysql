@@ -14,7 +14,7 @@
   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
 
 /**
-  @file storage/perfschema/pfs_digest.h
+  @file storage/perfschema/pfs_digest.cc
   Statement Digest data structures (implementation).
 */
 
@@ -38,7 +38,7 @@
 size_t digest_max= 0;
 ulong digest_lost= 0;
 
-/** EVENTS_STATEMENTS_HISTORY_LONG circular buffer. */
+/** EVENTS_STATEMENTS_SUMMARY_BY_DIGEST buffer. */
 PFS_statements_digest_stat *statements_digest_stat_array= NULL;
 static unsigned char *statements_digest_token_array= NULL;
 /** Consumer flag for table EVENTS_STATEMENTS_SUMMARY_BY_DIGEST. */
@@ -47,7 +47,7 @@ bool flag_statements_digest= true;
   Current index in Stat array where new record is to be inserted.
   index 0 is reserved for "all else" case when entire array is full.
 */
-static PFS_ALIGNED PFS_cacheline_uint32 digest_monotonic_index;
+static PFS_ALIGNED PFS_cacheline_uint32 digest_index;
 bool digest_full= false;
 
 LF_HASH digest_hash;
@@ -65,7 +65,7 @@ int init_digest(const PFS_global_param *param)
   */
   digest_max= param->m_digest_sizing;
   digest_lost= 0;
-  PFS_atomic::store_u32(& digest_monotonic_index.m_u32, 1);
+  digest_index.m_u32= 1;
   digest_full= false;
 
   if (digest_max == 0)
@@ -108,9 +108,6 @@ int init_digest(const PFS_global_param *param)
                                                    + index * pfs_max_digest_length, pfs_max_digest_length);
   }
 
-  /* Set record[0] as allocated. */
-  statements_digest_stat_array[0].m_lock.set_allocated();
-
   return 0;
 }
 
@@ -131,9 +128,7 @@ void cleanup_digest(void)
   statements_digest_token_array= NULL;
 }
 
-C_MODE_START
-static uchar *digest_hash_get_key(const uchar *entry, size_t *length,
-                                  my_bool)
+static const uchar *digest_hash_get_key(const uchar *entry, size_t *length)
 {
   const PFS_statements_digest_stat * const *typed_entry;
   const PFS_statements_digest_stat *digest;
@@ -144,9 +139,8 @@ static uchar *digest_hash_get_key(const uchar *entry, size_t *length,
   DBUG_ASSERT(digest != NULL);
   *length= sizeof (PFS_digest_key);
   result= & digest->m_digest_key;
-  return const_cast<uchar*> (reinterpret_cast<const uchar*> (result));
+  return reinterpret_cast<const uchar*> (result);
 }
-C_MODE_END
 
 
 /**
@@ -210,22 +204,19 @@ find_or_create_digest(PFS_thread *thread,
   */
   PFS_digest_key hash_key;
   memset(& hash_key, 0, sizeof(hash_key));
-  /* Compute MD5 Hash of the tokens received. */
-  compute_digest_md5(digest_storage, hash_key.m_md5);
-  memcpy((void*)& digest_storage->m_md5, &hash_key.m_md5, MD5_HASH_SIZE);
+  /* Copy MD5 Hash of the tokens received. */
+  memcpy(&hash_key.m_md5, digest_storage->m_md5, MD5_HASH_SIZE);
   /* Add the current schema to the key */
   hash_key.m_schema_name_length= schema_name_length;
   if (schema_name_length > 0)
     memcpy(hash_key.m_schema_name, schema_name, schema_name_length);
 
   int res;
+  size_t safe_index;
   uint retry_count= 0;
   const uint retry_max= 3;
-  size_t safe_index;
-  size_t attempts= 0;
   PFS_statements_digest_stat **entry;
   PFS_statements_digest_stat *pfs= NULL;
-  pfs_dirty_state dirty_state;
 
   ulonglong now= my_micro_time();
 
@@ -236,7 +227,7 @@ search:
     (lf_hash_search(&digest_hash, pins,
                     &hash_key, sizeof(PFS_digest_key)));
 
-  if (entry && (entry != MY_ERRPTR))
+  if (entry && (entry != MY_LF_ERRPTR))
   {
     /* If digest already exists, update stats and return. */
     pfs= *entry;
@@ -259,73 +250,58 @@ search:
     return & pfs->m_stat;
   }
 
-  while (++attempts <= digest_max)
+  safe_index= PFS_atomic::add_u32(& digest_index.m_u32, 1);
+  if (safe_index >= digest_max)
   {
-    safe_index= PFS_atomic::add_u32(& digest_monotonic_index.m_u32, 1) % digest_max;
-    if (safe_index == 0)
-    {
-      /* Record [0] is reserved. */
-      safe_index= 1;
-    }
+    /* The digest array is now full. */
+    digest_full= true;
+    pfs= &statements_digest_stat_array[0];
 
-    /* Add a new record in digest stat array. */
-    pfs= &statements_digest_stat_array[safe_index];
-
-    if (pfs->m_lock.is_free())
-    {
-      if (pfs->m_lock.free_to_dirty(& dirty_state))
-      {
-        /* Copy digest hash/LF Hash search key. */
-        memcpy(& pfs->m_digest_key, &hash_key, sizeof(PFS_digest_key));
-
-        /*
-          Copy digest storage to statement_digest_stat_array so that it could be
-          used later to generate digest text.
-        */
-        pfs->m_digest_storage.copy(digest_storage);
-
-        pfs->m_first_seen= now;
-        pfs->m_last_seen= now;
-
-        res= lf_hash_insert(&digest_hash, pins, &pfs);
-        if (likely(res == 0))
-        {
-          pfs->m_lock.dirty_to_allocated(& dirty_state);
-          return & pfs->m_stat;
-        }
-
-        pfs->m_lock.dirty_to_free(& dirty_state);
-
-        if (res > 0)
-        {
-          /* Duplicate insert by another thread */
-          if (++retry_count > retry_max)
-          {
-            /* Avoid infinite loops */
-            digest_lost++;
-            return NULL;
-          }
-          goto search;
-        }
-
-        /* OOM in lf_hash_insert */
-        digest_lost++;
-        return NULL;
-      }
-    }
+    if (pfs->m_first_seen == 0)
+      pfs->m_first_seen= now;
+    pfs->m_last_seen= now;
+    return & pfs->m_stat;
   }
 
-  /* The digest array is now full. */
-  digest_full= true;
-  pfs= &statements_digest_stat_array[0];
+  /* Add a new record in digest stat array. */
+  pfs= &statements_digest_stat_array[safe_index];
 
-  if (pfs->m_first_seen == 0)
-    pfs->m_first_seen= now;
+  /* Copy digest hash/LF Hash search key. */
+  memcpy(& pfs->m_digest_key, &hash_key, sizeof(PFS_digest_key));
+
+  /*
+    Copy digest storage to statement_digest_stat_array so that it could be
+    used later to generate digest text.
+  */
+  pfs->m_digest_storage.copy(digest_storage);
+
+  pfs->m_first_seen= now;
   pfs->m_last_seen= now;
-  return & pfs->m_stat;
+
+  res= lf_hash_insert(&digest_hash, pins, &pfs);
+  if (likely(res == 0))
+  {
+    return & pfs->m_stat;
+  }
+
+  if (res > 0)
+  {
+    /* Duplicate insert by another thread */
+    if (++retry_count > retry_max)
+    {
+      /* Avoid infinite loops */
+      digest_lost++;
+      return NULL;
+    }
+    goto search;
+  }
+
+  /* OOM in lf_hash_insert */
+  digest_lost++;
+  return NULL;
 }
 
-void purge_digest(PFS_thread* thread, PFS_digest_key *hash_key)
+static void purge_digest(PFS_thread* thread, PFS_digest_key *hash_key)
 {
   LF_PINS *pins= get_digest_hash_pins(thread);
   if (unlikely(pins == NULL))
@@ -338,7 +314,7 @@ void purge_digest(PFS_thread* thread, PFS_digest_key *hash_key)
     (lf_hash_search(&digest_hash, pins,
                     hash_key, sizeof(PFS_digest_key)));
 
-  if (entry && (entry != MY_ERRPTR))
+  if (entry && (entry != MY_LF_ERRPTR))
   {
     lf_hash_delete(&digest_hash, pins,
                    hash_key, sizeof(PFS_digest_key));
@@ -349,13 +325,10 @@ void purge_digest(PFS_thread* thread, PFS_digest_key *hash_key)
 
 void PFS_statements_digest_stat::reset_data(unsigned char *token_array, size_t length)
 {
-  pfs_dirty_state dirty_state;
-  m_lock.set_dirty(& dirty_state);
   m_digest_storage.reset(token_array, length);
   m_stat.reset();
   m_first_seen= 0;
   m_last_seen= 0;
-  m_lock.dirty_to_free(& dirty_state);
 }
 
 void PFS_statements_digest_stat::reset_index(PFS_thread *thread)
@@ -385,14 +358,11 @@ void reset_esms_by_digest()
     statements_digest_stat_array[index].reset_data(statements_digest_token_array + index * pfs_max_digest_length, pfs_max_digest_length);
   }
 
-  /* Mark record[0] as allocated again. */
-  statements_digest_stat_array[0].m_lock.set_allocated();
-
   /*
     Reset index which indicates where the next calculated digest information
     to be inserted in statements_digest_stat_array.
   */
-  PFS_atomic::store_u32(& digest_monotonic_index.m_u32, 1);
+  digest_index.m_u32= 1;
   digest_full= false;
 }
 

@@ -232,7 +232,7 @@ static int sql_start_row(void *ctx)
   DBUG_ENTER("sql_start_row");
   pctx->current_col= 0;
   DBUG_RETURN(false);
-};
+}
 
 
 static int sql_end_row(void *ctx)
@@ -361,7 +361,7 @@ static int sql_get_double(void * ctx, double value, uint32 decimals)
   pctx->sql_double_decimals[row][col]= decimals;
  
   DBUG_RETURN(false);
-};
+}
 
 
 static int sql_get_date(void * ctx, const MYSQL_TIME * value)
@@ -512,7 +512,7 @@ static void sql_handle_error(void * ctx, uint sql_errno,
   }
   pctx->num_rows= 0;
   DBUG_VOID_RETURN;
-};
+}
 
 
 static void sql_shutdown(void *ctx, int shutdown_server)
@@ -718,10 +718,10 @@ static void test_sql(void *p)
   }
 
   /* All information from performance_schema  */
-  my_snprintf(buffer_query, sizeof(buffer_query), "SELECT name,type,processlist_id,processlist_user,processlist_host,processlist_db,processlist_command,processlist_state,processlist_info,role,instrumented,history,connection_type FROM performance_schema.threads WHERE processlist_id =  %lu",  session_1_id);
+  my_snprintf(buffer_query, sizeof(buffer_query), "SELECT name,type,processlist_id,processlist_user,processlist_host,processlist_db,processlist_command,processlist_state,processlist_info,`role`,instrumented,history,connection_type FROM performance_schema.threads WHERE processlist_id =  %lu",  session_1_id);
   EXEC_TEST_CMD(session_1, buffer_query, p, plugin_ctx);
 
-  my_snprintf(buffer_query, sizeof(buffer_query), "SELECT name,type,processlist_id,processlist_user,processlist_host,processlist_db,processlist_command,processlist_state,processlist_info,role,instrumented,history,connection_type FROM performance_schema.threads WHERE processlist_id =  %lu",  session_2_id);
+  my_snprintf(buffer_query, sizeof(buffer_query), "SELECT name,type,processlist_id,processlist_user,processlist_host,processlist_db,processlist_command,processlist_state,processlist_info,`role`,instrumented,history,connection_type FROM performance_schema.threads WHERE processlist_id =  %lu",  session_2_id);
   EXEC_TEST_CMD(session_2, buffer_query, p, plugin_ctx);
 
   /* srv_session_info_get_current_db */

@@ -43,6 +43,9 @@ Created 3/14/2011 Jimmy Yang
 #include "sql_handler.h"
 #include "handler.h"
 #include "mysqld_thd_manager.h"
+#include "current_thd.h"
+#include "mysqld.h"
+#include "sql_cache.h"
 
 #include "log_event.h"
 #include "innodb_config.h"
@@ -151,8 +154,8 @@ handler_open_table(
 		MDL_REQUEST_INIT(&tables.mdl_request,
 				 MDL_key::TABLE, db_name, table_name,
 				 (lock_mode > TL_READ)
-				 ? MDL_SHARED_WRITE : MDL_SHARED_READ,
-				 MDL_TRANSACTION);
+				 ? MDL_SHARED_WRITE
+				 : MDL_SHARED_READ, MDL_TRANSACTION);
 	}
 
 	if (!open_table(thd, &tables, &table_ctx)) {

@@ -26,11 +26,6 @@ Created 3/26/1996 Heikki Tuuri
 #include "ha_prototypes.h"
 
 #include "trx0roll.h"
-
-#ifdef UNIV_NONINL
-#include "trx0roll.ic"
-#endif
-
 #include "fsp0fsp.h"
 #include "lock0lock.h"
 #include "mach0data.h"
@@ -47,6 +42,7 @@ Created 3/26/1996 Heikki Tuuri
 #include "trx0trx.h"
 #include "trx0undo.h"
 #include "usr0sess.h"
+#include "os0thread-create.h"
 
 /** This many pages must be undone before a truncate is tried within
 rollback */
@@ -222,6 +218,8 @@ trx_rollback_low(
 			trx_undo_ptr_t*	undo_ptr = &trx->rsegs.m_redo;
 			mtr_t		mtr;
 			mtr.start();
+			mtr.set_undo_space(trx->rsegs.m_redo.rseg->space);
+
 			mutex_enter(&trx->rsegs.m_redo.rseg->mutex);
 			if (undo_ptr->insert_undo != NULL) {
 				trx_undo_set_state_at_prepare(
@@ -410,7 +408,7 @@ the row, these locks are naturally released in the rollback. Savepoints which
 were set after this savepoint are deleted.
 @return if no savepoint of the name found then DB_NO_SAVEPOINT,
 otherwise DB_SUCCESS */
-static MY_ATTRIBUTE((nonnull, warn_unused_result))
+static MY_ATTRIBUTE((warn_unused_result))
 dberr_t
 trx_rollback_to_savepoint_for_mysql_low(
 /*====================================*/
@@ -791,11 +789,7 @@ trx_rollback_or_clean_recovered(
 	trx_t*	trx;
 
 	ut_a(srv_force_recovery < SRV_FORCE_NO_TRX_UNDO);
-
-	if (trx_sys_get_n_rw_trx() == 0) {
-
-		return;
-	}
+	ut_ad(!all || trx_sys_need_rollback());
 
 	if (all) {
 		ib::info() << "Starting in background the rollback"
@@ -841,37 +835,19 @@ trx_rollback_or_clean_recovered(
 	}
 }
 
-/*******************************************************************//**
-Rollback or clean up any incomplete transactions which were
+/** Rollback or clean up any incomplete transactions which were
 encountered in crash recovery.  If the transaction already was
 committed, then we clean up a possible insert undo log. If the
 transaction was not yet committed, then we roll it back.
-Note: this is done in a background thread.
-@return a dummy parameter */
-extern "C"
-os_thread_ret_t
-DECLARE_THREAD(trx_rollback_or_clean_all_recovered)(
-/*================================================*/
-	void*	arg MY_ATTRIBUTE((unused)))
-			/*!< in: a dummy parameter required by
-			os_thread_create */
+Note: this is done in a background thread. */
+void
+trx_recovery_rollback_thread()
 {
 	ut_ad(!srv_read_only_mode);
-
-#ifdef UNIV_PFS_THREAD
-	pfs_register_thread(trx_rollback_clean_thread_key);
-#endif /* UNIV_PFS_THREAD */
 
 	trx_rollback_or_clean_recovered(TRUE);
 
 	trx_rollback_or_clean_is_active = false;
-
-	/* We count the number of threads in os_thread_exit(). A created
-	thread should always use that to exit and not use return() to exit. */
-
-	os_thread_exit();
-
-	OS_THREAD_DUMMY_RETURN;
 }
 
 /***********************************************************************//**
@@ -947,6 +923,7 @@ Pops the topmost record when the two undo logs of a transaction are seen
 as a single stack of records ordered by their undo numbers.
 @return undo log record copied to heap, NULL if none left, or if the
 undo number of the top record would be less than the limit */
+static
 trx_undo_rec_t*
 trx_roll_pop_top_rec_of_trx_low(
 /*============================*/

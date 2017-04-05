@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2011, 2016, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -16,6 +16,11 @@
 #ifndef TABLE_ACCOUNTS_H
 #define TABLE_ACCOUNTS_H
 
+/**
+  @file storage/perfschema/table_accounts.h
+  TABLE ACCOUNTS.
+*/
+
 #include "pfs_column_types.h"
 #include "cursor_by_account.h"
 #include "table_helper.h"
@@ -23,7 +28,7 @@
 struct PFS_account;
 
 /**
-  \addtogroup Performance_schema_tables
+  @addtogroup performance_schema_tables
   @{
 */
 
@@ -36,6 +41,24 @@ struct row_accounts
   PFS_account_row m_account;
   /** Columns CURRENT_CONNECTIONS, TOTAL_CONNECTIONS. */
   PFS_connection_stat_row m_connection_stat;
+};
+
+class PFS_index_accounts_by_user_host : public PFS_index_accounts
+{
+public:
+  PFS_index_accounts_by_user_host()
+    : PFS_index_accounts(&m_key_1, &m_key_2),
+    m_key_1("USER"), m_key_2("HOST")
+  {}
+
+  ~PFS_index_accounts_by_user_host()
+  {}
+
+  virtual bool match(PFS_account *pfs);
+
+private:
+  PFS_key_user m_key_1;
+  PFS_key_host m_key_2;
 };
 
 /** Table PERFORMANCE_SCHEMA.ACCOUNTS. */
@@ -53,14 +76,14 @@ protected:
                               unsigned char *buf,
                               Field **fields,
                               bool read_all);
-
-
 protected:
   table_accounts();
 
 public:
   ~table_accounts()
   {}
+
+  int index_init(uint idx, bool sorted);
 
 private:
   virtual void make_row(PFS_account *pfs);

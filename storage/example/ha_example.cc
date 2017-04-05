@@ -32,7 +32,7 @@
   --with-example-storage-engine
 
   Once this is done, MySQL will let you create tables with:<br>
-  CREATE TABLE <table name> (...) ENGINE=EXAMPLE;
+  CREATE TABLE \<table name\> (...) ENGINE=EXAMPLE;
 
   The example storage engine is set up to use table locks. It
   implements an example "SHARE" that is inserted into a hash by table
@@ -99,7 +99,6 @@ static handler *example_create_handler(handlerton *hton,
 handlerton *example_hton;
 
 /* Interface to mysqld, to check system tables supported by SE */
-static const char* example_system_database();
 static bool example_is_supported_system_table(const char *db,
                                       const char *table_name,
                                       bool is_sql_layer_system_table);
@@ -118,7 +117,6 @@ static int example_init_func(void *p)
   example_hton->state=                     SHOW_OPTION_YES;
   example_hton->create=                    example_create_handler;
   example_hton->flags=                     HTON_CAN_RECREATE;
-  example_hton->system_database=   example_system_database;
   example_hton->is_supported_system_table= example_is_supported_system_table;
 
   DBUG_RETURN(0);
@@ -165,44 +163,6 @@ ha_example::ha_example(handlerton *hton, TABLE_SHARE *table_arg)
   :handler(hton, table_arg)
 {}
 
-
-/**
-  @brief
-  If frm_error() is called then we will use this to determine
-  the file extensions that exist for the storage engine. This is also
-  used by the default rename_table and delete_table method in
-  handler.cc.
-
-  For engines that have two file name extentions (separate meta/index file
-  and data file), the order of elements is relevant. First element of engine
-  file name extentions array should be meta/index file extention. Second
-  element - data file extention. This order is assumed by
-  prepare_for_repair() when REPAIR TABLE ... USE_FRM is issued.
-
-  @see
-  rename_table method in handler.cc and
-  delete_table method in handler.cc
-*/
-
-static const char *ha_example_exts[] = {
-  NullS
-};
-
-const char **ha_example::bas_ext() const
-{
-  return ha_example_exts;
-}
-
-/*
-  Following handler function provides access to
-  system database specific to SE. This interface
-  is optional, so every SE need not implement it.
-*/
-const char* ha_example_system_database= NULL;
-const char* example_system_database()
-{
-  return ha_example_system_database;
-}
 
 /*
   List of all system tables specific to the SE.
@@ -795,8 +755,8 @@ THR_LOCK_DATA **ha_example::store_lock(THD *thd,
 
   @details
   If you do not implement this, the default delete_table() is called from
-  handler.cc and it will delete all files with the file extensions returned
-  by bas_ext().
+  handler.cc and it will delete all files with the file extensions from
+  handlerton::file_extensions.
 
   Called from handler.cc by delete_table and ha_create_table(). Only used
   during create if the table_flag HA_DROP_BEFORE_CREATE was specified for
@@ -819,8 +779,8 @@ int ha_example::delete_table(const char *name)
 
   @details
   If you do not implement this, the default rename_table() is called from
-  handler.cc and it will delete all files with the file extensions returned
-  by bas_ext().
+  handler.cc and it will delete all files with the file extensions from
+  handlerton::file_extensions.
 
   Called from sql_table.cc by mysql_rename_table().
 
@@ -855,6 +815,26 @@ ha_rows ha_example::records_in_range(uint inx, key_range *min_key,
 }
 
 
+static MYSQL_THDVAR_STR(
+  last_create_thdvar,
+  PLUGIN_VAR_MEMALLOC,
+  NULL,
+  NULL,
+  NULL,
+  NULL);
+
+static MYSQL_THDVAR_UINT(
+  create_count_thdvar,
+  0,
+  NULL,
+  NULL,
+  NULL,
+  0,
+  0,
+  1000,
+  0);
+
+
 /**
   @brief
   create() is called to create a database. The variable name will have the name
@@ -882,6 +862,20 @@ int ha_example::create(const char *name, TABLE *table_arg,
     This is not implemented but we want someone to be able to see that it
     works.
   */
+
+  /*
+    It's just an example of THDVAR_SET() usage below.
+  */
+  THD *thd = ha_thd();
+  char *buf = (char *) my_malloc(PSI_NOT_INSTRUMENTED, SHOW_VAR_FUNC_BUFF_SIZE,
+                                 MYF(MY_FAE));
+  my_snprintf(buf, SHOW_VAR_FUNC_BUFF_SIZE, "Last creation '%s'", name);
+  THDVAR_SET(thd, last_create_thdvar, buf);
+  my_free(buf);
+
+  uint count= THDVAR(thd, create_count_thdvar) + 1;
+  THDVAR_SET(thd, create_count_thdvar, &count);
+
   DBUG_RETURN(0);
 }
 
@@ -954,6 +948,8 @@ static struct st_mysql_sys_var* example_system_variables[]= {
   MYSQL_SYSVAR(ulong_var),
   MYSQL_SYSVAR(double_var),
   MYSQL_SYSVAR(double_thdvar),
+  MYSQL_SYSVAR(last_create_thdvar),
+  MYSQL_SYSVAR(create_count_thdvar),
   NULL
 };
 

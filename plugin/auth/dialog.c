@@ -100,8 +100,8 @@ static int two_questions(MYSQL_PLUGIN_VIO *vio, MYSQL_SERVER_AUTH_INFO *info)
   return strcmp((const char *) pkt, "yes, of course") ? CR_ERROR : CR_OK;
 }
 
-int generate_auth_string_hash(char *outbuf, unsigned int *buflen,
-                              const char *inbuf, unsigned int inbuflen)
+static int generate_auth_string_hash(char *outbuf, unsigned int *buflen,
+                                     const char *inbuf, unsigned int inbuflen)
 {
   /*
     if buffer specified by server is smaller than the buffer given
@@ -114,16 +114,16 @@ int generate_auth_string_hash(char *outbuf, unsigned int *buflen,
   return 0;
 }
 
-int validate_auth_string_hash(char* const inbuf  MY_ATTRIBUTE((unused)),
-                              unsigned int buflen  MY_ATTRIBUTE((unused)))
+static int validate_auth_string_hash(char* const inbuf  MY_ATTRIBUTE((unused)),
+                                     unsigned int buflen  MY_ATTRIBUTE((unused)))
 {
   return 0;
 }
 
-int set_salt(const char* password MY_ATTRIBUTE((unused)),
-             unsigned int password_len MY_ATTRIBUTE((unused)),
-             unsigned char* salt MY_ATTRIBUTE((unused)),
-             unsigned char* salt_len)
+static int set_salt(const char* password MY_ATTRIBUTE((unused)),
+                    unsigned int password_len MY_ATTRIBUTE((unused)),
+                    unsigned char* salt MY_ATTRIBUTE((unused)),
+                    unsigned char* salt_len)
 {
   *salt_len= 0;
   return 0;

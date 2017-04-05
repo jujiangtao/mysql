@@ -23,6 +23,7 @@
 #include <mysqld_error.h>
 #include <sql_common.h>
 #include <mysql/client_plugin.h>
+#include "mysql/service_mysql_alloc.h"
 
 #define VER "2.1"
 #define MAX_TEST_QUERY_LENGTH 300 /* MAX QUERY BUFFER LENGTH */
@@ -110,6 +111,8 @@ static void print_error(MYSQL * l_mysql, const char *msg);
 static void print_st_error(MYSQL_STMT *stmt, const char *msg);
 static void client_disconnect(MYSQL* mysql);
 static void get_options(int *argc, char ***argv);
+static void die(const char *file, int line,
+                const char *expr) MY_ATTRIBUTE((noreturn));
 
 /*
 Abort unless given experssion is non-zero.
@@ -343,9 +346,9 @@ Connect to the server with options given by arguments to this application,
 stored in global variables opt_host, opt_user, opt_password, opt_db, 
 opt_port and opt_unix_socket.
 
-@param flag[in]           client_flag passed on to mysql_real_connect
-@param protocol[in]       MYSQL_PROTOCOL_* to use for this connection
-@param auto_reconnect[in] set to 1 for auto reconnect
+@param flag           client_flag passed on to mysql_real_connect
+@param protocol       MYSQL_PROTOCOL_* to use for this connection
+@param auto_reconnect set to 1 for auto reconnect
    
 @return pointer to initialized and connected MYSQL object
 */
@@ -985,7 +988,7 @@ Create statement handle, prepare it with statement, execute and allocate
 fetch buffers.
 */
 
-void stmt_fetch_init(Stmt_fetch *fetch, unsigned stmt_no_arg,
+static void stmt_fetch_init(Stmt_fetch *fetch, unsigned stmt_no_arg,
 const char *query_arg)
 {
  unsigned long type= CURSOR_TYPE_READ_ONLY;
@@ -1050,7 +1053,7 @@ const char *query_arg)
 
 /* Fetch and print one row from cursor */
 
-int stmt_fetch_fetch_row(Stmt_fetch *fetch)
+static int stmt_fetch_fetch_row(Stmt_fetch *fetch)
 {
  int rc;
  unsigned i;
@@ -1074,7 +1077,7 @@ int stmt_fetch_fetch_row(Stmt_fetch *fetch)
 }
 
 
-void stmt_fetch_close(Stmt_fetch *fetch)
+static void stmt_fetch_close(Stmt_fetch *fetch)
 {
  unsigned i;
  DBUG_ENTER("stmt_fetch_close");

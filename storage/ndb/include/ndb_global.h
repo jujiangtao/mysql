@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2004, 2014, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2004, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -26,6 +26,8 @@
 #endif
 
 #include <my_global.h>
+#include <mysql/service_my_snprintf.h>
+#include <mysql/service_mysql_alloc.h>
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
@@ -37,7 +39,7 @@
 #endif
 
 #if defined __GNUC__
-# define ATTRIBUTE_FORMAT(style, m, n) __attribute__((format(style, m, n)))
+# define ATTRIBUTE_FORMAT(style, m, n) MY_ATTRIBUTE((format(style, m, n)))
 #else
 # define ATTRIBUTE_FORMAT(style, m, n)
 #endif
@@ -214,7 +216,7 @@ extern "C" {
      if the expression is false.
 */
 
-#if (_MSC_VER > 1500) || (defined __GXX_EXPERIMENTAL_CXX0X__)
+#if (defined(_WIN32) && _MSC_VER > 1500) || (defined __GXX_EXPERIMENTAL_CXX0X__)
 
 /*
   Prefer to use the 'static_assert' function from C++0x
@@ -234,7 +236,7 @@ extern "C" {
 #endif
 
 
-#if (_MSC_VER > 1500)
+#if defined(_WIN32) && (_MSC_VER > 1500)
 #define HAVE___HAS_TRIVIAL_CONSTRUCTOR
 #define HAVE___IS_POD
 #endif
@@ -260,19 +262,19 @@ extern "C" {
 #endif
 
 /**
- *  __attribute__((noreturn)) was introduce in gcc 2.5
+ *  MY_ATTRIBUTE((noreturn)) was introduce in gcc 2.5
  */
-#if (GCC_VERSION >= 2005)
-#define ATTRIBUTE_NORETURN __attribute__((noreturn))
+#ifdef __GNUC__
+#define ATTRIBUTE_NORETURN MY_ATTRIBUTE((noreturn))
 #else
 #define ATTRIBUTE_NORETURN
 #endif
 
 /**
- *  __attribute__((noinline)) was introduce in gcc 3.1
+ *  MY_ATTRIBUTE((noinline)) was introduce in gcc 3.1
  */
-#if (GCC_VERSION >= 3001)
-#define ATTRIBUTE_NOINLINE __attribute__((noinline))
+#ifdef __GNUC__
+#define ATTRIBUTE_NOINLINE MY_ATTRIBUTE((noinline))
 #else
 #define ATTRIBUTE_NOINLINE
 #endif
@@ -293,12 +295,13 @@ extern "C" {
  * require is like a normal assert, only it's always on (eg. in release)
  */
 C_MODE_START
-/** see below */
-typedef int(*RequirePrinter)(const char *fmt, ...);
+typedef int(*RequirePrinter)(const char *fmt, ...)
+  ATTRIBUTE_FORMAT(printf, 1, 2);
 void require_failed(int exitcode, RequirePrinter p,
                     const char* expr, const char* file, int line)
                     ATTRIBUTE_NORETURN;
-int ndbout_printer(const char * fmt, ...);
+int ndbout_printer(const char * fmt, ...)
+  ATTRIBUTE_FORMAT(printf, 1, 2);
 C_MODE_END
 /*
  *  this allows for an exit() call if exitcode is not zero

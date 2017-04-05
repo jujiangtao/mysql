@@ -31,8 +31,8 @@
 #include "pfs_table_provider.h"
 #include "pfs_thread_provider.h"
 #include "pfs_transaction_provider.h"
+#include "pfs_error_provider.h"
 
-#include "mysql/psi/psi.h"
 #include "mysql/psi/mysql_thread.h"
 #include "my_thread.h"
 #include "sql_const.h"
@@ -57,6 +57,32 @@
 #include "pfs_digest.h"
 #include "pfs_program.h"
 #include "pfs_prepared_stmt.h"
+#include "pfs_error.h"
+
+/*
+  Exporting cmake compilation flags to doxygen,
+  so they get documented.
+*/
+#ifdef IN_DOXYGEN
+#define HAVE_PSI_2
+#define DISABLE_PSI_MUTEX
+#define DISABLE_PSI_RWLOCK
+#define DISABLE_PSI_COND
+#define DISABLE_PSI_FILE
+#define DISABLE_PSI_THREAD
+#define DISABLE_PSI_TABLE
+#define DISABLE_PSI_STAGE
+#define DISABLE_PSI_STATEMENT
+#define DISABLE_PSI_SP
+#define DISABLE_PSI_PS
+#define DISABLE_PSI_STATEMENT_DIGEST
+#define DISABLE_PSI_SOCKET
+#define DISABLE_PSI_MEMORY
+#define DISABLE_PSI_ERROR
+#define DISABLE_PSI_IDLE
+#define DISABLE_PSI_METADATA
+#define DISABLE_PSI_TRANSACTION
+#endif /* IN_DOXYGEN */
 
 /*
   This is a development tool to investigate memory statistics,
@@ -90,10 +116,10 @@ static void report_memory_accounting_error(
 #endif /* PFS_PARANOID */
 
 /**
-  @page PAGE_PERFORMANCE_SCHEMA The Performance Schema main page
+  @page PAGE_PFS Performance Schema
   MySQL PERFORMANCE_SCHEMA implementation.
 
-  @section INTRO Introduction
+  @section PFS_MAIN_INTRO Introduction
   The PERFORMANCE_SCHEMA is a way to introspect the internal execution of
   the server at runtime.
   The performance schema focuses primarily on performance data,
@@ -130,8 +156,7 @@ static void report_memory_accounting_error(
   - MySQL plugins, including storage engines,
   - third party plugins, including third party storage engines.
 
-  For details, see the @ref PAGE_INSTRUMENTATION_INTERFACE
-  "instrumentation interface page".
+  For details, see @ref PAGE_PFS_PSI
 
   @subsection INT_COMPILING Compiling interface
 
@@ -174,8 +199,8 @@ static void report_memory_accounting_error(
   Its role is to advertise all the SQL tables natively
   supported by the performance schema to the SQL server.
   The code consists of creating MySQL tables for the
-  performance schema itself, and is used in './mysql --bootstrap'
-  mode when a server is installed.
+  performance schema itself, and is used in './mysqld --initialize'
+  mode when a server is initialized.
 
   The implementation of the database creation script is located in
   @verbatim ./scripts/mysql_system_tables.sql @endverbatim
@@ -356,13 +381,19 @@ static void report_memory_accounting_error(
   that is not instrumented
   - a server not supporting the performance schema + a storage engine
   that is instrumented
+
+  @subpage PAGE_PFS_PSI
+
+  @subpage PAGE_PFS_AGGREGATES
+
+  @subpage PAGE_PFS_NEW_TABLE
 */
 
 /**
-  @page PAGE_INSTRUMENTATION_INTERFACE Performance schema: instrumentation interface page.
+  @page PAGE_PFS_PSI Instrumentation interface
   MySQL performance schema instrumentation interface.
 
-  @section INTRO Introduction
+  @section PFS_PSI_INTRO Introduction
 
   The instrumentation interface consist of two layers:
   - a raw ABI (Application Binary Interface) layer, that exposes the primitive
@@ -520,10 +551,10 @@ static inline int mysql_mutex_lock(...)
 */
 
 /**
-  @page PAGE_AGGREGATES Performance schema: the aggregates page.
+  @page PAGE_PFS_AGGREGATES Aggregates
   Performance schema aggregates.
 
-  @section INTRO Introduction
+  @section PFS_AGG_INTRO Introduction
 
   Aggregates tables are tables that can be formally defined as
   SELECT ... from EVENTS_WAITS_HISTORY_INFINITE ... group by 'group clause'.
@@ -705,33 +736,39 @@ static inline int mysql_mutex_lock(...)
 
   The graph of structures will look like:
 
-@verbatim
-  PFS_wait_locker (T-A, M-1) ----------
-                                      |
-                                      v
-                                 PFS_mutex (M-1)
-                                 - m_wait_stat    ------------
-                                      ^                      |
-                                      |                      |
-  PFS_wait_locker (T-B, M-1) ----------                      |
-                                                             v
-                                                        PFS_mutex_class (M)
-                                                        - m_wait_stat
-  PFS_wait_locker (T-C, M-2) ----------                      ^
-                                      |                      |
-                                      v                      |
-                                 PFS_mutex (M-2)             |
-                                 - m_wait_stat    ------------
-                                      ^
-                                      |
-  PFS_wait_locker (T-D, M-2) ----------
+  @startuml
 
-            ||                        ||                     ||
-            ||                        ||                     ||
-            vv                        vv                     vv
+  object "PFS_wait_locker (T-A, M-1)" as TAM1
+  object "PFS_wait_locker (T-B, M-1)" as TBM1
+  object "PFS_wait_locker (T-C, M-2)" as TCM2
+  object "PFS_wait_locker (T-D, M-2)" as TDM2
 
-  EVENTS_WAITS_CURRENT ..._SUMMARY_BY_INSTANCE ..._SUMMARY_BY_EVENT_NAME
-@endverbatim
+  object "PFS_mutex (M-1)" as M1
+  M1 : m_wait_stat
+
+  object "PFS_mutex (M-2)" as M2
+  M2 : m_wait_stat
+
+  object "PFS_mutex_class (M)" as M
+  M : m_wait_stat
+
+  M <-- M1
+  M1 <-- TAM1
+  M1 <-- TBM1
+  M <-- M2
+  M2 <-- TCM2
+  M2 <-- TDM2
+
+  M1 .right. M2
+  TAM1 .right. TBM1
+  TBM1 .right. TCM2
+  TCM2 .right. TDM2
+
+  note right of M : PFS_mutex_class displayed in TABLE EVENTS_WAITS_SUMMARY_BY_EVENT_NAME
+  note right of M2 : PFS_mutex displayed in TABLE EVENTS_WAITS_SUMMARY_BY_INSTANCE
+  note right of TDM2 : PFS_wait_lockers displayed in TABLE EVENTS_WAITS_CURRENT
+
+  @enduml
 
   @section ON_THE_FLY On the fly aggregates
 
@@ -841,10 +878,10 @@ static inline int mysql_mutex_lock(...)
   grand parents directly.
 
   Implemented as:
-  - [1] @c start_mutex_wait_v1(), @c end_mutex_wait_v1()
-  - [2] @c destroy_mutex_v1()
-  - [3] @c aggregate_thread_waits()
-  - [4] @c PFS_account::aggregate_waits()
+  - [1] #pfs_start_mutex_wait_v1(), #pfs_end_mutex_wait_v1()
+  - [2] #pfs_destroy_mutex_v1()
+  - [3] #aggregate_thread_waits()
+  - [4] PFS_account::aggregate_waits()
   - [A] EVENTS_WAITS_SUMMARY_BY_THREAD_BY_EVENT_NAME,
         @c table_ews_by_thread_by_event_name::make_row()
   - [B] EVENTS_WAITS_SUMMARY_BY_INSTANCE,
@@ -889,8 +926,8 @@ static inline int mysql_mutex_lock(...)
 @endverbatim
 
   Implemented as:
-  - [1] @c start_rwlock_rdwait_v1(), @c end_rwlock_rdwait_v1(), ...
-  - [2] @c destroy_rwlock_v1()
+  - [1] #pfs_start_rwlock_rdwait_v1(), #pfs_end_rwlock_rdwait_v1(), ...
+  - [2] #pfs_destroy_rwlock_v1()
   - [A] EVENTS_WAITS_SUMMARY_BY_THREAD_BY_EVENT_NAME,
         @c table_ews_by_thread_by_event_name::make_row()
   - [B] EVENTS_WAITS_SUMMARY_BY_INSTANCE,
@@ -917,8 +954,8 @@ static inline int mysql_mutex_lock(...)
 @endverbatim
 
   Implemented as:
-  - [1] @c start_cond_wait_v1(), @c end_cond_wait_v1()
-  - [2] @c destroy_cond_v1()
+  - [1] #pfs_start_cond_wait_v1(), #pfs_end_cond_wait_v1()
+  - [2] #pfs_destroy_cond_v1()
   - [A] EVENTS_WAITS_SUMMARY_BY_THREAD_BY_EVENT_NAME,
         @c table_ews_by_thread_by_event_name::make_row()
   - [B] EVENTS_WAITS_SUMMARY_BY_INSTANCE,
@@ -945,9 +982,9 @@ static inline int mysql_mutex_lock(...)
 @endverbatim
 
   Implemented as:
-  - [1] @c get_thread_file_name_locker_v1(), @c start_file_wait_v1(),
-        @c end_file_wait_v1(), ...
-  - [2] @c close_file_v1()
+  - [1] #pfs_get_thread_file_name_locker_v1(), #pfs_start_file_wait_v1(),
+        #pfs_end_file_wait_v1(), ...
+  - [2] #pfs_start_file_close_wait_v1(), #pfs_end_file_close_wait_v1()
   - [A] EVENTS_WAITS_SUMMARY_BY_THREAD_BY_EVENT_NAME,
         @c table_ews_by_thread_by_event_name::make_row()
   - [B] EVENTS_WAITS_SUMMARY_BY_INSTANCE,
@@ -986,9 +1023,9 @@ static inline int mysql_mutex_lock(...)
 @endverbatim
 
   Implemented as:
-  - [1] @c start_socket_wait_v1(), @c end_socket_wait_v1().
-  - [2] @c close_socket_v1()
-  - [3] @c aggregate_thread_waits()
+  - [1] #pfs_start_socket_wait_v1(), #pfs_end_socket_wait_v1().
+  - [2] #pfs_destroy_socket_v1()
+  - [3] #aggregate_thread_waits()
   - [4] @c PFS_account::aggregate_waits()
   - [5] @c PFS_host::aggregate_waits()
   - [A] EVENTS_WAITS_SUMMARY_BY_THREAD_BY_EVENT_NAME,
@@ -1047,22 +1084,22 @@ static inline int mysql_mutex_lock(...)
 @endverbatim
 
   Implemented as:
-  - [1] @c start_table_io_wait_v1(), @c end_table_io_wait_v1()
-  - [2] @c close_table_v1()
-  - [3] @c drop_table_share_v1()
-  - [4] @c TRUNCATE TABLE EVENTS_WAITS_SUMMARY_BY_THREAD_BY_EVENT_NAME
-  - [5] @c TRUNCATE TABLE EVENTS_WAITS_SUMMARY_BY_ACCOUNT_BY_EVENT_NAME
-  - [A] EVENTS_WAITS_SUMMARY_BY_INSTANCE,
-        @c table_events_waits_summary_by_instance::make_table_row()
+  - [1] #pfs_start_table_io_wait_v1(), #pfs_end_table_io_wait_v1()
+  - [2] #pfs_close_table_v1()
+  - [3] #pfs_drop_table_share_v1()
+  - [4] TRUNCATE TABLE EVENTS_WAITS_SUMMARY_BY_THREAD_BY_EVENT_NAME
+  - [5] TRUNCATE TABLE EVENTS_WAITS_SUMMARY_BY_ACCOUNT_BY_EVENT_NAME
+  - [A] TABLE_IO_WAITS_SUMMARY_BY_TABLE,
+        @c table_tiws_by_table::make_row()
   - [B] OBJECTS_SUMMARY_GLOBAL_BY_TYPE,
-        @c table_os_global_by_type::make_row()
+        @c table_os_global_by_type::make_table_row()
   - [C] EVENTS_WAITS_SUMMARY_GLOBAL_BY_EVENT_NAME,
         @c table_ews_global_by_event_name::make_table_io_row(),
         @c table_ews_global_by_event_name::make_table_lock_row()
   - [D] EVENTS_WAITS_SUMMARY_BY_THREAD_BY_EVENT_NAME,
         @c table_ews_by_thread_by_event_name::make_row()
   - [E] EVENTS_WAITS_SUMMARY_BY_ACCOUNT_BY_EVENT_NAME,
-        @c table_ews_by_user_by_account_name::make_row()
+        @c table_ews_by_account_by_event_name::make_row()
   - [F] EVENTS_WAITS_SUMMARY_BY_USER_BY_EVENT_NAME,
         @c table_ews_by_user_by_event_name::make_row()
   - [G] EVENTS_WAITS_SUMMARY_BY_HOST_BY_EVENT_NAME,
@@ -1107,8 +1144,8 @@ static inline int mysql_mutex_lock(...)
 @endverbatim
 
   Implemented as:
-  - [1] @c start_stage_v1()
-  - [2] @c delete_thread_v1(), @c aggregate_thread_stages()
+  - [1] #pfs_start_stage_v1()
+  - [2] #pfs_delete_thread_v1(), #aggregate_thread_stages()
   - [3] @c PFS_account::aggregate_stages()
   - [4] @c PFS_host::aggregate_stages()
   - [A] EVENTS_STAGES_SUMMARY_BY_THREAD_BY_EVENT_NAME,
@@ -1169,13 +1206,13 @@ static inline int mysql_mutex_lock(...)
 @endverbatim
 
   Implemented as:
-  - [1] @c start_statement_v1(), end_statement_v1()
+  - [1] #pfs_start_statement_v1(), #pfs_end_statement_v1()
        (1a, 1b) is an aggregation by EVENT_NAME,
         (1c, 1d, 1e) is an aggregation by TIME,
         (1f) is an aggregation by DIGEST
         all of these are orthogonal,
-        and implemented in end_statement_v1().
-  - [2] @c delete_thread_v1(), @c aggregate_thread_statements()
+        and implemented in #pfs_end_statement_v1().
+  - [2] #pfs_delete_thread_v1(), #aggregate_thread_statements()
   - [3] @c PFS_account::aggregate_statements()
   - [4] @c PFS_host::aggregate_statements()
   - [A] EVENTS_STATEMENTS_SUMMARY_BY_THREAD_BY_EVENT_NAME,
@@ -1189,14 +1226,11 @@ static inline int mysql_mutex_lock(...)
   - [E] EVENTS_STATEMENTS_SUMMARY_GLOBAL_BY_EVENT_NAME,
         @c table_esms_global_by_event_name::make_row()
   - [F] EVENTS_STATEMENTS_CURRENT,
-        @c table_events_statements_current::rnd_next(),
-        @c table_events_statements_common::make_row()
+        @c table_events_statements_current::make_row()
   - [G] EVENTS_STATEMENTS_HISTORY,
-        @c table_events_statements_history::rnd_next(),
-        @c table_events_statements_common::make_row()
+        @c table_events_statements_history::make_row()
   - [H] EVENTS_STATEMENTS_HISTORY_LONG,
-        @c table_events_statements_history_long::rnd_next(),
-        @c table_events_statements_common::make_row()
+        @c table_events_statements_history_long::make_row()
   - [I] EVENTS_STATEMENTS_SUMMARY_BY_DIGEST
         @c table_esms_by_digest::make_row()
 
@@ -1244,12 +1278,12 @@ static inline int mysql_mutex_lock(...)
 @endverbatim
 
   Implemented as:
-  - [1] @c start_transaction_v1(), end_transaction_v1()
+  - [1] #pfs_start_transaction_v1(), #pfs_end_transaction_v1()
        (1a, 1b) is an aggregation by EVENT_NAME,
         (1c, 1d, 1e) is an aggregation by TIME,
         all of these are orthogonal,
-        and implemented in end_transaction_v1().
-  - [2] @c delete_thread_v1(), @c aggregate_thread_transactions()
+        and implemented in #pfs_end_transaction_v1().
+  - [2] #pfs_delete_thread_v1(), #aggregate_thread_transactions()
   - [3] @c PFS_account::aggregate_transactions()
   - [4] @c PFS_host::aggregate_transactions()
 
@@ -1308,38 +1342,86 @@ static inline int mysql_mutex_lock(...)
 @endverbatim
 
   Implemented as:
-  - [1] @c pfs_memory_alloc_v1(),
-        @c pfs_memory_realloc_v1(),
-        @c pfs_memory_free_v1().
+  - [1] #pfs_memory_alloc_v1(),
+        #pfs_memory_realloc_v1(),
+        #pfs_memory_free_v1().
   - [1+] are overflows that can happen during [1a],
         implemented with @c carry_memory_stat_delta()
-  - [2] @c delete_thread_v1(), @c aggregate_thread_memory()
+  - [2] #pfs_delete_thread_v1(), #aggregate_thread_memory()
   - [3] @c PFS_account::aggregate_memory()
   - [4] @c PFS_host::aggregate_memory()
-  - [A] EVENTS_STATEMENTS_SUMMARY_BY_THREAD_BY_EVENT_NAME,
+  - [A] MEMORY_SUMMARY_BY_THREAD_BY_EVENT_NAME,
         @c table_mems_by_thread_by_event_name::make_row()
-  - [B] EVENTS_STATEMENTS_SUMMARY_BY_ACCOUNT_BY_EVENT_NAME,
+  - [B] MEMORY_SUMMARY_BY_ACCOUNT_BY_EVENT_NAME,
         @c table_mems_by_account_by_event_name::make_row()
-  - [C] EVENTS_STATEMENTS_SUMMARY_BY_USER_BY_EVENT_NAME,
+  - [C] MEMORY_SUMMARY_BY_USER_BY_EVENT_NAME,
         @c table_mems_by_user_by_event_name::make_row()
-  - [D] EVENTS_STATEMENTS_SUMMARY_BY_HOST_BY_EVENT_NAME,
+  - [D] MEMORY_SUMMARY_BY_HOST_BY_EVENT_NAME,
         @c table_mems_by_host_by_event_name::make_row()
-  - [E] EVENTS_STATEMENTS_SUMMARY_GLOBAL_BY_EVENT_NAME,
+  - [E] MEMORY_SUMMARY_GLOBAL_BY_EVENT_NAME,
         @c table_mems_global_by_event_name::make_row()
 
+@section IMPL_ERROR Implementation for error instruments
+
+  For errors, there are no tables that contains individual event data.
+
+  For errors, the tables that contains aggregated data are:
+  - EVENTS_ERRORS_SUMMARY_BY_ACCOUNT_BY_ERROR
+  - EVENTS_ERRORS_SUMMARY_BY_HOST_BY_ERROR
+  - EVENTS_ERRORS_SUMMARY_BY_THREAD_BY_ERROR
+  - EVENTS_ERRORS_SUMMARY_BY_USER_BY_ERROR
+  - EVENTS_ERRORS_SUMMARY_GLOBAL_BY_ERROR
+
+@verbatim
+  error_event(T, S)
+   |
+   | [1]
+   |
+1a |-> pfs_thread(T).event_name(S)            =====>> [A], [B], [C], [D], [E]
+   |    |
+   |    | [2]
+   |    |
+   | 2a |-> pfs_account(U, H).event_name(S)   =====>> [B], [C], [D], [E]
+   |    .    |
+   |    .    | [3-RESET]
+   |    .    |
+   | 2b .....+-> pfs_user(U).event_name(S)    =====>> [C]
+   |    .    |
+   | 2c .....+-> pfs_host(H).event_name(S)    =====>> [D], [E]
+   |    .    .    |
+   |    .    .    | [4-RESET]
+   | 2d .    .    |
+1b |----+----+----+-> global.event_name(S)    =====>> [E]
+
+@endverbatim
+
+  Implemented as:
+  - [1] #pfs_log_error_v1()
+  - [2] #pfs_delete_thread_v1(), #aggregate_thread_errors()
+  - [3] @c PFS_account::aggregate_errors()
+  - [4] @c PFS_host::aggregate_errors()
+  - [A] EVENTS_ERRORS_SUMMARY_BY_THREAD_BY_ERROR,
+        @c table_ees_by_thread_by_error::make_row()
+  - [B] EVENTS_ERRORS_SUMMARY_BY_ACCOUNT_BY_ERROR,
+        @c table_ees_by_account_by_error::make_row()
+  - [C] EVENTS_ERRORS_SUMMARY_BY_USER_BY_ERROR,
+        @c table_ees_by_user_by_error::make_row()
+  - [D] EVENTS_ERRORS_SUMMARY_BY_HOST_BY_ERROR,
+        @c table_ees_by_host_by_error::make_row()
+  - [E] EVENTS_ERRORS_SUMMARY_GLOBAL_BY_ERROR,
+        @c table_ees_global_by_error::make_row()
 */
 
 /**
-  @defgroup Performance_schema Performance Schema
+  @defgroup performance_schema Performance Schema
   The performance schema component.
-  For details, see the
-  @ref PAGE_PERFORMANCE_SCHEMA "performance schema main page".
+  For details, see @ref PAGE_PFS
 
-  @defgroup Performance_schema_implementation Performance Schema Implementation
-  @ingroup Performance_schema
+  @defgroup performance_schema_implementation Performance Schema Implementation
+  @ingroup performance_schema
 
-  @defgroup Performance_schema_tables Performance Schema Tables
-  @ingroup Performance_schema_implementation
+  @defgroup performance_schema_tables Performance Schema Tables
+  @ingroup performance_schema_implementation
 */
 
 thread_local_key_t THR_PFS;
@@ -1522,11 +1604,13 @@ static int build_prefix(const LEX_STRING *prefix, const char *category,
     return 1;
   }
 
-  /* output = prefix + category + '/' */
+  /* output = prefix + '/' + category + '/' */
   memcpy(out_ptr, prefix->str, prefix_length);
   out_ptr+= prefix_length;
   if (len > 0)
   {
+    *out_ptr= '/';
+    out_ptr++;
     memcpy(out_ptr, category, len);
     out_ptr+= len;
     *out_ptr= '/';
@@ -1564,7 +1648,7 @@ static int build_prefix(const LEX_STRING *prefix, const char *category,
     if (likely(full_length <= PFS_MAX_INFO_NAME_LENGTH))                    \
     {                                                                       \
       memcpy(formatted_name + prefix_length, info->m_name, len);            \
-      key= REGISTER_FUNC(formatted_name, (uint)full_length, info->m_flags); \
+      key= REGISTER_FUNC(formatted_name, (uint)full_length, info);          \
     }                                                                       \
     else                                                                    \
     {                                                                       \
@@ -1635,7 +1719,7 @@ void pfs_register_rwlock_v1(const char *category,
       if (likely(full_length <= PFS_MAX_INFO_NAME_LENGTH))
       {
         memcpy(sx_formatted_name + sx_prefix_length, info->m_name, len);
-        key= register_rwlock_class(sx_formatted_name, (uint)full_length, info->m_flags);
+        key= register_rwlock_class(sx_formatted_name, (uint)full_length, info);
       }
       else
       {
@@ -1650,7 +1734,7 @@ void pfs_register_rwlock_v1(const char *category,
       if (likely(full_length <= PFS_MAX_INFO_NAME_LENGTH))
       {
         memcpy(rw_formatted_name + rw_prefix_length, info->m_name, len);
-        key= register_rwlock_class(rw_formatted_name, (uint)full_length, info->m_flags);
+        key= register_rwlock_class(rw_formatted_name, (uint)full_length, info);
       }
       else
       {
@@ -1738,7 +1822,7 @@ void pfs_register_stage_v1(const char *category,
       info->m_key= register_stage_class(formatted_name,
                                         (uint)prefix_length,
                                         (uint)full_length,
-                                        info->m_flags);
+                                        info);
     }
     else
     {
@@ -1778,7 +1862,7 @@ void pfs_register_statement_v1(const char *category,
     if (likely(full_length <= PFS_MAX_INFO_NAME_LENGTH))
     {
       memcpy(formatted_name + prefix_length, info->m_name, len);
-      info->m_key= register_statement_class(formatted_name, (uint)full_length, info->m_flags);
+      info->m_key= register_statement_class(formatted_name, (uint)full_length, info);
     }
     else
     {
@@ -1799,15 +1883,6 @@ void pfs_register_socket_v1(const char *category,
                    register_socket_class)
 }
 
-#define INIT_BODY_V1(T, KEY, ID)                                            \
-  PFS_##T##_class *klass;                                                   \
-  PFS_##T *pfs;                                                             \
-  klass= find_##T##_class(KEY);                                             \
-  if (unlikely(klass == NULL))                                              \
-    return NULL;                                                            \
-  pfs= create_##T(klass, ID);                                               \
-  return reinterpret_cast<PSI_##T *> (pfs)
-
 /**
   Implementation of the mutex instrumentation interface.
   @sa PSI_v1::init_mutex.
@@ -1815,7 +1890,13 @@ void pfs_register_socket_v1(const char *category,
 PSI_mutex*
 pfs_init_mutex_v1(PSI_mutex_key key, const void *identity)
 {
-  INIT_BODY_V1(mutex, key, identity);
+  PFS_mutex_class *klass;
+  PFS_mutex *pfs;
+  klass= find_mutex_class(key);
+  if (unlikely(klass == NULL))
+    return NULL;
+  pfs= create_mutex(klass, identity);
+  return reinterpret_cast<PSI_mutex *> (pfs);
 }
 
 /**
@@ -1838,7 +1919,13 @@ void pfs_destroy_mutex_v1(PSI_mutex* mutex)
 PSI_rwlock*
 pfs_init_rwlock_v1(PSI_rwlock_key key, const void *identity)
 {
-  INIT_BODY_V1(rwlock, key, identity);
+  PFS_rwlock_class *klass;
+  PFS_rwlock *pfs;
+  klass= find_rwlock_class(key);
+  if (unlikely(klass == NULL))
+    return NULL;
+  pfs= create_rwlock(klass, identity);
+  return reinterpret_cast<PSI_rwlock *> (pfs);
 }
 
 /**
@@ -1861,7 +1948,13 @@ void pfs_destroy_rwlock_v1(PSI_rwlock* rwlock)
 PSI_cond*
 pfs_init_cond_v1(PSI_cond_key key, const void *identity)
 {
-  INIT_BODY_V1(cond, key, identity);
+  PFS_cond_class *klass;
+  PFS_cond *pfs;
+  klass= find_cond_class(key);
+  if (unlikely(klass == NULL))
+    return NULL;
+  pfs= create_cond(klass, identity);
+  return reinterpret_cast<PSI_cond *> (pfs);
 }
 
 /**
@@ -2139,7 +2232,8 @@ struct PFS_spawn_thread_arg
   void *m_user_arg;
 };
 
-extern "C" void* pfs_spawn_thread(void *arg)
+extern "C" {
+static void* pfs_spawn_thread(void *arg)
 {
   PFS_spawn_thread_arg *typed_arg= (PFS_spawn_thread_arg*) arg;
   void *user_arg;
@@ -2189,6 +2283,7 @@ extern "C" void* pfs_spawn_thread(void *arg)
 
   return NULL;
 }
+} // extern "C"
 
 /**
   Implementation of the thread instrumentation interface.
@@ -2682,7 +2777,7 @@ pfs_start_mutex_wait_v1(PSI_mutex_locker_state *state,
   @sa PSI_v1::start_rwlock_rdwait
   @sa PSI_v1::start_rwlock_wrwait
 */
-PSI_rwlock_locker*
+static PSI_rwlock_locker*
 pfs_start_rwlock_wait_v1(PSI_rwlock_locker_state *state,
                          PSI_rwlock *rwlock,
                          PSI_rwlock_operation op,
@@ -2998,7 +3093,9 @@ pfs_start_table_io_wait_v1(PSI_table_locker_state *state,
   if (! pfs_table->m_io_enabled)
     return NULL;
 
-  PFS_thread *pfs_thread= my_thread_get_THR_PFS();
+  PFS_thread *pfs_thread= pfs_table->m_thread_owner;
+
+  DBUG_ASSERT(pfs_thread == my_thread_get_THR_PFS());
 
   uint flags;
   ulonglong timer_start= 0;
@@ -3101,7 +3198,7 @@ pfs_start_table_lock_wait_v1(PSI_table_locker_state *state,
   if (! pfs_table->m_lock_enabled)
     return NULL;
 
-  PFS_thread *pfs_thread= my_thread_get_THR_PFS();
+  PFS_thread *pfs_thread= pfs_table->m_thread_owner;
 
   PFS_TL_LOCK_TYPE lock_type;
 
@@ -3514,12 +3611,7 @@ pfs_start_socket_wait_v1(PSI_socket_locker_state *state,
 
   if (flag_thread_instrumentation)
   {
-    /*
-       Do not use pfs_socket->m_thread_owner here,
-       as different threads may use concurrently the same socket,
-       for example during a KILL.
-    */
-    PFS_thread *pfs_thread= my_thread_get_THR_PFS();
+    PFS_thread *pfs_thread= pfs_socket->m_thread_owner;
 
     if (unlikely(pfs_thread == NULL))
       return NULL;
@@ -3891,8 +3983,6 @@ void pfs_end_idle_wait_v1(PSI_idle_locker* locker)
       if (thread->m_flag_events_waits_history_long)
         insert_events_waits_history_long(wait);
       thread->m_events_waits_current--;
-
-      DBUG_ASSERT(wait == thread->m_events_waits_current);
     }
   }
 
@@ -3977,8 +4067,6 @@ void pfs_end_mutex_wait_v1(PSI_mutex_locker* locker, int rc)
       if (thread->m_flag_events_waits_history_long)
         insert_events_waits_history_long(wait);
       thread->m_events_waits_current--;
-
-      DBUG_ASSERT(wait == thread->m_events_waits_current);
     }
   }
 }
@@ -4058,8 +4146,6 @@ void pfs_end_rwlock_rdwait_v1(PSI_rwlock_locker* locker, int rc)
       if (thread->m_flag_events_waits_history_long)
         insert_events_waits_history_long(wait);
       thread->m_events_waits_current--;
-
-      DBUG_ASSERT(wait == thread->m_events_waits_current);
     }
   }
 }
@@ -4137,8 +4223,6 @@ void pfs_end_rwlock_wrwait_v1(PSI_rwlock_locker* locker, int rc)
       if (thread->m_flag_events_waits_history_long)
         insert_events_waits_history_long(wait);
       thread->m_events_waits_current--;
-
-      DBUG_ASSERT(wait == thread->m_events_waits_current);
     }
   }
 }
@@ -4203,8 +4287,6 @@ void pfs_end_cond_wait_v1(PSI_cond_locker* locker, int rc)
       if (thread->m_flag_events_waits_history_long)
         insert_events_waits_history_long(wait);
       thread->m_events_waits_current--;
-
-      DBUG_ASSERT(wait == thread->m_events_waits_current);
     }
   }
 }
@@ -4300,8 +4382,6 @@ void pfs_end_table_io_wait_v1(PSI_table_locker* locker, ulonglong numrows)
       if (thread->m_flag_events_waits_history_long)
         insert_events_waits_history_long(wait);
       thread->m_events_waits_current--;
-
-      DBUG_ASSERT(wait == thread->m_events_waits_current);
     }
   }
 
@@ -4371,8 +4451,6 @@ void pfs_end_table_lock_wait_v1(PSI_table_locker* locker)
       if (thread->m_flag_events_waits_history_long)
         insert_events_waits_history_long(wait);
       thread->m_events_waits_current--;
-
-      DBUG_ASSERT(wait == thread->m_events_waits_current);
     }
   }
 
@@ -4645,8 +4723,6 @@ void pfs_end_file_wait_v1(PSI_file_locker *locker,
       if (thread->m_flag_events_waits_history_long)
         insert_events_waits_history_long(wait);
       thread->m_events_waits_current--;
-
-      DBUG_ASSERT(wait == thread->m_events_waits_current);
     }
   }
 }
@@ -5446,17 +5522,6 @@ void pfs_end_statement_v1(PSI_statement_locker *locker, void *stmt_da)
       pfs->m_timer_end= timer_end;
       pfs->m_end_event_id= thread->m_event_id;
 
-      if (digest_storage != NULL)
-      {
-        /*
-          The following columns in events_statement_current:
-          - DIGEST,
-          - DIGEST_TEXT
-          are computed from the digest storage.
-        */
-        pfs->m_digest_storage.copy(digest_storage);
-      }
-
       pfs_program= reinterpret_cast<PFS_program*>(state->m_parent_sp_share);
       pfs_prepared_stmt= reinterpret_cast<PFS_prepared_stmt*>(state->m_parent_prepared_stmt);
 
@@ -5715,17 +5780,17 @@ void pfs_end_statement_v1(PSI_statement_locker *locker, void *stmt_da)
 
 static inline enum_object_type sp_type_to_object_type(uint sp_type)
 {
-  enum enum_sp_type value= static_cast<enum enum_sp_type> (sp_type);
+  enum_sp_type value= to_sp_type(sp_type);
 
   switch (value)
   {
-    case SP_TYPE_FUNCTION:
+    case enum_sp_type::FUNCTION:
       return OBJECT_TYPE_FUNCTION;
-    case SP_TYPE_PROCEDURE:
+    case enum_sp_type::PROCEDURE:
       return OBJECT_TYPE_PROCEDURE;
-    case SP_TYPE_TRIGGER:
+    case enum_sp_type::TRIGGER:
       return OBJECT_TYPE_TRIGGER;
-    case SP_TYPE_EVENT:
+    case enum_sp_type::EVENT:
       return OBJECT_TYPE_EVENT;
     default:
       DBUG_ASSERT(false);
@@ -5738,11 +5803,11 @@ static inline enum_object_type sp_type_to_object_type(uint sp_type)
   Implementation of the stored program instrumentation interface.
   @sa PSI_v1::get_sp_share.
 */
-PSI_sp_share *pfs_get_sp_share_v1(uint sp_type,
-                                  const char* schema_name,
-                                  uint schema_name_length,
-                                  const char* object_name,
-                                  uint object_name_length)
+static PSI_sp_share *pfs_get_sp_share_v1(uint sp_type,
+                                         const char* schema_name,
+                                         uint schema_name_length,
+                                         const char* object_name,
+                                         uint object_name_length)
 {
 
   PFS_thread *pfs_thread= my_thread_get_THR_PFS();
@@ -5765,14 +5830,14 @@ PSI_sp_share *pfs_get_sp_share_v1(uint sp_type,
   return reinterpret_cast<PSI_sp_share *>(pfs_program);
 }
 
-void pfs_release_sp_share_v1(PSI_sp_share* sp_share)
+static void pfs_release_sp_share_v1(PSI_sp_share* sp_share)
 {
   /* Unused */
   return;
 }
 
-PSI_sp_locker* pfs_start_sp_v1(PSI_sp_locker_state *state,
-                               PSI_sp_share *sp_share)
+static PSI_sp_locker* pfs_start_sp_v1(PSI_sp_locker_state *state,
+                                      PSI_sp_share *sp_share)
 {
   DBUG_ASSERT(state != NULL);
   if (! flag_global_instrumentation)
@@ -5809,7 +5874,7 @@ PSI_sp_locker* pfs_start_sp_v1(PSI_sp_locker_state *state,
   return reinterpret_cast<PSI_sp_locker*> (state);
 }
 
-void pfs_end_sp_v1(PSI_sp_locker *locker)
+static void pfs_end_sp_v1(PSI_sp_locker *locker)
 {
   PSI_sp_locker_state *state= reinterpret_cast<PSI_sp_locker_state*> (locker);
   DBUG_ASSERT(state != NULL);
@@ -5834,11 +5899,11 @@ void pfs_end_sp_v1(PSI_sp_locker *locker)
   }
 }
 
-void pfs_drop_sp_v1(uint sp_type,
-                    const char* schema_name,
-                    uint schema_name_length,
-                    const char* object_name,
-                    uint object_name_length)
+static void pfs_drop_sp_v1(uint sp_type,
+                           const char* schema_name,
+                           uint schema_name_length,
+                           const char* object_name,
+                           uint object_name_length)
 {
   PFS_thread *pfs_thread= my_thread_get_THR_PFS();
   if (unlikely(pfs_thread == NULL))
@@ -6242,8 +6307,6 @@ void pfs_end_socket_wait_v1(PSI_socket_locker *locker, size_t byte_count)
     if (thread->m_flag_events_waits_history_long)
       insert_events_waits_history_long(wait);
     thread->m_events_waits_current--;
-
-    DBUG_ASSERT(wait == thread->m_events_waits_current);
   }
 }
 
@@ -6316,21 +6379,50 @@ pfs_digest_start_v1(PSI_statement_locker *locker)
 
 void pfs_digest_end_v1(PSI_digest_locker *locker, const sql_digest_storage *digest)
 {
-  PSI_statement_locker_state *statement_state;
-  statement_state= reinterpret_cast<PSI_statement_locker_state*> (locker);
-  DBUG_ASSERT(statement_state != NULL);
+  PSI_statement_locker_state *state;
+  state= reinterpret_cast<PSI_statement_locker_state*> (locker);
+  DBUG_ASSERT(state != NULL);
   DBUG_ASSERT(digest != NULL);
 
-  if (statement_state->m_discarded)
+  if (state->m_discarded)
     return;
 
-  if (statement_state->m_flags & STATE_FLAG_DIGEST)
+  if (state->m_flags & STATE_FLAG_DIGEST)
   {
-    statement_state->m_digest= digest;
+    /* TODO: pfs_digest_end_v1() has side effects here, to document better */
+    sql_digest_storage *update_digest= const_cast<sql_digest_storage*> (digest);
+
+    /* Compute MD5 Hash of the tokens received. */
+    compute_digest_md5(digest, update_digest->m_md5);
+
+    state->m_digest= digest;
+
+    uint req_flags= STATE_FLAG_THREAD | STATE_FLAG_EVENT;
+
+    if ((state->m_flags & req_flags) == req_flags)
+    {
+      PFS_thread *thread= reinterpret_cast<PFS_thread *> (state->m_thread);
+      DBUG_ASSERT(thread != NULL);
+      PFS_events_statements *pfs= reinterpret_cast<PFS_events_statements*> (state->m_statement);
+      DBUG_ASSERT(pfs != NULL);
+
+      pfs_dirty_state dirty_state;
+      thread->m_stmt_lock.allocated_to_dirty(& dirty_state);
+
+      /*
+        The following columns in events_statement_current:
+        - DIGEST,
+        - DIGEST_TEXT
+        are computed from the digest storage.
+      */
+      pfs->m_digest_storage.copy(digest);
+
+      thread->m_stmt_lock.dirty_to_allocated(& dirty_state);
+    }
   }
 }
 
-PSI_prepared_stmt*
+static PSI_prepared_stmt*
 pfs_create_prepared_stmt_v1(void *identity, uint stmt_id,
                            PSI_statement_locker *locker,
                            const char *stmt_name, size_t stmt_name_length,
@@ -6359,8 +6451,8 @@ pfs_create_prepared_stmt_v1(void *identity, uint stmt_id,
   return reinterpret_cast<PSI_prepared_stmt*>(pfs);
 }
 
-void pfs_execute_prepared_stmt_v1 (PSI_statement_locker *locker,
-                                   PSI_prepared_stmt* ps)
+static void pfs_execute_prepared_stmt_v1 (PSI_statement_locker *locker,
+                                          PSI_prepared_stmt* ps)
 {
   PSI_statement_locker_state *state= reinterpret_cast<PSI_statement_locker_state*> (locker);
   DBUG_ASSERT(state != NULL);
@@ -6369,14 +6461,14 @@ void pfs_execute_prepared_stmt_v1 (PSI_statement_locker *locker,
   state->m_in_prepare= false;
 }
 
-void pfs_destroy_prepared_stmt_v1(PSI_prepared_stmt* prepared_stmt)
+static void pfs_destroy_prepared_stmt_v1(PSI_prepared_stmt* prepared_stmt)
 {
   PFS_prepared_stmt *pfs_prepared_stmt= reinterpret_cast<PFS_prepared_stmt*>(prepared_stmt);
   delete_prepared_stmt(pfs_prepared_stmt);
   return;
 }
 
-void pfs_reprepare_prepared_stmt_v1(PSI_prepared_stmt* prepared_stmt)
+static void pfs_reprepare_prepared_stmt_v1(PSI_prepared_stmt* prepared_stmt)
 {
   PFS_prepared_stmt *pfs_prepared_stmt= reinterpret_cast<PFS_prepared_stmt*>(prepared_stmt);
   PFS_single_stat *prepared_stmt_stat= &pfs_prepared_stmt->m_reprepare_stat;
@@ -6402,11 +6494,49 @@ int pfs_set_thread_connect_attrs_v1(const char *buffer, uint length,
     pfs_dirty_state dirty_state;
     const CHARSET_INFO *cs = static_cast<const CHARSET_INFO *> (from_cs);
 
-    /* copy from the input buffer as much as we can fit */
-    uint copy_size= (uint)(length < session_connect_attrs_size_per_thread ?
-                           length : session_connect_attrs_size_per_thread);
     thd->m_session_lock.allocated_to_dirty(& dirty_state);
-    memcpy(thd->m_session_connect_attrs, buffer, copy_size);
+
+    /* copy from the input buffer as much as we can fit */
+    uint copy_size, lost;
+
+    if (length > session_connect_attrs_longest_seen)
+      session_connect_attrs_longest_seen= length;
+
+    if (length <= session_connect_attrs_size_per_thread)
+    {
+      copy_size= length;
+      lost=      0;
+
+      memcpy(thd->m_session_connect_attrs, buffer, copy_size);
+    }
+    else
+    {
+      copy_size= session_connect_attrs_size_per_thread;
+      lost     = length - copy_size;
+
+      /* create warning */
+      const char *key= "_truncated";
+      char        val[7], warn_buf[64];
+      size_t      key_len= strlen(key), warning_size, val_len;
+
+      /* lost characters, factoring in warning attribute key/value */
+      lost += key_len + 1 + sizeof(val);
+
+      /* we want UTF-8, so my_convert() is not necessary here. */
+      val_len= my_snprintf(val, sizeof(val) - 1, "%d", lost);
+
+      warning_size= my_snprintf(warn_buf, sizeof(warn_buf),
+                                "%c%s%c%s", key_len, key, val_len, val);
+
+      if (warning_size <= copy_size)
+      {
+        size_t left= copy_size - warning_size;
+        memcpy(thd->m_session_connect_attrs, warn_buf, warning_size);
+        if (left > 0)
+          memcpy(thd->m_session_connect_attrs + warning_size, buffer, left);
+      }
+    }
+
     thd->m_session_connect_attrs_length= copy_size;
     thd->m_session_connect_attrs_cs_number= cs->number;
     thd->m_session_lock.dirty_to_allocated(& dirty_state);
@@ -6415,14 +6545,14 @@ int pfs_set_thread_connect_attrs_v1(const char *buffer, uint length,
       return 0;
 
     session_connect_attrs_lost++;
-    return 1;
+    return lost;
   }
   return 0;
 }
 
 void pfs_register_memory_v1(const char *category,
-                               PSI_memory_info_v1 *info,
-                               int count)
+                            PSI_memory_info_v1 *info,
+                            int count)
 {
   REGISTER_BODY_V1(PSI_memory_key,
                    memory_instrument_prefix,
@@ -6577,7 +6707,8 @@ PSI_memory_key pfs_memory_realloc_v1(PSI_memory_key key, size_t old_size, size_t
   return key;
 }
 
-PSI_memory_key pfs_memory_claim_v1(PSI_memory_key key, size_t size, PSI_thread **owner)
+static PSI_memory_key pfs_memory_claim_v1(PSI_memory_key key, size_t size,
+                                          PSI_thread **owner)
 {
   PFS_thread ** owner_thread= reinterpret_cast<PFS_thread**>(owner);
   DBUG_ASSERT(owner_thread != NULL);
@@ -6908,8 +7039,6 @@ pfs_end_metadata_wait_v1(PSI_metadata_locker *locker,
       if (thread->m_flag_events_waits_history_long)
         insert_events_waits_history_long(wait);
       thread->m_events_waits_current--;
-
-      DBUG_ASSERT(wait == thread->m_events_waits_current);
     }
   }
   else
@@ -6927,36 +7056,61 @@ pfs_end_metadata_wait_v1(PSI_metadata_locker *locker,
   }
 }
 
+void pfs_log_error_v1(uint error_num, PSI_error_operation error_operation)
+{
+  PFS_error_stat *stat;
+  uint error_stat_index;
+
+  DBUG_ASSERT(error_num != 0);
+ 
+  if (!flag_global_instrumentation)
+    return;
+
+  if (!global_error_class.m_enabled)
+    return;
+
+  if (!max_server_errors)
+    return;
+
+  if (flag_thread_instrumentation)
+  {
+    PFS_thread *pfs_thread= my_thread_get_THR_PFS();
+    if (unlikely(pfs_thread == NULL))
+      return;
+    if (!pfs_thread->m_enabled)
+      return;
+
+    /* Aggregate to EVENTS_ERRORS_SUMMARY_BY_THREAD_BY_ERROR */
+    stat= &pfs_thread->write_instr_class_errors_stats()[GLOBAL_ERROR_INDEX];
+  }
+  else
+  {
+    /* Aggregate to EVENTS_ERRORS_SUMMARY_GLOBAL_BY_ERROR */
+    stat= &global_error_stat;
+  }
+
+  /* Find the index of this particular error in array of error stats. */
+  error_stat_index= lookup_error_stat_index(error_num);
+
+  /*
+     If this error goes beyond max_server_errors, OR
+     If it's (RE)SIGNALED error with custom error number
+     collect its stats at NULL row.
+   */
+  if (error_stat_index >= max_server_errors)
+    error_stat_index= 0;
+
+  /* Aggregate to EVENTS_ERRORS_SUMMARY_..._BY_ERROR (counted) */
+  stat->aggregate_count(error_stat_index, error_operation);
+}
+
 /**
   Implementation of the instrumentation interface.
-  @sa PSI_v1.
+  @sa PSI_thread_service_v1
 */
-PSI_v1 PFS_v1=
+PSI_thread_service_v1 pfs_thread_service_v1=
 {
-  pfs_register_mutex_v1,
-  pfs_register_rwlock_v1,
-  pfs_register_cond_v1,
   pfs_register_thread_v1,
-  pfs_register_file_v1,
-  pfs_register_stage_v1,
-  pfs_register_statement_v1,
-  pfs_register_socket_v1,
-  pfs_init_mutex_v1,
-  pfs_destroy_mutex_v1,
-  pfs_init_rwlock_v1,
-  pfs_destroy_rwlock_v1,
-  pfs_init_cond_v1,
-  pfs_destroy_cond_v1,
-  pfs_init_socket_v1,
-  pfs_destroy_socket_v1,
-  pfs_get_table_share_v1,
-  pfs_release_table_share_v1,
-  pfs_drop_table_share_v1,
-  pfs_open_table_v1,
-  pfs_unbind_table_v1,
-  pfs_rebind_table_v1,
-  pfs_close_table_v1,
-  pfs_create_file_v1,
   pfs_spawn_thread_v1,
   pfs_new_thread_v1,
   pfs_set_thread_id_v1,
@@ -6974,27 +7128,49 @@ PSI_v1 PFS_v1=
   pfs_set_thread_v1,
   pfs_delete_current_thread_v1,
   pfs_delete_thread_v1,
-  pfs_get_thread_file_name_locker_v1,
-  pfs_get_thread_file_stream_locker_v1,
-  pfs_get_thread_file_descriptor_locker_v1,
-  pfs_unlock_mutex_v1,
-  pfs_unlock_rwlock_v1,
-  pfs_signal_cond_v1,
-  pfs_broadcast_cond_v1,
-  pfs_start_idle_wait_v1,
-  pfs_end_idle_wait_v1,
+  pfs_set_thread_connect_attrs_v1
+};
+
+PSI_mutex_service_v1 pfs_mutex_service_v1=
+{
+  pfs_register_mutex_v1,
+  pfs_init_mutex_v1,
+  pfs_destroy_mutex_v1,
   pfs_start_mutex_wait_v1,
   pfs_end_mutex_wait_v1,
+  pfs_unlock_mutex_v1
+};
+
+PSI_rwlock_service_v1 pfs_rwlock_service_v1=
+{
+  pfs_register_rwlock_v1,
+  pfs_init_rwlock_v1,
+  pfs_destroy_rwlock_v1,
   pfs_start_rwlock_rdwait_v1,
   pfs_end_rwlock_rdwait_v1,
   pfs_start_rwlock_wrwait_v1,
   pfs_end_rwlock_wrwait_v1,
+  pfs_unlock_rwlock_v1,
+};
+
+PSI_cond_service_v1 pfs_cond_service_v1=
+{
+  pfs_register_cond_v1,
+  pfs_init_cond_v1,
+  pfs_destroy_cond_v1,
+  pfs_signal_cond_v1,
+  pfs_broadcast_cond_v1,
   pfs_start_cond_wait_v1,
-  pfs_end_cond_wait_v1,
-  pfs_start_table_io_wait_v1,
-  pfs_end_table_io_wait_v1,
-  pfs_start_table_lock_wait_v1,
-  pfs_end_table_lock_wait_v1,
+  pfs_end_cond_wait_v1
+};
+
+PSI_file_service_v1 pfs_file_service_v1=
+{
+  pfs_register_file_v1,
+  pfs_create_file_v1,
+  pfs_get_thread_file_name_locker_v1,
+  pfs_get_thread_file_stream_locker_v1,
+  pfs_get_thread_file_descriptor_locker_v1,
   pfs_start_file_open_wait_v1,
   pfs_end_file_open_wait_v1,
   pfs_end_file_open_wait_and_bind_to_descriptor_v1,
@@ -7002,10 +7178,63 @@ PSI_v1 PFS_v1=
   pfs_start_file_wait_v1,
   pfs_end_file_wait_v1,
   pfs_start_file_close_wait_v1,
-  pfs_end_file_close_wait_v1,
+  pfs_end_file_close_wait_v1
+};
+
+PSI_socket_service_v1 pfs_socket_service_v1=
+{
+  pfs_register_socket_v1,
+  pfs_init_socket_v1,
+  pfs_destroy_socket_v1,
+  pfs_start_socket_wait_v1,
+  pfs_end_socket_wait_v1,
+  pfs_set_socket_state_v1,
+  pfs_set_socket_info_v1,
+  pfs_set_socket_thread_owner_v1
+};
+
+PSI_table_service_v1 pfs_table_service_v1=
+{
+  pfs_get_table_share_v1,
+  pfs_release_table_share_v1,
+  pfs_drop_table_share_v1,
+  pfs_open_table_v1,
+  pfs_unbind_table_v1,
+  pfs_rebind_table_v1,
+  pfs_close_table_v1,
+  pfs_start_table_io_wait_v1,
+  pfs_end_table_io_wait_v1,
+  pfs_start_table_lock_wait_v1,
+  pfs_end_table_lock_wait_v1,
+  pfs_unlock_table_v1
+};
+
+PSI_mdl_service_v1 pfs_mdl_service_v1=
+{
+  pfs_create_metadata_lock_v1,
+  pfs_set_metadata_lock_status_v1,
+  pfs_destroy_metadata_lock_v1,
+  pfs_start_metadata_wait_v1,
+  pfs_end_metadata_wait_v1
+};
+
+PSI_idle_service_v1 pfs_idle_service_v1=
+{
+  pfs_start_idle_wait_v1,
+  pfs_end_idle_wait_v1
+};
+
+PSI_stage_service_v1 pfs_stage_service_v1=
+{
+  pfs_register_stage_v1,
   pfs_start_stage_v1,
   pfs_get_current_stage_progress_v1,
-  pfs_end_stage_v1,
+  pfs_end_stage_v1
+};
+
+PSI_statement_service_v1 pfs_statement_service_v1=
+{
+  pfs_register_statement_v1,
   pfs_get_thread_statement_locker_v1,
   pfs_refine_statement_v1,
   pfs_start_statement_v1,
@@ -7027,6 +7256,21 @@ PSI_v1 PFS_v1=
   pfs_set_statement_no_index_used_v1,
   pfs_set_statement_no_good_index_used_v1,
   pfs_end_statement_v1,
+  pfs_create_prepared_stmt_v1,
+  pfs_destroy_prepared_stmt_v1,
+  pfs_reprepare_prepared_stmt_v1,
+  pfs_execute_prepared_stmt_v1,
+  pfs_digest_start_v1,
+  pfs_digest_end_v1,
+  pfs_get_sp_share_v1,
+  pfs_release_sp_share_v1,
+  pfs_start_sp_v1,
+  pfs_end_sp_v1,
+  pfs_drop_sp_v1
+};
+
+PSI_transaction_service_v1 pfs_transaction_service_v1=
+{
   pfs_get_thread_transaction_locker_v1,
   pfs_start_transaction_v1,
   pfs_set_transaction_xid_v1,
@@ -7036,43 +7280,172 @@ PSI_v1 PFS_v1=
   pfs_inc_transaction_savepoints_v1,
   pfs_inc_transaction_rollback_to_savepoint_v1,
   pfs_inc_transaction_release_savepoint_v1,
-  pfs_end_transaction_v1,
-  pfs_start_socket_wait_v1,
-  pfs_end_socket_wait_v1,
-  pfs_set_socket_state_v1,
-  pfs_set_socket_info_v1,
-  pfs_set_socket_thread_owner_v1,
-  pfs_create_prepared_stmt_v1,
-  pfs_destroy_prepared_stmt_v1,
-  pfs_reprepare_prepared_stmt_v1,
-  pfs_execute_prepared_stmt_v1,
-  pfs_digest_start_v1,
-  pfs_digest_end_v1,
-  pfs_set_thread_connect_attrs_v1,
-  pfs_start_sp_v1,
-  pfs_end_sp_v1,
-  pfs_drop_sp_v1,
-  pfs_get_sp_share_v1,
-  pfs_release_sp_share_v1,
+  pfs_end_transaction_v1
+};
+
+PSI_memory_service_v1 pfs_memory_service_v1=
+{
   pfs_register_memory_v1,
   pfs_memory_alloc_v1,
   pfs_memory_realloc_v1,
   pfs_memory_claim_v1,
-  pfs_memory_free_v1,
-  pfs_unlock_table_v1,
-  pfs_create_metadata_lock_v1,
-  pfs_set_metadata_lock_status_v1,
-  pfs_destroy_metadata_lock_v1,
-  pfs_start_metadata_wait_v1,
-  pfs_end_metadata_wait_v1
+  pfs_memory_free_v1
 };
 
-static void* get_interface(int version)
+PSI_error_service_v1 pfs_error_service_v1=
+{
+  pfs_log_error_v1
+};
+
+static void* get_thread_interface(int version)
 {
   switch (version)
   {
-  case PSI_VERSION_1:
-    return &PFS_v1;
+  case PSI_THREAD_VERSION_1:
+    return &pfs_thread_service_v1;
+  default:
+    return NULL;
+  }
+}
+
+static void* get_mutex_interface(int version)
+{
+  switch (version)
+  {
+  case PSI_MUTEX_VERSION_1:
+    return &pfs_mutex_service_v1;
+  default:
+    return NULL;
+  }
+}
+
+static void* get_rwlock_interface(int version)
+{
+  switch (version)
+  {
+  case PSI_RWLOCK_VERSION_1:
+    return &pfs_rwlock_service_v1;
+  default:
+    return NULL;
+  }
+}
+
+static void* get_cond_interface(int version)
+{
+  switch (version)
+  {
+  case PSI_COND_VERSION_1:
+    return &pfs_cond_service_v1;
+  default:
+    return NULL;
+  }
+}
+
+static void* get_file_interface(int version)
+{
+  switch (version)
+  {
+  case PSI_FILE_VERSION_1:
+    return &pfs_file_service_v1;
+  default:
+    return NULL;
+  }
+}
+
+static void* get_socket_interface(int version)
+{
+  switch (version)
+  {
+  case PSI_SOCKET_VERSION_1:
+    return &pfs_socket_service_v1;
+  default:
+    return NULL;
+  }
+}
+
+static void* get_table_interface(int version)
+{
+  switch (version)
+  {
+  case PSI_TABLE_VERSION_1:
+    return &pfs_table_service_v1;
+  default:
+    return NULL;
+  }
+}
+
+static void* get_mdl_interface(int version)
+{
+  switch (version)
+  {
+  case PSI_MDL_VERSION_1:
+    return &pfs_mdl_service_v1;
+  default:
+    return NULL;
+  }
+}
+
+static void* get_idle_interface(int version)
+{
+  switch (version)
+  {
+  case PSI_IDLE_VERSION_1:
+    return &pfs_idle_service_v1;
+  default:
+    return NULL;
+  }
+}
+
+static void* get_stage_interface(int version)
+{
+  switch (version)
+  {
+  case PSI_STAGE_VERSION_1:
+    return &pfs_stage_service_v1;
+  default:
+    return NULL;
+  }
+}
+
+static void* get_statement_interface(int version)
+{
+  switch (version)
+  {
+  case PSI_STATEMENT_VERSION_1:
+    return &pfs_statement_service_v1;
+  default:
+    return NULL;
+  }
+}
+
+static void* get_transaction_interface(int version)
+{
+  switch (version)
+  {
+  case PSI_TRANSACTION_VERSION_1:
+    return &pfs_transaction_service_v1;
+  default:
+    return NULL;
+  }
+}
+
+static void* get_memory_interface(int version)
+{
+  switch (version)
+  {
+  case PSI_MEMORY_VERSION_1:
+    return &pfs_memory_service_v1;
+  default:
+    return NULL;
+  }
+}
+
+static void* get_error_interface(int version)
+{
+  switch (version)
+  {
+  case PSI_ERROR_VERSION_1:
+    return &pfs_error_service_v1;
   default:
     return NULL;
   }
@@ -7080,7 +7453,72 @@ static void* get_interface(int version)
 
 C_MODE_END
 
-struct PSI_bootstrap PFS_bootstrap=
+struct PSI_thread_bootstrap pfs_thread_bootstrap=
 {
-  get_interface
+  get_thread_interface
+};
+
+struct PSI_mutex_bootstrap pfs_mutex_bootstrap=
+{
+  get_mutex_interface
+};
+
+struct PSI_rwlock_bootstrap pfs_rwlock_bootstrap=
+{
+  get_rwlock_interface
+};
+
+struct PSI_cond_bootstrap pfs_cond_bootstrap=
+{
+  get_cond_interface
+};
+
+struct PSI_file_bootstrap pfs_file_bootstrap=
+{
+  get_file_interface
+};
+
+struct PSI_socket_bootstrap pfs_socket_bootstrap=
+{
+  get_socket_interface
+};
+
+struct PSI_table_bootstrap pfs_table_bootstrap=
+{
+  get_table_interface
+};
+
+struct PSI_mdl_bootstrap pfs_mdl_bootstrap=
+{
+  get_mdl_interface
+};
+
+struct PSI_idle_bootstrap pfs_idle_bootstrap=
+{
+  get_idle_interface
+};
+
+struct PSI_stage_bootstrap pfs_stage_bootstrap=
+{
+  get_stage_interface
+};
+
+struct PSI_statement_bootstrap pfs_statement_bootstrap=
+{
+  get_statement_interface
+};
+
+struct PSI_transaction_bootstrap pfs_transaction_bootstrap=
+{
+  get_transaction_interface
+};
+
+struct PSI_memory_bootstrap pfs_memory_bootstrap=
+{
+  get_memory_interface
+};
+
+struct PSI_error_bootstrap pfs_error_bootstrap=
+{
+  get_error_interface
 };

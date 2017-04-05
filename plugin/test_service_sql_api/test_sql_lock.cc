@@ -202,7 +202,7 @@ static int sql_end_result_metadata(void *ctx, uint server_status,
   pctx->meta_warn_count= warn_count;
   pctx->num_rows= 0;
   DBUG_RETURN(false);
-};
+}
 
 
 static int sql_start_row(void *ctx)

@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -21,16 +21,15 @@
 #ifndef OPT_HINTS_INCLUDED
 #define OPT_HINTS_INCLUDED
 
-#include "my_config.h"
-#include "parse_tree_node_base.h"
-#include "sql_alloc.h"
-#include "sql_list.h"
-#include "mem_root_array.h"
-#include "sql_string.h"
-#include "sql_bitmap.h"
-#include "sql_show.h"
-#include "item_subselect.h"
+#include "my_global.h"
+#include "item_subselect.h" // Item_exists_subselect
+#include "mem_root_array.h" // Mem_root_array
+#include "sql_alloc.h"      // Sql_alloc
+#include "sql_bitmap.h"     // Bitmap
+#include "sql_show.h"       // append_identifier
+#include "sql_string.h"     // String
 
+class Opt_hints_table;
 struct LEX;
 struct TABLE;
 
@@ -51,6 +50,7 @@ enum opt_hints_enum
   QB_NAME_HINT_ENUM,
   SEMIJOIN_HINT_ENUM,
   SUBQUERY_HINT_ENUM,
+  DERIVED_MERGE_HINT_ENUM,
   MAX_HINT_ENUM
 };
 
@@ -169,6 +169,8 @@ public:
       resolved(false), resolved_children(0)
   { }
 
+  virtual ~Opt_hints() {}
+
   bool is_specified(opt_hints_enum type_arg) const
   {
     return hints_map.is_specified(type_arg);
@@ -234,7 +236,7 @@ public:
 
     @return  pointer to complex hint for a given type.
   */
-  virtual PT_hint *get_complex_hints(opt_hints_enum type)
+  virtual PT_hint *get_complex_hints(opt_hints_enum type MY_ATTRIBUTE((unused)))
   {
     DBUG_ASSERT(0);
     return NULL; /* error C4716: must return a value */
@@ -302,7 +304,7 @@ public:
     max_exec_time= NULL;
   }
 
-  virtual void append_name(THD *thd, String *str) {}
+  virtual void append_name(THD*, String*) {}
   virtual PT_hint *get_complex_hints(opt_hints_enum type);
 };
 
@@ -369,13 +371,12 @@ public:
     table alias in the query block and attaches corresponding
     key hint objects to appropriate KEY structures.
 
-    @param table      Pointer to TABLE object
-    @param alias      Table alias
+    @param table  Table reference
 
     @return  pointer Opt_hints_table object if this object is found,
              NULL otherwise.
   */
-  Opt_hints_table *adjust_table_hints(TABLE *table, const char *alias);
+  Opt_hints_table *adjust_table_hints(TABLE_LIST *table);
 
   /**
     Returns whether semi-join is enabled for this query block
@@ -447,9 +448,9 @@ public:
     Function sets correlation between key hint objects and
     appropriate KEY structures.
 
-    @param table      Pointer to TABLE object
+    @param table      Pointer to TABLE_LIST object
   */
-  void adjust_key_hints(TABLE *table);
+  void adjust_key_hints(TABLE_LIST *table);
 };
 
 
@@ -487,7 +488,7 @@ public:
   optimizer switch value if hint is not specified.
 
   @param thd               Pointer to THD object
-  @param tab               Pointer to TABLE object
+  @param table             Pointer to TABLE_LIST object
   @param keyno             Key number
   @param type_arg          Hint type
   @param optimizer_switch  Optimizer switch flag
@@ -495,7 +496,7 @@ public:
   @return key hint value if hint is specified,
           otherwise optimizer switch value.
 */
-bool hint_key_state(const THD *thd, const TABLE *table,
+bool hint_key_state(const THD *thd, const TABLE_LIST *table,
                     uint keyno, opt_hints_enum type_arg,
                     uint optimizer_switch);
 
@@ -504,14 +505,14 @@ bool hint_key_state(const THD *thd, const TABLE *table,
   optimizer switch value if hint is not specified.
 
   @param thd                Pointer to THD object
-  @param tab                Pointer to TABLE object
+  @param table              Pointer to TABLE_LIST object
   @param type_arg           Hint type
   @param optimizer_switch   Optimizer switch flag
 
   @return table hint value if hint is specified,
           otherwise optimizer switch value.
 */
-bool hint_table_state(const THD *thd, const TABLE *table,
+bool hint_table_state(const THD *thd, const TABLE_LIST *table,
                       opt_hints_enum type_arg,
                       uint optimizer_switch);
 

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2014, 2015, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2014, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -65,17 +65,28 @@ protected:
   {
     initializer.SetUp();
 
-    // Initilize one storage engine
-    LEX_STRING engine_name= {C_STRING_WITH_LEN("InnoDB")};
-    hton2plugin[0]= new st_plugin_int();
-    hton2plugin[0]->name= engine_name;
+    // Initilize some storage engines
+    LEX_STRING engine_name0= { C_STRING_WITH_LEN("InnoDB0") };
+    LEX_STRING engine_name1= { C_STRING_WITH_LEN("InnoDB1") };
+    LEX_STRING engine_name2= { C_STRING_WITH_LEN("InnoDB2") };
+    LEX_STRING engine_name4= { C_STRING_WITH_LEN("InnoDB4") };
+    LEX_STRING engine_name7= { C_STRING_WITH_LEN("InnoDB7") };
+
+    insert_hton2plugin(0, new st_plugin_int())->name= engine_name0;
+    insert_hton2plugin(1, new st_plugin_int())->name= engine_name1;
+    insert_hton2plugin(2, new st_plugin_int())->name= engine_name2;
+    insert_hton2plugin(4, new st_plugin_int())->name= engine_name4;
+    insert_hton2plugin(7, new st_plugin_int())->name= engine_name7;
   }
 
   virtual void TearDown()
   {
     initializer.TearDown();
-    delete hton2plugin[0];
-    hton2plugin[0]= NULL;
+    delete remove_hton2plugin(0);
+    delete remove_hton2plugin(1);
+    delete remove_hton2plugin(2);
+    delete remove_hton2plugin(4);
+    delete remove_hton2plugin(7);
   }
 
   THD *thd() { return initializer.thd(); }
@@ -211,7 +222,7 @@ private:
   the expected default values.
 */
 
-void validate_default_server_cost_constants(const Server_cost_constants *cost)
+static void validate_default_server_cost_constants(const Server_cost_constants *cost)
 {
   EXPECT_EQ(cost->row_evaluate_cost(), default_row_evaluate_cost);
   EXPECT_EQ(cost->key_compare_cost(), default_key_compare_cost);

@@ -15,6 +15,7 @@
 
 #include "table_cache.h"
 #include "sql_test.h" // lock_descriptions[]
+#include "template_utils.h"
 
 
 /**
@@ -26,14 +27,13 @@ Table_cache_manager table_cache_manager;
 #ifdef HAVE_PSI_INTERFACE
 PSI_mutex_key Table_cache::m_lock_key;
 PSI_mutex_info Table_cache::m_mutex_keys[]= {
-  { &m_lock_key, "LOCK_table_cache", 0}
+  { &m_lock_key, "LOCK_table_cache", 0, 0}
 };
 #endif
 
 
-extern "C" uchar *table_cache_key(const uchar *record,
-                                  size_t *length,
-                                  my_bool not_used MY_ATTRIBUTE((unused)))
+static const uchar *table_cache_key(const uchar *record,
+                                    size_t *length)
 {
   TABLE_SHARE *share= ((Table_cache_element*)record)->get_share();
   *length= share->table_cache_key.length;
@@ -41,8 +41,9 @@ extern "C" uchar *table_cache_key(const uchar *record,
 }
 
 
-extern "C" void table_cache_free_entry(Table_cache_element *element)
+static void table_cache_free_entry(void *arg)
 {
+  Table_cache_element *element= pointer_cast<Table_cache_element*>(arg);
   delete element;
 }
 
@@ -61,8 +62,8 @@ bool Table_cache::init()
   m_table_count= 0;
 
   if (my_hash_init(&m_cache, &my_charset_bin,
-                   table_cache_size_per_instance, 0, 0,
-                   table_cache_key, (my_hash_free_key) table_cache_free_entry,
+                   table_cache_size_per_instance, 0,
+                   table_cache_key, table_cache_free_entry,
                    0,
                    PSI_INSTRUMENT_ME))
   {

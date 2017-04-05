@@ -56,3 +56,5 @@ SET SESSION debug="-d,simulate_err_on_write_gtid_into_table";
 #
 include/assert.inc [Did not commit gtid MASTER_UUID:4 into @@GLOBAL.GTID_EXECUTED]
 include/assert.inc [Did not save gtid MASTER_UUID:3 into mysql.gtid_executed table]
+SET SESSION GTID_NEXT='MASTER_UUID:5';
+DROP USER u1@h;

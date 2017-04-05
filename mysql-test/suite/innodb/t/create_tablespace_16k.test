@@ -650,6 +650,4 @@ call mtr.add_suppression("\\[ERROR\\] InnoDB: Cannot open datafile for read-only
 call mtr.add_suppression("\\[ERROR\\] InnoDB: Cannot delete tablespace .* because it is not found in the tablespace memory cache");
 call mtr.add_suppression("\\[ERROR\\] InnoDB: Failed to find tablespace for table `test`.`t_missing` in the cache. Attempting to load the tablespace with space id .*");
 call mtr.add_suppression("\\[Warning\\] InnoDB: Ignoring tablespace `s_missing` because it could not be opened");
-call mtr.add_suppression("\\[ERROR\\] InnoDB: If you are installing InnoDB, remember that you must create directories yourself, InnoDB does not create them.");
-call mtr.add_suppression("\\[ERROR\\] InnoDB: Could not find a valid tablespace file for `s_missing`. Please refer to .* for how to resolve the issue.");
 --enable_query_log

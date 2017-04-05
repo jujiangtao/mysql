@@ -1,7 +1,7 @@
 #ifndef PROTOCOL_CLASSIC_INCLUDED
 #define PROTOCOL_CLASSIC_INCLUDED
 
-/* Copyright (c) 2002, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2002, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -15,13 +15,23 @@
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
-#include "sql_error.h"
-#include "my_decimal.h"                         /* my_decimal */
-#include "field.h"                              /* Send_field */
-#include "protocol.h"                           /* Protocol */
+
+#include "my_global.h"
+#include "mysql_time.h"          // MYSQL_TIME
+#include "protocol.h"            // Protocol
 
 typedef struct st_mysql_field MYSQL_FIELD;
+class i_string;
 class Item_param;
+template <class T> class List;
+template <class T> class I_List;
+
+#ifdef __cplusplus
+class THD;
+#define MYSQL_THD THD*
+#else
+#define MYSQL_THD void*
+#endif
 
 class Protocol_classic : public Protocol
 {
@@ -97,7 +107,6 @@ public:
   virtual bool create_command(COM_DATA *com_data,
                               enum_server_command cmd,
                               uchar *pkt, size_t length);
-  String *storage_packet() { return packet; }
   virtual bool flush();
   virtual void end_partial_result_set();
 
@@ -144,12 +153,6 @@ public:
   bool write(const uchar *ptr, size_t len);
   /* Return last error from NET */
   uchar get_error();
-  /* Return last errno from NET */
-  uint get_last_errno();
-  /* Set NET errno to handled by caller */
-  void set_last_errno(uint err);
-  /* Return last error string */
-  char *get_last_error();
   /* Set max allowed packet size */
   void set_max_packet_size(ulong max_packet_size);
   /* Return SSL descriptor, if any */
@@ -289,4 +292,7 @@ uchar *net_store_data(uchar *to,const uchar *from, size_t length);
 uchar *net_store_data(uchar *to,int32 from);
 uchar *net_store_data(uchar *to,longlong from);
 bool store(Protocol *prot, I_List<i_string> *str_list);
+bool net_send_ok(THD *, uint, uint, ulonglong, ulonglong, const char *, bool);
+bool net_send_eof(THD *thd, uint server_status, uint statement_warn_count);
+bool net_send_error_packet(THD *, uint, const char *, const char *);
 #endif /* PROTOCOL_CLASSIC_INCLUDED */

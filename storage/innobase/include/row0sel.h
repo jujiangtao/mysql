@@ -59,15 +59,17 @@ void
 sel_col_prefetch_buf_free(
 /*======================*/
 	sel_buf_t*	prefetch_buf);	/*!< in, own: prefetch buffer */
-/*********************************************************************//**
-Gets the plan node for the nth table in a join.
+
+/** Gets the plan node for the nth table in a join.
+@param[in]	node	select node
+@param[in]	i	get ith plan node
 @return plan node */
 UNIV_INLINE
 plan_t*
 sel_node_get_nth_plan(
-/*==================*/
-	sel_node_t*	node,	/*!< in: select node */
-	ulint		i);	/*!< in: get ith plan node */
+	sel_node_t*	node,
+	ulint		i);
+
 /**********************************************************************//**
 Performs a select step. This is a high-level function used in SQL execution
 graphs.
@@ -90,21 +92,6 @@ Performs a fetch for a cursor.
 que_thr_t*
 fetch_step(
 /*=======*/
-	que_thr_t*	thr);	/*!< in: query thread */
-/****************************************************************//**
-Sample callback function for fetch that prints each row.
-@return always returns non-NULL */
-void*
-row_fetch_print(
-/*============*/
-	void*	row,		/*!< in:  sel_node_t* */
-	void*	user_arg);	/*!< in:  not used */
-/***********************************************************//**
-Prints a row in a select result.
-@return query thread to run next or NULL */
-que_thr_t*
-row_printf_step(
-/*============*/
 	que_thr_t*	thr);	/*!< in: query thread */
 
 /** Copy used fields from cached row.
@@ -221,15 +208,6 @@ It also has optimization such as pre-caching the rows, using AHI, etc.
 				Note: if this is != 0, then prebuilt must has a
 				pcur with stored position! In opening of a
 				cursor 'direction' should be 0.
-@param[in]	ins_sel_stmt	if true, then this statement is
-				insert .... select statement. For normal table
-				this can be detected by checking out locked
-				tables using trx->mysql_n_tables_locked > 0
-				condition. For intrinsic table
-				external_lock is not invoked and so condition
-				above will not stand valid instead this is
-				traced using alternative condition
-				at caller level.
 @return DB_SUCCESS or error code */
 dberr_t
 row_search_mvcc(
@@ -275,7 +253,7 @@ row_search_max_autoinc(
 	dict_index_t*	index,		/*!< in: index to search */
 	const char*	col_name,	/*!< in: autoinc column name */
 	ib_uint64_t*	value)		/*!< out: AUTOINC value read */
-	MY_ATTRIBUTE((nonnull, warn_unused_result));
+	MY_ATTRIBUTE((warn_unused_result));
 
 /** A structure for caching column values for prefetched rows */
 struct sel_buf_t{
@@ -445,9 +423,7 @@ struct fetch_node_t{
 					further rows and the cursor is
 					modified so (cursor % NOTFOUND) is
 					true. If it returns not-NULL,
-					continue normally. See
-					row_fetch_print() for an example
-					(and a useful debugging tool). */
+					continue normally. */
 };
 
 /** Open or close cursor operation type */
@@ -463,12 +439,6 @@ struct open_node_t{
 			op_type;	/*!< operation type: open or
 					close cursor */
 	sel_node_t*	cursor_def;	/*!< cursor definition */
-};
-
-/** Row printf statement node */
-struct row_printf_node_t{
-	que_common_t	common;		/*!< type: QUE_NODE_ROW_PRINTF */
-	sel_node_t*	sel_node;	/*!< select */
 };
 
 /** Search direction for the MySQL interface */
@@ -526,8 +496,6 @@ row_sel_field_store_in_mysql_format_func(
         const byte*     data,   /*!< in: data to store */
         ulint           len);    /*!< in: length of the data */
 
-#ifndef UNIV_NONINL
 #include "row0sel.ic"
-#endif
 
 #endif

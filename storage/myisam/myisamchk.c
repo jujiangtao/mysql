@@ -22,6 +22,7 @@
 #include <stdarg.h>
 #include <my_getopt.h>
 #include <my_bit.h>
+#include "typelib.h"
 #ifdef HAVE_SYS_MMAN_H
 #include <sys/mman.h>
 #endif
@@ -95,7 +96,6 @@ int main(int argc, char **argv)
   my_progname_short= my_progname+dirname_length(my_progname);
 
   myisamchk_init(&check_param);
-  check_param.opt_lock_memory=1;		/* Lock memory if possible */
   check_param.using_global_keycache = 0;
   get_options(&argc,(char***) &argv);
   myisam_quick_table_bits=decode_bits;
@@ -144,7 +144,6 @@ int main(int argc, char **argv)
   mysql_cond_destroy(&main_thread_keycache_var.suspend);
   my_delete_thread_local_key(keycache_tls_key);
   exit(error);
-  return 0;				/* No compiler warning */
 } /* main */
 
 enum options_mc {
@@ -290,7 +289,7 @@ static struct my_option my_long_options[] =
   { "key_buffer_size", OPT_KEY_BUFFER_SIZE, "",
     &check_param.use_buffers, &check_param.use_buffers, 0,
     GET_ULL, REQUIRED_ARG, USE_BUFFER_INIT, MALLOC_OVERHEAD,
-    SIZE_T_MAX, MALLOC_OVERHEAD,  IO_SIZE, 0},
+    SIZE_T_MAX, 0,  IO_SIZE, 0},
   { "key_cache_block_size", OPT_KEY_CACHE_BLOCK_SIZE,  "",
     &opt_key_cache_block_size,
     &opt_key_cache_block_size, 0,
@@ -304,30 +303,30 @@ static struct my_option my_long_options[] =
     &check_param.read_buffer_length,
     &check_param.read_buffer_length, 0, GET_ULONG, REQUIRED_ARG,
     (long) READ_BUFFER_INIT, (long) MALLOC_OVERHEAD,
-    INT_MAX32, (long) MALLOC_OVERHEAD, (long) 1L, 0},
+    INT_MAX32, 0, (long) 1L, 0},
   { "write_buffer_size", OPT_WRITE_BUFFER_SIZE, "",
     &check_param.write_buffer_length,
     &check_param.write_buffer_length, 0, GET_ULONG, REQUIRED_ARG,
     (long) READ_BUFFER_INIT, (long) MALLOC_OVERHEAD,
-    INT_MAX32, (long) MALLOC_OVERHEAD, (long) 1L, 0},
+    INT_MAX32, 0, (long) 1L, 0},
   { "sort_buffer_size", OPT_SORT_BUFFER_SIZE,
     "Deprecated. myisam_sort_buffer_size alias is being used",
     &check_param.sort_buffer_length,
     &check_param.sort_buffer_length, 0, GET_ULL, REQUIRED_ARG,
     (long) SORT_BUFFER_INIT, (long) (MIN_SORT_BUFFER + MALLOC_OVERHEAD),
-    SIZE_T_MAX, (long) MALLOC_OVERHEAD, (long) 1L, 0},
+    SIZE_T_MAX, 0, (long) 1L, 0},
   { "myisam_sort_buffer_size", OPT_SORT_BUFFER_SIZE, 
     "Alias of sort_buffer_size parameter",
     &check_param.sort_buffer_length,
     &check_param.sort_buffer_length, 0, GET_ULL, REQUIRED_ARG,
     (long) SORT_BUFFER_INIT, (long) (MIN_SORT_BUFFER + MALLOC_OVERHEAD),
-    SIZE_T_MAX, (long) MALLOC_OVERHEAD, (long) 1L, 0},
+    SIZE_T_MAX, 0, (long) 1L, 0},
   { "sort_key_blocks", OPT_SORT_KEY_BLOCKS, "",
     &check_param.sort_key_blocks,
     &check_param.sort_key_blocks, 0, GET_ULONG, REQUIRED_ARG,
-    BUFFERS_WHEN_SORTING, 4L, 100L, 0L, 1L, 0},
+    BUFFERS_WHEN_SORTING, 4L, 100L, 0, 1L, 0},
   { "decode_bits", OPT_DECODE_BITS, "", &decode_bits,
-    &decode_bits, 0, GET_UINT, REQUIRED_ARG, 9L, 4L, 17L, 0L, 1L, 0},
+    &decode_bits, 0, GET_UINT, REQUIRED_ARG, 9L, 4L, 17L, 0, 1L, 0},
   { "ft_min_word_len", OPT_FT_MIN_WORD_LEN, "", &ft_min_word_len,
     &ft_min_word_len, 0, GET_ULONG, REQUIRED_ARG, 4, 1, HA_FT_MAXCHARLEN,
     0, 1, 0},
@@ -1007,18 +1006,14 @@ static int myisamchk(MI_CHECK *param, char * filename)
 				info->s->state.key_map,
 				param->force_sort))
 	{
-          /*
-            The new file might not be created with the right stats depending
-            on how myisamchk is run, so we must copy file stats from old to new.
-          */
           if (param->testflag & T_REP_BY_SORT)
-            error= mi_repair_by_sort(param, info, filename, rep_quick, FALSE);
+            error=mi_repair_by_sort(param,info,filename,rep_quick);
           else
-            error= mi_repair_parallel(param, info, filename, rep_quick, FALSE);
+            error=mi_repair_parallel(param,info,filename,rep_quick);
 	  state_updated=1;
 	}
 	else if (param->testflag & T_REP_ANY)
-	  error= mi_repair(param, info, filename, rep_quick, FALSE);
+	  error=mi_repair(param, info,filename,rep_quick);
       }
       if (!error && param->testflag & T_SORT_RECORDS)
       {
@@ -1059,12 +1054,12 @@ static int myisamchk(MI_CHECK *param, char * filename)
 	  {
 	    if (param->verbose)
 	      puts("Table had a compressed index;  We must now recreate the index");
-	    error= mi_repair_by_sort(param, info, filename, 1, FALSE);
+	    error=mi_repair_by_sort(param,info,filename,1);
 	  }
 	}
       }
       if (!error && param->testflag & T_SORT_INDEX)
-	error= mi_sort_index(param, info, filename, FALSE);
+	error=mi_sort_index(param,info,filename);
       if (!error)
 	share->state.changed&= ~(STATE_CHANGED | STATE_CRASHED |
 				 STATE_CRASHED_ON_REPAIR);
@@ -1109,7 +1104,6 @@ static int myisamchk(MI_CHECK *param, char * filename)
 			    share->pack.header_length),
 			   1,
 			   MYF(MY_WME));
-	lock_memory(param);
 	if ((info->s->options & (HA_OPTION_PACK_RECORD |
 				 HA_OPTION_COMPRESS_RECORD)) ||
 	    (param->testflag & (T_EXTEND | T_MEDIUM)))
@@ -1548,7 +1542,6 @@ static int mi_sort_records(MI_CHECK *param,
       goto err;
   info->rec_cache.file=new_file;		/* Use this file for cacheing*/
 
-  lock_memory(param);
   for (key=0 ; key < share->base.keys ; key++)
     share->keyinfo[key].flag|= HA_SORT_ALLOWS_SAME;
 
@@ -1557,7 +1550,7 @@ static int mi_sort_records(MI_CHECK *param,
 	       share->state.key_root[sort_key],
 	       MYF(MY_NABP+MY_WME)))
   {
-    mi_check_print_error(param,"Can't read indexpage from filepos: %s",
+    mi_check_print_error(param,"Can't read indexpage from filepos: %lu",
 		(ulong) share->state.key_root[sort_key]);
     goto err;
   }

@@ -60,6 +60,18 @@ Mysqlx.Connection.Capabilities {
     }
   }
   capabilities {
+    name: "plugin.version"
+    value {
+      type: SCALAR
+      scalar {
+        type: V_STRING
+        v_string {
+          value: "1.0.2"
+        }
+      }
+    }
+  }
+  capabilities {
     name: "client.pwd_expire_ok"
     value {
       type: SCALAR
@@ -155,6 +167,18 @@ Mysqlx.Connection.Capabilities {
     }
   }
   capabilities {
+    name: "plugin.version"
+    value {
+      type: SCALAR
+      scalar {
+        type: V_STRING
+        v_string {
+          value: "1.0.2"
+        }
+      }
+    }
+  }
+  capabilities {
     name: "client.pwd_expire_ok"
     value {
       type: SCALAR
@@ -219,6 +243,18 @@ Mysqlx.Connection.Capabilities {
         type: V_STRING
         v_string {
           value: "mysql"
+        }
+      }
+    }
+  }
+  capabilities {
+    name: "plugin.version"
+    value {
+      type: SCALAR
+      scalar {
+        type: V_STRING
+        v_string {
+          value: "1.0.2"
         }
       }
     }
@@ -394,6 +430,18 @@ Mysqlx.Connection.Capabilities {
         type: V_STRING
         v_string {
           value: "mysql"
+        }
+      }
+    }
+  }
+  capabilities {
+    name: "plugin.version"
+    value {
+      type: SCALAR
+      scalar {
+        type: V_STRING
+        v_string {
+          value: "1.0.2"
         }
       }
     }

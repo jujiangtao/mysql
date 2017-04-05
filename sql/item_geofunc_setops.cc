@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -21,7 +21,12 @@
   This file defines implementations of GIS set operation functions.
 */
 #include "my_config.h"
+#include "current_thd.h"
 #include "item_geofunc_internal.h"
+#include "derror.h"                            // ER_THD
+#include "sql_class.h"                         // THD
+#include "dd/types/spatial_reference_system.h"
+#include "dd/cache/dictionary_client.h"
 
 #include <set>
 
@@ -38,7 +43,7 @@ do                                                                      \
                   g1->get_srid());                                      \
     GeoType2 geo2(pg2, g2->get_data_size(), g2->get_flags(),            \
                   g2->get_srid());                                      \
-    auto_ptr<GeoOutType>geout(new GeoOutType());                        \
+    std::unique_ptr<GeoOutType>geout(new GeoOutType());                 \
     geout->set_srid(g1->get_srid());                                    \
     boost::geometry::bgop(geo1, geo2, *geout);                          \
     (nullval)= false;                                                   \
@@ -236,7 +241,7 @@ public:
     Geometry *retgeo= NULL;
     Point_set ptset1, ptset2;
     Multipoint *mpts= new Multipoint();
-    auto_ptr<Multipoint> guard(mpts);
+    std::unique_ptr<Multipoint> guard(mpts);
 
     mpts->set_srid(g1->get_srid());
 
@@ -284,7 +289,7 @@ public:
     Multipoint mpts(g1->get_data_ptr(),
                     g1->get_data_size(), g1->get_flags(), g1->get_srid());
     Multipoint *mpts2= new Multipoint();
-    auto_ptr<Multipoint> guard(mpts2);
+    std::unique_ptr<Multipoint> guard(mpts2);
 
     mpts2->set_srid(g1->get_srid());
 
@@ -400,7 +405,7 @@ public:
   {
     Geometry *retgeo= NULL, *tmp1= NULL;
     Multipoint *tmp2= NULL;
-    auto_ptr<Geometry> guard1;
+    std::unique_ptr<Geometry> guard1;
 
 
     BGOPCALL(Multilinestring, tmp1, intersection,
@@ -434,7 +439,7 @@ public:
       }
     }
 
-    auto_ptr<Multipoint> guard2;
+    std::unique_ptr<Multipoint> guard2;
     if (ptset.size() > 0)
     {
       tmp2= new Multipoint;
@@ -504,7 +509,7 @@ public:
     Polygon plgn1(pg1, g1->get_data_size(), g1->get_flags(),
                   g1->get_srid());
 
-    auto_ptr<Multipolygon> mplgn_result(new Multipolygon());
+    std::unique_ptr<Multipolygon> mplgn_result(new Multipolygon());
     mplgn_result->set_srid(g1->get_srid());
 
     if (gt2 == Geometry::wkb_polygon)
@@ -522,14 +527,16 @@ public:
       plgn_intersection_plgn_mls(plgn1, mplgn2, *mplgn_result, mls);
     }
 
-    retgeo= combine_mls_mplgn_results(&mls, mplgn_result, result);
+    retgeo= combine_mls_mplgn_results(&mls, mplgn_result.get(), result);
+    if (retgeo == mplgn_result.get())
+      mplgn_result.release();
     copy_ifso_state();
 
     return retgeo;
   }
 
   Geometry *combine_mls_mplgn_results(Multilinestring *mls,
-                                      auto_ptr<Multipolygon> mplgn_result,
+                                      Multipolygon *mplgn_result,
                                       String *result)
   {
     Geometry *geom= NULL, *retgeo= NULL;
@@ -549,7 +556,7 @@ public:
         if (null_value)
           return NULL;
         else
-          retgeo= mplgn_result.release();
+          retgeo= mplgn_result;
       }
       else
       {
@@ -620,7 +627,7 @@ public:
     Geometry *retgeo= NULL, *tmp1= NULL;
     Multipoint *tmp2= NULL;
 
-    auto_ptr<Geometry> guard1;
+    std::unique_ptr<Geometry> guard1;
     BGOPCALL(Multilinestring, tmp1, intersection,
              Multilinestring, g1, Multipolygon, g2,
              NULL, null_value);
@@ -653,7 +660,7 @@ public:
       }
     }
 
-    auto_ptr<Multipoint> guard2;
+    std::unique_ptr<Multipoint> guard2;
     if (ptset.empty() == false)
     {
       tmp2= new Multipoint;
@@ -688,14 +695,16 @@ public:
     Multipolygon mplgn1(pg1, g1->get_data_size(), g1->get_flags(),
                         g1->get_srid());
 
-    auto_ptr<Multipolygon> mplgn_result(new Multipolygon());
+    std::unique_ptr<Multipolygon> mplgn_result(new Multipolygon());
     mplgn_result->set_srid(g1->get_srid());
 
     Multipolygon mplgn2(pg2, g2->get_data_size(), g2->get_flags(),
                         g2->get_srid());
     bg::intersection(mplgn1, mplgn2, *mplgn_result);
     plgn_intersection_plgn_mls(mplgn1, mplgn2, *mplgn_result, mls);
-    retgeo= combine_mls_mplgn_results(&mls, mplgn_result, result);
+    retgeo= combine_mls_mplgn_results(&mls, mplgn_result.get(), result);
+    if (retgeo == mplgn_result.get())
+      mplgn_result.release();
 
     copy_ifso_state();
 
@@ -712,7 +721,7 @@ public:
     Point pt1(g1->get_data_ptr(),
               g1->get_data_size(), g1->get_flags(), g1->get_srid());
     Multipoint *mpts= new Multipoint();
-    auto_ptr<Multipoint> guard(mpts);
+    std::unique_ptr<Multipoint> guard(mpts);
 
     mpts->set_srid(g1->get_srid());
     ptset.insert(pt1);
@@ -787,7 +796,7 @@ public:
                    g1->get_flags(), g1->get_srid());
     Linestring ls2(g2->get_data_ptr(), g2->get_data_size(),
                    g2->get_flags(), g2->get_srid());
-    auto_ptr<Multilinestring> res(new Multilinestring());
+    std::unique_ptr<Multilinestring> res(new Multilinestring());
     res->set_srid(g1->get_srid());
 
     boost::geometry::union_(ls1, ls2, *res);
@@ -821,7 +830,7 @@ public:
                    g1->get_flags(), g1->get_srid());
     Polygon py2(g2_wkb, g2->get_data_size(),
                 g2->get_flags(), g2->get_srid());
-    auto_ptr<Multilinestring> linestrings(new Multilinestring());
+    std::unique_ptr<Multilinestring> linestrings(new Multilinestring());
     linestrings->set_srid(g1->get_srid());
 
     // Union(LineString, Polygon) isn't supported by BG, but it's
@@ -874,7 +883,7 @@ public:
                    g1->get_flags(), g1->get_srid());
     Multilinestring mls2(g2->get_data_ptr(), g2->get_data_size(),
                          g2->get_flags(), g2->get_srid());
-    auto_ptr<Multilinestring> res(new Multilinestring);
+    std::unique_ptr<Multilinestring> res(new Multilinestring);
     res->set_srid(g1->get_srid());
 
     boost::geometry::union_(ls1, mls2, *res);
@@ -908,7 +917,7 @@ public:
                    g1->get_flags(), g1->get_srid());
     Multipolygon mpy2(g2_wkb, g2->get_data_size(),
                       g2->get_flags(), g2->get_srid());
-    auto_ptr<Multilinestring> linestrings(new Multilinestring());
+    std::unique_ptr<Multilinestring> linestrings(new Multilinestring());
     linestrings->set_srid(g1->get_srid());
 
     // Union(LineString, MultiPolygon) isn't supported by BG, but it's
@@ -981,7 +990,7 @@ public:
                 g1->get_flags(), g1->get_srid());
     Multilinestring mls2(g2->get_data_ptr(), g2->get_data_size(),
                          g2->get_flags(), g2->get_srid());
-    auto_ptr<Multilinestring> linestrings(new Multilinestring());
+    std::unique_ptr<Multilinestring> linestrings(new Multilinestring());
     linestrings->set_srid(g1->get_srid());
 
     // Union(Polygon, MultiLineString) isn't supported by BG, but it's
@@ -1033,7 +1042,7 @@ public:
     Geometry *retgeo= NULL;
     Point_set ptset;
     Multipoint *mpts= new Multipoint();
-    auto_ptr<Multipoint> guard(mpts);
+    std::unique_ptr<Multipoint> guard(mpts);
 
     mpts->set_srid(g1->get_srid());
     Multipoint mpts1(g1->get_data_ptr(),
@@ -1081,7 +1090,7 @@ public:
     ptset.insert(mpts.begin(), mpts.end());
 
     Gis_geometry_collection *geocol= new Gis_geometry_collection(g2, result);
-    auto_ptr<Gis_geometry_collection> guard(geocol);
+    std::unique_ptr<Gis_geometry_collection> guard(geocol);
     bool added= false;
 
     for (TYPENAME Point_set::iterator i= ptset.begin(); i != ptset.end(); ++i)
@@ -1122,7 +1131,7 @@ public:
                          g1->get_flags(), g1->get_srid());
     Multilinestring mls2(g2->get_data_ptr(), g2->get_data_size(),
                          g2->get_flags(), g2->get_srid());
-    auto_ptr<Multilinestring> res(new Multilinestring());
+    std::unique_ptr<Multilinestring> res(new Multilinestring());
     res->set_srid(g1->get_srid());
 
     boost::geometry::union_(mls1, mls2, *res);
@@ -1156,7 +1165,7 @@ public:
                          g1->get_flags(), g1->get_srid());
     Multipolygon mpy2(g2_wkb, g2->get_data_size(),
                       g2->get_flags(), g2->get_srid());
-    auto_ptr<Multilinestring> linestrings(new Multilinestring());
+    std::unique_ptr<Multilinestring> linestrings(new Multilinestring());
     linestrings->set_srid(g1->get_srid());
 
     // Union(MultiLineString, MultiPolygon) isn't supported by BG, but
@@ -1229,7 +1238,7 @@ public:
                 g1->get_srid());
     Polygon py2(g2_wkb, g2->get_data_size(), g2->get_flags(),
                 g2->get_srid());
-    auto_ptr<Multipolygon> res(new Multipolygon());
+    std::unique_ptr<Multipolygon> res(new Multipolygon());
     res->set_srid(g1->get_srid());
 
     boost::geometry::union_(py1, py2, *res);
@@ -1306,7 +1315,7 @@ public:
   {
     Geometry *retgeo= NULL;
     Multipoint *mpts= new Multipoint();
-    auto_ptr<Multipoint> guard(mpts);
+    std::unique_ptr<Multipoint> guard(mpts);
 
     mpts->set_srid(g1->get_srid());
     Multipoint mpts1(g1->get_data_ptr(),
@@ -1352,7 +1361,7 @@ public:
                    g1->get_flags(), g1->get_srid());
     Linestring ls2(g2->get_data_ptr(), g2->get_data_size(),
                    g2->get_flags(), g2->get_srid());
-    auto_ptr<Multilinestring> res(new Multilinestring());
+    std::unique_ptr<Multilinestring> res(new Multilinestring());
     res->set_srid(g1->get_srid());
 
     boost::geometry::difference(ls1, ls2, *res);
@@ -1423,7 +1432,7 @@ public:
                    g1->get_flags(), g1->get_srid());
     Multilinestring mls2(g2->get_data_ptr(), g2->get_data_size(),
                          g2->get_flags(), g2->get_srid());
-    auto_ptr<Multilinestring> res(new Multilinestring());
+    std::unique_ptr<Multilinestring> res(new Multilinestring());
     res->set_srid(g1->get_srid());
 
     boost::geometry::difference(ls1, mls2, *res);
@@ -1527,7 +1536,7 @@ public:
                          g1->get_flags(), g1->get_srid());
     Linestring ls2(g2->get_data_ptr(), g2->get_data_size(),
                    g2->get_flags(), g2->get_srid());
-    auto_ptr<Multilinestring> res(new Multilinestring());
+    std::unique_ptr<Multilinestring> res(new Multilinestring());
     res->set_srid(g1->get_srid());
 
     boost::geometry::difference(mls1, ls2, *res);
@@ -1598,7 +1607,7 @@ public:
                          g1->get_flags(), g1->get_srid());
     Multilinestring mls2(g2->get_data_ptr(), g2->get_data_size(),
                          g2->get_flags(), g2->get_srid());
-    auto_ptr<Multilinestring> res(new Multilinestring());
+    std::unique_ptr<Multilinestring> res(new Multilinestring());
     res->set_srid(g1->get_srid());
 
     boost::geometry::difference(mls1, mls2, *res);
@@ -1702,7 +1711,7 @@ public:
                    g1->get_flags(), g1->get_srid());
     Linestring ls2(g2->get_data_ptr(), g2->get_data_size(),
                    g2->get_flags(), g2->get_srid());
-    auto_ptr<Multilinestring> res(new Multilinestring());
+    std::unique_ptr<Multilinestring> res(new Multilinestring());
     res->set_srid(g1->get_srid());
 
     boost::geometry::sym_difference(ls1, ls2, *res);
@@ -1736,7 +1745,7 @@ public:
                    g1->get_flags(), g1->get_srid());
     Multilinestring mls2(g2->get_data_ptr(), g2->get_data_size(),
                          g2->get_flags(), g2->get_srid());
-    auto_ptr<Multilinestring> res(new Multilinestring());
+    std::unique_ptr<Multilinestring> res(new Multilinestring());
     res->set_srid(g1->get_srid());
 
     boost::geometry::sym_difference(ls1, mls2, *res);
@@ -1805,7 +1814,7 @@ public:
                          g1->get_flags(), g1->get_srid());
     Multilinestring mls2(g2->get_data_ptr(), g2->get_data_size(),
                          g2->get_flags(), g2->get_srid());
-    auto_ptr<Multilinestring> res(new Multilinestring());
+    std::unique_ptr<Multilinestring> res(new Multilinestring());
     res->set_srid(g1->get_srid());
 
     boost::geometry::sym_difference(mls1, mls2, *res);
@@ -2577,7 +2586,7 @@ combine_sub_results(Geometry *geo1, Geometry *geo2, String *result)
     return NULL;
   }
 
-  auto_ptr<Geometry> guard1(geo1), guard2(geo2);
+  std::unique_ptr<Geometry> guard1(geo1), guard2(geo2);
 
   Gis_geometry_collection *geocol= NULL;
   if (geo1 == NULL && geo2 == NULL)
@@ -2609,7 +2618,7 @@ combine_sub_results(Geometry *geo1, Geometry *geo2, String *result)
                   geo2->get_flags(), geo2->get_srid());
   geocol= new Gis_geometry_collection(geo1, result);
   geocol->set_components_no_overlapped(geo1->is_components_no_overlapped());
-  auto_ptr<Gis_geometry_collection> guard3(geocol);
+  std::unique_ptr<Gis_geometry_collection> guard3(geocol);
   my_bool had_error= false;
 
   for (TYPENAME Multipoint::iterator i= mpts.begin();
@@ -2673,8 +2682,8 @@ simplify_multilinestring(Gis_multi_line_string *mls, String *result)
 
   // Loop through the multilinestring and separate true linestrings
   // from points.
-  auto_ptr<Gis_multi_line_string> linestrings(new Gis_multi_line_string());
-  auto_ptr<Gis_multi_point> points(new Gis_multi_point());
+  std::unique_ptr<Gis_multi_line_string> linestrings(new Gis_multi_line_string());
+  std::unique_ptr<Gis_multi_point> points(new Gis_multi_point());
   linestrings->set_srid(mls->get_srid());
   points->set_srid(mls->get_srid());
   // BG may return duplicate points, so use a point set to get unique
@@ -3090,6 +3099,23 @@ String *Item_func_spatial_operation::val_str(String *str_value_arg)
   str_value_arg->set_charset(&my_charset_bin);
   str_value_arg->length(0);
 
+  if (g1->get_srid() != 0)
+  {
+    Srs_fetcher fetcher(current_thd);
+    const dd::Spatial_reference_system *srs= nullptr;
+    if (fetcher.acquire(g1->get_srid(), &srs))
+      DBUG_RETURN(error_str()); // Error has already been flagged.
+
+    if (srs == nullptr)
+    {
+      push_warning_printf(current_thd,
+                          Sql_condition::SL_WARNING,
+                          ER_WARN_SRS_NOT_FOUND,
+                          ER_THD(current_thd, ER_WARN_SRS_NOT_FOUND),
+                          g1->get_srid(),
+                          func_name());
+    }
+  }
 
   /*
     Catch all exceptions to make sure no exception can be thrown out of
@@ -3591,7 +3617,7 @@ geocol_difference(const BG_geometry_collection &bggc1,
        i != gv1->end(); ++i)
   {
     bool g11_isempty= false;
-    auto_ptr<Geometry> guard11;
+    std::unique_ptr<Geometry> guard11;
     Geometry *g11= NULL;
     g11= *i;
     Inplace_vector<String> wkbstrs(PSI_INSTRUMENT_ME);
@@ -3616,7 +3642,7 @@ geocol_difference(const BG_geometry_collection &bggc1,
         return NULL;
       }
       Geometry *g0= bg_geo_set_op<Coordsys>(g11, geom, wkbres);
-      auto_ptr<Geometry> guard0(g0);
+      std::unique_ptr<Geometry> guard0(g0);
 
       if (null_value)
       {
@@ -3685,8 +3711,8 @@ geocol_symdifference(const BG_geometry_collection &bggc1,
                      String *result)
 {
   Geometry *res= NULL;
-  auto_ptr<Geometry> diff12(NULL);
-  auto_ptr<Geometry> diff21(NULL);
+  std::unique_ptr<Geometry> diff12;
+  std::unique_ptr<Geometry> diff21;
   String diff12_wkb;
   String diff21_wkb;
 

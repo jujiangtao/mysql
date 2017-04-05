@@ -1,4 +1,4 @@
-/* Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2003, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -16,7 +16,10 @@
 #ifndef VIO_PRIV_INCLUDED
 #define VIO_PRIV_INCLUDED
 
-/* Structures and functions private to the vio package */
+/**
+  @file vio/vio_priv.h
+  Structures and functions private to the vio package
+*/
 
 #define DONT_MAP_VIO
 #include <my_global.h>
@@ -26,6 +29,8 @@
 #include <violite.h>
 
 #include "mysql/psi/psi_memory.h"
+
+C_MODE_START
 
 extern PSI_memory_key key_memory_vio;
 extern PSI_memory_key key_memory_vio_read_buffer;
@@ -64,4 +69,7 @@ void vio_ssl_delete(Vio *vio);
 my_bool vio_ssl_has_data(Vio *vio);
 
 #endif /* HAVE_OPENSSL */
+
+C_MODE_END
+
 #endif /* VIO_PRIV_INCLUDED */

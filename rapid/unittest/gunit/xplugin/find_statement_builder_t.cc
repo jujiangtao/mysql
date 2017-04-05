@@ -31,11 +31,19 @@ namespace test
 class Find_statement_builder_impl: public Find_statement_builder
 {
 public:
-  Find_statement_builder_impl(Expression_generator &gen) : Find_statement_builder(gen) {}
+  Find_statement_builder_impl(const Find_statement_builder::Find& msg,
+                              Query_string_builder &qb)
+  : Find_statement_builder(msg, qb)
+  { m_is_relational = true;}
+
+  void set_document_model() { m_is_relational = false; }
+  using Find_statement_builder::add_statement;
+  using Find_statement_builder::add_projection;
   using Find_statement_builder::add_table_projection;
   using Find_statement_builder::add_document_projection;
   using Find_statement_builder::add_grouping;
   using Find_statement_builder::add_grouping_criteria;
+  using Find_statement_builder::Projection_list;
   using Find_statement_builder::Grouping_list;
   using Find_statement_builder::Grouping_criteria;
 };
@@ -45,20 +53,13 @@ class Find_statement_builder_test : public ::testing::Test
 {
 public:
   Find_statement_builder_test()
-  : args(*msg.mutable_args()),
-    expr_gen(query, args, schema, true),
-    builder(expr_gen)
-    {}
+  : builder(msg, query),
+    args(*msg.mutable_args())
+  {}
   Find_statement_builder::Find msg;
-  Expression_generator::Args &args;
   Query_string_builder query;
-  std::string schema;
-  Expression_generator expr_gen;
   Find_statement_builder_impl builder;
-
-  enum {DM_DOCUMENT = 0, DM_TABLE = 1};
-
-  typedef ::google::protobuf::RepeatedPtrField< ::Mysqlx::Crud::Projection > Projection_list;
+  Expression_generator::Args &args;
 };
 
 
@@ -71,25 +72,26 @@ void operator<< (::google::protobuf::Message &msg, const std::string& txt)
 } // namespace
 
 
-TEST_F(Find_statement_builder_test, add_projection_table_empty)
+TEST_F(Find_statement_builder_test, add_empty_projection_table)
 {
-  Projection_list projection;
-  ASSERT_NO_THROW(builder.add_table_projection(projection));
+  Find_statement_builder_impl::Projection_list projection;
+  ASSERT_NO_THROW(builder.add_projection(projection));
   EXPECT_EQ("*", query.get());
 }
 
 
-TEST_F(Find_statement_builder_test, add_document_projection_empty)
+TEST_F(Find_statement_builder_test, add_empty_projection_document)
 {
-  Projection_list projection;
-  ASSERT_NO_THROW(builder.add_document_projection(projection));
+  Find_statement_builder_impl::Projection_list projection;
+  builder.set_document_model();
+  ASSERT_NO_THROW(builder.add_projection(projection));
   EXPECT_EQ("doc", query.get());
 }
 
 
 TEST_F(Find_statement_builder_test, add_projection_table_one_member_item)
 {
-  Projection_list projection;
+  Find_statement_builder_impl::Projection_list projection;
   *projection.Add() << "source { type: IDENT identifier "
       "{ document_path { type: MEMBER value: \"alpha\" } } }";
   ASSERT_NO_THROW(builder.add_table_projection(projection));
@@ -99,7 +101,7 @@ TEST_F(Find_statement_builder_test, add_projection_table_one_member_item)
 
 TEST_F(Find_statement_builder_test, add_projection_table_one_item)
 {
-  Projection_list projection;
+  Find_statement_builder_impl::Projection_list projection;
   *projection.Add() << "source { type: IDENT identifier "
       "{ name: 'alpha' } }";
   ASSERT_NO_THROW(builder.add_table_projection(projection));
@@ -109,7 +111,7 @@ TEST_F(Find_statement_builder_test, add_projection_table_one_item)
 
 TEST_F(Find_statement_builder_test, add_projection_table_two_items)
 {
-  Projection_list projection;
+  Find_statement_builder_impl::Projection_list projection;
   *projection.Add() << "source { type: IDENT identifier "
       "{ name: 'alpha' } }";
   *projection.Add() <<  "source { type: IDENT identifier "
@@ -123,7 +125,7 @@ TEST_F(Find_statement_builder_test, add_projection_table_two_items_placeholder)
 {
   *args.Add() << "type: V_DOUBLE v_double: 2.2";
 
-  Projection_list projection;
+  Find_statement_builder_impl::Projection_list projection;
   *projection.Add() << "source { type: IDENT identifier "
       "{ name: 'alpha' } }";
   *projection.Add() <<  "source { type: PLACEHOLDER position: 0 }";
@@ -134,7 +136,7 @@ TEST_F(Find_statement_builder_test, add_projection_table_two_items_placeholder)
 
 TEST_F(Find_statement_builder_test, add_projection_table_one_item_with_alias)
 {
-  Projection_list projection;
+  Find_statement_builder_impl::Projection_list projection;
   *projection.Add() << "source { type: IDENT identifier "
       "{ name: 'alpha' } } alias: 'beta'";
   ASSERT_NO_THROW(builder.add_table_projection(projection));
@@ -144,7 +146,7 @@ TEST_F(Find_statement_builder_test, add_projection_table_one_item_with_alias)
 
 TEST_F(Find_statement_builder_test, add_projection_document_one_item_no_alias)
 {
-  Projection_list projection;
+  Find_statement_builder_impl::Projection_list projection;
   *projection.Add() << "source { type: IDENT identifier "
       "{ name: 'alpha' } }";
   EXPECT_THROW(builder.add_document_projection(projection), ngs::Error_code);
@@ -153,7 +155,7 @@ TEST_F(Find_statement_builder_test, add_projection_document_one_item_no_alias)
 
 TEST_F(Find_statement_builder_test, add_projection_document_one_member_item)
 {
-  Projection_list projection;
+  Find_statement_builder_impl::Projection_list projection;
   *projection.Add() << "source { type: IDENT identifier "
       "{ document_path { type: MEMBER value: \"alpha\" } } }"
       "alias: \"beta\"";
@@ -165,7 +167,7 @@ TEST_F(Find_statement_builder_test, add_projection_document_one_member_item)
 
 TEST_F(Find_statement_builder_test, add_projection_document_two_member_items)
 {
-  Projection_list projection;
+  Find_statement_builder_impl::Projection_list projection;
   *projection.Add() << "source { type: IDENT identifier "
       "{ document_path { type: MEMBER value: \"alpha\" } } }"
       "alias: \"beta\"";
@@ -182,7 +184,7 @@ TEST_F(Find_statement_builder_test, add_projection_document_two_member_items)
 TEST_F(Find_statement_builder_test, add_projection_document_two_member_items_placeholder)
 {
   *args.Add() << "type: V_DOUBLE v_double: 2.2";
-  Projection_list projection;
+  Find_statement_builder_impl::Projection_list projection;
   *projection.Add() << "source { type: IDENT identifier "
       "{ document_path { type: MEMBER value: \"alpha\" } } }"
       "alias: \"beta\"";
@@ -258,7 +260,7 @@ TEST_F(Find_statement_builder_test, add_gruping_criteria_placeholder)
 }
 
 
-TEST_F(Find_statement_builder_test, build_table)
+TEST_F(Find_statement_builder_test, add_statement_table)
 {
   msg <<
       "collection {name: 'xtable' schema: 'xschema'}"
@@ -280,7 +282,7 @@ TEST_F(Find_statement_builder_test, build_table)
       "                    param {type: LITERAL literal"
       "                                                {type: V_DOUBLE"
       "                                             v_double: 2.0}}}}";
-  ASSERT_NO_THROW(builder.build(msg));
+  ASSERT_NO_THROW(builder.add_statement());
   EXPECT_EQ(
       "SELECT `alpha` AS `zeta` "
       "FROM `xschema`.`xtable` "
@@ -291,7 +293,7 @@ TEST_F(Find_statement_builder_test, build_table)
 }
 
 
-TEST_F(Find_statement_builder_test, build_document_no_grouping)
+TEST_F(Find_statement_builder_test, add_statement_document_no_grouping)
 {
   msg <<
       "collection {name: 'xtable' schema: 'xschema'}"
@@ -309,7 +311,8 @@ TEST_F(Find_statement_builder_test, build_document_no_grouping)
       "order {expr {type: IDENT identifier {document_path {type: MEMBER "
       "                                                     value: 'gamma'}}}"
       "       direction: DESC}";
-  ASSERT_NO_THROW(builder.build(msg));
+  builder.set_document_model();
+  ASSERT_NO_THROW(builder.add_statement());
   EXPECT_EQ(
       "SELECT JSON_OBJECT('zeta', JSON_EXTRACT(doc,'$.alpha')) AS doc "
       "FROM `xschema`.`xtable` "
@@ -319,7 +322,7 @@ TEST_F(Find_statement_builder_test, build_document_no_grouping)
 }
 
 
-TEST_F(Find_statement_builder_test, build_document_with_grouping_and_criteria)
+TEST_F(Find_statement_builder_test, add_statement_document_with_grouping_and_criteria)
 {
   msg <<
       "collection {name: 'xtable' schema: 'xschema'}"
@@ -346,7 +349,8 @@ TEST_F(Find_statement_builder_test, build_document_with_grouping_and_criteria)
       "                    param {type: LITERAL literal"
       "                                                {type: V_DOUBLE"
       "                                                v_double: 2.0}}}}";
-  ASSERT_NO_THROW(builder.build(msg));
+  builder.set_document_model();
+  ASSERT_NO_THROW(builder.add_statement());
   EXPECT_EQ(
       "SELECT JSON_OBJECT('zeta', `_DERIVED_TABLE_`.`zeta`) AS doc FROM ("
       "SELECT JSON_EXTRACT(doc,'$.alpha') AS `zeta` "
@@ -360,7 +364,7 @@ TEST_F(Find_statement_builder_test, build_document_with_grouping_and_criteria)
 }
 
 
-TEST_F(Find_statement_builder_test, build_document_with_grouping)
+TEST_F(Find_statement_builder_test, add_statement_document_with_grouping)
 {
   msg <<
       "collection {name: 'xtable' schema: 'xschema'}"
@@ -375,7 +379,8 @@ TEST_F(Find_statement_builder_test, build_document_with_grouping)
       "                                                  value: 'alpha'}}}"
       "grouping {type: IDENT identifier {document_path {type: MEMBER "
       "                                                  value: 'gama'}}}";
-  ASSERT_NO_THROW(builder.build(msg));
+  builder.set_document_model();
+  ASSERT_NO_THROW(builder.add_statement());
   EXPECT_EQ(
       "SELECT JSON_OBJECT('zeta', `_DERIVED_TABLE_`.`zeta`,'ksi', `_DERIVED_TABLE_`.`ksi`) AS doc FROM ("
       "SELECT JSON_EXTRACT(doc,'$.alpha') AS `zeta`,JSON_EXTRACT(doc,'$.gama') AS `ksi` "
@@ -386,14 +391,15 @@ TEST_F(Find_statement_builder_test, build_document_with_grouping)
 }
 
 
-TEST_F(Find_statement_builder_test, build_document_with_grouping_no_projection)
+TEST_F(Find_statement_builder_test, add_statement_document_with_grouping_no_projection)
 {
   msg <<
       "collection {name: 'xtable' schema: 'xschema'}"
       "data_model: DOCUMENT "
       "grouping {type: IDENT identifier {document_path {type: MEMBER "
       "                                                  value: 'beta'}}}";
-  EXPECT_THROW(builder.build(msg), ngs::Error_code);
+  builder.set_document_model();
+  EXPECT_THROW(builder.add_statement(), ngs::Error_code);
 }
 
 } // namespace test

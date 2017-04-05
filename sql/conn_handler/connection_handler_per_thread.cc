@@ -67,7 +67,7 @@ static PSI_mutex_key key_LOCK_thread_cache;
 
 static PSI_mutex_info all_per_thread_mutexes[]=
 {
-  { &key_LOCK_thread_cache, "LOCK_thread_cache", PSI_FLAG_GLOBAL}
+  { &key_LOCK_thread_cache, "LOCK_thread_cache", PSI_FLAG_GLOBAL, 0}
 };
 
 static PSI_cond_key key_COND_thread_cache;
@@ -141,13 +141,14 @@ Channel_info* Per_thread_connection_handler::block_until_new_connection()
 
     // Block pthread
     blocked_pthread_count++;
-    while (!abort_loop && !wake_pthread && !kill_blocked_pthreads_flag)
+    while (!connection_events_loop_aborted() && !wake_pthread &&
+           !kill_blocked_pthreads_flag)
       mysql_cond_wait(&COND_thread_cache, &LOCK_thread_cache);
     blocked_pthread_count--;
 
     if (kill_blocked_pthreads_flag)
       mysql_cond_signal(&COND_flush_thread_cache);
-    else if (!abort_loop && wake_pthread)
+    else if (!connection_events_loop_aborted() && wake_pthread)
     {
       wake_pthread--;
       DBUG_ASSERT(!waiting_channel_info_list->empty());
@@ -183,7 +184,6 @@ static THD* init_new_thd(Channel_info *channel_info)
 
   thd->set_new_thread_id();
 
-  thd->start_utime= thd->thr_create_utime= my_micro_time();
   if (channel_info->get_prior_thr_create_utime() != 0)
   {
     /*
@@ -191,9 +191,9 @@ static THD* init_new_thd(Channel_info *channel_info)
       increment slow_launch_threads counter if it took more than
       slow_launch_time seconds to create the pthread.
     */
-    ulong launch_time= (ulong) (thd->thr_create_utime -
-                                channel_info->get_prior_thr_create_utime());
-    if (launch_time >= slow_launch_time * 1000000L)
+    ulonglong launch_time= thd->start_utime -
+      channel_info->get_prior_thr_create_utime();
+    if (launch_time >= slow_launch_time * 1000000ULL)
       Per_thread_connection_handler::slow_launch_threads++;
   }
   delete channel_info;
@@ -233,7 +233,8 @@ static THD* init_new_thd(Channel_info *channel_info)
   - End thread  / Handle next connection using thread from thread cache
 */
 
-extern "C" void *handle_connection(void *arg)
+extern "C" {
+static void *handle_connection(void *arg)
 {
   Global_THD_manager *thd_manager= Global_THD_manager::get_instance();
   Connection_handler_manager *handler_manager=
@@ -323,7 +324,8 @@ extern "C" void *handle_connection(void *arg)
 
     delete thd;
 
-    if (abort_loop) // Server is shutting down so end the pthread.
+    // Server is shutting down so end the pthread.
+    if (connection_events_loop_aborted())
       break;
 
     channel_info= Per_thread_connection_handler::block_until_new_connection();
@@ -336,6 +338,7 @@ extern "C" void *handle_connection(void *arg)
   my_thread_exit(0);
   return NULL;
 }
+} // extern "C"
 
 
 void Per_thread_connection_handler::kill_blocked_pthreads()

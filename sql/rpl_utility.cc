@@ -14,64 +14,34 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "rpl_utility.h"
+#include "binary_log_funcs.h"
+#include "my_byteorder.h"
 
 #ifndef MYSQL_CLIENT
 
 #include "binlog_event.h"                // checksum_crv32
+#include "derror.h"                      // ER_THD
 #include "template_utils.h"              // delete_container_pointers
 #include "field.h"                       // Field
 #include "log.h"                         // sql_print_error
 #include "log_event.h"                   // Log_event
+#include "mysqld.h"                      // slave_type_conversions_options
+#include "psi_memory_key.h"
 #include "rpl_rli.h"                     // Relay_log_info
 #include "sql_class.h"                   // THD
 #include "sql_tmp_table.h"               // create_virtual_tmp_table
+#include "template_utils.h"
 #include "rpl_slave.h"
+
+#include "dd/dd.h"                       // get_dictionary
+#include "dd/dictionary.h"               // is_dd_table_access_allowed
+
 #include <algorithm>
 
 using std::min;
 using std::max;
 using binary_log::checksum_crc32;
 
-/**
-   Function to compare two size_t integers for their relative
-   order. Used below.
- */
-static int compare(size_t a, size_t b)
-{
-  if (a < b)
-    return -1;
-  if (b < a)
-    return 1;
-  return 0;
-}
-
-
-/*
-  Compare the pack lengths of a source field (on the master) and a
-  target field (on the slave).
-
-  @param field    Target field.
-  @param type     Source field type.
-  @param metadata Source field metadata.
-
-  @retval -1 The length of the source field is smaller than the target field.
-  @retval  0 The length of the source and target fields are the same.
-  @retval  1 The length of the source field is greater than the target field.
- */
-int compare_lengths(Field *field, enum_field_types source_type, uint16 metadata)
-{
-  DBUG_ENTER("compare_lengths");
-  size_t const source_length=
-    max_display_length_for_field(source_type, metadata);
-  size_t const target_length= field->max_display_length();
-  DBUG_PRINT("debug", ("source_length: %lu, source_type: %u,"
-                       " target_length: %lu, target_type: %u",
-                       (unsigned long) source_length, source_type,
-                       (unsigned long) target_length, field->real_type()));
-  int result= compare(source_length, target_length);
-  DBUG_PRINT("result", ("%d", result));
-  DBUG_RETURN(result);
-}
 #endif //MYSQL_CLIENT
 
 /*********************************************************************
@@ -89,9 +59,48 @@ uint32 table_def::calc_field_size(uint col, uchar *master_data) const
   return length;
 }
 
-/**
- */
 #if defined(MYSQL_SERVER) && defined(HAVE_REPLICATION)
+/**
+   Function to compare two size_t integers for their relative
+   order. Used below.
+ */
+static int compare(size_t a, size_t b)
+{
+  if (a < b)
+    return -1;
+  if (b < a)
+    return 1;
+  return 0;
+}
+
+/*
+  Compare the pack lengths of a source field (on the master) and a
+  target field (on the slave).
+
+  @param field    Target field.
+  @param type     Source field type.
+  @param metadata Source field metadata.
+
+  @retval -1 The length of the source field is smaller than the target field.
+  @retval  0 The length of the source and target fields are the same.
+  @retval  1 The length of the source field is greater than the target field.
+ */
+static int compare_lengths(Field *field, enum_field_types source_type,
+                           uint16 metadata)
+{
+  DBUG_ENTER("compare_lengths");
+  size_t const source_length=
+    max_display_length_for_field(source_type, metadata);
+  size_t const target_length= field->max_display_length();
+  DBUG_PRINT("debug", ("source_length: %lu, source_type: %u,"
+                       " target_length: %lu, target_type: %u",
+                       (unsigned long) source_length, source_type,
+                       (unsigned long) target_length, field->real_type()));
+  int result= compare(source_length, target_length);
+  DBUG_PRINT("result", ("%d", result));
+  DBUG_RETURN(result);
+}
+
 static void show_sql_type(enum_field_types type, uint16 metadata, String *str,
                           const CHARSET_INFO *field_cs)
 {
@@ -272,7 +281,7 @@ static void show_sql_type(enum_field_types type, uint16 metadata, String *str,
    @param order  The computed order of the conversion needed.
    @param rli    The relay log info data structure: for error reporting.
  */
-bool is_conversion_ok(int order, Relay_log_info *rli)
+static bool is_conversion_ok(int order, Relay_log_info *rli)
 {
   DBUG_ENTER("is_conversion_ok");
   bool allow_non_lossy, allow_lossy;
@@ -364,11 +373,11 @@ inline bool time_cross_check(enum_field_types type1,
       than the target type and that conversion is potentially lossy.
 
    @param[in] field    Target field
-   @param[in] type     Source field type
+   @param[in] source_type Source field type
    @param[in] metadata Source field metadata
    @param[in] rli      Relay log info (for error reporting)
    @param[in] mflags   Flags from the table map event
-   @param[out] order   Order between source field and target field
+   @param[out] order_var Order between source field and target field
 
    @return @c true if conversion is possible according to the current
    settings, @c false if conversion is not possible according to the
@@ -578,10 +587,12 @@ can_convert_field_to(Field *field,
 
 
 /**
-  Is the definition compatible with a table?
+  Is the definition compatible with a table when it does not belong to
+  the data dictionary?
 
-  This function will compare the master table with an existing table
-  on the slave and see if they are compatible with respect to the
+  This function first finds out whether the table belongs to the data
+  dictionary. When not, it will compare the master table with an existing
+  table on the slave and see if they are compatible with respect to the
   current settings of @c SLAVE_TYPE_CONVERSIONS.
 
   If the tables are compatible and conversions are required, @c
@@ -592,23 +603,42 @@ can_convert_field_to(Field *field,
   If tables are compatible, but no conversions are necessary, @c
   *tmp_table_var will be set to NULL.
 
-  @param rli_arg[in]
-  Relay log info, for error reporting.
+  @param [in] rli Relay log info, for error reporting.
 
-  @param table[in]
-  Table to compare with
+  @param [in] table Table to compare with
 
-  @param tmp_table_var[out]
-  Virtual temporary table for performing conversions, if necessary.
+  @param [out] conv_table_var Virtual temporary table for performing conversions, if necessary.
 
   @retval true Master table is compatible with slave table.
-  @retval false Master table is not compatible with slave table.
+  @retval false When the table belongs to the data dictionary or
+                master table is not compatible with slave table.
 */
 bool
 table_def::compatible_with(THD *thd, Relay_log_info *rli,
                            TABLE *table, TABLE **conv_table_var)
   const
 {
+  /*
+    Prohibit replication into dictionary internal tables. We know this is
+    not DDL (which will be replicated as statements, and rejected by the
+    corresponding check for SQL statements), thus 'false' in the call below.
+    Also sserting that this is not a DD system thread.
+  */
+  DBUG_ASSERT(!thd->is_dd_system_thread());
+  const dd::Dictionary *dictionary= dd::get_dictionary();
+  if (dictionary && !dictionary->is_dd_table_access_allowed(false, false,
+                                                  table->s->db.str,
+                                                  table->s->db.length,
+                                                  table->s->table_name.str))
+  {
+    DBUG_PRINT("debug", ("Access to dictionary table %s.%s is prohibited",
+                         table->s->db.str, table->s->table_name.str));
+    rli->report(ERROR_LEVEL, ER_NO_SYSTEM_TABLE_ACCESS,
+                ER_THD(thd, ER_NO_SYSTEM_TABLE_ACCESS),
+                table->s->db.str, table->s->table_name.str);
+    return false;
+  }
+
   /*
     We only check the initial columns for the tables.
   */
@@ -676,7 +706,7 @@ table_def::compatible_with(THD *thd, Relay_log_info *rli,
 
       if (report_level != INFORMATION_LEVEL)
         rli->report(report_level, ER_SLAVE_CONVERSION_FAILED,
-                    ER(ER_SLAVE_CONVERSION_FAILED),
+                    ER_THD(thd, ER_SLAVE_CONVERSION_FAILED),
                     col, db_name, tbl_name,
                     source_type.c_ptr_safe(), target_type.c_ptr_safe());
       return false;
@@ -706,6 +736,7 @@ table_def::compatible_with(THD *thd, Relay_log_info *rli,
   *conv_table_var= tmp_table;
   return true;
 }
+
 
 /**
   Create a conversion table.
@@ -743,24 +774,30 @@ TABLE *table_def::create_conversion_table(THD *thd, Relay_log_info *rli, TABLE *
 
   for (uint col= 0 ; col < cols_to_create; ++col)
   {
-    Create_field *field_def=
-      (Create_field*) alloc_root(thd->mem_root, sizeof(Create_field));
+    Create_field *field_def= new (thd->mem_root) Create_field();
     if (field_list.push_back(field_def))
       DBUG_RETURN(NULL);
 
     uint decimals= 0;
     TYPELIB* interval= NULL;
-    uint pack_length= 0;
+    uint pack_length_override= 0; // 0 => NA. Only assigned below when needed.
+    enum_field_types field_type= type(col);
     uint32 max_length=
-      max_display_length_for_field(type(col), field_metadata(col));
+      max_display_length_for_field(field_type, field_metadata(col));
 
-    switch(type(col))
+
+    switch(field_type)
     {
       int precision;
     case MYSQL_TYPE_ENUM:
     case MYSQL_TYPE_SET:
       interval= static_cast<Field_enum*>(target_table->field[col])->typelib;
-      pack_length= field_metadata(col) & 0x00ff;
+      /*
+        Number of elements in interval on master and slave might differ.
+        Use pack length from binary log instead of one calculated from
+        number of interval elements on slave.
+      */
+      pack_length_override= field_metadata(col) & 0x00ff;
       break;
 
     case MYSQL_TYPE_NEWDECIMAL:
@@ -786,13 +823,17 @@ TABLE *table_def::create_conversion_table(THD *thd, Relay_log_info *rli, TABLE *
                       target_table->field[col]->field_name);
       goto err;
 
-    case MYSQL_TYPE_TINY_BLOB:
-    case MYSQL_TYPE_MEDIUM_BLOB:
-    case MYSQL_TYPE_LONG_BLOB:
     case MYSQL_TYPE_BLOB:
-    case MYSQL_TYPE_GEOMETRY:
-    case MYSQL_TYPE_JSON:
-      pack_length= field_metadata(col) & 0x00ff;
+      /*
+        Blobs are binlogged as MYSQL_TYPE_BLOB, even when pack_length
+        != 2. Need the exact blob type for the call to
+        Create_field::init_for_tmp_table() below. Note that
+        pack_length is NOT assigned to pack_length_override here, as
+        this should only be used when the pack_length cannot be
+        derived from the exact type, i.e. for ENUM and SET (see
+        above).
+      */
+      field_type= blob_type_from_pack_length(field_metadata(col) & 0x00ff);
       break;
 
     default:
@@ -800,15 +841,15 @@ TABLE *table_def::create_conversion_table(THD *thd, Relay_log_info *rli, TABLE *
     }
 
     DBUG_PRINT("debug", ("sql_type: %d, target_field: '%s', max_length: %d, decimals: %d,"
-                         " maybe_null: %d, unsigned_flag: %d, pack_length: %u",
+                         " maybe_null: %d, unsigned_flag: %d",
                          binlog_type(col), target_table->field[col]->field_name,
-                         max_length, decimals, TRUE, unsigned_flag, pack_length));
-    field_def->init_for_tmp_table(type(col),
+                         max_length, decimals, TRUE, unsigned_flag));
+    field_def->init_for_tmp_table(field_type,
                                   max_length,
                                   decimals,
                                   TRUE,          // maybe_null
                                   unsigned_flag, // unsigned_flag
-                                  pack_length);
+                                  pack_length_override);
     field_def->charset= target_table->field[col]->charset();
     field_def->interval= interval;
   }
@@ -830,7 +871,7 @@ err:
 
     if (report_level != INFORMATION_LEVEL)
       rli->report(report_level, ER_SLAVE_CANT_CREATE_CONVERSION,
-                  ER(ER_SLAVE_CANT_CREATE_CONVERSION),
+                  ER_THD(thd, ER_SLAVE_CANT_CREATE_CONVERSION),
                   target_table->s->db.str,
                   target_table->s->table_name.str);
   }
@@ -839,7 +880,9 @@ err:
 
 #endif /* MYSQL_CLIENT */
 
+extern "C" {
 PSI_memory_key key_memory_table_def_memory;
+}
 
 table_def::table_def(unsigned char *types, ulong size,
                      uchar *field_metadata, int metadata_size,
@@ -957,10 +1000,9 @@ table_def::~table_def()
   Utility methods for handling row based operations.
  */
 
-static uchar*
+static const uchar*
 hash_slave_rows_get_key(const uchar *record,
-                        size_t *length,
-                        my_bool not_used MY_ATTRIBUTE((unused)))
+                        size_t *length)
 {
   DBUG_ENTER("get_key");
 
@@ -972,9 +1014,10 @@ hash_slave_rows_get_key(const uchar *record,
 }
 
 static void
-hash_slave_rows_free_entry(HASH_ROW_ENTRY *entry)
+hash_slave_rows_free_entry(void *ptr)
 {
   DBUG_ENTER("free_entry");
+  HASH_ROW_ENTRY *entry= pointer_cast<HASH_ROW_ENTRY*>(ptr);
   if (entry)
   {
     if (entry->preamble)
@@ -999,12 +1042,11 @@ bool Hash_slave_rows::init(void)
 {
   if (my_hash_init(&m_hash,
                    &my_charset_bin,                /* the charater set information */
-                   16 /* TODO */,                  /* growth size */
-                   0,                              /* key offset */
+                   16 /* TODO */,                  /* size */
                    0,                              /* key length */
-                   hash_slave_rows_get_key,                        /* get function pointer */
-                   (my_hash_free_key) hash_slave_rows_free_entry,  /* freefunction pointer */
-                   MYF(0),                         /* flags */
+                   hash_slave_rows_get_key,        /* get function pointer */
+                   hash_slave_rows_free_entry,     /* freefunction pointer */
+                   0,                              /* flags */
                    key_memory_HASH_ROW_ENTRY))     /* memory instrumentation key */
     return true;
   return false;

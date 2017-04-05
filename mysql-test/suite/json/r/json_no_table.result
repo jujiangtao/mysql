@@ -927,7 +927,7 @@ json_type(cast(true as json))
 BOOLEAN
 select json_type(cast(b'10101' as json));
 json_type(cast(b'10101' as json))
-BIT
+BLOB
 select json_type(cast(cast(3.14 as decimal(5,2)) as json));
 json_type(cast(cast(3.14 as decimal(5,2)) as json))
 DECIMAL
@@ -1004,7 +1004,7 @@ cast(true as json)
 true
 select cast(b'10101' as json);
 cast(b'10101' as json)
-"base64:type16:FQ=="
+"base64:type15:FQ=="
 select cast(cast(3.14 as decimal(5,2)) as json);
 cast(cast(3.14 as decimal(5,2)) as json)
 3.14
@@ -2078,7 +2078,7 @@ json_array(1,2,3)
 [1, 2, 3]
 select json_array(b'0', b'1', b'10');
 json_array(b'0', b'1', b'10')
-["base64:type16:AA==", "base64:type16:AQ==", "base64:type16:Ag=="]
+["base64:type15:AA==", "base64:type15:AQ==", "base64:type15:Ag=="]
 SELECT JSON_ARRAY();
 JSON_ARRAY()
 []
@@ -3135,11 +3135,11 @@ SELECT JSON_EXTRACT('1E+308', '$');
 JSON_EXTRACT('1E+308', '$')
 1e308
 SELECT JSON_EXTRACT('1E+309', '$');
-ERROR 22032: Invalid JSON text in argument 1 to function json_extract: "Number too big to be stored in double." at position 6.
+ERROR 22032: Invalid JSON text in argument 1 to function json_extract: "Number too big to be stored in double." at position 0.
 SELECT JSON_EXTRACT('1E+36181012216111515851075235238', '$');
-ERROR 22032: Invalid JSON text in argument 1 to function json_extract: "Number too big to be stored in double." at position 6.
+ERROR 22032: Invalid JSON text in argument 1 to function json_extract: "Number too big to be stored in double." at position 0.
 SELECT JSON_EXTRACT('-1E+36181012216111515851075235238', '$');
-ERROR 22032: Invalid JSON text in argument 1 to function json_extract: "Number too big to be stored in double." at position 7.
+ERROR 22032: Invalid JSON text in argument 1 to function json_extract: "Number too big to be stored in double." at position 0.
 #
 # Bug#21383284: ASSERTION IN SELECT_LEX::SETUP_CONDS
 #
@@ -3283,3 +3283,9 @@ Warning	1235	This version of MySQL doesn't yet support 'comparison of JSON in th
 Warning	1235	This version of MySQL doesn't yet support 'comparison of JSON in the LEAST and GREATEST operators'
 Warning	1235	This version of MySQL doesn't yet support 'comparison of JSON in the LEAST and GREATEST operators'
 Warning	1235	This version of MySQL doesn't yet support 'comparison of JSON in the LEAST and GREATEST operators'
+#
+# Bug#22961128: WRONG RESULT WHEN MANIPULATING RESULT OF JSON_MERGE
+#
+SELECT JSON_SET(JSON_ARRAY(JSON_MERGE('{"a":1}', '{"a":2}')), '$[0].a', 123);
+JSON_SET(JSON_ARRAY(JSON_MERGE('{"a":1}', '{"a":2}')), '$[0].a', 123)
+[{"a": 123}]

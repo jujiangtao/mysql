@@ -1,4 +1,4 @@
-/* Copyright (c) 2009, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2009, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -14,7 +14,8 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 /**
-  @file Representation of an SQL command.
+  @file sql/sql_cmd.h
+  Representation of an SQL command.
 */
 
 #ifndef SQL_CMD_INCLUDED
@@ -25,7 +26,7 @@
 class THD;
 
 /**
-  @class Sql_cmd - Representation of an SQL command.
+  Representation of an SQL command.
 
   This class is an interface between the parser and the runtime.
   The parser builds the appropriate derived classes of Sql_cmd
@@ -75,7 +76,7 @@ public:
 
     @param thd  Current THD.
   */
-  virtual void cleanup(THD *thd) {}
+  virtual void cleanup(THD *thd MY_ATTRIBUTE((unused))) {}
 
 protected:
   Sql_cmd()

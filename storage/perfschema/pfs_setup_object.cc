@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2016, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -30,7 +30,7 @@
 #include "pfs_buffer_container.h"
 
 /**
-  @addtogroup Performance_schema_buffers
+  @addtogroup performance_schema_buffers
   @{
 */
 
@@ -55,9 +55,7 @@ void cleanup_setup_object(void)
   global_setup_object_container.cleanup();
 }
 
-C_MODE_START
-static uchar *setup_object_hash_get_key(const uchar *entry, size_t *length,
-                                        my_bool)
+static const uchar *setup_object_hash_get_key(const uchar *entry, size_t *length)
 {
   const PFS_setup_object * const *typed_entry;
   const PFS_setup_object *setup_object;
@@ -68,9 +66,8 @@ static uchar *setup_object_hash_get_key(const uchar *entry, size_t *length,
   DBUG_ASSERT(setup_object != NULL);
   *length= setup_object->m_key.m_key_length;
   result= setup_object->m_key.m_hash_key;
-  return const_cast<uchar*> (reinterpret_cast<const uchar*> (result));
+  return reinterpret_cast<const uchar*> (result);
 }
-C_MODE_END
 
 /**
   Initialize the setup objects hash.
@@ -197,7 +194,7 @@ int delete_setup_object(enum_object_type object_type, const String *schema,
   entry= reinterpret_cast<PFS_setup_object**>
     (lf_hash_search(&setup_object_hash, pins, key.m_hash_key, key.m_key_length));
 
-  if (entry && (entry != MY_ERRPTR))
+  if (entry && (entry != MY_LF_ERRPTR))
   {
     PFS_setup_object *pfs= *entry;
     lf_hash_delete(&setup_object_hash, pins, key.m_hash_key, key.m_key_length);
@@ -306,7 +303,7 @@ void lookup_setup_object(PFS_thread *thread,
     entry= reinterpret_cast<PFS_setup_object**>
       (lf_hash_search(&setup_object_hash, pins, key.m_hash_key, key.m_key_length));
 
-    if (entry && (entry != MY_ERRPTR))
+    if (entry && (entry != MY_LF_ERRPTR))
     {
       pfs= *entry;
       *enabled= pfs->m_enabled;

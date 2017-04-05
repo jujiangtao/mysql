@@ -22,7 +22,7 @@
 
 
 /**
-@file
+  @file include/mysql/com_data.h
   Definition of COM_DATA to be used with the Command service as data input
   structure.
 */
@@ -38,11 +38,6 @@ typedef struct st_com_refresh_data
 {
   unsigned char options;
 } COM_REFRESH_DATA;
-
-typedef struct st_com_shutdown_data
-{
-  enum mysql_enum_shutdown_level level;
-} COM_SHUTDOWN_DATA;
 
 typedef struct st_com_kill_data
 {
@@ -109,7 +104,6 @@ typedef struct st_com_field_list_data
 union COM_DATA {
   COM_INIT_DB_DATA com_init_db;
   COM_REFRESH_DATA com_refresh;
-  COM_SHUTDOWN_DATA com_shutdown;
   COM_KILL_DATA com_kill;
   COM_SET_OPTION_DATA com_set_option;
   COM_STMT_EXECUTE_DATA com_stmt_execute;

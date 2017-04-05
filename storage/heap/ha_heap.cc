@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -16,11 +16,14 @@
 
 
 #define MYSQL_SERVER 1
+#include "ha_heap.h"
+
 #include "probes_mysql.h"
 #include "sql_plugin.h"
-#include "ha_heap.h"
 #include "heapdef.h"
 #include "sql_base.h"                    // enum_tdc_remove_table_type
+#include "sql_class.h"
+#include "current_thd.h"
 
 static handler *heap_create_handler(handlerton *hton,
                                     TABLE_SHARE *table, 
@@ -30,13 +33,13 @@ heap_prepare_hp_create_info(TABLE *table_arg, bool internal_table,
                             HP_CREATE_INFO *hp_create_info);
 
 
-int heap_panic(handlerton *hton, ha_panic_function flag)
+static int heap_panic(handlerton *hton, ha_panic_function flag)
 {
   return hp_panic(flag);
 }
 
 
-int heap_init(void *p)
+static int heap_init(void *p)
 {
   handlerton *heap_hton;
 
@@ -72,20 +75,11 @@ ha_heap::ha_heap(handlerton *hton, TABLE_SHARE *table_arg)
 {}
 
 
-static const char *ha_heap_exts[] = {
-  NullS
-};
-
-const char **ha_heap::bas_ext() const
-{
-  return ha_heap_exts;
-}
-
 /*
   Hash index statistics is updated (copied from HP_KEYDEF::hash_buckets to 
-  rec_per_key) after 1/HEAP_STATS_UPDATE_THRESHOLD fraction of table records 
-  have been inserted/updated/deleted. delete_all_rows() and table flush cause 
-  immediate update.
+  records_per_key) after 1/HEAP_STATS_UPDATE_THRESHOLD fraction of table
+  records have been inserted/updated/deleted. delete_all_rows() and table flush
+  cause immediate update.
 
   NOTE
    hash index statistics must be updated when number of table records changes
@@ -167,6 +161,13 @@ handler *ha_heap::clone(const char *name, MEM_ROOT *mem_root)
 }
 
 
+const char *ha_heap::table_type() const
+{
+  return (table->in_use->variables.sql_mode & MODE_MYSQL323) ?
+    "HEAP" : "MEMORY";
+}
+
+
 /*
   Compute which keys to use for scanning
 
@@ -194,6 +195,10 @@ void ha_heap::set_keys_for_scanning(void)
 }
 
 
+/**
+  Update index statistics for the table.
+*/
+
 void ha_heap::update_key_stats()
 {
   for (uint i= 0; i < table->s->keys; i++)
@@ -202,19 +207,20 @@ void ha_heap::update_key_stats()
 
     key->set_in_memory_estimate(1.0);           // Index is in memory
 
-    if (!key->rec_per_key)
+    if (!key->supports_records_per_key())
       continue;
     if (key->algorithm != HA_KEY_ALG_BTREE)
     {
       if (key->flags & HA_NOSAME)
-        key->rec_per_key[key->user_defined_key_parts - 1]= 1;
+        key->set_records_per_key(key->user_defined_key_parts - 1, 1.0f);
       else
       {
-        ha_rows hash_buckets= file->s->keydef[i].hash_buckets;
-        uint no_records= hash_buckets ? (uint) (file->s->records/hash_buckets) : 2;
-        if (no_records < 2)
-          no_records= 2;
-        key->rec_per_key[key->user_defined_key_parts - 1]= no_records;
+        const ha_rows hash_buckets= file->s->keydef[i].hash_buckets;
+        rec_per_key_t rec_per_key= hash_buckets ?
+          static_cast<rec_per_key_t>(file->s->records) / hash_buckets : 2.0f;
+        if (rec_per_key < 2.0f)
+          rec_per_key= 2.0f;
+        key->set_records_per_key(key->user_defined_key_parts - 1, rec_per_key);
       }
     }
   }
@@ -227,7 +233,7 @@ void ha_heap::update_key_stats()
 int ha_heap::write_row(uchar * buf)
 {
   int res;
-  ha_statistic_increment(&SSV::ha_write_count);
+  ha_statistic_increment(&System_status_var::ha_write_count);
   if (table->next_number_field && buf == table->record[0])
   {
     if ((res= update_auto_increment()))
@@ -249,7 +255,7 @@ int ha_heap::write_row(uchar * buf)
 int ha_heap::update_row(const uchar * old_data, uchar * new_data)
 {
   int res;
-  ha_statistic_increment(&SSV::ha_update_count);
+  ha_statistic_increment(&System_status_var::ha_update_count);
   res= heap_update(file,old_data,new_data);
   if (!res && ++records_changed*HEAP_STATS_UPDATE_THRESHOLD > 
               file->s->records)
@@ -266,7 +272,7 @@ int ha_heap::update_row(const uchar * old_data, uchar * new_data)
 int ha_heap::delete_row(const uchar * buf)
 {
   int res;
-  ha_statistic_increment(&SSV::ha_delete_count);
+  ha_statistic_increment(&System_status_var::ha_delete_count);
   res= heap_delete(file,buf);
   if (!res && table->s->tmp_table == NO_TMP_TABLE && 
       ++records_changed*HEAP_STATS_UPDATE_THRESHOLD > file->s->records)
@@ -286,7 +292,7 @@ int ha_heap::index_read_map(uchar *buf, const uchar *key,
 {
   MYSQL_INDEX_READ_ROW_START(table_share->db.str, table_share->table_name.str);
   DBUG_ASSERT(inited==INDEX);
-  ha_statistic_increment(&SSV::ha_read_key_count);
+  ha_statistic_increment(&System_status_var::ha_read_key_count);
   int error = heap_rkey(file,buf,active_index, key, keypart_map, find_flag);
   table->status = error ? STATUS_NOT_FOUND : 0;
   MYSQL_INDEX_READ_ROW_DONE(error);
@@ -298,7 +304,7 @@ int ha_heap::index_read_last_map(uchar *buf, const uchar *key,
 {
   MYSQL_INDEX_READ_ROW_START(table_share->db.str, table_share->table_name.str);
   DBUG_ASSERT(inited==INDEX);
-  ha_statistic_increment(&SSV::ha_read_key_count);
+  ha_statistic_increment(&System_status_var::ha_read_key_count);
   int error= heap_rkey(file, buf, active_index, key, keypart_map,
 		       HA_READ_PREFIX_LAST);
   table->status= error ? STATUS_NOT_FOUND : 0;
@@ -311,7 +317,7 @@ int ha_heap::index_read_idx_map(uchar *buf, uint index, const uchar *key,
                                 enum ha_rkey_function find_flag)
 {
   MYSQL_INDEX_READ_ROW_START(table_share->db.str, table_share->table_name.str);
-  ha_statistic_increment(&SSV::ha_read_key_count);
+  ha_statistic_increment(&System_status_var::ha_read_key_count);
   int error = heap_rkey(file, buf, index, key, keypart_map, find_flag);
   table->status = error ? STATUS_NOT_FOUND : 0;
   MYSQL_INDEX_READ_ROW_DONE(error);
@@ -322,7 +328,7 @@ int ha_heap::index_next(uchar * buf)
 {
   MYSQL_INDEX_READ_ROW_START(table_share->db.str, table_share->table_name.str);
   DBUG_ASSERT(inited==INDEX);
-  ha_statistic_increment(&SSV::ha_read_next_count);
+  ha_statistic_increment(&System_status_var::ha_read_next_count);
   int error=heap_rnext(file,buf);
   table->status=error ? STATUS_NOT_FOUND: 0;
   MYSQL_INDEX_READ_ROW_DONE(error);
@@ -333,7 +339,7 @@ int ha_heap::index_prev(uchar * buf)
 {
   MYSQL_INDEX_READ_ROW_START(table_share->db.str, table_share->table_name.str);
   DBUG_ASSERT(inited==INDEX);
-  ha_statistic_increment(&SSV::ha_read_prev_count);
+  ha_statistic_increment(&System_status_var::ha_read_prev_count);
   int error=heap_rprev(file,buf);
   table->status=error ? STATUS_NOT_FOUND: 0;
   MYSQL_INDEX_READ_ROW_DONE(error);
@@ -344,7 +350,7 @@ int ha_heap::index_first(uchar * buf)
 {
   MYSQL_INDEX_READ_ROW_START(table_share->db.str, table_share->table_name.str);
   DBUG_ASSERT(inited==INDEX);
-  ha_statistic_increment(&SSV::ha_read_first_count);
+  ha_statistic_increment(&System_status_var::ha_read_first_count);
   int error=heap_rfirst(file, buf, active_index);
   table->status=error ? STATUS_NOT_FOUND: 0;
   MYSQL_INDEX_READ_ROW_DONE(error);
@@ -355,7 +361,7 @@ int ha_heap::index_last(uchar * buf)
 {
   MYSQL_INDEX_READ_ROW_START(table_share->db.str, table_share->table_name.str);
   DBUG_ASSERT(inited==INDEX);
-  ha_statistic_increment(&SSV::ha_read_last_count);
+  ha_statistic_increment(&System_status_var::ha_read_last_count);
   int error=heap_rlast(file, buf, active_index);
   table->status=error ? STATUS_NOT_FOUND: 0;
   MYSQL_INDEX_READ_ROW_DONE(error);
@@ -371,7 +377,7 @@ int ha_heap::rnd_next(uchar *buf)
 {
   MYSQL_READ_ROW_START(table_share->db.str, table_share->table_name.str,
                        TRUE);
-  ha_statistic_increment(&SSV::ha_read_rnd_next_count);
+  ha_statistic_increment(&System_status_var::ha_read_rnd_next_count);
   int error=heap_scan(file, buf);
   table->status=error ? STATUS_NOT_FOUND: 0;
   MYSQL_READ_ROW_DONE(error);
@@ -384,7 +390,7 @@ int ha_heap::rnd_pos(uchar * buf, uchar *pos)
   HEAP_PTR heap_position;
   MYSQL_READ_ROW_START(table_share->db.str, table_share->table_name.str,
                        FALSE);
-  ha_statistic_increment(&SSV::ha_read_rnd_count);
+  ha_statistic_increment(&System_status_var::ha_read_rnd_count);
   memcpy(&heap_position, pos, sizeof(HEAP_PTR));
   error=heap_rrnd(file, buf, heap_position);
   table->status=error ? STATUS_NOT_FOUND: 0;
@@ -639,7 +645,9 @@ ha_rows ha_heap::records_in_range(uint inx, key_range *min_key,
 
   /* Assert that info() did run. We need current statistics here. */
   DBUG_ASSERT(key_stat_version == file->s->key_stat_version);
-  return key->rec_per_key[key->user_defined_key_parts - 1];
+  const ha_rows rec_in_range=
+    static_cast<ha_rows>(key->records_per_key(key->user_defined_key_parts - 1));
+  return rec_in_range;
 }
 
 
@@ -677,7 +685,6 @@ heap_prepare_hp_create_info(TABLE *table_arg, bool internal_table,
     keydef[key].seg=       seg;
 
     switch (pos->algorithm) {
-    case HA_KEY_ALG_UNDEF:
     case HA_KEY_ALG_HASH:
       keydef[key].algorithm= HA_KEY_ALG_HASH;
       mem_per_row+= sizeof(HASH_INFO);

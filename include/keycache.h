@@ -13,7 +13,10 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-/* Key cache variable structures */
+/**
+  @file include/keycache.h
+  Key cache variable structures.
+*/
 
 #ifndef _keycache_h
 #define _keycache_h
@@ -42,6 +45,11 @@ typedef struct st_keycache_wqueue
 {
   st_keycache_thread_var *last_thread;  /* circular list of waiting threads */
 } KEYCACHE_WQUEUE;
+
+	/* Typical key cash */
+#define KEY_CACHE_SIZE		(uint) (8*1024*1024)
+	/* Default size of a key cache block  */
+#define KEY_CACHE_BLOCK_SIZE	(uint) 1024
 
 #define CHANGED_BLOCKS_HASH 128             /* must be power of 2 */
 

@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2016, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -12,6 +12,11 @@
   You should have received a copy of the GNU General Public License
   along with this program; if not, write to the Free Software Foundation,
   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+
+/**
+  @file storage/perfschema/pfs_builtin_memory.cc
+  Performance schema built in memory instrumentation.
+*/
 
 #include "my_global.h"
 #include "pfs_global.h"
@@ -30,17 +35,20 @@ PFS_builtin_memory_class builtin_memory_account_waits;
 PFS_builtin_memory_class builtin_memory_account_stages;
 PFS_builtin_memory_class builtin_memory_account_statements;
 PFS_builtin_memory_class builtin_memory_account_transactions;
+PFS_builtin_memory_class builtin_memory_account_errors;
 PFS_builtin_memory_class builtin_memory_account_memory;
 
 PFS_builtin_memory_class builtin_memory_global_stages;
 PFS_builtin_memory_class builtin_memory_global_statements;
 PFS_builtin_memory_class builtin_memory_global_memory;
+PFS_builtin_memory_class builtin_memory_global_errors;
 
 PFS_builtin_memory_class builtin_memory_host;
 PFS_builtin_memory_class builtin_memory_host_waits;
 PFS_builtin_memory_class builtin_memory_host_stages;
 PFS_builtin_memory_class builtin_memory_host_statements;
 PFS_builtin_memory_class builtin_memory_host_transactions;
+PFS_builtin_memory_class builtin_memory_host_errors;
 PFS_builtin_memory_class builtin_memory_host_memory;
 
 PFS_builtin_memory_class builtin_memory_thread;
@@ -48,6 +56,7 @@ PFS_builtin_memory_class builtin_memory_thread_waits;
 PFS_builtin_memory_class builtin_memory_thread_stages;
 PFS_builtin_memory_class builtin_memory_thread_statements;
 PFS_builtin_memory_class builtin_memory_thread_transactions;
+PFS_builtin_memory_class builtin_memory_thread_errors;
 PFS_builtin_memory_class builtin_memory_thread_memory;
 
 PFS_builtin_memory_class builtin_memory_thread_waits_history;
@@ -66,6 +75,7 @@ PFS_builtin_memory_class builtin_memory_user_waits;
 PFS_builtin_memory_class builtin_memory_user_stages;
 PFS_builtin_memory_class builtin_memory_user_statements;
 PFS_builtin_memory_class builtin_memory_user_transactions;
+PFS_builtin_memory_class builtin_memory_user_errors;
 PFS_builtin_memory_class builtin_memory_user_memory;
 
 PFS_builtin_memory_class builtin_memory_mutex_class;
@@ -143,6 +153,8 @@ void init_all_builtin_memory_class()
                              "memory/performance_schema/events_statements_summary_by_account_by_event_name");
   init_builtin_memory_class( & builtin_memory_account_transactions,
                              "memory/performance_schema/events_transactions_summary_by_account_by_event_name");
+  init_builtin_memory_class( & builtin_memory_account_errors,
+                             "memory/performance_schema/events_errors_summary_by_account_by_error");
   init_builtin_memory_class( & builtin_memory_account_memory,
                              "memory/performance_schema/memory_summary_by_account_by_event_name");
 
@@ -152,6 +164,8 @@ void init_all_builtin_memory_class()
                              "memory/performance_schema/events_statements_summary_global_by_event_name");
   init_builtin_memory_class( & builtin_memory_global_memory,
                              "memory/performance_schema/memory_summary_global_by_event_name");
+  init_builtin_memory_class( & builtin_memory_global_errors,
+                             "memory/performance_schema/events_errors_summary_global_by_error");
 
   init_builtin_memory_class( & builtin_memory_host,
                              "memory/performance_schema/hosts");
@@ -163,6 +177,8 @@ void init_all_builtin_memory_class()
                              "memory/performance_schema/events_statements_summary_by_host_by_event_name");
   init_builtin_memory_class( & builtin_memory_host_transactions,
                              "memory/performance_schema/events_transactions_summary_by_host_by_event_name");
+  init_builtin_memory_class( & builtin_memory_host_errors,
+                             "memory/performance_schema/events_errors_summary_by_host_by_error");
   init_builtin_memory_class( & builtin_memory_host_memory,
                              "memory/performance_schema/memory_summary_by_host_by_event_name");
 
@@ -176,6 +192,8 @@ void init_all_builtin_memory_class()
                              "memory/performance_schema/events_statements_summary_by_thread_by_event_name");
   init_builtin_memory_class( & builtin_memory_thread_transactions,
                              "memory/performance_schema/events_transactions_summary_by_thread_by_event_name");
+  init_builtin_memory_class( & builtin_memory_thread_errors,
+                             "memory/performance_schema/events_errors_summary_by_thread_by_error");
   init_builtin_memory_class( & builtin_memory_thread_memory,
                              "memory/performance_schema/memory_summary_by_thread_by_event_name");
 
@@ -210,6 +228,8 @@ void init_all_builtin_memory_class()
                              "memory/performance_schema/events_statements_summary_by_user_by_event_name");
   init_builtin_memory_class( & builtin_memory_user_transactions,
                              "memory/performance_schema/events_transactions_summary_by_user_by_event_name");
+  init_builtin_memory_class( & builtin_memory_user_errors,
+                             "memory/performance_schema/events_errors_summary_by_user_by_error");
   init_builtin_memory_class( & builtin_memory_user_memory,
                              "memory/performance_schema/memory_summary_by_user_by_event_name");
 
@@ -288,17 +308,20 @@ static PFS_builtin_memory_class* all_builtin_memory[]=
   & builtin_memory_account_stages,
   & builtin_memory_account_statements,
   & builtin_memory_account_transactions,
+  & builtin_memory_account_errors,
   & builtin_memory_account_memory,
 
   & builtin_memory_global_stages,
   & builtin_memory_global_statements,
   & builtin_memory_global_memory,
+  & builtin_memory_global_errors,
 
   & builtin_memory_host,
   & builtin_memory_host_waits,
   & builtin_memory_host_stages,
   & builtin_memory_host_statements,
   & builtin_memory_host_transactions,
+  & builtin_memory_host_errors,
   & builtin_memory_host_memory,
 
   & builtin_memory_thread,
@@ -306,6 +329,7 @@ static PFS_builtin_memory_class* all_builtin_memory[]=
   & builtin_memory_thread_stages,
   & builtin_memory_thread_statements,
   & builtin_memory_thread_transactions,
+  & builtin_memory_thread_errors,
   & builtin_memory_thread_memory,
 
   & builtin_memory_thread_waits_history,
@@ -324,6 +348,7 @@ static PFS_builtin_memory_class* all_builtin_memory[]=
   & builtin_memory_user_stages,
   & builtin_memory_user_statements,
   & builtin_memory_user_transactions,
+  & builtin_memory_user_errors,
   & builtin_memory_user_memory,
 
   & builtin_memory_mutex_class,

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2014, 2016 Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2014, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -110,7 +110,7 @@ Abstract_program::~Abstract_program()
 
 void Abstract_program::init_name(char *name_from_cmd_line)
 {
-#if _WIN32
+#ifdef _WIN32
   char* name;
 
   char name_buf[FN_REFLEN];

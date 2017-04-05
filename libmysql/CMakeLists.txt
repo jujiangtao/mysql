@@ -15,6 +15,7 @@
 
 INCLUDE_DIRECTORIES(
   ${CMAKE_SOURCE_DIR}/include
+  ${CMAKE_BINARY_DIR}/include
   ${CMAKE_SOURCE_DIR}/libmysql
   ${CMAKE_SOURCE_DIR}/regex
   ${CMAKE_SOURCE_DIR}/sql
@@ -94,7 +95,6 @@ mysql_select_db
 mysql_stmt_send_long_data
 # We need to have document for this api
 mysql_send_query
-mysql_shutdown
 mysql_ssl_set
 mysql_stat
 mysql_stmt_affected_rows
@@ -146,34 +146,20 @@ CACHE INTERNAL "Functions exported by client API"
 
 )
 
-# Below lists will have all the undocumented C API symbols but still exported.
+# Below list will have all the undocumented C API symbols but still exported.
 # Once the decision is taken to have documentation we need to move them to
 # CLIENT_API_FUNCTIONS list.
-SET(CLIENT_API_FUNCTIONS_UNDOCUMENTED_20_0
+SET(CLIENT_API_FUNCTIONS_UNDOCUMENTED
 get_tty_password
 # my_load_defaults is a wrapper for load_defaults and it is not documented. We
 # will have a FR to replace this for decent name/functionality and document it.
 my_load_defaults
 handle_options
+# pure-ftpd 1.0.42 needs either my_make_scrambled_password (preferred)
+# or make_scrambled_password.
+my_make_scrambled_password
 
-CACHE INTERNAL "Undocumented functions exported by client API in version 20.0"
-
-)
-
-SET(CLIENT_API_FUNCTIONS_UNDOCUMENTED_20_3
-  # pure-ftpd 1.0.42 needs either my_make_scrambled_password (preferred)
-  # or make_scrambled_password.
-  my_make_scrambled_password
-
-  CACHE INTERNAL "Undocumented functions exported by client API in version 20.3"
-
-)
-
-SET(CLIENT_API_FUNCTIONS_UNDOCUMENTED
-  ${CLIENT_API_FUNCTIONS_UNDOCUMENTED_20_0}
-  ${CLIENT_API_FUNCTIONS_UNDOCUMENTED_20_3}
-
-  CACHE INTERNAL "Undocumented functions exported by client API"
+CACHE INTERNAL "Undocumented functions exported by client API"
 
 )
 
@@ -181,7 +167,7 @@ SET(CLIENT_SOURCES
   get_password.c 
   libmysql.c
   errmsg.c
-  ../sql-common/client.c 
+  ../sql-common/client.cc
   ../sql-common/my_time.c 
   ../sql-common/client_plugin.c 
   ../sql-common/client_authentication.cc
@@ -257,15 +243,6 @@ IF(UNIX)
       SET(${OUTNAME} ${LIBNAME}${EXTENSION}${DOT_VERSION})
     ENDIF() 
   ENDMACRO()
-ENDIF()
-
-# In our special "mixed" builds, also install libstlport which will
-# be injected into the build tree by the Sun Studio part of the build.
-
-IF(CMAKE_SYSTEM_NAME MATCHES "SunOS" AND DEFINED ENV{PB2WORKDIR})
-  INSTALL(FILES ${CMAKE_BINARY_DIR}/libstlport.so
-                ${CMAKE_BINARY_DIR}/libstlport.so.1
-          DESTINATION ${INSTALL_LIBDIR} COMPONENT SharedLibraries OPTIONAL)
 ENDIF()
 
 IF(NOT DISABLE_SHARED)

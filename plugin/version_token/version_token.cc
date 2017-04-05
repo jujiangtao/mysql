@@ -19,10 +19,14 @@
 #include <m_string.h>
 #include <sql_class.h>
 #include <hash.h>
+#include <current_thd.h>
 #include <sstream>
 #include <errmsg.h>
 #include <mysql/service_locking.h>
 #include <locking_service.h>
+#include <derror.h>
+#include <mysql/psi/mysql_rwlock.h>
+#include <mysql/psi/mysql_memory.h>
 
 #ifdef WIN32
 #define PLUGIN_EXPORT extern "C" __declspec(dllexport)
@@ -91,19 +95,16 @@ static PSI_memory_info all_vtoken_memory[]=
 };
 
 // Function to register the lock
-void vtoken_init_psi_keys(void)
+static void vtoken_init_psi_keys(void)
 {
   const char* category= "vtoken";
   int count;
 
-  if (PSI_server == NULL)
-    return;
-
   count= array_elements(all_vtoken_rwlocks);
-  PSI_server->register_rwlock(category, all_vtoken_rwlocks, count);
+  PSI_RWLOCK_CALL(register_rwlock)(category, all_vtoken_rwlocks, count);
 
   count= array_elements(all_vtoken_memory);
-  PSI_server->register_memory(category, all_vtoken_memory, count);
+  PSI_MEMORY_CALL(register_memory)(category, all_vtoken_memory, count);
 }
 
 #endif /* HAVE_PSI_INTERFACE */
@@ -123,9 +124,8 @@ static bool is_blank_string(char *input)
 }
 
 
-static uchar *version_token_get_key(const char *entry MY_ATTRIBUTE((unused)),
-                                    size_t *length MY_ATTRIBUTE((unused)),
-	    	                    my_bool not_used MY_ATTRIBUTE((unused)));
+static const uchar *
+version_token_get_key(const uchar *entry, size_t *length);
 
 static void set_vtoken_string_length()
 {
@@ -197,8 +197,8 @@ enum command {
          list with the input or checks the input against the global according
 	 to which function the caller is.
 
-  @param input          [IN]   List of semicolon separated token name/value pairs
-  @param enum command   [IN]   Helps determining the caller function.
+  @param [in] input  List of semicolon separated token name/value pairs
+  @param [in] type   Helps determining the caller function.
 
   @return (error)    -1 in case of error.
   @return (success)  Number of tokens updated/set on EDIT_VTOKEN and SET_VTOKEN.
@@ -355,7 +355,7 @@ static int parse_vtokens(char *input, enum command type)
               if (!thd->get_stmt_da()->is_set())
               {
                 my_snprintf(error_str, sizeof(error_str),
-                            ER(ER_VTOKEN_PLUGIN_TOKEN_MISMATCH),
+                            ER_THD(thd, ER_VTOKEN_PLUGIN_TOKEN_MISMATCH),
                             (int) token_name.length, token_name.str,
                             (int) token_obj->token_val.length, 
                             token_obj->token_val.str);
@@ -372,7 +372,7 @@ static int parse_vtokens(char *input, enum command type)
             if (!thd->get_stmt_da()->is_set())
             {
               my_snprintf(error_str, sizeof(error_str),
-                          ER(ER_VTOKEN_PLUGIN_TOKEN_NOT_FOUND),
+                          ER_THD(thd, ER_VTOKEN_PLUGIN_TOKEN_NOT_FOUND),
                           (int) token_name.length, token_name.str);
 
               thd->get_stmt_da()->set_error_status(ER_VTOKEN_PLUGIN_TOKEN_NOT_FOUND,
@@ -502,7 +502,7 @@ static int version_tokens_init(void *arg MY_ATTRIBUTE((unused)))
   // Initialize hash.
   my_hash_init(&version_tokens_hash,
 	       &my_charset_bin,
-               4, 0, 0, (my_hash_get_key) version_token_get_key,
+               4, 0, version_token_get_key,
                my_free, HASH_UNIQUE,
                key_memory_vtoken);
 
@@ -1059,8 +1059,7 @@ long long version_tokens_unlock(UDF_INIT *initid, UDF_ARGS *args,
 
 
 
-static uchar *version_token_get_key(const char *entry, size_t *length,
-		                    my_bool not_used MY_ATTRIBUTE((unused)))
+static const uchar *version_token_get_key(const uchar *entry, size_t *length)
 {
   char *key;
   key= (((version_token_st *) entry)->token_name).str;

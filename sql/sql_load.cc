@@ -19,6 +19,9 @@
 /* 2006-12 Erik Wetterberg : LOAD XML added */
 
 #include "sql_load.h"
+
+#include "mysqld.h"                             // mysql_real_data_home
+#include "psi_memory_key.h"
 #include "sql_cache.h"                          // query_cache_*
 #include "sql_base.h"          // fill_record_n_invoke_before_triggers
 #include <my_dir.h>
@@ -37,6 +40,7 @@
 #include "sql_show.h"
 #include "item_timefunc.h"  // Item_func_now_local
 #include "rpl_rli.h"     // Relay_log_info
+#include "derror.h"
 #include "log.h"
 
 #include "pfs_file_provider.h"
@@ -222,8 +226,7 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
 
   if (escaped->length() > 1 || enclosed->length() > 1)
   {
-    my_message(ER_WRONG_FIELD_TERMINATORS,ER(ER_WRONG_FIELD_TERMINATORS),
-	       MYF(0));
+    my_error(ER_WRONG_FIELD_TERMINATORS, MYF(0));
     DBUG_RETURN(TRUE);
   }
 
@@ -234,7 +237,7 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
   {
     push_warning(thd, Sql_condition::SL_WARNING,
                  WARN_NON_ASCII_SEPARATOR_NOT_IMPLEMENTED,
-                 ER(WARN_NON_ASCII_SEPARATOR_NOT_IMPLEMENTED));
+                 ER_THD(thd, WARN_NON_ASCII_SEPARATOR_NOT_IMPLEMENTED));
   } 
 
   if (open_and_lock_tables(thd, table_list, 0))
@@ -318,9 +321,9 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
       Let us also prepare SET clause, altough it is probably empty
       in this case.
     */
-    if (setup_fields(thd, Ref_ptr_array(), set_fields, INSERT_ACL, NULL,
+    if (setup_fields(thd, Ref_item_array(), set_fields, INSERT_ACL, NULL,
                      false, true) ||
-        setup_fields(thd, Ref_ptr_array(), set_values, SELECT_ACL, NULL,
+        setup_fields(thd, Ref_item_array(), set_values, SELECT_ACL, NULL,
                      false, false))
       DBUG_RETURN(TRUE);
   }
@@ -330,9 +333,9 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
       Because fields_vars may contain user variables,
       pass false for column_update in first call below.
     */
-    if (setup_fields(thd, Ref_ptr_array(), fields_vars, INSERT_ACL, NULL,
+    if (setup_fields(thd, Ref_item_array(), fields_vars, INSERT_ACL, NULL,
                      false, false) ||
-        setup_fields(thd, Ref_ptr_array(), set_fields, INSERT_ACL, NULL,
+        setup_fields(thd, Ref_item_array(), set_fields, INSERT_ACL, NULL,
                      false, true))
       DBUG_RETURN(TRUE);
 
@@ -355,7 +358,7 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
     /* We explicitly ignore the return value */
     (void)check_that_all_fields_are_given_values(thd, table, table_list);
     /* Fix the expressions in SET clause */
-    if (setup_fields(thd, Ref_ptr_array(), set_values, SELECT_ACL, NULL,
+    if (setup_fields(thd, Ref_item_array(), set_values, SELECT_ACL, NULL,
                      false, false))
       DBUG_RETURN(TRUE);
   }
@@ -381,7 +384,7 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
   if (info.add_function_default_columns(table, table->write_set))
     DBUG_RETURN(TRUE);
 
-  prepare_triggers_for_insert_stmt(table);
+  prepare_triggers_for_insert_stmt(thd, table);
 
   uint tot_length=0;
   bool use_blobs= 0, use_vars= 0;
@@ -408,8 +411,7 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
   }
   if (use_blobs && !ex->line.line_term->length() && !field_term->length())
   {
-    my_message(ER_BLOBS_AND_NO_TERMINATED,ER(ER_BLOBS_AND_NO_TERMINATED),
-	       MYF(0));
+    my_error(ER_BLOBS_AND_NO_TERMINATED, MYF(0));
     DBUG_RETURN(TRUE);
   }
   if (use_vars && !field_term->length() && !enclosed->length())
@@ -513,7 +515,7 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
   if (mysql_bin_log.is_open())
   {
     lf_info.thd = thd;
-    lf_info.wrote_create_file = 0;
+    lf_info.logged_data_file = 0;
     lf_info.last_pos_in_file = HA_POS_ERROR;
     lf_info.log_delayed= transactional_table;
     read_info.set_io_cache_arg((void*) &lf_info);
@@ -567,8 +569,6 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
       table->file->print_error(my_errno(), MYF(0));
       error= 1;
     }
-    table->file->extra(HA_EXTRA_NO_IGNORE_DUP_KEY);
-    table->file->extra(HA_EXTRA_WRITE_CANNOT_REPLACE);
     table->next_number_field=0;
   }
   if (file >= 0)
@@ -628,7 +628,7 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
 	*/
 	read_info.end_io_cache();
 	/* If the file was not empty, wrote_create_file is true */
-	if (lf_info.wrote_create_file)
+	if (lf_info.logged_data_file)
 	{
           int errcode= query_error_code(thd, killed_status == THD::NOT_KILLED);
 
@@ -657,7 +657,7 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
   }
 
   my_snprintf(name, sizeof(name),
-              ER(ER_LOAD_INFO),
+              ER_THD(thd, ER_LOAD_INFO),
               (long) info.stats.records, (long) info.stats.deleted,
               (long) (info.stats.records - info.stats.copied),
               (long) thd->get_stmt_da()->current_statement_cond_count());
@@ -683,7 +683,7 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
         wrong), when read_info is destroyed.
       */
       read_info.end_io_cache();
-      if (lf_info.wrote_create_file)
+      if (lf_info.logged_data_file)
       {
         int errcode= query_error_code(thd, killed_status == THD::NOT_KILLED);
         error= write_execute_load_query_log_event(thd, ex,
@@ -720,7 +720,6 @@ err:
 
 
 #ifndef EMBEDDED_LIBRARY
-
 /* Not a very useful function; just to avoid duplication of code */
 static bool write_execute_load_query_log_event(THD *thd, sql_exchange* ex,
                                                const char* db_arg,  /* table's database */
@@ -730,20 +729,13 @@ static bool write_execute_load_query_log_event(THD *thd, sql_exchange* ex,
                                                bool transactional_table,
                                                int errcode)
 {
-  char                *load_data_query,
-                      *end,
-                      *fname_start,
-                      *fname_end,
-                      *p= NULL;
-  size_t               pl= 0;
-  List<Item>           fv;
-  Item                *item;
-  String              *str;
-  String               pfield, pfields;
-  int                  n;
   const char          *tbl= table_name_arg;
   const char          *tdb= (thd->db().str != NULL ? thd->db().str : db_arg);
+  const String        *query= NULL;
   String              string_buf;
+  size_t              fname_start= 0;
+  size_t              fname_end= 0;
+
   if (thd->db().str == NULL || strcmp(db_arg, thd->db().str))
   {
     /*
@@ -758,88 +750,23 @@ static bool write_execute_load_query_log_event(THD *thd, sql_exchange* ex,
   append_identifier(thd, &string_buf, table_name_arg,
                     strlen(table_name_arg));
   tbl= string_buf.c_ptr_safe();
-  Load_log_event       lle(thd, ex, tdb, tbl, fv, is_concurrent,
-                           duplicates, thd->lex->is_ignore(),
-                           transactional_table);
-
-  /*
-    force in a LOCAL if there was one in the original.
-  */
-  if (thd->lex->local_file)
-    lle.set_fname_outside_temp_buf(ex->file_name, strlen(ex->file_name));
-
-  /*
-    prepare fields-list and SET if needed; print_query won't do that for us.
-  */
-  if (!thd->lex->load_field_list.is_empty())
-  {
-    List_iterator<Item> li(thd->lex->load_field_list);
-
-    pfields.append(" (");
-    n= 0;
-
-    while ((item= li++))
-    {
-      if (n++)
-        pfields.append(", ");
-      if (item->type() == Item::FIELD_ITEM ||
-                 item->type() == Item::REF_ITEM)
-        append_identifier(thd, &pfields, item->item_name.ptr(),
-                          strlen(item->item_name.ptr()));
-      else
-        item->print(&pfields, QT_ORDINARY);
-    }
-    pfields.append(")");
-  }
-
-  if (!thd->lex->load_update_list.is_empty())
-  {
-    List_iterator<Item> lu(thd->lex->load_update_list);
-    List_iterator<String> ls(thd->lex->load_set_str_list);
-
-    pfields.append(" SET ");
-    n= 0;
-
-    while ((item= lu++))
-    {
-      str= ls++;
-      if (n++)
-        pfields.append(", ");
-      append_identifier(thd, &pfields, item->item_name.ptr(),
-                        strlen(item->item_name.ptr()));
-      // Extract exact Item value
-      str->copy();
-      pfields.append(str->ptr());
-      str->mem_free();
-    }
-    /*
-      Clear the SET string list once the SET command is reconstructed
-      as we donot require the list anymore.
-    */
-    thd->lex->load_set_str_list.empty();
-  }
-
-  p= pfields.c_ptr_safe();
-  pl= strlen(p);
-
-  if (!(load_data_query= (char *)thd->alloc(lle.get_query_buffer_length() + 1 + pl)))
-    return TRUE;
-
-  lle.print_query(FALSE, ex->cs ? ex->cs->csname : NULL,
-                  load_data_query, &end,
-                  &fname_start, &fname_end);
-
-  strcpy(end, p);
-  end += pl;
+  Load_query_generator gen(thd, ex, tdb, tbl, is_concurrent,
+                           duplicates == DUP_REPLACE, thd->lex->is_ignore());
+  query= gen.generate(&fname_start, &fname_end);
 
   Execute_load_query_log_event
-    e(thd, load_data_query, end-load_data_query,
-      static_cast<uint>(fname_start - load_data_query - 1),
-      static_cast<uint>(fname_end - load_data_query),
+    e(thd, query->ptr(), query->length(), fname_start, fname_end,
       (duplicates == DUP_REPLACE) ? binary_log::LOAD_DUP_REPLACE :
       (thd->lex->is_ignore() ? binary_log::LOAD_DUP_IGNORE :
                                binary_log::LOAD_DUP_ERROR),
       transactional_table, FALSE, FALSE, errcode);
+
+  /*
+    Clear the SET string list once query is generated.
+    as we donot require the list anymore.
+  */
+  thd->lex->load_set_str_list.empty();
+
   return mysql_bin_log.write_event(&e);
 }
 
@@ -916,7 +843,7 @@ read_fixed_length(THD *thd, COPY_INFO &info, TABLE_LIST *table_list,
         thd->cuted_fields++;			/* Not enough fields */
         push_warning_printf(thd, Sql_condition::SL_WARNING,
                             ER_WARN_TOO_FEW_RECORDS,
-                            ER(ER_WARN_TOO_FEW_RECORDS),
+                            ER_THD(thd, ER_WARN_TOO_FEW_RECORDS),
                             thd->get_stmt_da()->current_row_for_condition());
         if (field->type() == FIELD_TYPE_TIMESTAMP && !field->maybe_null())
         {
@@ -943,7 +870,7 @@ read_fixed_length(THD *thd, COPY_INFO &info, TABLE_LIST *table_list,
       thd->cuted_fields++;			/* To long row */
       push_warning_printf(thd, Sql_condition::SL_WARNING,
                           ER_WARN_TOO_MANY_RECORDS,
-                          ER(ER_WARN_TOO_MANY_RECORDS),
+                          ER_THD(thd, ER_WARN_TOO_MANY_RECORDS),
                           thd->get_stmt_da()->current_row_for_condition());
     }
 
@@ -977,7 +904,7 @@ read_fixed_length(THD *thd, COPY_INFO &info, TABLE_LIST *table_list,
       thd->cuted_fields++;			/* To long row */
       push_warning_printf(thd, Sql_condition::SL_WARNING,
                           ER_WARN_TOO_MANY_RECORDS,
-                          ER(ER_WARN_TOO_MANY_RECORDS),
+                          ER_THD(thd, ER_WARN_TOO_MANY_RECORDS),
                           thd->get_stmt_da()->current_row_for_condition());
     }
     thd->get_stmt_da()->inc_current_row_for_condition();
@@ -1169,7 +1096,7 @@ read_sep_field(THD *thd, COPY_INFO &info, TABLE_LIST *table_list,
           thd->cuted_fields++;
           push_warning_printf(thd, Sql_condition::SL_WARNING,
                               ER_WARN_TOO_FEW_RECORDS,
-                              ER(ER_WARN_TOO_FEW_RECORDS),
+                              ER_THD(thd, ER_WARN_TOO_FEW_RECORDS),
                               thd->get_stmt_da()->current_row_for_condition());
         }
         else if (item->type() == Item::STRING_ITEM)
@@ -1233,7 +1160,8 @@ read_sep_field(THD *thd, COPY_INFO &info, TABLE_LIST *table_list,
     {
       thd->cuted_fields++;			/* To long row */
       push_warning_printf(thd, Sql_condition::SL_WARNING,
-                          ER_WARN_TOO_MANY_RECORDS, ER(ER_WARN_TOO_MANY_RECORDS),
+                          ER_WARN_TOO_MANY_RECORDS,
+                          ER_THD(thd, ER_WARN_TOO_MANY_RECORDS),
                           thd->get_stmt_da()->current_row_for_condition());
       if (thd->killed)
         DBUG_RETURN(1);
@@ -1384,7 +1312,7 @@ read_xml_field(THD *thd, COPY_INFO &info, TABLE_LIST *table_list,
           thd->cuted_fields++;
           push_warning_printf(thd, Sql_condition::SL_WARNING,
                               ER_WARN_TOO_FEW_RECORDS,
-                              ER(ER_WARN_TOO_FEW_RECORDS),
+                              ER_THD(thd, ER_WARN_TOO_FEW_RECORDS),
                               thd->get_stmt_da()->current_row_for_condition());
         }
         else
@@ -1990,9 +1918,9 @@ my_xml_entity_to_char(const char *name, size_t length)
   @param chr    character
   
   @details According to the "XML 1.0" standard,
-           only space (#x20) characters, carriage returns,
+           only space (@#x20) characters, carriage returns,
            line feeds or tabs are considered as spaces.
-           Convert all of them to space (#x20) for parsing simplicity.
+           Convert all of them to space (@#x20) for parsing simplicity.
 */
 static int
 my_tospace(int chr)

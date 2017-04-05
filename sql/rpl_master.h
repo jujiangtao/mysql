@@ -98,6 +98,8 @@ bool com_binlog_dump(THD *thd, char *packet, size_t packet_length);
   @param gtid_set The gtid_set that the slave sent, or NULL if the
   protocol is COM_BINLOG_DUMP.
 
+  @param flags flags in COM_BINLOG_DUMP[_GTID] packets.
+
   @note This function will start reading at the given (filename,
   offset), or from the oldest log if filename[0]==0.  It will send all
   events from that position; but if gtid_set!=NULL, it will skip all

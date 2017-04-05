@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2016, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -17,12 +17,11 @@
 #define PFS_PS_H
 
 /**
-  @file storage/perfschema/pfs_prepared_statement.h
+  @file storage/perfschema/pfs_prepared_stmt.h
   Stored Program data structures (declarations).
 */
 
 #include "pfs_stat.h"
-#include "include/mysql/psi/psi.h"
 #include "include/mysql/psi/mysql_ps.h"
 #include "pfs_program.h"
 

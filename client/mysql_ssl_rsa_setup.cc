@@ -40,6 +40,7 @@
 #include <mysql_version.h>
 #include "path.h"
 #include "logger.h"
+#include "mysql/service_mysql_alloc.h"
 
 #if HAVE_CHOWN
 #include <pwd.h>
@@ -116,7 +117,6 @@ my_bool opt_verbose;
 static const char *load_default_groups[]=
 {
   "mysql_ssl_rsa_setup",
-  "mysql_install_db",
   "mysqld",
   0
 };
@@ -369,7 +369,8 @@ void usage(void)
 }
 
 
-my_bool
+extern "C" {
+static my_bool
 my_arguments_get_one_option(int optid,
                             const struct my_option *opt MY_ATTRIBUTE((unused)),
                             char *argument)
@@ -385,6 +386,7 @@ my_arguments_get_one_option(int optid,
       exit(0);
   }
   return 0;
+}
 }
 
 

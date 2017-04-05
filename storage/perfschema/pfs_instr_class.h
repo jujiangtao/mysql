@@ -22,6 +22,12 @@
 #include "pfs_global.h"
 #include "pfs_atomic.h"
 #include "prealloced_array.h"
+#include "pfs_lock.h"
+#include "pfs_stat.h"
+#include "pfs_column_types.h"
+#include "mysqld_error.h"
+
+struct TABLE_SHARE;
 
 /**
   @file storage/perfschema/pfs_instr_class.h
@@ -43,19 +49,12 @@
 */
 #define PFS_MAX_FULL_PREFIX_NAME_LENGTH 32
 
-#include <my_global.h>
-#include <my_sys.h>
-#include <mysql/psi/psi.h>
-#include "pfs_lock.h"
-#include "pfs_stat.h"
-#include "pfs_column_types.h"
-
 struct PFS_global_param;
 struct PFS_table_share;
 class PFS_opaque_container_page;
 
 /**
-  @addtogroup Performance_schema_buffers
+  @addtogroup performance_schema_buffers
   @{
 */
 
@@ -96,7 +95,8 @@ enum PFS_class_type
   PFS_CLASS_IDLE=       12,
   PFS_CLASS_MEMORY=     13,
   PFS_CLASS_METADATA=   14,
-  PFS_CLASS_LAST=       PFS_CLASS_METADATA,
+  PFS_CLASS_ERROR=      15,
+  PFS_CLASS_LAST=       PFS_CLASS_ERROR,
   PFS_CLASS_MAX=        PFS_CLASS_LAST + 1
 };
 
@@ -194,6 +194,8 @@ struct PFS_instr_class
 };
 
 struct PFS_mutex;
+
+#define PFS_MUTEX_PARTITIONS 2
 
 /** Instrumentation metadata for a MUTEX. */
 struct PFS_ALIGNED PFS_mutex_class : public PFS_instr_class
@@ -393,6 +395,8 @@ extern PFS_table_lock_stat global_table_lock_stat;
 extern PFS_single_stat global_metadata_stat;
 /** Statistics for the transaction instrument. */
 extern PFS_transaction_stat global_transaction_stat;
+/** Statistics for the error instrument. */
+extern PFS_error_stat global_error_stat;
 
 inline uint sanitize_index_count(uint count)
 {
@@ -411,6 +415,8 @@ inline uint sanitize_index_count(uint count)
 /** Transaction events are not wait events .*/
 #define GLOBAL_TRANSACTION_INDEX 0
 
+#define GLOBAL_ERROR_INDEX 0
+
 /**
   Instrument controlling all table io.
   This instrument is used with table SETUP_OBJECTS.
@@ -428,7 +434,20 @@ extern PFS_instr_class global_table_lock_class;
 */
 extern PFS_instr_class global_idle_class;
 
+/**
+  Instrument controlling all metadata locks.
+*/
 extern PFS_instr_class global_metadata_class;
+
+/** Instrumentation metadata for an error. */
+struct PFS_ALIGNED PFS_error_class : public PFS_instr_class
+{
+};
+/**
+  Instrument controlling all server errors.
+*/
+extern PFS_error_class global_error_class;
+
 
 struct PFS_file;
 
@@ -445,7 +464,7 @@ struct PFS_ALIGNED PFS_file_class : public PFS_instr_class
 struct PFS_ALIGNED PFS_stage_class : public PFS_instr_class
 {
   /**
-    Length of the 'stage/<component>/' prefix.
+    Length of the 'stage/\<component\>/' prefix.
     This is to extract 'foo' from 'stage/sql/foo'.
   */
   uint m_prefix_length;
@@ -528,33 +547,33 @@ int init_memory_class(uint memory_class_sizing);
 void cleanup_memory_class();
 
 PFS_sync_key register_mutex_class(const char *name, uint name_length,
-                                  int flags);
+                                  PSI_mutex_info *info);
 
 PFS_sync_key register_rwlock_class(const char *name, uint name_length,
-                                   int flags);
+                                   PSI_rwlock_info *info);
 
 PFS_sync_key register_cond_class(const char *name, uint name_length,
-                                 int flags);
+                                 PSI_cond_info *info);
 
 PFS_thread_key register_thread_class(const char *name, uint name_length,
-                                     int flags);
+                                     PSI_thread_info *info);
 
 PFS_file_key register_file_class(const char *name, uint name_length,
-                                 int flags);
+                                 PSI_file_info *info);
 
 PFS_stage_key register_stage_class(const char *name,
                                    uint prefix_length,
                                    uint name_length,
-                                   int flags);
+                                   PSI_stage_info *info);
 
 PFS_statement_key register_statement_class(const char *name, uint name_length,
-                                           int flags);
+                                           PSI_statement_info *info);
 
 PFS_socket_key register_socket_class(const char *name, uint name_length,
-                                     int flags);
+                                     PSI_socket_info *info);
 
 PFS_memory_key register_memory_class(const char *name, uint name_length,
-                                     int flags);
+                                     PSI_memory_info *info);
 
 PFS_mutex_class *find_mutex_class(PSI_mutex_key key);
 PFS_mutex_class *sanitize_mutex_class(PFS_mutex_class *unsafe);
@@ -580,6 +599,8 @@ PFS_instr_class *find_idle_class(uint index);
 PFS_instr_class *sanitize_idle_class(PFS_instr_class *unsafe);
 PFS_instr_class *find_metadata_class(uint index);
 PFS_instr_class *sanitize_metadata_class(PFS_instr_class *unsafe);
+PFS_error_class *find_error_class(uint index);
+PFS_error_class *sanitize_error_class(PFS_instr_class *unsafe);
 PFS_transaction_class *find_transaction_class(uint index);
 PFS_transaction_class *sanitize_transaction_class(PFS_transaction_class *unsafe);
 
@@ -613,6 +634,7 @@ extern ulong socket_class_max;
 extern ulong socket_class_lost;
 extern ulong memory_class_max;
 extern ulong memory_class_lost;
+extern ulong error_class_max;
 
 /* Exposing the data directly, for iterators. */
 

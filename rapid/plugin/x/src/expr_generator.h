@@ -52,29 +52,30 @@ public:
     CT_XML = 0x0003          //   BYTES  0x0003 XML (text encoding)
   };
 
-  Expression_generator(Query_string_builder &qb, const Args &args, const std::string &default_schema, const bool &is_relational)
+  Expression_generator(Query_string_builder &qb, const Args &args, const std::string &default_schema, bool is_relational)
   : m_qb(qb), m_args(args), m_default_schema(default_schema), m_is_relational(is_relational)
   {}
 
   template<typename T>
   inline void feed(const T &expr) const { generate(expr); }
 
-  Expression_generator clone(Query_string_builder &qb) const;
-  Query_string_builder &query_string_builder() const { return m_qb; }
+  const Args &get_args() const { return m_args; }
+  const std::string &get_default_schema() const { return m_default_schema; }
+  bool is_relational() const { return m_is_relational; }
 
 private:
   typedef ::google::protobuf::RepeatedPtrField< ::Mysqlx::Expr::DocumentPathItem > Document_path;
   typedef ::google::protobuf::uint32 Placeholder;
 
   void generate(const Mysqlx::Expr::Expr &arg) const;
-  void generate(const Mysqlx::Expr::Identifier &arg, const bool is_function=false) const;
-  void generate(const Mysqlx::Expr::ColumnIdentifier &arg) const;
-  void generate(const Mysqlx::Expr::FunctionCall &arg) const;
+  void generate(const Mysqlx::Expr::Identifier& arg, bool is_function=false) const;
+  void generate(const Mysqlx::Expr::ColumnIdentifier& arg) const;
+  void generate(const Mysqlx::Expr::FunctionCall& arg) const;
   void generate(const Mysqlx::Expr::Operator &arg) const;
-  void generate(const Mysqlx::Datatypes::Any &arg) const;
-  void generate(const Mysqlx::Datatypes::Scalar &arg) const;
-  void generate(const Mysqlx::Datatypes::Scalar::Octets &arg) const;
-  void generate(const Document_path &arg) const;
+  void generate(const Mysqlx::Datatypes::Any& arg) const;
+  void generate(const Mysqlx::Datatypes::Scalar& arg) const;
+  void generate(const Mysqlx::Datatypes::Scalar::Octets& arg) const;
+  void generate(const Document_path& arg) const;
   void generate(const Placeholder &arg) const;
   void generate(const Mysqlx::Expr::Object &arg) const;
   void generate(const Mysqlx::Expr::Object::ObjectField &arg) const;
@@ -100,7 +101,7 @@ private:
   Query_string_builder &m_qb;
   const Args &m_args;
   const std::string &m_default_schema;
-  const bool &m_is_relational;
+  const bool m_is_relational;
 };
 
 
@@ -116,7 +117,7 @@ void generate_expression(Query_string_builder &qb, const T &expr,
 
 
 template<typename T>
-ngs::PFS_string generate_expression(const T &expr,
+std::string generate_expression(const T &expr,
                                 const Expression_generator::Args &args,
                                 const std::string &default_schema,
                                 bool is_relational)
@@ -135,7 +136,7 @@ void generate_expression(Query_string_builder &qb, const T &expr, const std::str
 
 
 template<typename T>
-ngs::PFS_string generate_expression(const T &expr, const std::string &default_schema, bool is_relational)
+std::string generate_expression(const T &expr, const std::string &default_schema, bool is_relational)
 {
   return generate_expression(expr, Expression_generator::Args(), default_schema, is_relational);
 }

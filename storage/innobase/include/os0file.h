@@ -36,6 +36,7 @@ Created 10/21/1995 Heikki Tuuri
 #define os0file_h
 
 #include "univ.i"
+#include "os/file.h"
 
 #ifndef _WIN32
 #include <dirent.h>
@@ -58,14 +59,6 @@ typedef ib_uint64_t os_offset_t;
 
 #ifdef _WIN32
 
-/**
-Gets the operating system version. Currently works only on Windows.
-@return OS_WIN95, OS_WIN31, OS_WINNT, OS_WIN2000, OS_WINXP, OS_WINVISTA,
-OS_WIN7. */
-
-ulint
-os_get_os_version();
-
 typedef HANDLE	os_file_dir_t;	/*!< directory stream */
 
 /** We define always WIN_ASYNC_IO, and check at run-time whether
@@ -84,8 +77,6 @@ the OS actually supports it: Win 95 does not, NT does. */
 # define OS_FILE_FROM_FD(fd) (HANDLE) _get_osfhandle(fd)
 
 #else /* _WIN32 */
-
-typedef DIR*	os_file_dir_t;	/*!< directory stream */
 
 /** File handle */
 typedef int	os_file_t;
@@ -114,8 +105,6 @@ enum os_file_create_t {
 					doesn't exist, error) */
 	OS_FILE_CREATE,			/*!< to create new file (if
 					exists, error) */
-	OS_FILE_OVERWRITE,		/*!< to create a new file, if exists
-					the overwrite old file */
 	OS_FILE_OPEN_RAW,		/*!< to open a raw device or disk
 					partition */
 	OS_FILE_CREATE_PATH,		/*!< to create the directories */
@@ -166,129 +155,6 @@ static const ulint OS_FILE_ACCESS_VIOLATION = 81;
 static const ulint OS_FILE_ERROR_MAX = 100;
 /* @} */
 
-/** Compression algorithm. */
-struct Compression {
-
-	/** Algorithm types supported */
-	enum Type {
-		/* Note: During recovery we don't have the compression type
-		because the .frm file has not been read yet. Therefore
-		we write the recovered pages out without compression. */
-
-		/** No compression */
-		NONE = 0,
-
-		/** Use ZLib */
-		ZLIB = 1,
-
-		/** Use LZ4 faster variant, usually lower compression. */
-		LZ4 = 2
-	};
-
-	/** Compressed page meta-data */
-	struct meta_t {
-
-		/** Version number */
-		uint8_t		m_version;
-
-		/** Algorithm type */
-		Type		m_algorithm;
-
-		/** Original page type */
-		uint16_t	m_original_type;
-
-		/** Original page size, before compression */
-		uint16_t	m_original_size;
-
-		/** Size after compression */
-		uint16_t	m_compressed_size;
-	};
-
-	/** Default constructor */
-	Compression() : m_type(NONE) { };
-
-	/** Specific constructor
-	@param[in]	type		Algorithm type */
-	explicit Compression(Type type)
-		:
-		m_type(type)
-	{
-#ifdef UNIV_DEBUG
-		switch (m_type) {
-		case NONE:
-		case ZLIB:
-		case LZ4:
-
-		default:
-			ut_error;
-		}
-#endif /* UNIV_DEBUG */
-	}
-
-	/** Check the page header type field.
-	@param[in]	page		Page contents
-	@return true if it is a compressed page */
-	static bool is_compressed_page(const byte* page)
-		MY_ATTRIBUTE((warn_unused_result));
-
-        /** Check wether the compression algorithm is supported.
-        @param[in]      algorithm       Compression algorithm to check
-        @param[out]     type            The type that algorithm maps to
-        @return DB_SUCCESS or error code */
-	static dberr_t check(const char* algorithm, Compression* type)
-		MY_ATTRIBUTE((warn_unused_result));
-
-        /** Validate the algorithm string.
-        @param[in]      algorithm       Compression algorithm to check
-        @return DB_SUCCESS or error code */
-	static dberr_t validate(const char* algorithm)
-		MY_ATTRIBUTE((warn_unused_result));
-
-        /** Convert to a "string".
-        @param[in]      type            The compression type
-        @return the string representation */
-        static const char* to_string(Type type)
-		MY_ATTRIBUTE((warn_unused_result));
-
-        /** Convert the meta data to a std::string.
-        @param[in]      meta		Page Meta data
-        @return the string representation */
-        static std::string to_string(const meta_t& meta)
-		MY_ATTRIBUTE((warn_unused_result));
-
-	/** Deserizlise the page header compression meta-data
-	@param[in]	header		Pointer to the page header
-	@param[out]	control		Deserialised data */
-	static void deserialize_header(
-		const byte*	page,
-		meta_t*		control);
-
-        /** Check if the string is "empty" or "none".
-        @param[in]      algorithm       Compression algorithm to check
-        @return true if no algorithm requested */
-	static bool is_none(const char* algorithm)
-		MY_ATTRIBUTE((warn_unused_result));
-
-	/** Decompress the page data contents. Page type must be
-	FIL_PAGE_COMPRESSED, if not then the source contents are
-	left unchanged and DB_SUCCESS is returned.
-	@param[in]	dblwr_recover	true of double write recovery
-					in progress
-	@param[in,out]	src		Data read from disk, decompressed
-					data will be copied to this page
-	@param[in,out]	dst		Scratch area to use for decompression
-	@param[in]	dst_len		Size of the scratch area in bytes
-	@return DB_SUCCESS or error code */
-	static dberr_t deserialize(
-		bool		dblwr_recover,
-		byte*		src,
-		byte*		dst,
-		ulint		dst_len)
-		MY_ATTRIBUTE((warn_unused_result));
-
-	/** Compression type */
-	Type		m_type;
-};
 
 /** Encryption key length */
 static const ulint ENCRYPTION_KEY_LEN = 32;
@@ -391,15 +257,15 @@ struct Encryption {
 
 	/** Check the encryption option and set it
 	@param[in]	option		encryption option
-	@param[in/out]	encryption	The encryption type
+	@param[in,out]	encryption	The encryption type
 	@return DB_SUCCESS or DB_UNSUPPORTED */
 	dberr_t set_algorithm(const char* option, Encryption* type)
 		MY_ATTRIBUTE((warn_unused_result));
 
         /** Validate the algorithm string.
-        @param[in]      algorithm       Encryption algorithm to check
+	@param[in]	option		Encryption option
         @return DB_SUCCESS or error code */
-	static dberr_t validate(const char* algorithm)
+	static dberr_t validate(const char* option)
 		MY_ATTRIBUTE((warn_unused_result));
 
         /** Convert to a "string".
@@ -695,14 +561,14 @@ public:
 	}
 
 	/** Compare two requests
-	@reutrn true if the are equal */
+	@return true if the are equal */
 	bool operator==(const IORequest& rhs) const
 	{
 		return(m_type == rhs.m_type);
 	}
 
 	/** Set compression algorithm
-	@param[in] compression	The compression algorithm to use */
+	@param[in]	type	The compression algorithm to use */
 	void compression_algorithm(Compression::Type type)
 	{
 		if (type == Compression::NONE) {
@@ -900,7 +766,7 @@ struct os_file_stat_t {
 	os_offset_t	size;			/*!< file size in bytes */
 	os_offset_t	alloc_size;		/*!< Allocated size for
 						sparse files in bytes */
-	size_t		block_size;		/*!< Block size to use for IO
+	uint32_t	block_size;		/*!< Block size to use for IO
 						in bytes*/
 	time_t		ctime;			/*!< creation time */
 	time_t		mtime;			/*!< modification time */
@@ -921,43 +787,6 @@ FILE*
 os_file_create_tmpfile(
 	const char*	path);
 #endif /* !UNIV_HOTBACKUP */
-
-/** The os_file_opendir() function opens a directory stream corresponding to the
-directory named by the dirname argument. The directory stream is positioned
-at the first entry. In both Unix and Windows we automatically skip the '.'
-and '..' items at the start of the directory listing.
-
-@param[in]	dirname		directory name; it must not contain a trailing
-				'\' or '/'
-@param[in]	is_fatal	true if we should treat an error as a fatal
-				error; if we try to open symlinks then we do
-				not wish a fatal error if it happens not to be
-				a directory
-@return directory stream, NULL if error */
-os_file_dir_t
-os_file_opendir(
-	const char*	dirname,
-	bool		is_fatal);
-
-/**
-Closes a directory stream.
-@param[in] dir	directory stream
-@return 0 if success, -1 if failure */
-int
-os_file_closedir(
-	os_file_dir_t	dir);
-
-/** This function returns information of the next file in the directory. We jump
-over the '.' and '..' entries in the directory.
-@param[in]	dirname		directory name or path
-@param[in]	dir		directory stream
-@param[out]	info		buffer where the info is returned
-@return 0 if ok, -1 if error, 1 if at the end of the directory */
-int
-os_file_readdir_next_file(
-	const char*	dirname,
-	os_file_dir_t	dir,
-	os_file_stat_t*	info);
 
 /**
 This function attempts to create a directory named pathname. The new directory
@@ -1017,7 +846,7 @@ os_file_create_simple_no_error_handling_func(
 /** Tries to disable OS caching on an opened file descriptor.
 @param[in]	fd		file descriptor to alter
 @param[in]	file_name	file name, used in the diagnostic message
-@param[in]	name		"open" or "create"; used in the diagnostic
+@param[in]	operation_name	"open" or "create"; used in the diagnostic
 				message */
 void
 os_file_set_nocache(
@@ -1292,6 +1121,7 @@ Add instrumentation to monitor file creation/open.
 				and srv_.. variables whether we really use
 				async I/O or unbuffered I/O: look in the
 				function source code for the exact rules
+@param[in]	type		OS_DATA_FILE or OS_LOG_FILE
 @param[in]	read_only	if true read only mode checks are enforced
 @param[out]	success		true if succeeded
 @param[in]	src_file	file name where func invoked
@@ -1568,7 +1398,7 @@ os_file_close_no_error_handling(os_file_t file);
 #endif /* UNIV_HOTBACKUP */
 
 /** Gets a file size.
-@param[in]	file		handle to a file
+@param[in]	filename	handle to a file
 @return file size if OK, else set m_total_size to ~0 and m_alloc_size
 	to errno */
 os_file_size_t
@@ -1600,7 +1430,7 @@ os_file_set_size(
 	MY_ATTRIBUTE((warn_unused_result));
 
 /** Truncates a file at its current position.
-@param[in/out]	file	file to be truncated
+@param[in,out]	file	file to be truncated
 @return true if success */
 bool
 os_file_set_eof(
@@ -1631,12 +1461,12 @@ os_file_flush_func(
 The number should be retrieved before any other OS calls (because they may
 overwrite the error number). If the number is not known to this program,
 the OS error number + 100 is returned.
-@param[in]	report		true if we want an error message printed
-				for all errors
+@param[in]	report_all_errors	true if we want an error message printed
+					for all errors
 @return error number, or OS error number + 100 */
 ulint
 os_file_get_last_error(
-	bool		report);
+	bool		report_all_errors);
 
 /** NOTE! Use the corresponding macro os_file_read(), not directly this
 function!
@@ -1693,6 +1523,8 @@ os_file_read_no_error_handling_func(
 function!
 Requests a synchronous write operation.
 @param[in,out]	type		IO request context
+@param[in]	name		name of the file or path as a null-terminated
+				string
 @param[in]	file		Open file handle
 @param[out]	buf		buffer where to read
 @param[in]	offset		file offset where to read
@@ -1729,12 +1561,12 @@ This function allocates memory to be returned.  It is the callers
 responsibility to free the return value after it is no longer needed.
 
 @param[in]	old_path		pathname
-@param[in]	new_name		new file name
+@param[in]	tablename		new file name
 @return own: new full pathname */
 char*
 os_file_make_new_pathname(
 	const char*	old_path,
-	const char*	new_name);
+	const char*	tablename);
 
 /** This function reduces a null-terminated full remote path name into
 the path that is sent by MySQL for DATA DIRECTORY clause.  It replaces
@@ -1747,7 +1579,7 @@ This function manipulates that path in place.
 
 If the path format is not as expected, just return.  The result is used
 to inform a SHOW CREATE TABLE command.
-@param[in,out]	data_dir_path		Full path/data_dir_path */
+@param[in,out]	data_dir_path	full path/data_dir_path */
 void
 os_file_make_data_dir_path(
 	char*	data_dir_path);
@@ -1770,14 +1602,14 @@ array is divided logically into n_read_segs and n_write_segs
 respectively. The caller must create an i/o handler thread for each
 segment in these arrays. This function also creates the sync array.
 No i/o handler thread needs to be created for that
-@param[in]	n_read_segs	number of reader threads
-@param[in]	n_write_segs	number of writer threads
+@param[in]	n_readers	number of reader threads
+@param[in]	n_writers	number of writer threads
 @param[in]	n_slots_sync	number of slots in the sync aio array */
 
 bool
 os_aio_init(
-	ulint		n_read_segs,
-	ulint		n_write_segs,
+	ulint		n_readers,
+	ulint		n_writers,
 	ulint		n_slots_sync);
 
 /**
@@ -1857,17 +1689,17 @@ therefore no other thread is allowed to do the freeing!
 				are valid and can be used to restart the
 				operation, for example
 @param[out]	m2		callback message
-@param[out]	type		OS_FILE_WRITE or ..._READ
+@param[out]	request		OS_FILE_WRITE or ..._READ
 @return DB_SUCCESS or error code */
 dberr_t
 os_aio_handler(
 	ulint		segment,
 	fil_node_t**	m1,
 	void**		m2,
-	IORequest*	type);
+	IORequest*	request);
 
 /** Prints info of the aio arrays.
-@param[in/out]	file		file where to print */
+@param[in,out]	file		file where to print */
 void
 os_aio_print(FILE* file);
 
@@ -1954,8 +1786,8 @@ file.
 
 Note: On Windows we use the name and on Unices we use the file handle.
 
-@param[in]	name		File name
-@param[in]	fh		File handle for the file - if opened
+@param[in]	path	File name
+@param[in]	fh	File handle for the file - if opened
 @return true if the file system supports sparse files */
 bool
 os_is_sparse_file_supported(
@@ -2007,8 +1839,6 @@ is_absolute_path(
 	return(false);
 }
 
-#ifndef UNIV_NONINL
 #include "os0file.ic"
-#endif /* UNIV_NONINL */
 
 #endif /* os0file_h */

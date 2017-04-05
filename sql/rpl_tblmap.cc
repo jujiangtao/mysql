@@ -1,4 +1,4 @@
-/* Copyright (c) 2005, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2005, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -18,6 +18,7 @@
 #ifndef MYSQL_CLIENT
 #include "table.h"       // TABLE
 #endif
+#include "psi_memory_key.h"
 
 #ifdef MYSQL_CLIENT
 #define MAYBE_TABLE_NAME(T) ("")
@@ -46,8 +47,7 @@ table_mapping::table_mapping()
     constructor is called at startup only.
   */
   (void) my_hash_init(&m_table_ids,&my_charset_bin,TABLE_ID_HASH_SIZE,
-		   offsetof(entry,table_id),sizeof(ulonglong),
-                   0, 0, 0, psi_key);
+                      0, table_id_get_key, nullptr, 0, psi_key);
   /* We don't preallocate any block, this is consistent with m_free=0 above */
   init_alloc_root(psi_key,
                   &m_mem_root, TABLE_ID_HASH_SIZE*sizeof(entry), 0);
@@ -69,8 +69,8 @@ TABLE* table_mapping::get_table(ulonglong table_id)
   entry *e= find_entry(table_id);
   if (e) 
   {
-    DBUG_PRINT("info", ("tid %llu -> table 0x%lx (%s)",
-			table_id, (long) e->table,
+    DBUG_PRINT("info", ("tid %llu -> table %p (%s)",
+			table_id, e->table,
 			MAYBE_TABLE_NAME(e->table)));
     DBUG_RETURN(e->table);
   }
@@ -108,9 +108,9 @@ int table_mapping::expand()
 int table_mapping::set_table(ulonglong table_id, TABLE* table)
 {
   DBUG_ENTER("table_mapping::set_table(ulong,TABLE*)");
-  DBUG_PRINT("enter", ("table_id: %llu  table: 0x%lx (%s)",
+  DBUG_PRINT("enter", ("table_id: %llu  table: %p (%s)",
 		       table_id, 
-		       (long) table, MAYBE_TABLE_NAME(table)));
+		       table, MAYBE_TABLE_NAME(table)));
   entry *e= find_entry(table_id);
   if (e == 0)
   {
@@ -136,8 +136,8 @@ int table_mapping::set_table(ulonglong table_id, TABLE* table)
     DBUG_RETURN(ERR_MEMORY_ALLOCATION);
   }
 
-  DBUG_PRINT("info", ("tid %llu -> table 0x%lx (%s)",
-		      table_id, (long) e->table,
+  DBUG_PRINT("info", ("tid %llu -> table %p (%s)",
+		      table_id, e->table,
 		      MAYBE_TABLE_NAME(e->table)));
   DBUG_RETURN(0);		// All OK
 }

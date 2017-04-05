@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -16,13 +16,15 @@
 #include "sql_partition_admin.h"
 
 #include "auth_common.h"                    // check_access
+#include "mysqld.h"                         // opt_log_slow_admin_statements
 #include "sql_table.h"                      // mysql_alter_table, etc.
 #include "partition_info.h"                 // class partition_info etc.
 #include "sql_base.h"                       // open_and_lock_tables, etc
 #include "debug_sync.h"                     // DEBUG_SYNC
-#include "sql_base.h"                       // open_and_lock_tables
 #include "log.h"
 #include "partitioning/partition_handler.h" // Partition_handler
+#include "sql_class.h"                      // THD
+#include "sql_cache.h"                      // query_cache
 
 
 bool Sql_cmd_alter_table_exchange_partition::execute(THD *thd)
@@ -40,7 +42,7 @@ bool Sql_cmd_alter_table_exchange_partition::execute(THD *thd)
     referenced from this structure will be modified.
     @todo move these into constructor...
   */
-  HA_CREATE_INFO create_info(lex->create_info);
+  HA_CREATE_INFO create_info(*lex->create_info);
   Alter_info alter_info(lex->alter_info, thd->mem_root);
   ulong priv_needed= ALTER_ACL | DROP_ACL | INSERT_ACL | CREATE_ACL;
 
@@ -182,17 +184,13 @@ static bool compare_table_with_partition(THD *thd, TABLE *table,
                                 table_create_info.auto_increment_value;
 
   /* Check compatible row_types and set create_info accordingly. */
+  if (part_table->s->real_row_type != table->s->real_row_type)
   {
-    enum row_type part_row_type= part_table->file->get_row_type();
-    enum row_type table_row_type= table->file->get_row_type();
-    if (part_row_type != table_row_type)
-    {
-      my_error(ER_PARTITION_EXCHANGE_DIFFERENT_OPTION, MYF(0),
-               "ROW_FORMAT");
-      DBUG_RETURN(true);
-    }
-    part_create_info.row_type= table->s->row_type;
+    my_error(ER_PARTITION_EXCHANGE_DIFFERENT_OPTION, MYF(0),
+             "ROW_FORMAT");
+    DBUG_RETURN(true);
   }
+  part_create_info.row_type= table->s->row_type;
 
   /*
     NOTE: ha_blackhole does not support check_if_compatible_data,
@@ -418,7 +416,7 @@ err_rename:
     will log to the error log about the failures...
   */
   /* execute the ddl log entry to revert the renames */
-  (void) execute_ddl_log_entry(current_thd, log_entry->entry_pos);
+  (void) execute_ddl_log_entry(thd, log_entry->entry_pos);
   mysql_mutex_lock(&LOCK_gdl);
   /* mark the execute log entry done */
   (void) write_execute_ddl_log_entry(0, TRUE, &exec_log_entry);
@@ -726,7 +724,6 @@ bool Sql_cmd_alter_table_truncate_partition::execute(THD *thd)
   TABLE_LIST *first_table= thd->lex->select_lex->table_list.first;
   Alter_info *alter_info= &thd->lex->alter_info;
   uint table_counter;
-  List<String> partition_names_list;
   Partition_handler *part_handler;
   DBUG_ENTER("Sql_cmd_alter_table_truncate_partition::execute");
 

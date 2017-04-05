@@ -1,4 +1,4 @@
-/* Copyright (c) 2003, 2014, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2003, 2015, Oracle and/or its affiliates. All rights reserved.
    
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -40,6 +40,7 @@ extern char *	mysql_unix_port;
                              CLIENT_SESSION_TRACK | \
                              CLIENT_DEPRECATE_EOF)
 
+C_MODE_START
 void read_user_name(char *name);
 my_bool handle_local_infile(MYSQL *mysql, const char *net_filename);
 
@@ -62,10 +63,13 @@ int cli_read_binary_rows(MYSQL_STMT *stmt);
 int cli_unbuffered_fetch(MYSQL *mysql, char **row);
 const char * cli_read_statistics(MYSQL *mysql);
 int cli_read_change_user_result(MYSQL *mysql);
+C_MODE_END
 
 #ifdef EMBEDDED_LIBRARY
+C_MODE_START
 int init_embedded_server(int argc, char **argv, char **groups);
 void end_embedded_server();
+C_MODE_END
 #endif /*EMBEDDED_LIBRARY*/
 
 C_MODE_START

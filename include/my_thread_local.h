@@ -16,6 +16,10 @@
 #ifndef MY_THREAD_LOCAL_INCLUDED
 #define MY_THREAD_LOCAL_INCLUDED
 
+/**
+  @file include/my_thread_local.h
+*/
+
 #ifndef _WIN32
 #include <pthread.h>
 #endif

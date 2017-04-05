@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2016, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -30,7 +30,7 @@
 #include "pfs_buffer_container.h"
 
 /**
-  @addtogroup Performance_schema_buffers
+  @addtogroup performance_schema_buffers
   @{
 */
 
@@ -56,9 +56,7 @@ void cleanup_user(void)
   global_user_container.cleanup();
 }
 
-C_MODE_START
-static uchar *user_hash_get_key(const uchar *entry, size_t *length,
-                                my_bool)
+static const uchar *user_hash_get_key(const uchar *entry, size_t *length)
 {
   const PFS_user * const *typed_entry;
   const PFS_user *user;
@@ -69,9 +67,8 @@ static uchar *user_hash_get_key(const uchar *entry, size_t *length,
   DBUG_ASSERT(user != NULL);
   *length= user->m_key.m_key_length;
   result= user->m_key.m_hash_key;
-  return const_cast<uchar*> (reinterpret_cast<const uchar*> (result));
+  return reinterpret_cast<const uchar*> (result);
 }
-C_MODE_END
 
 /**
   Initialize the user hash.
@@ -149,7 +146,7 @@ search:
   entry= reinterpret_cast<PFS_user**>
     (lf_hash_search(&user_hash, pins,
                     key.m_hash_key, key.m_key_length));
-  if (entry && (entry != MY_ERRPTR))
+  if (entry && (entry != MY_LF_ERRPTR))
   {
     pfs= *entry;
     pfs->inc_refcount();
@@ -206,6 +203,7 @@ void PFS_user::aggregate(bool alive)
   aggregate_stages();
   aggregate_statements();
   aggregate_transactions();
+  aggregate_errors();
   aggregate_memory(alive);
   aggregate_status();
   aggregate_stats();
@@ -233,6 +231,12 @@ void PFS_user::aggregate_transactions()
 {
   /* No parent to aggregate to, clean the stats */
   reset_transactions_stats();
+}
+
+void PFS_user::aggregate_errors()
+{
+  /* No parent to aggregate to, clean the stats */
+  reset_errors_stats();
 }
 
 void PFS_user::aggregate_memory(bool alive)
@@ -274,7 +278,7 @@ PFS_user *sanitize_user(PFS_user *unsafe)
   return global_user_container.sanitize(unsafe);
 }
 
-void purge_user(PFS_thread *thread, PFS_user *user)
+static void purge_user(PFS_thread *thread, PFS_user *user)
 {
   LF_PINS *pins= get_user_hash_pins(thread);
   if (unlikely(pins == NULL))
@@ -284,7 +288,7 @@ void purge_user(PFS_thread *thread, PFS_user *user)
   entry= reinterpret_cast<PFS_user**>
     (lf_hash_search(&user_hash, pins,
                     user->m_key.m_hash_key, user->m_key.m_key_length));
-  if (entry && (entry != MY_ERRPTR))
+  if (entry && (entry != MY_LF_ERRPTR))
   {
     DBUG_ASSERT(*entry == user);
     if (user->get_refcount() == 0)

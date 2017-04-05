@@ -20,12 +20,11 @@
 #include "violite.h"                    // Vio
 #include "channel_info.h"               // Channel_info
 #include "connection_handler_manager.h" // Connection_handler_manager
+#include "derror.h"                     // ER_DEFAULT
 #include "mysqld.h"                     // key_socket_tcpip
 #include "log.h"                        // sql_print_error
 #include "sql_class.h"                  // THD
-
-#include <pfs_idle_provider.h>
-#include <mysql/psi/mysql_idle.h>
+#include "init_net_server_extension.h"  // init_net_server_extension
 
 #include <algorithm>
 #include <signal.h>
@@ -43,91 +42,6 @@ ulong Mysqld_socket_listener::connection_errors_select= 0;
 ulong Mysqld_socket_listener::connection_errors_accept= 0;
 ulong Mysqld_socket_listener::connection_errors_tcpwrap= 0;
 
-
-void net_before_header_psi(struct st_net *net, void *user_data, size_t /* unused: count */)
-{
-  THD *thd;
-  thd= static_cast<THD*> (user_data);
-  DBUG_ASSERT(thd != NULL);
-
-  if (thd->m_server_idle)
-  {
-    /*
-      The server is IDLE, waiting for the next command.
-      Technically, it is a wait on a socket, which may take a long time,
-      because the call is blocking.
-      Disable the socket instrumentation, to avoid recording a SOCKET event.
-      Instead, start explicitly an IDLE event.
-    */
-    MYSQL_SOCKET_SET_STATE(net->vio->mysql_socket, PSI_SOCKET_STATE_IDLE);
-    MYSQL_START_IDLE_WAIT(thd->m_idle_psi, &thd->m_idle_state);
-  }
-}
-
-void net_after_header_psi(struct st_net *net, void *user_data, size_t /* unused: count */, my_bool rc)
-{
-  THD *thd;
-  thd= static_cast<THD*> (user_data);
-  DBUG_ASSERT(thd != NULL);
-
-  if (thd->m_server_idle)
-  {
-    /*
-      The server just got data for a network packet header,
-      from the network layer.
-      The IDLE event is now complete, since we now have a message to process.
-      We need to:
-      - start a new STATEMENT event
-      - start a new STAGE event, within this statement,
-      - start recording SOCKET WAITS events, within this stage.
-      The proper order is critical to get events numbered correctly,
-      and nested in the proper parent.
-    */
-    MYSQL_END_IDLE_WAIT(thd->m_idle_psi);
-
-    if (! rc)
-    {
-      DBUG_ASSERT(thd->m_statement_psi == NULL);
-      thd->m_statement_psi= MYSQL_START_STATEMENT(&thd->m_statement_state,
-                                                  stmt_info_new_packet.m_key,
-                                                  thd->db().str,
-                                                  thd->db().length,
-                                                  thd->charset(), NULL);
-
-      THD_STAGE_INFO(thd, stage_starting);
-    }
-
-    /*
-      TODO: consider recording a SOCKET event for the bytes just read,
-      by also passing count here.
-    */
-    MYSQL_SOCKET_SET_STATE(net->vio->mysql_socket, PSI_SOCKET_STATE_ACTIVE);
-    thd->m_server_idle= false;
-  }
-}
-
-
-static void init_net_server_extension(THD *thd)
-{
-#ifdef HAVE_PSI_INTERFACE
-  /* Start with a clean state for connection events. */
-  thd->m_idle_psi= NULL;
-  thd->m_statement_psi= NULL;
-  thd->m_server_idle= false;
-  /* Hook up the NET_SERVER callback in the net layer. */
-  thd->m_net_server_extension.m_user_data= thd;
-  thd->m_net_server_extension.m_before_header= net_before_header_psi;
-  thd->m_net_server_extension.m_after_header= net_after_header_psi;
-
-  /* Activate this private extension for the mysqld server. */
-  thd->get_protocol_classic()->get_net()->extension=
-    &thd->m_net_server_extension;
-#else
-  thd->get_protocol_classic()->get_net()->extension= NULL;
-#endif
-}
-
-
 ///////////////////////////////////////////////////////////////////////////
 // Channel_info_local_socket implementation
 ///////////////////////////////////////////////////////////////////////////
@@ -144,9 +58,16 @@ class Channel_info_local_socket : public Channel_info
 protected:
   virtual Vio* create_and_init_vio() const
   {
-    return mysql_socket_vio_new(m_connect_sock, VIO_TYPE_SOCKET, VIO_LOCALHOST);
+    Vio *vio= mysql_socket_vio_new(m_connect_sock, VIO_TYPE_SOCKET, VIO_LOCALHOST);
+#ifdef USE_PPOLL_IN_VIO
+    if (vio != nullptr)
+    {
+      vio->thread_id= my_thread_self();
+      vio->signal_mask= mysqld_signal_mask;
+    }
+#endif
+    return vio;
   }
-
 public:
   /**
     Constructor that sets the connect socket.
@@ -197,7 +118,15 @@ class Channel_info_tcpip_socket : public Channel_info
 protected:
   virtual Vio* create_and_init_vio() const
   {
-    return mysql_socket_vio_new(m_connect_sock, VIO_TYPE_TCPIP, 0);
+    Vio *vio= mysql_socket_vio_new(m_connect_sock, VIO_TYPE_TCPIP, 0);
+#ifdef USE_PPOLL_IN_VIO
+    if (vio != nullptr)
+    {
+      vio->thread_id= my_thread_self();
+      vio->signal_mask= mysqld_signal_mask;
+    }
+#endif
+    return vio;
   }
 
 public:
@@ -306,10 +235,10 @@ public:
     related parameters to set up listener tcp to listen for connection
     events.
 
-    @param  tcp_port  tcp port number.
     @param  bind_addr_str  ip address as string value.
-    @param  back_log backlog specifying length of pending connection queue.
-    @param  m_port_timeout port timeout value
+    @param  tcp_port  tcp port number.
+    @param  backlog backlog specifying length of pending connection queue.
+    @param  port_timeout port timeout value
   */
   TCP_socket(std::string bind_addr_str,
              uint tcp_port,
@@ -366,7 +295,8 @@ public:
 
         MYSQL_SOCKET s= mysql_socket_socket(0, AF_INET6, SOCK_STREAM, 0);
         ipv6_available= mysql_socket_getfd(s) != INVALID_SOCKET;
-        mysql_socket_close(s);
+        if (ipv6_available)
+          mysql_socket_close(s);
       }
       if (ipv6_available)
       {
@@ -857,11 +787,11 @@ Channel_info* Mysqld_socket_listener::listen_for_connection_event()
       increment the server global status variable.
     */
     connection_errors_select++;
-    if (!select_errors++ && !abort_loop)
+    if (!select_errors++ && !connection_events_loop_aborted())
       sql_print_error("mysqld: Got error %d from select",socket_errno);
   }
 
-  if (retval < 0 || abort_loop)
+  if (retval < 0 || connection_events_loop_aborted())
     return NULL;
 
 
@@ -917,17 +847,6 @@ Channel_info* Mysqld_socket_listener::listen_for_connection_event()
       sleep(1);             // Give other threads some time
     return NULL;
   }
-
-#ifdef __APPLE__
-  if (mysql_socket_getfd(connect_sock) >= FD_SETSIZE)
-  {
-    sql_print_warning("File Descriptor %d exceeded FD_SETSIZE=%d",
-                      mysql_socket_getfd(connect_sock), FD_SETSIZE);
-    connection_errors_internal++;
-    (void) mysql_socket_close(connect_sock);
-    return NULL;
-  }
-#endif
 
 #ifdef HAVE_LIBWRAP
   if (!is_unix_socket)

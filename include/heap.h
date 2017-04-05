@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -18,11 +18,12 @@
 /* This file should be included when using heap_database_functions */
 /* Author: Michael Widenius */
 
+/**
+  @file include/heap.h
+*/
+
 #ifndef _heap_h
 #define _heap_h
-#ifdef	__cplusplus
-extern "C" {
-#endif
 
 #ifndef _my_base_h
 #include <my_base.h>
@@ -32,6 +33,10 @@ extern "C" {
 
 #include "my_compare.h"
 #include "my_tree.h"
+
+#ifdef	__cplusplus
+extern "C" {
+#endif
 
 	/* defines used by heap-funktions */
 

@@ -68,30 +68,13 @@ IF(CMAKE_SYSTEM_NAME MATCHES "SunOS" AND
   ADD_DEFINITIONS(-DSOLARIS_64BIT_ENABLED)
 ENDIF()
 
-# The default C++ library for SunPro is really old, and not standards compliant.
-# http://www.oracle.com/technetwork/server-storage/solaris10/cmp-stlport-libcstd-142559.html
-# Use stlport rather than Rogue Wave,
-#   unless otherwise specified on command line.
+# Add explicit dependencies when building shared libraries
 IF(CMAKE_SYSTEM_NAME MATCHES "SunOS")
   IF(CMAKE_CXX_COMPILER_ID MATCHES "SunPro")
-    IF(CMAKE_CXX_FLAGS MATCHES "-std=")
-      ADD_DEFINITIONS(-D__MATHERR_RENAME_EXCEPTION)
       SET(CMAKE_SHARED_LIBRARY_C_FLAGS
         "${CMAKE_SHARED_LIBRARY_C_FLAGS} -lc")
       SET(CMAKE_SHARED_LIBRARY_CXX_FLAGS
         "${CMAKE_SHARED_LIBRARY_CXX_FLAGS} -lstdc++ -lgcc_s -lCrunG3 -lc")
-      SET(QUOTED_CMAKE_CXX_LINK_FLAGS "-lstdc++ -lgcc_s -lCrunG3 -lc")
-    ELSE()
-      IF(SUNPRO_CXX_LIBRARY)
-        SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -library=${SUNPRO_CXX_LIBRARY}")
-        IF(SUNPRO_CXX_LIBRARY STREQUAL "stdcxx4")
-          ADD_DEFINITIONS(-D__MATHERR_RENAME_EXCEPTION)
-          SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -template=extdef")
-        ENDIF()
-      ELSE()
-        SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -library=stlport4")
-      ENDIF()
-    ENDIF()
   ENDIF()
 ENDIF()
 
@@ -113,7 +96,7 @@ MACRO(DIRNAME IN OUT)
 ENDMACRO()
 
 MACRO(FIND_REAL_LIBRARY SOFTLINK_NAME REALNAME)
-  # We re-distribute libstlport.so/libstdc++.so which are both symlinks.
+  # We re-distribute libstdc++.so which is a symlink.
   # There is no 'readlink' on solaris, so we use perl to follow links:
   SET(PERLSCRIPT
     "my $link= $ARGV[0]; use Cwd qw(abs_path); my $file = abs_path($link); print $file;")
@@ -146,7 +129,10 @@ MACRO(EXTEND_C_LINK_FLAGS LIBRARY_PATH)
     "${CMAKE_SHARED_LIBRARY_C_FLAGS} -R'\$ORIGIN/../lib' -R${LIBRARY_PATH}")
 ENDMACRO()
 
-IF(CMAKE_SYSTEM_NAME MATCHES "SunOS" AND CMAKE_COMPILER_IS_GNUCC)
+# We assume that the client code is built with -std=c++11
+# which means that the necessary gcc libraries must be available.
+# Hence we disable the extra link flags, as well as installation of libraries.
+IF(CMAKE_SYSTEM_NAME MATCHES "SunOS" AND DISABLED_CMAKE_COMPILER_IS_GNUCC)
   DIRNAME(${CMAKE_CXX_COMPILER} CXX_PATH)
   SET(LIB_SUFFIX "lib")
   IF(SIZEOF_VOIDP EQUAL 8 AND CMAKE_SYSTEM_PROCESSOR MATCHES "sparc")
@@ -195,92 +181,9 @@ IF(CMAKE_SYSTEM_NAME MATCHES "SunOS" AND CMAKE_COMPILER_IS_GNUCC)
   ENDIF()
 ENDIF()
 
-IF(CMAKE_SYSTEM_NAME MATCHES "SunOS" AND
-   CMAKE_C_COMPILER_ID MATCHES "SunPro" AND
-   CMAKE_CXX_FLAGS MATCHES "stlport4")
-  DIRNAME(${CMAKE_CXX_COMPILER} CXX_PATH)
-  # Also extract real path to the compiler(which is normally
-  # in <install_path>/prod/bin) and try to find the
-  # stlport libs relative to that location as well.
-  GET_FILENAME_COMPONENT(CXX_REALPATH ${CMAKE_CXX_COMPILER} REALPATH)
-
-  # CC -V yields
-  # CC: Studio 12.5 Sun C++ 5.14 SunOS_sparc Dodona 2016/04/04
-  # CC: Sun C++ 5.13 SunOS_sparc Beta 2014/03/11
-  # CC: Sun C++ 5.11 SunOS_sparc 2010/08/13
-
-  EXECUTE_PROCESS(
-    COMMAND ${CMAKE_CXX_COMPILER} "-V"
-    OUTPUT_VARIABLE stdout
-    ERROR_VARIABLE  stderr
-    RESULT_VARIABLE result
-  )
-  IF(result)
-    MESSAGE(FATAL_ERROR "Failed to execute ${CMAKE_CXX_COMPILER} -V")
-  ENDIF()
-
-  STRING(REGEX MATCH "CC: Sun C\\+\\+ 5\\.([0-9]+)" VERSION_STRING ${stderr})
-  IF (NOT CMAKE_MATCH_1 OR CMAKE_MATCH_1 STREQUAL "")
-    STRING(REGEX MATCH "CC: Studio 12\\.5 Sun C\\+\\+ 5\\.([0-9]+)"
-      VERSION_STRING ${stderr})
-  ENDIF()
-  SET(CC_MINOR_VERSION ${CMAKE_MATCH_1})
-
-  IF(${CC_MINOR_VERSION} EQUAL 14)
-    MESSAGE(FATAL_ERROR
-      "Please run cmake with -DCMAKE_CXX_FLAGS=-std=c++03 for ${stderr}")
-  ENDIF()
-
-  IF(${CC_MINOR_VERSION} EQUAL 13)
-    SET(STLPORT_SUFFIX "lib/compilers/stlport4")
-    IF(SIZEOF_VOIDP EQUAL 8 AND CMAKE_SYSTEM_PROCESSOR MATCHES "sparc")
-      SET(STLPORT_SUFFIX "lib/compilers/stlport4/sparcv9")
-    ENDIF()
-    IF(SIZEOF_VOIDP EQUAL 8 AND CMAKE_SYSTEM_PROCESSOR MATCHES "i386")
-      SET(STLPORT_SUFFIX "lib/compilers/stlport4/amd64")
-    ENDIF()
-  ELSE()
-    SET(STLPORT_SUFFIX "lib/stlport4")
-    IF(SIZEOF_VOIDP EQUAL 8 AND CMAKE_SYSTEM_PROCESSOR MATCHES "sparc")
-      SET(STLPORT_SUFFIX "lib/stlport4/v9")
-    ENDIF()
-    IF(SIZEOF_VOIDP EQUAL 8 AND CMAKE_SYSTEM_PROCESSOR MATCHES "i386")
-      SET(STLPORT_SUFFIX "lib/stlport4/amd64")
-    ENDIF()
-  ENDIF()
-
-  FIND_LIBRARY(STL_LIBRARY_NAME
-    NAMES "stlport"
-    PATHS ${CXX_PATH}/../${STLPORT_SUFFIX}
-          ${CXX_REALPATH}/../../${STLPORT_SUFFIX}
-  )
-  MESSAGE(STATUS "STL_LIBRARY_NAME ${STL_LIBRARY_NAME}")
-  IF(STL_LIBRARY_NAME)
-    DIRNAME(${STL_LIBRARY_NAME} STLPORT_PATH)
-    FIND_REAL_LIBRARY(${STL_LIBRARY_NAME} real_library)
-    MESSAGE(STATUS "INSTALL ${STL_LIBRARY_NAME} ${real_library}")
-    INSTALL(FILES ${STL_LIBRARY_NAME} ${real_library}
-            DESTINATION ${INSTALL_LIBDIR} COMPONENT SharedLibraries)
-    EXTEND_C_LINK_FLAGS(${STLPORT_PATH})
-    EXTEND_CXX_LINK_FLAGS(${STLPORT_PATH})
-  ELSE()
-    MESSAGE(STATUS "Failed to find the reuired stlport library, print some"
-                   "variables to help debugging and bail out")
-    MESSAGE(STATUS "CMAKE_CXX_COMPILER ${CMAKE_CXX_COMPILER}")
-    MESSAGE(STATUS "CXX_PATH ${CXX_PATH}")
-    MESSAGE(STATUS "CXX_REALPATH ${CXX_REALPATH}")
-    MESSAGE(STATUS "STLPORT_SUFFIX ${STLPORT_SUFFIX}")
-    MESSAGE(STATUS "PATH: ${CXX_PATH}/../${STLPORT_SUFFIX}")
-    MESSAGE(STATUS "PATH: ${CXX_REALPATH}/../../${STLPORT_SUFFIX}")
-    MESSAGE(FATAL_ERROR
-      "Could not find the required stlport library.")
-  ENDIF()
-ENDIF()
-
 IF(CMAKE_COMPILER_IS_GNUCXX)
   IF (CMAKE_EXE_LINKER_FLAGS MATCHES " -static " 
      OR CMAKE_EXE_LINKER_FLAGS MATCHES " -static$")
-     SET(HAVE_DLOPEN FALSE CACHE "Disable dlopen due to -static flag" FORCE)
      SET(WITHOUT_DYNAMIC_PLUGINS TRUE)
   ENDIF()
 ENDIF()
@@ -288,9 +191,6 @@ ENDIF()
 IF(WITHOUT_DYNAMIC_PLUGINS)
   MESSAGE("Dynamic plugins are disabled.")
 ENDIF(WITHOUT_DYNAMIC_PLUGINS)
-
-# Large files, common flag
-SET(_LARGEFILE_SOURCE  1)
 
 # Same for structs, setting HAVE_STRUCT_<name> instead
 FUNCTION(MY_CHECK_STRUCT_SIZE type defbase)
@@ -440,12 +340,11 @@ CHECK_FUNCTION_EXISTS (backtrace HAVE_BACKTRACE)
 CHECK_FUNCTION_EXISTS (printstack HAVE_PRINTSTACK)
 CHECK_FUNCTION_EXISTS (index HAVE_INDEX)
 CHECK_FUNCTION_EXISTS (clock_gettime HAVE_CLOCK_GETTIME)
+CHECK_FUNCTION_EXISTS (chown HAVE_CHOWN)
 CHECK_FUNCTION_EXISTS (cuserid HAVE_CUSERID)
 CHECK_FUNCTION_EXISTS (directio HAVE_DIRECTIO)
 CHECK_FUNCTION_EXISTS (ftruncate HAVE_FTRUNCATE)
-CHECK_FUNCTION_EXISTS (compress HAVE_COMPRESS)
 CHECK_FUNCTION_EXISTS (crypt HAVE_CRYPT)
-CHECK_FUNCTION_EXISTS (dlopen HAVE_DLOPEN)
 CHECK_FUNCTION_EXISTS (fchmod HAVE_FCHMOD)
 CHECK_FUNCTION_EXISTS (fcntl HAVE_FCNTL)
 CHECK_FUNCTION_EXISTS (fdatasync HAVE_FDATASYNC)
@@ -483,14 +382,13 @@ CHECK_FUNCTION_EXISTS (pthread_condattr_setclock HAVE_PTHREAD_CONDATTR_SETCLOCK)
 CHECK_FUNCTION_EXISTS (pthread_sigmask HAVE_PTHREAD_SIGMASK)
 CHECK_FUNCTION_EXISTS (readlink HAVE_READLINK)
 CHECK_FUNCTION_EXISTS (realpath HAVE_REALPATH)
-CHECK_FUNCTION_EXISTS (setfd HAVE_SETFD)
+CHECK_FUNCTION_EXISTS (setfd HAVE_SETFD) # Used by libevent (never true)
 CHECK_FUNCTION_EXISTS (sigaction HAVE_SIGACTION)
 CHECK_FUNCTION_EXISTS (sleep HAVE_SLEEP)
 CHECK_FUNCTION_EXISTS (stpcpy HAVE_STPCPY)
 CHECK_FUNCTION_EXISTS (stpncpy HAVE_STPNCPY)
 CHECK_FUNCTION_EXISTS (strlcpy HAVE_STRLCPY)
 CHECK_FUNCTION_EXISTS (strndup HAVE_STRNDUP) # Used by libbinlogevents
-CHECK_FUNCTION_EXISTS (strnlen HAVE_STRNLEN)
 CHECK_FUNCTION_EXISTS (strlcat HAVE_STRLCAT)
 CHECK_FUNCTION_EXISTS (strsignal HAVE_STRSIGNAL)
 CHECK_FUNCTION_EXISTS (fgetln HAVE_FGETLN)
@@ -534,8 +432,6 @@ CHECK_SYMBOL_EXISTS(FIONREAD "sys/ioctl.h" FIONREAD_IN_SYS_IOCTL)
 CHECK_SYMBOL_EXISTS(FIONREAD "sys/filio.h" FIONREAD_IN_SYS_FILIO)
 CHECK_SYMBOL_EXISTS(SIGEV_THREAD_ID "signal.h;time.h" HAVE_SIGEV_THREAD_ID)
 CHECK_SYMBOL_EXISTS(SIGEV_PORT "signal.h;time.h;sys/siginfo.h" HAVE_SIGEV_PORT)
-
-CHECK_SYMBOL_EXISTS(log2  math.h HAVE_LOG2)
 
 # On Solaris, it is only visible in C99 mode
 CHECK_SYMBOL_EXISTS(isinf "math.h" HAVE_C_ISINF)
@@ -584,7 +480,7 @@ TEST_BIG_ENDIAN(WORDS_BIGENDIAN)
 INCLUDE (CheckTypeSize)
 
 set(CMAKE_REQUIRED_DEFINITIONS ${CMAKE_REQUIRED_DEFINITIONS}
-        -D_LARGEFILE_SOURCE -D_LARGE_FILES -D_FILE_OFFSET_BITS=64
+        -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64
         -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS)
 
 SET(CMAKE_EXTRA_INCLUDE_FILES stdint.h stdio.h sys/types.h time.h)
@@ -597,7 +493,6 @@ CHECK_TYPE_SIZE("int"       SIZEOF_INT)
 CHECK_TYPE_SIZE("long long" SIZEOF_LONG_LONG)
 CHECK_TYPE_SIZE("off_t"     SIZEOF_OFF_T)
 CHECK_TYPE_SIZE("time_t"    SIZEOF_TIME_T)
-CHECK_TYPE_SIZE("struct timespec" STRUCT_TIMESPEC)
 
 # If finds the size of a type, set SIZEOF_<type> and HAVE_<type>
 FUNCTION(MY_CHECK_TYPE_SIZE type defbase)
@@ -702,7 +597,9 @@ IF(NOT CMAKE_CROSSCOMPILING AND NOT MSVC)
   ENDIF()
 ENDIF()
   
-IF(CMAKE_COMPILER_IS_GNUCXX AND HAVE_CXXABI_H)
+INCLUDE (CheckIncludeFileCXX)
+CHECK_INCLUDE_FILE_CXX(cxxabi.h HAVE_CXXABI_H)
+IF(HAVE_CXXABI_H)
 CHECK_CXX_SOURCE_COMPILES("
  #include <cxxabi.h>
  int main(int argc, char **argv) 
@@ -803,53 +700,52 @@ IF(WITH_VALGRIND)
   ENDIF()
 ENDIF()
 
-#--------------------------------------------------------------------
-# Check for IPv6 support
-#--------------------------------------------------------------------
-CHECK_INCLUDE_FILE(netinet/in6.h HAVE_NETINET_IN6_H) # Used by libevent
+# Check for SYS_thread_selfid system call
+CHECK_C_SOURCE_COMPILES("
+#include <sys/types.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+int main(int ac, char **av)
+{
+  unsigned long long tid = syscall(SYS_thread_selfid);
+  return (tid != 0 ? 0 : 1);
+}"
+HAVE_SYS_THREAD_SELFID)
 
-IF(UNIX)
-  SET(CMAKE_EXTRA_INCLUDE_FILES sys/types.h netinet/in.h sys/socket.h)
-  IF(HAVE_NETINET_IN6_H)
-    SET(CMAKE_EXTRA_INCLUDE_FILES ${CMAKE_EXTRA_INCLUDE_FILES} netinet/in6.h)
-  ENDIF()
-ELSEIF(WIN32)
-  SET(CMAKE_EXTRA_INCLUDE_FILES ${CMAKE_EXTRA_INCLUDE_FILES} winsock2.h ws2ipdef.h)
-ENDIF()
+# Check for gettid() system call
+CHECK_C_SOURCE_COMPILES("
+#include <sys/types.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+int main(int ac, char **av)
+{
+  unsigned long long tid = syscall(SYS_gettid);
+  return (tid != 0 ? 0 : 1);
+}"
+HAVE_SYS_GETTID)
 
-MY_CHECK_STRUCT_SIZE("sockaddr_in6" SOCKADDR_IN6)
-MY_CHECK_STRUCT_SIZE("in6_addr" IN6_ADDR)
+# Check for pthread_getthreadid_np()
+CHECK_C_SOURCE_COMPILES("
+#include <pthread_np.h>
+int main(int ac, char **av)
+{
+  unsigned long long tid = pthread_getthreadid_np();
+  return (tid != 0 ? 0 : 1);
+}"
+HAVE_PTHREAD_GETTHREADID_NP)
 
-IF(HAVE_STRUCT_SOCKADDR_IN6 OR HAVE_STRUCT_IN6_ADDR)
-  SET(HAVE_IPV6 TRUE CACHE INTERNAL "")
-ENDIF()
-
-
-# Check for sockaddr_storage.ss_family
-
-CHECK_STRUCT_HAS_MEMBER("struct sockaddr_storage"
- ss_family "${CMAKE_EXTRA_INCLUDE_FILES}" HAVE_SOCKADDR_STORAGE_SS_FAMILY)
-IF(NOT HAVE_SOCKADDR_STORAGE_SS_FAMILY)
-  CHECK_STRUCT_HAS_MEMBER("struct sockaddr_storage"
-  __ss_family "${CMAKE_EXTRA_INCLUDE_FILES}" HAVE_SOCKADDR_STORAGE___SS_FAMILY)
-  IF(HAVE_SOCKADDR_STORAGE___SS_FAMILY)
-    SET(ss_family __ss_family)
-  ENDIF()
-ENDIF()
-
-#
-# Check if struct sockaddr_in::sin_len is available.
-#
-
-CHECK_STRUCT_HAS_MEMBER("struct sockaddr_in" sin_len
-  "${CMAKE_EXTRA_INCLUDE_FILES}" HAVE_SOCKADDR_IN_SIN_LEN)
-
-#
-# Check if struct sockaddr_in6::sin6_len is available.
-#
-
-CHECK_STRUCT_HAS_MEMBER("struct sockaddr_in6" sin6_len
-  "${CMAKE_EXTRA_INCLUDE_FILES}" HAVE_SOCKADDR_IN6_SIN6_LEN)
+# Check for pthread_self() returning an integer type
+CHECK_C_SOURCE_COMPILES("
+#include <sys/types.h>
+#include <pthread.h>
+int main(int ac, char **av)
+{
+  unsigned long long tid = pthread_self();
+  return (tid != 0 ? 0 : 1);
+}"
+HAVE_INTEGER_PTHREAD_SELF
+FAIL_REGEX "warning: incompatible pointer to integer conversion"
+)
 
 CHECK_CXX_SOURCE_COMPILES(
   "
@@ -877,14 +773,53 @@ CHECK_CXX_SOURCE_COMPILES(
   }
   " HAVE_IMPLICIT_DEPENDENT_NAME_TYPING)
 
+#--------------------------------------------------------------------
+# Check for IPv6 support
+#--------------------------------------------------------------------
+CHECK_INCLUDE_FILE(netinet/in6.h HAVE_NETINET_IN6_H) # Used by libevent (never true)
+MY_CHECK_STRUCT_SIZE("in6_addr" IN6_ADDR) # Used by libevent
+
+IF(UNIX)
+  SET(CMAKE_EXTRA_INCLUDE_FILES sys/types.h netinet/in.h sys/socket.h)
+  IF(HAVE_NETINET_IN6_H)
+    SET(CMAKE_EXTRA_INCLUDE_FILES ${CMAKE_EXTRA_INCLUDE_FILES} netinet/in6.h)
+  ENDIF()
+ELSEIF(WIN32)
+  SET(CMAKE_EXTRA_INCLUDE_FILES ${CMAKE_EXTRA_INCLUDE_FILES} winsock2.h ws2ipdef.h)
+ENDIF()
+
+#
+# Check if struct sockaddr_in::sin_len is available.
+#
+
+CHECK_STRUCT_HAS_MEMBER("struct sockaddr_in" sin_len
+  "${CMAKE_EXTRA_INCLUDE_FILES}" HAVE_SOCKADDR_IN_SIN_LEN)
+
+#
+# Check if struct sockaddr_in6::sin6_len is available.
+#
+
+CHECK_STRUCT_HAS_MEMBER("struct sockaddr_in6" sin6_len
+  "${CMAKE_EXTRA_INCLUDE_FILES}" HAVE_SOCKADDR_IN6_SIN6_LEN)
+
 SET(CMAKE_EXTRA_INCLUDE_FILES)
 
-CHECK_FUNCTION_EXISTS(chown HAVE_CHOWN)
+# needed for libevent
+CHECK_TYPE_SIZE("socklen_t" SIZEOF_SOCKLEN_T)
+IF(SIZEOF_SOCKLEN_T)
+  SET(HAVE_SOCKLEN_T 1)
+ENDIF()
 
 CHECK_INCLUDE_FILES(numa.h HAVE_NUMA_H)
 CHECK_INCLUDE_FILES(numaif.h HAVE_NUMAIF_H)
 
 IF(HAVE_NUMA_H AND HAVE_NUMAIF_H)
+  OPTION(WITH_NUMA "Explicitly set NUMA memory allocation policy" ON)
+ELSE()
+  OPTION(WITH_NUMA "Explicitly set NUMA memory allocation policy" OFF)
+ENDIF()
+
+IF(WITH_NUMA AND HAVE_NUMA_H AND HAVE_NUMAIF_H)
     SET(SAVE_CMAKE_REQUIRED_LIBRARIES ${CMAKE_REQUIRED_LIBRARIES})
     SET(CMAKE_REQUIRED_LIBRARIES ${CMAKE_REQUIRED_LIBRARIES} numa)
     CHECK_C_SOURCE_COMPILES(
@@ -903,29 +838,8 @@ ELSE()
     SET(HAVE_LIBNUMA 0)
 ENDIF()
 
-IF(NOT HAVE_LIBNUMA)
-   MESSAGE(STATUS "NUMA library missing or required version not available")
-ENDIF()
-
-IF(HAVE_LIBNUMA AND HAVE_NUMA_H AND HAVE_NUMAIF_H)
-  OPTION(WITH_NUMA "Explicitly set NUMA memory allocation policy" ON)
-ELSE()
-  OPTION(WITH_NUMA "Explicitly set NUMA memory allocation policy" OFF)
-ENDIF()
-
 IF(WITH_NUMA AND NOT HAVE_LIBNUMA)
   # Forget it in cache, abort the build.
   UNSET(WITH_NUMA CACHE)
-  MESSAGE(FATAL_ERROR "NUMA library missing or required version not available")
-ENDIF()
-
-IF(HAVE_LIBNUMA AND NOT WITH_NUMA)
-   SET(HAVE_LIBNUMA 0)
-   MESSAGE(STATUS "Disabling NUMA on user's request")
-ENDIF()
-
-# needed for libevent
-CHECK_TYPE_SIZE("socklen_t" SIZEOF_SOCKLEN_T)
-IF(SIZEOF_SOCKLEN_T)
-  SET(HAVE_SOCKLEN_T 1)
+  MESSAGE(FATAL_ERROR "Could not find numa headers/libraries")
 ENDIF()

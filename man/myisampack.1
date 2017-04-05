@@ -2,12 +2,12 @@
 .\"     Title: \fBmyisampack\fR
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 11/26/2016
+.\"      Date: 08/25/2016
 .\"    Manual: MySQL Database System
-.\"    Source: MySQL 5.7
+.\"    Source: MySQL 8.0
 .\"  Language: English
 .\"
-.TH "\FBMYISAMPACK\FR" "1" "11/26/2016" "MySQL 5\&.7" "MySQL Database System"
+.TH "\FBMYISAMPACK\FR" "1" "08/25/2016" "MySQL 8\&.0" "MySQL Database System"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -118,7 +118,7 @@ to rebuild its indexes\&.
 .PP
 \fBmyisampack\fR
 supports the following options\&. It also reads option files and supports the options for processing them described at
-Section\ \&5.2.7, \(lqCommand-Line Options that Affect Option-File Handling\(rq\&.
+Section\ \&4.2.7, \(lqCommand-Line Options that Affect Option-File Handling\(rq\&.
 .sp
 .RS 4
 .ie n \{\
@@ -160,7 +160,7 @@ Make a backup of each table\*(Aqs data file using the name
 \fB\-\-character\-sets\-dir=\fR\fB\fIdir_name\fR\fR
 .sp
 The directory where character sets are installed\&. See
-Section\ \&11.5, \(lqCharacter Set Configuration\(rq\&.
+Section\ \&10.5, \(lqCharacter Set Configuration\(rq\&.
 .RE
 .sp
 .RS 4
@@ -331,7 +331,6 @@ The following sequence of commands illustrates a typical table compression sessi
 shell> \fBls \-l station\&.*\fR
 \-rw\-rw\-r\-\-   1 monty    my         994128 Apr 17 19:00 station\&.MYD
 \-rw\-rw\-r\-\-   1 monty    my          53248 Apr 17 19:00 station\&.MYI
-\-rw\-rw\-r\-\-   1 monty    my           5767 Apr 17 19:00 station\&.frm
 shell> \fBmyisamchk \-dvv station\fR
 MyISAM file:     station
 Isam\-version:  2
@@ -424,7 +423,6 @@ shell> \fBmysqladmin \-uroot flush\-tables\fR
 shell> \fBls \-l station\&.*\fR
 \-rw\-rw\-r\-\-   1 monty    my         127874 Apr 17 19:00 station\&.MYD
 \-rw\-rw\-r\-\-   1 monty    my          55296 Apr 17 19:04 station\&.MYI
-\-rw\-rw\-r\-\-   1 monty    my           5767 Apr 17 19:00 station\&.frm
 shell> \fBmyisamchk \-dvv station\fR
 MyISAM file:     station
 Isam\-version:  2

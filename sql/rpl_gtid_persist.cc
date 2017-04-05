@@ -17,11 +17,13 @@
 
 #include "rpl_gtid_persist.h"
 
+#include "current_thd.h"
 #include "debug_sync.h"       // debug_sync_set_action
 #include "log.h"              // sql_print_error
 #include "replication.h"      // THD_ENTER_COND
 #include "sql_base.h"         // MYSQL_OPEN_IGNORE_GLOBAL_READ_LOCK
 #include "sql_parse.h"        // mysql_reset_thd_for_next_command
+#include "mysqld.h"           // gtid_executed_compression_period
 
 using std::list;
 using std::string;
@@ -48,7 +50,8 @@ class THD::Attachable_trx_rw : public THD::Attachable_trx
 {
 public:
   bool is_read_only() const { return false; }
-  Attachable_trx_rw(THD *thd) : THD::Attachable_trx(thd)
+  Attachable_trx_rw(THD *thd, Attachable_trx *prev_trx= NULL)
+    : THD::Attachable_trx(thd, prev_trx)
   {
     m_thd->tx_read_only= false;
     m_thd->lex->sql_command= SQLCOM_END;
@@ -831,7 +834,8 @@ int Gtid_table_persistor::delete_all(TABLE *table)
                        for going to wait for next compression signal until
                        it is terminated.
 */
-extern "C" void *compress_gtid_table(void *p_thd)
+extern "C" {
+static void *compress_gtid_table(void *p_thd)
 {
   THD *thd=(THD*) p_thd;
   mysql_thread_set_psi_id(thd->thread_id());
@@ -867,7 +871,7 @@ extern "C" void *compress_gtid_table(void *p_thd)
                       {
                         const char act[]= "now signal compression_failed";
                         DBUG_ASSERT(opt_debug_sync_timeout > 0);
-                        DBUG_ASSERT(!debug_sync_set_action(current_thd,
+                        DBUG_ASSERT(!debug_sync_set_action(thd,
                                                            STRING_WITH_LEN(act)));
                       };);
     }
@@ -880,6 +884,7 @@ extern "C" void *compress_gtid_table(void *p_thd)
   my_thread_exit(0);
   return 0;
 }
+} // extern "C"
 
 
 /**
@@ -888,7 +893,7 @@ extern "C" void *compress_gtid_table(void *p_thd)
 void create_compress_gtid_table_thread()
 {
   my_thread_attr_t attr;
-  int error;
+  int error= 0;
   THD *thd;
   if (!(thd= new THD))
   {

@@ -1,4 +1,4 @@
-/* Copyright (c) 2002, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2002, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -18,7 +18,6 @@
 
 #include "my_global.h"
 #include "mysql/mysql_lex_string.h"     // LEX_STRING
-#include "mysqld.h"
 #include "sql_string.h"                 // String
 
 #include <vector>
@@ -236,15 +235,7 @@ struct Geometry_buffer;
   Memory management functions for BG adapter code. Allocate extra space for
   GEOMETRY header so that we can later prefix the header if needed.
  */
-inline void *gis_wkb_alloc(size_t sz)
-{
-  sz+= GEOM_HEADER_SIZE;
-  char *p= static_cast<char *>(my_malloc(key_memory_Geometry_objects_data,
-                                         sz, MYF(MY_FAE)));
-  p+= GEOM_HEADER_SIZE;
-  return p;
-}
-
+void *gis_wkb_alloc(size_t sz);
 
 inline void *gis_wkb_fixed_alloc(size_t sz)
 {
@@ -252,17 +243,7 @@ inline void *gis_wkb_fixed_alloc(size_t sz)
 }
 
 
-inline void *gis_wkb_realloc(void *p, size_t sz)
-{
-  char *cp= static_cast<char *>(p);
-  if (cp)
-    cp-= GEOM_HEADER_SIZE;
-  sz+= GEOM_HEADER_SIZE;
-
-  p= my_realloc(key_memory_Geometry_objects_data, cp, sz, MYF(MY_FAE));
-  cp= static_cast<char *>(p);
-  return cp + GEOM_HEADER_SIZE;
-}
+void *gis_wkb_realloc(void *p, size_t sz);
 
 
 inline void gis_wkb_free(void *p)
@@ -282,7 +263,7 @@ inline void gis_wkb_raw_free(void *p)
 
 class Geometry
 {
-  friend void parse_wkb_data(Geometry *g, const char *p, size_t num_geoms);
+  friend void parse_wkb_data(Geometry *geom, const char *p, size_t num_geoms);
 protected:
   // Flag bits for m_flags.props.
 
@@ -665,10 +646,8 @@ public:
     if (wkt->reserve(len + 2, 512))
       return true;
     wkt->qs_append(get_class_info()->m_name.str, len);
-    wkt->qs_append('(');
     if (get_data_as_wkt(wkt, wkb))
       return true;
-    wkt->qs_append(')');
     return false;
   }
   bool as_wkt(String *wkt) const
@@ -955,6 +934,7 @@ public:
     @param type Expected type of geometry, or
            Geoemtry::wkb_invalid_type if any type is allowed
 
+    @param bo
     @return True if the string is a well-formed GEOMETRY string,
             false otherwise
    */
@@ -1090,12 +1070,12 @@ protected:
     In a polygon usable by boost geometry, the m_ptr points to the outer ring
     object, and m_inn_rings points to the inner rings, thus the polygon's data
     isn't stored in a single WKB. Users should call
-    Gis_polygon::to_wkb_unparsed() before getting the polygon's wkb data,
-    Gis_polygon::to_wkb_unparsed() will form a single WKB for the polygon
+    @c Gis_polygon::to_wkb_unparsed() before getting the polygon's wkb data,
+    @c Gis_polygon::to_wkb_unparsed() will form a single WKB for the polygon
     and refer to it with m_ptr, and release the outer ring object
     and the inner rings objects, and such an polygon isn't usable by BG any
     more, it's exactly what we got with
-    Geometry::create_from_wkt/Geometry::create_from_wkt.
+    @c Geometry::create_from_wkt / @c Geometry::create_from_wkt.
    */
   bool polygon_is_wkb_form() const
   {
@@ -1283,7 +1263,21 @@ class Gis_point: public Geometry
 {
 public:
   uint32 get_data_size() const;
-  bool init_from_wkt(Gis_read_stream *trs, String *wkb);
+  /**
+    Initialize from a partial WKT string (everything following "POINT").
+
+    @param trs Input stream
+    @param wkb Output string
+    @param parens Whether parentheses are expected around the
+    coordinates.
+    @retval true Error
+    @retval false Success
+  */
+  bool init_from_wkt(Gis_read_stream *trs, String *wkb, const bool parens);
+  bool init_from_wkt(Gis_read_stream *trs, String *wkb)
+  {
+    return init_from_wkt(trs, wkb, true);
+  }
   uint init_from_wkb(const char *wkb, uint len, wkbByteOrder bo, String *res);
   bool get_data_as_wkt(String *txt, wkb_parser *wkb) const;
   bool get_mbr(MBR *mbr, wkb_parser *wkb) const;
@@ -2118,7 +2112,7 @@ void *get_packed_ptr(const Geometry *geo, size_t *pnbytes);
 const char *get_packed_ptr(Geometry *geo);
 bool polygon_is_packed(Geometry *plgn, Geometry *mplgn);
 void own_rings(Geometry *geo);
-void parse_wkb_data(Geometry *g, const char *p, size_t num_geoms= 0);
+void parse_wkb_data(Geometry *geom, const char *p, size_t num_geoms= 0);
 
 /**
    Geometry vector class.
@@ -2277,7 +2271,7 @@ public:
   }
 
 
-  Gis_wkb_vector(const void *ptr, size_t nbytes, const Flags_t &flags,
+  Gis_wkb_vector(const void *ptr, size_t nbytes, const Geometry::Flags_t &flags,
                  srid_t srid, bool is_bg_adapter= true);
   Gis_wkb_vector(const self &v);
 
@@ -2324,7 +2318,9 @@ public:
 
 
   self &operator=(const self &rhs);
-  virtual void shallow_push(const Geometry *g);
+
+  // SUPPRESS_UBSAN Wrong downcast. FIXME
+  virtual void shallow_push(const Geometry *g) SUPPRESS_UBSAN;
 
   Geo_vector *get_geo_vect(bool create_if_null= false)
   {
@@ -2552,12 +2548,14 @@ public:
 
   bool set_polygon_ring_order();
 
-  inner_container_type *inner_rings() const
+  // SUPPRESS_UBSAN Wrong downcast. FIXME
+  inner_container_type *inner_rings() const SUPPRESS_UBSAN
   {
     return m_inn_rings;
   }
 
-  void set_inner_rings(inner_container_type *inns)
+  // SUPPRESS_UBSAN Wrong downcast. FIXME
+  void set_inner_rings(inner_container_type *inns) SUPPRESS_UBSAN
   {
     m_inn_rings= inns;
   }

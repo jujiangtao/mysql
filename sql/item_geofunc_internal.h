@@ -1,7 +1,7 @@
 #ifndef GEOFUNC_INTERNAL_INCLUDED
 #define GEOFUNC_INTERNAL_INCLUDED
 
-/* Copyright (c) 2014, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -29,10 +29,15 @@
 #include <algorithm>
 #include <stdexcept>
 #include <memory>
+#include <cmath>
 
 #include <m_ctype.h>
 #include "item_geofunc.h"
 #include "gis_bg_traits.h"
+
+#include "dd/types/spatial_reference_system.h"
+#include "dd/cache/dictionary_client.h"
+#include "sql_class.h" // THD
 
 // Boost.Geometry
 #include <boost/geometry/geometry.hpp>
@@ -54,7 +59,40 @@
 
 extern bool simplify_multi_geometry(String *str, String *result_buffer);
 
-using std::auto_ptr;
+
+class Srs_fetcher
+{
+private:
+  THD *m_thd;
+  dd::cache::Dictionary_client *m_ddc;
+  dd::cache::Dictionary_client::Auto_releaser m_releaser;
+
+  /**
+    Take an MDL lock on an SRID.
+
+    @param[in] srid Spatial reference system ID
+
+    @retval false Success.
+    @retval true Locking failed. An error has already been flagged.
+  */
+  bool lock(Geometry::srid_t srid);
+
+public:
+  Srs_fetcher(THD *thd)
+    :m_thd(thd), m_ddc(m_thd->dd_client()), m_releaser(m_ddc)
+  {}
+
+  /**
+    Acquire an SRS from the data dictionary.
+
+    @param[in] srid Spatial reference system ID
+    @param[out] srs The spatial reference system
+
+    @retval false Success.
+    @retval true Locking failed. An error has already been flagged.
+  */
+  bool acquire(Geometry::srid_t srid, const dd::Spatial_reference_system **srs);
+};
 
 
 /**
@@ -81,6 +119,8 @@ using std::auto_ptr;
   after the call to handle_gis_exception(), must not throw exceptions.
 
   @param funcname Function name for use in error message
+
+  @see handle_std_exception
  */
 void handle_gis_exception(const char *funcname);
 
@@ -155,10 +195,10 @@ inline void make_bg_box(const Geometry *g, BG_box *box)
 inline bool is_box_valid(const BG_box &box)
 {
   return
-    !(!my_isfinite(box.min_corner().get<0>()) ||
-      !my_isfinite(box.min_corner().get<1>()) ||
-      !my_isfinite(box.max_corner().get<0>()) ||
-      !my_isfinite(box.max_corner().get<1>()) ||
+    !(!std::isfinite(box.min_corner().get<0>()) ||
+      !std::isfinite(box.min_corner().get<1>()) ||
+      !std::isfinite(box.max_corner().get<0>()) ||
+      !std::isfinite(box.max_corner().get<1>()) ||
       box.max_corner().get<0>() < box.min_corner().get<0>() ||
       box.max_corner().get<1>() < box.min_corner().get<1>());
 }
@@ -291,7 +331,10 @@ public:
   those passed as out parameter into set operation functions, call this
   function before using the result object's data.
 
-  @param resbuf_mgr tracks the result buffer
+  @param          resbuf_mgr   Tracks the result buffer
+  @param [in,out] geout        Geometry object
+  @param [in,out] res          GEOMETRY string.
+
   @return true if an error occurred or if the geometry is an empty
           collection; false if no error occurred.
 */

@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2011, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -21,6 +21,7 @@
 #include "connection_handler_manager.h"  // Connection_handler_manager
 #include "mysqld_thd_manager.h"          // Global_THD_manager
 #include "sql_class.h"
+#include "current_thd.h"                 // my_thread_get_THR_THD
 
 #ifdef _WIN32
 #include <crtdbg.h>
@@ -115,7 +116,8 @@ extern "C" void handle_fatal_signal(int sig)
 #endif
   my_safe_printf_stderr("max_threads=%u\n", max_threads);
 
-  my_safe_printf_stderr("thread_count=%u\n", Global_THD_manager::global_thd_count);
+  my_safe_printf_stderr("thread_count=%u\n",
+                        Global_THD_manager::get_thd_count());
 
   my_safe_printf_stderr("connection_count=%u\n",
                         Connection_handler_manager::connection_count);
@@ -153,9 +155,6 @@ extern "C" void handle_fatal_signal(int sig)
     switch (thd->killed) {
     case THD::NOT_KILLED:
       kreason= "NOT_KILLED";
-      break;
-    case THD::KILL_BAD_DATA:
-      kreason= "KILL_BAD_DATA";
       break;
     case THD::KILL_CONNECTION:
       kreason= "KILL_CONNECTION";

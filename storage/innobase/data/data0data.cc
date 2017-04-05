@@ -26,11 +26,6 @@ Created 5/30/1994 Heikki Tuuri
 #include "ha_prototypes.h"
 
 #include "data0data.h"
-
-#ifdef UNIV_NONINL
-#include "data0data.ic"
-#endif
-
 #ifndef UNIV_HOTBACKUP
 #include "rem0rec.h"
 #include "rem0cmp.h"
@@ -47,11 +42,6 @@ Created 5/30/1994 Heikki Tuuri
 debug version, dtuple_create() will make all fields of dtuple_t point
 to data_error. */
 byte	data_error;
-
-# ifndef UNIV_DEBUG_VALGRIND
-/** this is used to fool the compiler in dtuple_validate */
-ulint	data_dummy;
-# endif /* !UNIV_DEBUG_VALGRIND */
 #endif /* UNIV_DEBUG */
 
 #ifndef UNIV_HOTBACKUP
@@ -129,6 +119,7 @@ dfield_check_typed_no_assert(
 /**********************************************************//**
 Checks that a data tuple is typed.
 @return TRUE if ok */
+static
 ibool
 dtuple_check_typed_no_assert(
 /*=========================*/
@@ -237,10 +228,6 @@ dtuple_validate(
 			ulint		j;
 
 			for (j = 0; j < len; j++) {
-
-				data_dummy  += *data; /* fool the compiler not
-						      to optimize out this
-						      code */
 				data++;
 			}
 #endif /* !UNIV_DEBUG_VALGRIND */
@@ -256,47 +243,6 @@ dtuple_validate(
 #endif /* UNIV_DEBUG */
 
 #ifndef UNIV_HOTBACKUP
-/*************************************************************//**
-Pretty prints a dfield value according to its data type. */
-void
-dfield_print(
-/*=========*/
-	const dfield_t*	dfield)	/*!< in: dfield */
-{
-	const byte*	data;
-	ulint		len;
-	ulint		i;
-
-	len = dfield_get_len(dfield);
-	data = static_cast<const byte*>(dfield_get_data(dfield));
-
-	if (dfield_is_null(dfield)) {
-		fputs("NULL", stderr);
-
-		return;
-	}
-
-	switch (dtype_get_mtype(dfield_get_type(dfield))) {
-	case DATA_CHAR:
-	case DATA_VARCHAR:
-		for (i = 0; i < len; i++) {
-			int	c = *data++;
-			putc(isprint(c) ? c : ' ', stderr);
-		}
-
-		if (dfield_is_ext(dfield)) {
-			fputs("(external)", stderr);
-		}
-		break;
-	case DATA_INT:
-		ut_a(len == 4); /* only works for 32-bit integers */
-		fprintf(stderr, "%d", (int) mach_read_from_4(data));
-		break;
-	default:
-		ut_error;
-	}
-}
-
 /*************************************************************//**
 Pretty prints a dfield value according to its data type. Also the hex string
 is printed if a string contains non-printable characters. */
@@ -588,11 +534,11 @@ dtuple_convert_big_rec(
 	ulint		local_len;
 	ulint		local_prefix_len;
 
-	if (!dict_index_is_clust(index)) {
+	if (!index->is_clustered()) {
 		return(NULL);
 	}
 
-	if (dict_table_get_format(index->table) < UNIV_FORMAT_B) {
+	if (!dict_table_has_atomic_blobs(index->table)) {
 		/* up to MySQL 5.1: store a 768-byte prefix locally */
 		local_len = BTR_EXTERN_FIELD_REF_SIZE
 			+ DICT_ANTELOPE_MAX_INDEX_COL_LEN;
@@ -639,7 +585,7 @@ dtuple_convert_big_rec(
 			ulint	savings;
 
 			dfield = dtuple_get_nth_field(entry, i);
-			ifield = dict_index_get_nth_field(index, i);
+			ifield = index->get_field(i);
 
 			/* Skip fixed-length, NULL, externally stored,
 			or short columns */
@@ -696,7 +642,7 @@ skip_field:
 		from locally stored data. */
 
 		dfield = dtuple_get_nth_field(entry, longest_i);
-		ifield = dict_index_get_nth_field(index, longest_i);
+		ifield = index->get_field(longest_i);
 		local_prefix_len = local_len - BTR_EXTERN_FIELD_REF_SIZE;
 
 		vector->append(
@@ -848,4 +794,13 @@ dfield_t::clone(
 
 	return(obj);
 }
+
+byte*
+dfield_t::blobref() const
+{
+	ut_ad(ext);
+
+	return(static_cast<byte*>(data) + len - BTR_EXTERN_FIELD_REF_SIZE);
+}
+
 #endif /* !UNIV_HOTBACKUP */

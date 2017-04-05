@@ -26,13 +26,27 @@
 #include <my_global.h>
 #include <my_thread.h>
 #include <my_thread_local.h>
-#include <mysql/psi/psi.h>
+#include <mysql/psi/psi_base.h>
 
 /**
   Entry point to the performance schema implementation.
   This singleton is used to discover the performance schema services.
 */
-extern struct PSI_bootstrap PFS_bootstrap;
+extern struct PSI_thread_bootstrap pfs_thread_bootstrap;
+extern struct PSI_mutex_bootstrap pfs_mutex_bootstrap;
+extern struct PSI_rwlock_bootstrap pfs_rwlock_bootstrap;
+extern struct PSI_cond_bootstrap pfs_cond_bootstrap;
+extern struct PSI_file_bootstrap pfs_file_bootstrap;
+extern struct PSI_socket_bootstrap pfs_socket_bootstrap;
+extern struct PSI_table_bootstrap pfs_table_bootstrap;
+extern struct PSI_mdl_bootstrap pfs_mdl_bootstrap;
+extern struct PSI_idle_bootstrap pfs_idle_bootstrap;
+extern struct PSI_stage_bootstrap pfs_stage_bootstrap;
+extern struct PSI_statement_bootstrap pfs_statement_bootstrap;
+extern struct PSI_transaction_bootstrap pfs_transaction_bootstrap;
+extern struct PSI_memory_bootstrap pfs_memory_bootstrap;
+extern struct PSI_error_bootstrap pfs_error_bootstrap;
+
 /** Performance schema Thread Local Storage key.  */
 extern thread_local_key_t THR_PFS;
 extern thread_local_key_t THR_PFS_VG;  // global_variables
@@ -47,11 +61,6 @@ extern thread_local_key_t THR_PFS_SBH; // status_by_account
 
 /** True when @c THR_PFS and all other Performance Schema TLS keys are initialized. */
 extern bool THR_PFS_initialized;
-
-#define PSI_VOLATILITY_UNKNOWN 0
-#define PSI_VOLATILITY_SESSION 1
-
-#define PSI_COUNT_VOLATILITY 2
 
 #endif
 

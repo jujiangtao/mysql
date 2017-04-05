@@ -1,7 +1,7 @@
 #ifndef MY_BYTEORDER_INCLUDED
 #define MY_BYTEORDER_INCLUDED
 
-/* Copyright (c) 2001, 2014, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2001, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -17,11 +17,13 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 
-/*
+/**
+  @file include/my_byteorder.h
   Functions for reading and storing in machine independent
   format (low byte first). There are 'korr' (assume 'corrector') variants
   for integer types, but 'get' (assume 'getter') for floating point types.
 */
+
 #if defined(__i386__) || defined(_WIN32) || defined(__x86_64__)
 #include "byte_order_generic_x86.h"
 #else
@@ -74,6 +76,20 @@ static inline ulonglong uint6korr(const uchar *A)
     ;
 }
 
+/**
+  int3store
+
+  Stores an unsinged integer in a platform independent way
+
+  @param T  The destination buffer. Must be at least 3 bytes long
+  @param A  The integer to store.
+
+  _Example:_
+  A @ref a_protocol_type_int3 "int \<3\>" with the value 1 is stored as:
+  ~~~~~~~~~~~~~~~~~~~~~
+  01 00 00
+  ~~~~~~~~~~~~~~~~~~~~~
+*/
 static inline void int3store(uchar *T, uint A)
 {
   *(T)=   (uchar) (A);

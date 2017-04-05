@@ -26,7 +26,9 @@
 #include <sql_common.h>
 #include <welcome_copyright_notice.h>           /* ORACLE_WELCOME_COPYRIGHT_NOTICE */
 #include <mysqld_error.h>                       /* to check server error codes */
-#include <string>  /* std::string */
+#include "mysql/service_mysql_alloc.h"
+
+#include <string>
 
 #define ADMIN_VERSION "8.42"
 #define MAX_MYSQL_VAR 512
@@ -710,14 +712,7 @@ static int execute_commands(MYSQL *mysql,int argc, char **argv)
 	  !stat(pidfile, &pidfile_status))
 	last_modified= pidfile_status.st_mtime;
 
-      /* Issue COM_SHUTDOWN if server version is older then 5.7*/
-      int resShutdown= 1;
-      if(mysql_get_server_version(mysql) < 50709)
-        resShutdown= mysql_shutdown(mysql, SHUTDOWN_DEFAULT);
-      else
-        resShutdown= mysql_query(mysql, "shutdown");
-
-      if(resShutdown)
+      if(mysql_query(mysql, "shutdown"))
       {
         my_printf_error(0, "shutdown failed; error: '%s'", error_flags,
         mysql_error(mysql));
@@ -1092,12 +1087,14 @@ static int execute_commands(MYSQL *mysql,int argc, char **argv)
 
       /* Warn about password being set in non ssl connection */
 #if defined(HAVE_OPENSSL) && !defined(EMBEDDED_LIBRARY)
-      uint ssl_mode;
-      if (!mysql_get_option(mysql, MYSQL_OPT_SSL_MODE, &ssl_mode) &&
-          ssl_mode <= SSL_MODE_PREFERRED)
       {
-        fprintf(stderr, "Warning: Since password will be sent to server in "
-                "plain text, use ssl connection to ensure password safety.\n");
+        uint ssl_mode= 0;
+        if (!mysql_get_option(mysql, MYSQL_OPT_SSL_MODE, &ssl_mode) &&
+            ssl_mode <= SSL_MODE_PREFERRED)
+        {
+          fprintf(stderr, "Warning: Since password will be sent to server in "
+                  "plain text, use ssl connection to ensure password safety.\n");
+        }
       }
 #endif
       memset(buff, 0, sizeof(buff));
@@ -1443,7 +1440,7 @@ static void print_relative_row(MYSQL_RES *result, MYSQL_ROW cur, uint row)
 
 static void print_relative_row_vert(MYSQL_RES *result MY_ATTRIBUTE((unused)),
 				    MYSQL_ROW cur,
-				    uint row MY_ATTRIBUTE((unused)))
+				    uint row)
 {
   uint length;
   ulonglong tmp;
@@ -1554,10 +1551,8 @@ static my_bool get_pidfile(MYSQL *mysql, char *pidfile)
 
   if (mysql_query(mysql, "SHOW VARIABLES LIKE 'pid_file'"))
   {
-    my_printf_error(mysql_errno(mysql),
-                    "The query to get the server's pid file failed,"
-                    " error: '%s'. Continuing.", error_flags,
-                    mysql_error(mysql));
+    my_printf_error(0, "query failed; error: '%s'", error_flags,
+		    mysql_error(mysql));
   }
   result = mysql_store_result(mysql);
   if (result)

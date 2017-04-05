@@ -1,4 +1,9 @@
-#
+
+# The test contains queries which are impossible to write to binary log if binlog-format is row (which
+# is the default) and has tables which use a storage engine limited to statement-based logging. Hence,
+# it is skipped when log-bin is enabled.
+--source include/not_log_bin.inc
+
 --source include/not_windows_embedded.inc
 --source include/have_example_plugin.inc
 --source include/have_debug_sync.inc
@@ -21,9 +26,9 @@ UNINSTALL PLUGIN example;
 eval INSTALL PLUGIN example SONAME '$EXAMPLE_PLUGIN';
 
 --echo # Example engine does not support indexes
---error ER_TOO_MANY_KEY_PARTS
+--error ER_TOO_MANY_KEYS
 CREATE TABLE t1 (a int PRIMARY KEY) ENGINE=EXAMPLE;
---error ER_TOO_MANY_KEY_PARTS
+--error ER_TOO_MANY_KEYS
 CREATE TABLE t1 (a int, KEY (a)) ENGINE=EXAMPLE;
 
 
@@ -54,8 +59,9 @@ DROP TABLE t1;
 set global example_ulong_var=500;
 set global example_enum_var= e1;
 --disable_warnings
-select * from information_schema.global_status where variable_name like 'example%' order by variable_name;
+select * from performance_schema.global_status where variable_name like 'example%' order by variable_name;
 --enable_warnings
+--replace_regex /^Last creation.*t1'$/Last creation 't1'/
 show variables like 'example%';
 
 UNINSTALL PLUGIN example;
@@ -184,7 +190,7 @@ END
 
 CREATE PROCEDURE p_show_vars()
 BEGIN
-  SELECT COUNT(*) FROM INFORMATION_SCHEMA.GLOBAL_VARIABLES;
+  SELECT COUNT(*) FROM performance_schema.global_variables;
 END|
 
 delimiter ;|
@@ -298,6 +304,31 @@ disconnect con2;
 # Innodb is now builtin plugin and not dynamically loaded
 --error ER_PLUGIN_DELETE_BUILTIN
 UNINSTALL PLUGIN innodb;
+
+--echo #
+--echo # Bug #19917521: MEMORY LEAK WITH STRING THREAD VARIABLE 
+--echo #                THAT SET MEMALLOC FLAG
+--echo #
+--replace_regex /\.dll/.so/
+eval INSTALL PLUGIN example SONAME '$EXAMPLE_PLUGIN';
+
+SET SESSION example_create_count_thdvar = 0;
+SET SESSION example_last_create_thdvar = '';
+
+CREATE TABLE t10(a INT) ENGINE=EXAMPLE;
+SELECT @@SESSION.example_create_count_thdvar;
+--replace_regex /^Last creation.*t10'$/Last creation 't10'/
+SELECT @@SESSION.example_last_create_thdvar;
+
+CREATE TABLE t20(a INT) ENGINE=EXAMPLE;
+SELECT @@SESSION.example_create_count_thdvar;
+--replace_regex /^Last creation.*t20'$/Last creation 't20'/
+SELECT @@SESSION.example_last_create_thdvar;
+
+DROP TABLE t10, t20;
+
+UNINSTALL PLUGIN example;
+
 
 # Wait till we reached the initial number of concurrent sessions
 --source include/wait_until_count_sessions.inc

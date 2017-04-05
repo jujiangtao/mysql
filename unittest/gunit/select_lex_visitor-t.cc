@@ -18,6 +18,7 @@
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
 
+#include "current_thd.h"
 #include "parsertest.h"
 #include "test_utils.h"
 #include "select_lex_visitor.h"
@@ -115,8 +116,6 @@ TEST_F(SelectLexVisitorTest, SelectLex)
   EXPECT_CALL(having, walk(_, _, _)).Times(1);
 
   SELECT_LEX query_block(NULL, NULL, &where, &having, NULL, NULL);
-  Item *ref_ptrs[5]= { NULL, NULL, NULL, NULL, NULL };
-  query_block.ref_pointer_array= Ref_ptr_array(ref_ptrs, 5);
 
   SELECT_LEX_UNIT unit(CTX_NONE);
 

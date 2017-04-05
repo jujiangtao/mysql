@@ -17,6 +17,7 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 /**
+  @file include/my_compiler.h
   Header for compiler-dependent features.
 
   Intended to contain a set of reusable wrappers for preprocessor
@@ -25,20 +26,6 @@
 */
 
 #include <stddef.h> /* size_t */
-
-#if defined __GNUC__
-/*
-  Convenience macro to test the minimum required GCC version.
-  These should be used with care as Clang also sets __GNUC__ and
-  __GNUC_MINOR__ (currently to 4.2). Prefer using feature specific
-  CMake checks in configure.cmake instead.
-*/
-#  define MY_GNUC_PREREQ(maj, min) \
-    ((__GNUC__ << 16) + __GNUC_MINOR__ >= ((maj) << 16) + (min))
-#  define GCC_VERSION (__GNUC__ * 1000 + __GNUC_MINOR__)
-#else
-#  define MY_GNUC_PREREQ(maj, min) (0)
-#endif
 
 /*
   The macros below are borrowed from include/linux/compiler.h in the
@@ -169,10 +156,12 @@ struct my_aligned_storage
 # define __has_attribute(x) 0
 #endif
 
+#ifndef SUPPRESS_UBSAN
 #if __has_attribute(no_sanitize_undefined)
-# define SUPPRESS_UBSAN __attribute__((no_sanitize_undefined))
+# define SUPPRESS_UBSAN MY_ATTRIBUTE((no_sanitize_undefined))
 #else
 # define SUPPRESS_UBSAN
 #endif
+#endif  /* SUPPRESS_UBSAN */
 
 #endif /* MY_COMPILER_INCLUDED */

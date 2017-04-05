@@ -9,9 +9,6 @@
 
 # Allow system resource access
   /sys/devices/system/cpu/ r,
-  /sys/devices/system/node/ r,
-  /sys/devices/system/node/** r,
-  /proc/*/status r,
   capability sys_resource,
   capability dac_override,
   capability setuid,

@@ -20,26 +20,30 @@
    (We will refer to this code as to elsie-code further.)
 */
 
-#include <my_global.h>
-#include <algorithm>
+#include "tztime.h"
+
+#include "m_string.h"          // strmake
+#include "my_time.h"           // MY_TIME_T_MIN
+#include "tzfile.h"            // TZ_MAX_REV_RANGES
+#include "mysql/psi/mysql_file.h"
+#include "mysql/psi/mysql_memory.h"
+#include "template_utils.h"
 
 #if !defined(TZINFO2SQL)
-#include "tztime.h"
-#include "sql_time.h"                           // localtime_to_TIME
-#include "sql_base.h"                           // open_trans_system_tables_for_read,
-                                                // close_trans_system_tables
-#include "log.h"
-#else
-#include <my_time.h>
-#include "tztime.h"
-#include <my_sys.h>
+#include "hash.h"              // HASH
+#include "debug_sync.h"        // DEBUG_SYNC
+#include "log.h"               // sql_print_error
+#include "mysqld.h"            // global_system_variables
+#include "sql_base.h"          // close_trans_system_tables
+#include "sql_class.h"         // THD
+#include "sql_string.h"        // String
+#include "sql_time.h"          // localtime_to_TIME
+#include "table.h"             // TABLE_LIST
 #endif
 
-#include "tzfile.h"
-#include <m_string.h>
-#include <my_dir.h>
-#include <mysql/psi/mysql_file.h>
-#include "debug_sync.h"
+#include <algorithm>
+using std::min;
+
 
 /*
   Macro for reading 32-bit integer from network byte order (big-endian)
@@ -49,8 +53,6 @@
                                   (((uint32) ((uchar) (A)[2])) << 8)  | \
                                   (((uint32) ((uchar) (A)[1])) << 16) | \
                                   (((uint32) ((uchar) (A)[0])) << 24))
-
-using std::min;
 
 /*
   Now we don't use abbreviations in server but we will do this in future.
@@ -174,7 +176,8 @@ tz_load(const char *name, TIME_ZONE_INFO *sp, MEM_ROOT *storage)
   uint i;
   MYSQL_FILE *file;
 
-  if (!(file= mysql_file_fopen(0, name, O_RDONLY|O_BINARY, MYF(MY_WME))))
+  if (!(file= mysql_file_fopen(0, name, O_RDONLY | MY_FOPEN_BINARY,
+                               MYF(MY_WME))))
     return 1;
   {
     union
@@ -1498,24 +1501,19 @@ public:
 };
 
 
-/*
-  We are going to call both of these functions from C code so
-  they should obey C calling conventions.
-*/
-
-extern "C" uchar *
-my_tz_names_get_key(Tz_names_entry *entry, size_t *length,
-                    my_bool not_used MY_ATTRIBUTE((unused)))
+static const uchar *
+my_tz_names_get_key(const uchar *arg, size_t *length)
 {
+  const Tz_names_entry *entry= pointer_cast<const Tz_names_entry*>(arg);
   *length= entry->name.length();
   return (uchar*) entry->name.ptr();
 }
 
-extern "C" uchar *
-my_offset_tzs_get_key(Time_zone_offset *entry,
-                      size_t *length,
-                      my_bool not_used MY_ATTRIBUTE((unused)))
+static const uchar *
+my_offset_tzs_get_key(const uchar *arg,
+                      size_t *length)
 {
+  const Time_zone_offset *entry= pointer_cast<const Time_zone_offset*>(arg);
   *length= sizeof(long);
   return (uchar*) &entry->offset;
 }
@@ -1561,7 +1559,7 @@ static PSI_mutex_key key_tz_LOCK;
 
 static PSI_mutex_info all_tz_mutexes[]=
 {
-  { & key_tz_LOCK, "tz_LOCK", PSI_FLAG_GLOBAL}
+  { & key_tz_LOCK, "tz_LOCK", PSI_FLAG_GLOBAL, 0}
 };
 
 static PSI_memory_info all_tz_memory[]=
@@ -1635,14 +1633,14 @@ my_tz_init(THD *org_thd, const char *default_tzname, my_bool bootstrap)
 
   /* Init all memory structures that require explicit destruction */
   if (my_hash_init(&tz_names, &my_charset_latin1, 20,
-                   0, 0, (my_hash_get_key) my_tz_names_get_key, 0, 0,
+                   0, my_tz_names_get_key, nullptr, 0,
                    key_memory_tz_storage))
   {
     sql_print_error("Fatal error: OOM while initializing time zones");
     goto end;
   }
-  if (my_hash_init(&offset_tzs, &my_charset_latin1, 26, 0, 0,
-                   (my_hash_get_key)my_offset_tzs_get_key, 0, 0,
+  if (my_hash_init(&offset_tzs, &my_charset_latin1, 26, 0,
+                   my_offset_tzs_get_key, nullptr, 0,
                    key_memory_tz_storage))
   {
     sql_print_error("Fatal error: OOM while initializing time zones");
@@ -2204,7 +2202,7 @@ end:
     0 - Ok
     1 - String doesn't contain valid time zone offset
 */
-my_bool
+static my_bool
 str_to_offset(const char *str, size_t length, long *offset)
 {
   const char *end= str + length;
@@ -2405,7 +2403,7 @@ void Time_zone::adjust_leap_second(MYSQL_TIME *t)
       tz_name - name of time zone
       sp      - structure describing time zone
 */
-void
+static void
 print_tz_as_sql(const char* tz_name, const TIME_ZONE_INFO *sp)
 {
   uint i;
@@ -2451,7 +2449,7 @@ print_tz_as_sql(const char* tz_name, const TIME_ZONE_INFO *sp)
     print_tz_leaps_as_sql()
       sp      - structure describing time zone
 */
-void
+static void
 print_tz_leaps_as_sql(const TIME_ZONE_INFO *sp)
 {
   uint i;
@@ -2506,7 +2504,7 @@ char *root_name_end;
     0 - Ok, 1 - Fatal error
 
 */
-my_bool
+static my_bool
 scan_tz_dir(char * name_end)
 {
   MY_DIR *cur_dir;

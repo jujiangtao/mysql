@@ -41,7 +41,7 @@ SELECT COUNT(@@GLOBAL.innodb_undo_tablespaces);
 --disable_warnings
 --disable_query_log
 eval SELECT VARIABLE_VALUE-$undo_tablespaces DIFFERENCE
-FROM INFORMATION_SCHEMA.GLOBAL_VARIABLES
+FROM performance_schema.global_variables
 WHERE VARIABLE_NAME='innodb_undo_tablespaces';
 --enable_query_log
 --enable_warnings

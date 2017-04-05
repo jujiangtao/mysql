@@ -27,6 +27,10 @@
 
 #include <vector>
 
+class Json_dom;
+class Json_array;
+class Json_object;
+enum class enum_json_type;
 
 /**
    We have to hold result buffers in functions that return a GEOMETRY string,
@@ -120,11 +124,7 @@ class BG_geometry_collection
 public:
   typedef std::vector<Geometry *> Geometry_list;
 
-  BG_geometry_collection()
-    :comp_no_overlapped(false), m_srid(0), m_num_isolated(0),
-    m_geobufs(key_memory_Geometry_objects_data),
-    m_geosdata(key_memory_Geometry_objects_data)
-  {}
+  BG_geometry_collection();
 
   bool is_comp_no_overlapped() const
   {
@@ -200,42 +200,120 @@ public:
   {}
   Item_geometry_func(const POS &pos, PT_item_list *list);
 
-  void fix_length_and_dec();
+  virtual bool resolve_type(THD *thd);
   enum_field_types field_type() const  { return MYSQL_TYPE_GEOMETRY; }
   Field *tmp_table_field(TABLE *t_arg);
-  bool is_null() { (void) val_int(); return null_value; }
 };
 
 class Item_func_geometry_from_text: public Item_geometry_func
 {
-  typedef Item_geometry_func super;
 public:
-  Item_func_geometry_from_text(const POS &pos, Item *a)
-    :Item_geometry_func(pos, a)
+  enum class Functype
+  {
+    GEOMCOLLFROMTEXT,
+    GEOMCOLLFROMTXT,
+    GEOMETRYCOLLECTIONFROMTEXT,
+    GEOMETRYFROMTEXT,
+    GEOMFROMTEXT,
+    LINEFROMTEXT,
+    LINESTRINGFROMTEXT,
+    MLINEFROMTEXT,
+    MPOINTFROMTEXT,
+    MPOLYFROMTEXT,
+    MULTILINESTRINGFROMTEXT,
+    MULTIPOINTFROMTEXT,
+    MULTIPOLYGONFROMTEXT,
+    POINTFROMTEXT,
+    POLYFROMTEXT,
+    POLYGONFROMTEXT
+  };
+
+private:
+  typedef Item_geometry_func super;
+  Functype m_functype;
+  /**
+    Get the type of geometry that this Item can return.
+
+    @return The geometry type
+  */
+  Geometry::wkbType allowed_wkb_type() const;
+  /**
+    Check if a geometry type is a valid return type for this Item.
+
+    @param type The type to check
+
+    @retval true The geometry type is allowed
+    @retval false The geometry type is not allowed
+  */
+  bool is_allowed_wkb_type(Geometry::wkbType type) const;
+
+public:
+  Item_func_geometry_from_text(const POS &pos, Item *a, Functype functype)
+    :Item_geometry_func(pos, a), m_functype(functype)
   {}
-  Item_func_geometry_from_text(const POS &pos, Item *a, Item *srid)
-    :Item_geometry_func(pos, a, srid)
+  Item_func_geometry_from_text(const POS &pos, Item *a, Item *srid,
+                               Functype functype)
+    :Item_geometry_func(pos, a, srid), m_functype(functype)
   {}
 
   virtual bool itemize(Parse_context *pc, Item **res);
-  const char *func_name() const { return "st_geometryfromtext"; }
+  const char *func_name() const;
   String *val_str(String *);
 };
 
 class Item_func_geometry_from_wkb: public Item_geometry_func
 {
+public:
+  enum class Functype
+  {
+    GEOMCOLLFROMWKB,
+    GEOMETRYCOLLECTIONFROMWKB,
+    GEOMETRYFROMWKB,
+    GEOMFROMWKB,
+    LINEFROMWKB,
+    LINESTRINGFROMWKB,
+    MLINEFROMWKB,
+    MPOINTFROMWKB,
+    MPOLYFROMWKB,
+    MULTILINESTRINGFROMWKB,
+    MULTIPOINTFROMWKB,
+    MULTIPOLYGONFROMWKB,
+    POINTFROMWKB,
+    POLYFROMWKB,
+    POLYGONFROMWKB
+  };
+
+private:
   typedef Item_geometry_func super;
   String tmp_value;
+  Functype m_functype;
+  /**
+    Get the type of geometry that this Item can return.
+
+    @return The geometry type
+  */
+  Geometry::wkbType allowed_wkb_type() const;
+  /**
+    Check if a geometry type is a valid return type for this Item.
+
+    @param type The type to check
+
+    @retval true The geometry type is allowed
+    @retval false The geometry type is not allowed
+  */
+  bool is_allowed_wkb_type(Geometry::wkbType type) const;
+
 public:
-  Item_func_geometry_from_wkb(const POS &pos, Item *a)
-    : Item_geometry_func(pos, a)
-  {}
-  Item_func_geometry_from_wkb(const POS &pos, Item *a, Item *srid):
-    Item_geometry_func(pos, a, srid)
-  {}
+  Item_func_geometry_from_wkb(const POS &pos, Item *a, Functype functype)
+    : Item_geometry_func(pos, a), m_functype(functype)
+  { }
+  Item_func_geometry_from_wkb(const POS &pos, Item *a, Item *srid,
+                              Functype functype)
+    : Item_geometry_func(pos, a, srid), m_functype(functype)
+  { }
 
   virtual bool itemize(Parse_context *pc, Item **res);
-  const char *func_name() const { return "st_geometryfromwkb"; }
+  const char *func_name() const;
   String *val_str(String *);
 };
 
@@ -245,7 +323,7 @@ public:
   Item_func_as_wkt(const POS &pos, Item *a): Item_str_ascii_func(pos, a) {}
   const char *func_name() const { return "st_astext"; }
   String *val_str_ascii(String *);
-  void fix_length_and_dec();
+  virtual bool resolve_type(THD *thd);
 };
 
 class Item_func_as_wkb: public Item_geometry_func
@@ -264,11 +342,12 @@ public:
   {}
   String *val_str_ascii(String *);
   const char *func_name() const { return "st_geometrytype"; }
-  void fix_length_and_dec()
+  virtual bool resolve_type(THD *thd)
   {
     // "GeometryCollection" is the longest
     fix_length_and_charset(20, default_charset());
-    maybe_null= 1;
+    maybe_null= true;
+    return false;
   };
 };
 
@@ -276,7 +355,7 @@ public:
 /**
   This handles one function:
 
-    <geometry> = ST_GEOMFROMGEOJSON(<string>[, <options>[, <srid>]])
+    @<geometry@> = ST_GEOMFROMGEOJSON(@<string@>[, @<options@>[, @<srid@>]])
 
   Options is an integer argument which determines how positions with higher
   coordinate dimension than MySQL support should be handled. The function will
@@ -313,7 +392,6 @@ public:
     m_srid_found_in_document(-1)
   {}
   String *val_str(String *);
-  void fix_length_and_dec();
   bool fix_fields(THD *, Item **ref);
   const char *func_name() const { return "st_geomfromgeojson"; }
   Geometry::wkbType get_wkbtype(const char *typestring);
@@ -331,7 +409,7 @@ public:
   static bool check_argument_valid_integer(Item *argument);
   bool parse_crs_object(const Json_object *crs_object);
   bool is_member_valid(const Json_dom *member, const char *member_name,
-                       Json_dom::enum_json_type expected_type, bool allow_null,
+                       enum_json_type expected_type, bool allow_null,
                        bool *was_null);
   const Json_dom *
   my_find_member_ncase(const Json_object *object, const char *member_name);
@@ -380,7 +458,7 @@ static const int MAX_CRS_WIDTH= (22 + MAX_INT_WIDTH + 1);
 /**
   This class handles the following function:
 
-  <json> = ST_ASGEOJSON(<geometry>[, <maxdecimaldigits>[, <options>]])
+  @<json@> = ST_ASGEOJSON(@<geometry@>[, @<maxdecimaldigits@>[, @<options@>]])
 
   It converts a GEOMETRY into a valid GeoJSON string. If maxdecimaldigits is
   specified, the coordinates written are rounded to the number of decimals
@@ -435,6 +513,167 @@ public:
   const char *func_name() const { return "st_asgeojson"; }
   bool parse_options_argument();
   bool parse_maxdecimaldigits_argument();
+};
+
+
+/**
+  This class handles two forms of the same function:
+
+  @<string@> = ST_GEOHASH(@<point@>, @<maxlength@>);
+  @<string@> = ST_GEOHASH(@<longitude@>, @<latitude@>, @<maxlength@>)
+
+  It returns an encoded geohash string, no longer than @<maxlength@> characters
+  long. Note that it might be shorter than @<maxlength@>.
+*/
+class Item_func_geohash :public Item_str_ascii_func
+{
+private:
+  /// The latitude argument supplied by the user (directly or by a POINT).
+  double latitude;
+  /// The longitude argument supplied by the user (directly or by a POINT).
+  double longitude;
+  /// The maximum output length of the geohash, supplied by the user.
+  uint geohash_max_output_length;
+
+  /**
+    The maximum input latitude. For now, this is set to 90.0. It can be
+    changed to support a different range than the normal [90, -90].
+  */
+  const double max_latitude;
+
+  /**
+    The minimum input latitude. For now, this is set to -90.0. It can be
+    changed to support a different range than the normal [90, -90].
+  */
+  const double min_latitude;
+
+  /**
+    The maximum input longitude. For now, this is set to 180.0. It can be
+    changed to support a different range than the normal [180, -180].
+  */
+  const double max_longitude;
+
+  /**
+    The minimum input longitude. For now, this is set to -180.0. It can be
+    changed to support a different range than the normal [180, -180].
+  */
+  const double min_longitude;
+
+  /**
+    The absolute upper limit of geohash output length. User will get an error
+    if they supply a max geohash length argument greater than this.
+  */
+  const uint upper_limit_output_length;
+public:
+  Item_func_geohash(const POS &pos, Item *point, Item *length)
+    :Item_str_ascii_func(pos, point, length), max_latitude(90.0),
+    min_latitude(-90.0), max_longitude(180.0), min_longitude(-180.0),
+    upper_limit_output_length(100)
+  {}
+  Item_func_geohash(const POS &pos, Item *longitude, Item *latitude,
+                    Item *length)
+    :Item_str_ascii_func(pos, longitude, latitude, length), max_latitude(90.0),
+    min_latitude(-90.0), max_longitude(180.0), min_longitude(-180.0),
+    upper_limit_output_length(100)
+  {}
+  String *val_str_ascii(String *);
+  virtual bool resolve_type(THD *thd);
+  bool fix_fields(THD *thd, Item **ref);
+  const char *func_name() const { return "st_geohash"; }
+  char char_to_base32(char char_input);
+  void encode_bit(double *upper_value, double *lower_value,
+                  double target_value, char *char_value, int bit_number);
+  bool fill_and_check_fields();
+  bool check_valid_latlong_type(Item *ref);
+};
+
+
+/**
+  This is a superclass for Item_func_longfromgeohash and
+  Item_func_latfromgeohash, since they share almost all code.
+*/
+class Item_func_latlongfromgeohash :public Item_real_func
+{
+private:
+  /**
+   The lower limit for latitude output value. Normally, this will be
+   set to -90.0.
+  */
+  const double lower_latitude;
+
+  /**
+   The upper limit for latitude output value. Normally, this will be
+   set to 90.0.
+  */
+  const double upper_latitude;
+
+  /**
+   The lower limit for longitude output value. Normally, this will
+   be set to -180.0.
+  */
+  const double lower_longitude;
+
+  /**
+   The upper limit for longitude output value. Normally, this will
+   be set to 180.0.
+  */
+  const double upper_longitude;
+
+  /**
+   If this is set to TRUE the algorithm will start decoding on the first bit,
+   which decodes a longitude value. If it is FALSE, it will start on the
+   second bit which decodes a latitude value.
+  */
+  const bool start_on_even_bit;
+public:
+  Item_func_latlongfromgeohash(const POS &pos, Item *a,
+                               double lower_latitude, double upper_latitude,
+                               double lower_longitude, double upper_longitude,
+                               bool start_on_even_bit_arg)
+    :Item_real_func(pos, a), lower_latitude(lower_latitude),
+    upper_latitude(upper_latitude), lower_longitude(lower_longitude),
+    upper_longitude(upper_longitude), start_on_even_bit(start_on_even_bit_arg)
+  {}
+  double val_real();
+  virtual bool resolve_type(THD *thd);
+  bool fix_fields(THD *thd, Item **ref);
+  static bool decode_geohash(String *geohash, double upper_latitude,
+                             double lower_latitude, double upper_longitude,
+                             double lower_longitude, double *result_latitude,
+                             double *result_longitude);
+  static double round_latlongitude(double latlongitude, double error_range,
+                                   double lower_limit, double upper_limit);
+  static bool check_geohash_argument_valid_type(Item *item);
+};
+
+
+/**
+  This handles the @<double@> = ST_LATFROMGEOHASH(@<string@>) function.
+  It returns the latitude-part of a geohash, in the range of [-90, 90].
+*/
+class Item_func_latfromgeohash :public Item_func_latlongfromgeohash
+{
+public:
+  Item_func_latfromgeohash(const POS &pos, Item *a)
+    :Item_func_latlongfromgeohash(pos, a, -90.0, 90.0, -180.0, 180.0, false)
+  {}
+
+  const char *func_name() const { return "ST_LATFROMGEOHASH"; }
+};
+
+
+/**
+  This handles the @<double@> = ST_LONGFROMGEOHASH(@<string@>) function.
+  It returns the longitude-part of a geohash, in the range of [-180, 180].
+*/
+class Item_func_longfromgeohash :public Item_func_latlongfromgeohash
+{
+public:
+  Item_func_longfromgeohash(const POS &pos, Item *a)
+    :Item_func_latlongfromgeohash(pos, a, -90.0, 90.0, -180.0, 180.0, true)
+  {}
+
+  const char *func_name() const { return "ST_LONGFROMGEOHASH"; }
 };
 
 
@@ -520,7 +759,7 @@ public:
 
 
 /**
-  This handles the <point> = ST_POINTFROMGEOHASH(<string>, <srid>) funtion.
+  This handles the @<point@> = ST_POINTFROMGEOHASH(@<string@>, @<srid@>) function.
 
   It returns a point containing the decoded geohash value, where X is the
   longitude in the range of [-180, 180] and Y is the latitude in the range
@@ -622,9 +861,10 @@ public:
     item_type=it;
   }
   String *val_str(String *);
-  void fix_length_and_dec()
+  virtual bool resolve_type(THD *thd)
   {
-    Item_geometry_func::fix_length_and_dec();
+    if (Item_geometry_func::resolve_type(thd))
+      return true;
     for (unsigned int i= 0; i < arg_count; ++i)
     {
       if (args[i]->fixed && args[i]->field_type() != MYSQL_TYPE_GEOMETRY)
@@ -634,8 +874,10 @@ public:
         str.append('\0');
         my_error(ER_ILLEGAL_VALUE_FOR_TYPE, MYF(0), "non geometric",
                  str.ptr());
+        return true;
       }
     }
+    return false;
   }
 
   const char *func_name() const;
@@ -678,7 +920,11 @@ public:
   {
     Item_func::print(str, query_type);
   }
-  void fix_length_and_dec() { maybe_null= 1; }
+  virtual bool resolve_type(THD *thd)
+  {
+    maybe_null= true;
+    return false;
+  }
   bool is_null() { (void) val_int(); return null_value; }
 };
 
@@ -714,7 +960,11 @@ public:
     Item_func::print(str, query_type);
   }
 
-  void fix_length_and_dec() { maybe_null= 1; }
+  virtual bool resolve_type(THD *thd)
+  {
+    maybe_null= true;
+    return false;
+  }
   bool is_null() { (void) val_int(); return null_value; }
 
   template<typename CoordinateSystemType>
@@ -944,7 +1194,7 @@ public:
   Item_func_buffer_strategy(const POS &pos, PT_item_list *ilist);
   const char *func_name() const { return "st_buffer_strategy"; }
   String *val_str(String *);
-  void fix_length_and_dec();
+  virtual bool resolve_type(THD *thd);
 };
 
 
@@ -955,7 +1205,11 @@ public:
   longlong val_int();
   optimize_type select_optimize() const { return OPTIMIZE_NONE; }
   const char *func_name() const { return "st_isempty"; }
-  void fix_length_and_dec() { maybe_null= 1; }
+  virtual bool resolve_type(THD *thd)
+  {
+    maybe_null= true;
+    return false;
+  }
 };
 
 class Item_func_issimple: public Item_bool_func
@@ -967,7 +1221,11 @@ public:
   bool issimple(Geometry *g);
   optimize_type select_optimize() const { return OPTIMIZE_NONE; }
   const char *func_name() const { return "st_issimple"; }
-  void fix_length_and_dec() { maybe_null= 1; }
+  virtual bool resolve_type(THD *thd)
+  {
+    maybe_null= true;
+    return false;
+  }
 };
 
 class Item_func_isclosed: public Item_bool_func
@@ -977,7 +1235,11 @@ public:
   longlong val_int();
   optimize_type select_optimize() const { return OPTIMIZE_NONE; }
   const char *func_name() const { return "st_isclosed"; }
-  void fix_length_and_dec() { maybe_null= 1; }
+  virtual bool resolve_type(THD *thd)
+  {
+    maybe_null= true;
+    return false;
+  }
 };
 
 class Item_func_isvalid: public Item_bool_func
@@ -996,35 +1258,71 @@ public:
   Item_func_dimension(const POS &pos, Item *a): Item_int_func(pos, a) {}
   longlong val_int();
   const char *func_name() const { return "st_dimension"; }
-  void fix_length_and_dec() { max_length= 10; maybe_null= 1; }
+  virtual bool resolve_type(THD *thd)
+  {
+    max_length= 10;
+    maybe_null= true;
+    return false;
+  }
 };
 
-class Item_func_x: public Item_real_func
+/**
+  This class updates the x coordinate of geometry class POINT.
+  The class handles the SQL function @<geometry@>= ST_X(@<point@>, @<double@>).
+*/
+class Item_func_set_x : public Item_geometry_func
+{
+public:
+  Item_func_set_x(const POS &pos, Item *a, Item *b) :
+    Item_geometry_func(pos, a, b) {}
+  const char *func_name() const { return "st_x"; }
+  String *val_str(String *);
+};
+
+/**
+  This class updates the y coordinate of geometry class POINT.
+  The class handles the SQL function @<geometry@>= ST_Y(@<point@>, @<double@>).
+*/
+class Item_func_set_y : public Item_geometry_func
+{
+public:
+  Item_func_set_y(const POS &pos, Item *a, Item *b) :
+    Item_geometry_func(pos, a, b) {}
+  const char *func_name() const { return "st_y"; }
+  String *val_str(String *);
+};
+
+
+class Item_func_get_x: public Item_real_func
 {
   String value;
 public:
-  Item_func_x(const POS &pos, Item *a): Item_real_func(pos, a) {}
+  Item_func_get_x(const POS &pos, Item *a): Item_real_func(pos, a) {}
   double val_real();
   const char *func_name() const { return "st_x"; }
-  void fix_length_and_dec()
+  virtual bool resolve_type(THD *thd)
   {
-    Item_real_func::fix_length_and_dec();
-    maybe_null= 1;
+    if (Item_real_func::resolve_type(thd))
+      return true;
+    maybe_null= true;
+    return false;
   }
 };
 
 
-class Item_func_y: public Item_real_func
+class Item_func_get_y: public Item_real_func
 {
   String value;
 public:
-  Item_func_y(const POS &pos, Item *a): Item_real_func(pos, a) {}
+  Item_func_get_y(const POS &pos, Item *a): Item_real_func(pos, a) {}
   double val_real();
   const char *func_name() const { return "st_y"; }
-  void fix_length_and_dec()
+  virtual bool resolve_type(THD *thd)
   {
-    Item_real_func::fix_length_and_dec();
-    maybe_null= 1;
+    if (Item_real_func::resolve_type(thd))
+      return true;
+    maybe_null= true;
+    return false;
   }
 };
 
@@ -1036,7 +1334,12 @@ public:
   Item_func_numgeometries(const POS &pos, Item *a): Item_int_func(pos, a) {}
   longlong val_int();
   const char *func_name() const { return "st_numgeometries"; }
-  void fix_length_and_dec() { max_length= 10; maybe_null= 1; }
+  virtual bool resolve_type(THD *thd)
+  {
+    max_length= 10;
+    maybe_null= true;
+    return false;
+  }
 };
 
 
@@ -1047,7 +1350,12 @@ public:
   Item_func_numinteriorring(const POS &pos, Item *a): Item_int_func(pos, a) {}
   longlong val_int();
   const char *func_name() const { return "st_numinteriorrings"; }
-  void fix_length_and_dec() { max_length= 10; maybe_null= 1; }
+  virtual bool resolve_type(THD *thd)
+  {
+    max_length= 10;
+    maybe_null= true;
+    return false;
+  }
 };
 
 
@@ -1058,7 +1366,12 @@ public:
   Item_func_numpoints(const POS &pos, Item *a): Item_int_func(pos, a) {}
   longlong val_int();
   const char *func_name() const { return "st_numpoints"; }
-  void fix_length_and_dec() { max_length= 10; maybe_null= 1; }
+  virtual bool resolve_type(THD *thd)
+  {
+    max_length= 10;
+    maybe_null= true;
+    return false;
+  }
 };
 
 
@@ -1072,10 +1385,12 @@ public:
   Item_func_area(const POS &pos, Item *a): Item_real_func(pos, a) {}
   double val_real();
   const char *func_name() const { return "st_area"; }
-  void fix_length_and_dec()
+  virtual bool resolve_type(THD *thd)
   {
-    Item_real_func::fix_length_and_dec();
-    maybe_null= 1;
+    if (Item_real_func::resolve_type(thd))
+      return true;
+    maybe_null= true;
+    return false;
   }
 };
 
@@ -1087,22 +1402,57 @@ public:
   Item_func_glength(const POS &pos, Item *a): Item_real_func(pos, a) {}
   double val_real();
   const char *func_name() const { return "st_length"; }
-  void fix_length_and_dec()
+  virtual bool resolve_type(THD *thd)
   {
-    Item_real_func::fix_length_and_dec();
-    maybe_null= 1;
+    if (Item_real_func::resolve_type(thd))
+      return true;
+    maybe_null= true;
+    return false;
   }
 };
 
 
-class Item_func_srid: public Item_int_func
+/**
+  Implements the one-parameter ST_SRID observer function. If used with a
+  valid geometry, it returns the SRID of the geometry object. Ex:
+
+  SELECT ST_SRID(geometry_column) FROM t1;
+
+  will return the SRIDs of the geometries in geometry_column
+  in table t1.
+*/
+class Item_func_get_srid: public Item_int_func
 {
   String value;
 public:
-  Item_func_srid(const POS &pos, Item *a): Item_int_func(pos, a) {}
+  Item_func_get_srid(const POS &pos, Item *a): Item_int_func(pos, a) {}
   longlong val_int();
   const char *func_name() const { return "st_srid"; }
-  void fix_length_and_dec() { max_length= 10; maybe_null= 1; }
+  virtual bool resolve_type(THD *thd)
+  {
+    max_length= 10;
+    maybe_null= true;
+    return false;
+  }
+};
+
+
+/**
+  Updates the SRID of a geometry object without changing its content.
+  This extends the ST_SRID function to two parameters: a geometry and an
+  SRID. Can be used as follows:
+
+  UPDATE t1 SET geometry_column=ST_SRID(geometry_column, 4326);
+
+  This will update all geometries in geometry_column to have SRID 4326.
+*/
+class Item_func_set_srid: public Item_geometry_func
+{
+public:
+  Item_func_set_srid(const POS &pos, Item *a, Item *b)
+                     : Item_geometry_func(pos, a, b){};
+  String *val_str(String *str);
+  const char *func_name() const {return "st_srid"; }
 };
 
 
@@ -1140,10 +1490,12 @@ public:
     maybe_null= true;
   }
 
-  void fix_length_and_dec()
+  virtual bool resolve_type(THD *thd)
   {
-    Item_real_func::fix_length_and_dec();
+    if (Item_real_func::resolve_type(thd))
+      return true;
     maybe_null= true;
+    return false;
   }
 
   double val_real();
@@ -1152,6 +1504,5 @@ public:
     return is_spherical_equatorial ? "st_distance_sphere" : "st_distance";
   }
 };
-
 
 #endif /*ITEM_GEOFUNC_INCLUDED*/

@@ -147,10 +147,10 @@ send Mysqlx.Sql.StmtExecute {
 Mysqlx.Resultset.ColumnMetaData {
   type: BYTES
   name: "Variable_name"
-  original_name: "VARIABLE_NAME"
-  table: "VARIABLES"
-  original_table: "VARIABLES"
-  schema: "information_schema"
+  original_name: "Variable_name"
+  table: "session_variables"
+  original_table: "session_variables"
+  schema: ""
   catalog: "def"
   collation: 33
   fractional_digits: 0
@@ -161,10 +161,10 @@ Mysqlx.Resultset.ColumnMetaData {
 Mysqlx.Resultset.ColumnMetaData {
   type: BYTES
   name: "Value"
-  original_name: "VARIABLE_VALUE"
-  table: "VARIABLES"
-  original_table: "VARIABLES"
-  schema: "information_schema"
+  original_name: "Value"
+  table: "session_variables"
+  original_table: "session_variables"
+  schema: ""
   catalog: "def"
   collation: 33
   fractional_digits: 0
@@ -909,10 +909,10 @@ send Mysqlx.Sql.StmtExecute {
 Mysqlx.Resultset.ColumnMetaData {
   type: BYTES
   name: "Variable_name"
-  original_name: "VARIABLE_NAME"
-  table: "VARIABLES"
-  original_table: "VARIABLES"
-  schema: "information_schema"
+  original_name: "Variable_name"
+  table: "session_variables"
+  original_table: "session_variables"
+  schema: ""
   catalog: "def"
   collation: 33
   fractional_digits: 0
@@ -923,10 +923,10 @@ Mysqlx.Resultset.ColumnMetaData {
 Mysqlx.Resultset.ColumnMetaData {
   type: BYTES
   name: "Value"
-  original_name: "VARIABLE_VALUE"
-  table: "VARIABLES"
-  original_table: "VARIABLES"
-  schema: "information_schema"
+  original_name: "Value"
+  table: "session_variables"
+  original_table: "session_variables"
+  schema: ""
   catalog: "def"
   collation: 33
   fractional_digits: 0
@@ -958,10 +958,10 @@ send Mysqlx.Sql.StmtExecute {
 Mysqlx.Resultset.ColumnMetaData {
   type: BYTES
   name: "Variable_name"
-  original_name: "VARIABLE_NAME"
-  table: "VARIABLES"
-  original_table: "VARIABLES"
-  schema: "information_schema"
+  original_name: "Variable_name"
+  table: "session_variables"
+  original_table: "session_variables"
+  schema: ""
   catalog: "def"
   collation: 33
   fractional_digits: 0
@@ -972,10 +972,10 @@ Mysqlx.Resultset.ColumnMetaData {
 Mysqlx.Resultset.ColumnMetaData {
   type: BYTES
   name: "Value"
-  original_name: "VARIABLE_VALUE"
-  table: "VARIABLES"
-  original_table: "VARIABLES"
-  schema: "information_schema"
+  original_name: "Value"
+  table: "session_variables"
+  original_table: "session_variables"
+  schema: ""
   catalog: "def"
   collation: 33
   fractional_digits: 0
@@ -1007,10 +1007,10 @@ send Mysqlx.Sql.StmtExecute {
 Mysqlx.Resultset.ColumnMetaData {
   type: BYTES
   name: "Variable_name"
-  original_name: "VARIABLE_NAME"
-  table: "VARIABLES"
-  original_table: "VARIABLES"
-  schema: "information_schema"
+  original_name: "Variable_name"
+  table: "session_variables"
+  original_table: "session_variables"
+  schema: ""
   catalog: "def"
   collation: 33
   fractional_digits: 0
@@ -1021,10 +1021,10 @@ Mysqlx.Resultset.ColumnMetaData {
 Mysqlx.Resultset.ColumnMetaData {
   type: BYTES
   name: "Value"
-  original_name: "VARIABLE_VALUE"
-  table: "VARIABLES"
-  original_table: "VARIABLES"
-  schema: "information_schema"
+  original_name: "Value"
+  table: "session_variables"
+  original_table: "session_variables"
+  schema: ""
   catalog: "def"
   collation: 33
   fractional_digits: 0
@@ -1312,10 +1312,10 @@ send Mysqlx.Sql.StmtExecute {
 Mysqlx.Resultset.ColumnMetaData {
   type: BYTES
   name: "Variable_name"
-  original_name: "VARIABLE_NAME"
-  table: "STATUS"
-  original_table: "STATUS"
-  schema: "information_schema"
+  original_name: "Variable_name"
+  table: "session_status"
+  original_table: "session_status"
+  schema: ""
   catalog: "def"
   collation: 33
   fractional_digits: 0
@@ -1326,10 +1326,10 @@ Mysqlx.Resultset.ColumnMetaData {
 Mysqlx.Resultset.ColumnMetaData {
   type: BYTES
   name: "Value"
-  original_name: "VARIABLE_VALUE"
-  table: "STATUS"
-  original_table: "STATUS"
-  schema: "information_schema"
+  original_name: "Value"
+  table: "session_status"
+  original_table: "session_status"
+  schema: ""
   catalog: "def"
   collation: 33
   fractional_digits: 0
@@ -3000,10 +3000,10 @@ send Mysqlx.Sql.StmtExecute {
 Mysqlx.Resultset.ColumnMetaData {
   type: BYTES
   name: "Variable_name"
-  original_name: "VARIABLE_NAME"
-  table: "VARIABLES"
-  original_table: "VARIABLES"
-  schema: "information_schema"
+  original_name: "Variable_name"
+  table: "session_variables"
+  original_table: "session_variables"
+  schema: ""
   catalog: "def"
   collation: 33
   fractional_digits: 0
@@ -3014,10 +3014,10 @@ Mysqlx.Resultset.ColumnMetaData {
 Mysqlx.Resultset.ColumnMetaData {
   type: BYTES
   name: "Value"
-  original_name: "VARIABLE_VALUE"
-  table: "VARIABLES"
-  original_table: "VARIABLES"
-  schema: "information_schema"
+  original_name: "Value"
+  table: "session_variables"
+  original_table: "session_variables"
+  schema: ""
   catalog: "def"
   collation: 33
   fractional_digits: 0
@@ -7599,8 +7599,8 @@ Mysqlx.Error {
 }
 
 RUN set global innodb_large_prefix=1
-
-0 rows affected
+While executing set global innodb_large_prefix=1:
+in main, line 721:ERROR: Unknown system variable 'innodb_large_prefix' (code 1193)
 RUN drop table worklog5743_1
 
 0 rows affected
@@ -7650,7 +7650,7 @@ send Mysqlx.Sql.StmtExecute {
 Mysqlx.Notice.Frame {
   type: 1
   scope: LOCAL
-  payload: "Mysqlx.Notice.Warning { level: WARNING\ncode: 1478\nmsg: \"InnoDB: ROW_FORMAT=COMPRESSED requires innodb_file_per_table.\"\n }"
+  payload: "Mysqlx.Notice.Warning { level: WARNING\ncode: 1478\nmsg: \"InnoDB: ROW_FORMAT=COMPRESSED is ignored for TEMPORARY TABLE.\"\n }"
 }
 
 Mysqlx.Notice.Frame {
@@ -7746,7 +7746,7 @@ Mysqlx.Notice.Frame {
 Mysqlx.Notice.Frame {
   type: 1
   scope: LOCAL
-  payload: "Mysqlx.Notice.Warning { level: ERROR\ncode: 1030\nmsg: \"Got error 124 from storage engine\"\n }"
+  payload: "Mysqlx.Notice.Warning { level: ERROR\ncode: 1030\nmsg: \"Got error 124 - \\\'Wrong index given to function\\\' from storage engine\"\n }"
 }
 
 Mysqlx.Error {
@@ -7998,7 +7998,7 @@ Namespace 'xplugin' is deprecated, please use 'mysqlx' instead
 RUN show status like 'Mysqlx%notice%'
 Variable_name	Value
 Mysqlx_notice_other_sent	1234
-Mysqlx_notice_warning_sent	548
+Mysqlx_notice_warning_sent	547
 Mysqlx_stmt_disable_notices	0
 Mysqlx_stmt_enable_notices	1
 Mysqlx_stmt_list_notices	0
@@ -8010,7 +8010,7 @@ ok
 show status like 'Mysqlx%notice%';
 Variable_name	Value
 Mysqlx_notice_other_sent	1235
-Mysqlx_notice_warning_sent	548
+Mysqlx_notice_warning_sent	547
 Mysqlx_stmt_disable_notices	0
 Mysqlx_stmt_enable_notices	1
 Mysqlx_stmt_list_notices	0
@@ -8435,7 +8435,7 @@ ok
 show status like 'Mysqlx%notice%';
 Variable_name	Value
 Mysqlx_notice_other_sent	1306
-Mysqlx_notice_warning_sent	548
+Mysqlx_notice_warning_sent	547
 Mysqlx_stmt_disable_notices	0
 Mysqlx_stmt_enable_notices	1
 Mysqlx_stmt_list_notices	0
@@ -8544,7 +8544,7 @@ ok
 show status like 'Mysqlx%notice%';
 Variable_name	Value
 Mysqlx_notice_other_sent	1309
-Mysqlx_notice_warning_sent	548
+Mysqlx_notice_warning_sent	547
 Mysqlx_stmt_disable_notices	0
 Mysqlx_stmt_enable_notices	6
 Mysqlx_stmt_list_notices	0
@@ -8654,7 +8654,7 @@ ok
 show status like 'Mysqlx%notice%';
 Variable_name	Value
 Mysqlx_notice_other_sent	1312
-Mysqlx_notice_warning_sent	548
+Mysqlx_notice_warning_sent	547
 Mysqlx_stmt_disable_notices	0
 Mysqlx_stmt_enable_notices	11
 Mysqlx_stmt_list_notices	0
@@ -8791,7 +8791,7 @@ ok
 show status like 'Mysqlx%notice%';
 Variable_name	Value
 Mysqlx_notice_other_sent	1315
-Mysqlx_notice_warning_sent	548
+Mysqlx_notice_warning_sent	547
 Mysqlx_stmt_disable_notices	0
 Mysqlx_stmt_enable_notices	12
 Mysqlx_stmt_list_notices	1
@@ -9248,7 +9248,7 @@ ok
 show status like 'Mysqlx%notice%';
 Variable_name	Value
 Mysqlx_notice_other_sent	1333
-Mysqlx_notice_warning_sent	551
+Mysqlx_notice_warning_sent	550
 Mysqlx_stmt_disable_notices	1
 Mysqlx_stmt_enable_notices	14
 Mysqlx_stmt_list_notices	3

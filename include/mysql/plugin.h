@@ -16,6 +16,10 @@
 #ifndef _my_plugin_h
 #define _my_plugin_h
 
+/**
+  @file include/mysql/plugin.h
+*/
+
 #ifndef MYSQL_ABI_CHECK
 #include <stddef.h>
 #include "mysql_version.h" /* MYSQL_VERSION_ID */
@@ -80,7 +84,7 @@ typedef struct st_mysql_xid MYSQL_XID;
   Plugin API. Common for all plugin types.
 */
 
-#define MYSQL_PLUGIN_INTERFACE_VERSION 0x0107
+#define MYSQL_PLUGIN_INTERFACE_VERSION 0x0106
 
 /*
   The allowable types of plugins
@@ -215,7 +219,6 @@ typedef int (*mysql_show_var_func)(MYSQL_THD, struct st_mysql_show_var*, char *)
 #define PLUGIN_VAR_NOCMDARG     0x1000 /* No argument for cmd line */
 #define PLUGIN_VAR_RQCMDARG     0x0000 /* Argument required for cmd line */
 #define PLUGIN_VAR_OPCMDARG     0x2000 /* Argument optional for cmd line */
-#define PLUGIN_VAR_NODEFAULT    0x4000 /* SET DEFAULT is prohibited */
 #define PLUGIN_VAR_MEMALLOC     0x8000 /* String needs memory allocated */
 
 struct st_mysql_sys_var;
@@ -269,8 +272,7 @@ typedef void (*mysql_var_update_func)(MYSQL_THD thd,
 #define PLUGIN_VAR_MASK \
         (PLUGIN_VAR_READONLY | PLUGIN_VAR_NOSYSVAR | \
          PLUGIN_VAR_NOCMDOPT | PLUGIN_VAR_NOCMDARG | \
-         PLUGIN_VAR_OPCMDARG | PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_MEMALLOC | \
-         PLUGIN_VAR_NODEFAULT)
+         PLUGIN_VAR_OPCMDARG | PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_MEMALLOC)
 
 #define MYSQL_PLUGIN_VAR_HEADER \
   int flags;                    \
@@ -460,6 +462,10 @@ DECLARE_MYSQL_THDVAR_SIMPLE(name, double) = { \
 #define THDVAR(thd, name) \
   (*(MYSQL_SYSVAR_NAME(name).resolve(thd, MYSQL_SYSVAR_NAME(name).offset)))
 
+#define THDVAR_SET(thd, name, value) \
+  plugin_thdvar_safe_update(thd, MYSQL_SYSVAR(name), \
+                            (char **) &THDVAR(thd, name), \
+                            (const char *) value);
 
 /*
   Plugin description structure.

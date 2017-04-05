@@ -30,15 +30,20 @@
   deletes in disk order.
 */
 
-#include "sql_sort.h"
-#include "my_tree.h"                            // element_count
-#include "opt_costmodel.h"
 #include "uniques.h"                            // Unique
-#include "sql_base.h"                           // TEMP_PREFIX
-#include "priority_queue.h"
+
 #include "malloc_allocator.h"
+#include "my_tree.h"                            // element_count
+#include "mysqld.h"                             // mysql_tmpdir
+#include "opt_costmodel.h"
+#include "priority_queue.h"
+#include "psi_memory_key.h"
+#include "sql_base.h"                           // TEMP_PREFIX
+#include "sql_sort.h"
+#include "table.h"
 
 #include <algorithm>
+#include <cmath>
 
 int unique_write_to_file(uchar* key, element_count count, Unique *unique)
 {
@@ -58,7 +63,7 @@ int unique_write_to_ptrs(uchar* key, element_count count, Unique *unique)
   return 0;
 }
 
-Unique::Unique(qsort_cmp2 comp_func, void * comp_func_fixed_arg,
+Unique::Unique(qsort2_cmp comp_func, void * comp_func_fixed_arg,
 	       uint size_arg, ulonglong max_in_memory_size_arg)
   :file_ptrs(PSI_INSTRUMENT_ME),
    max_in_memory_size(max_in_memory_size_arg),
@@ -89,9 +94,11 @@ Unique::Unique(qsort_cmp2 comp_func, void * comp_func_fixed_arg,
 
   Derivation of formula used for calculations is as follows:
 
-    log2(n!) = log(n!)/log(2) = log(sqrt(2*M_PI*n)*(n/M_E)^n) / log(2) =
+    log2(n!) = log2(sqrt(2*M_PI*n)*(n/M_E)^n)
 
-      = (log(2*M_PI*n)/2 + n*log(n/M_E)) / log(2).
+      = log2(2*M_PI*n)/2 + n*log2(n/M_E)
+
+      = log2(2*M_PI)/2 + log2(n)/2 + n * (log2(n) - M_LOG2E);
 
   @param n the number to calculate log2(n!) for
 
@@ -110,7 +117,8 @@ static inline double log2_n_fact(ulong n)
   if (n <= 1)
     return 0.0;
 
-  return (log(2*M_PI*n)/2 + n*log(n/M_E)) / M_LN2;
+  const auto log2_n= std::log2(n);
+  return std::log2(2 * M_PI) / 2 + log2_n / 2 + n * (log2_n - M_LOG2E);
 }
 
 
@@ -159,10 +167,8 @@ static double get_merge_buffers_cost(Unique::Imerge_cost_buf_type buff_elems,
   const double io_ops= static_cast<double>(total_buf_elems * elem_size) /
                        IO_SIZE;
   const double io_cost= cost_model->io_block_read_cost(io_ops);
-  /* Using log2(n)=log(n)/log(2) formula */
   const double cpu_cost=
-    cost_model->key_compare_cost(total_buf_elems * log((double) n_buffers) /
-                                 M_LN2);
+    cost_model->key_compare_cost(total_buf_elems * std::log2(n_buffers));
  
   return 2 * io_cost + cpu_cost;
 }
@@ -462,7 +468,7 @@ struct Merge_chunk_less
 static bool merge_walk(uchar *merge_buffer, size_t merge_buffer_size,
                        size_t key_length, Merge_chunk *begin, Merge_chunk *end,
                        tree_walk_action walk_action, void *walk_action_arg,
-                       qsort_cmp2 compare, const void *compare_arg,
+                       qsort2_cmp compare, const void *compare_arg,
                        IO_CACHE *file)
 {
   if (end <= begin ||
@@ -703,14 +709,14 @@ bool Unique::get(TABLE *table)
   sort_param.cmp_context.key_compare_arg= tree.custom_arg;
 
   /* Merge the buffers to one file, removing duplicates */
-  if (merge_many_buff(&sort_param, Sort_buffer(sort_memory, num_bytes),
+  if (merge_many_buff(table->in_use, &sort_param, Sort_buffer(sort_memory, num_bytes),
                       Merge_chunk_array(file_ptrs.begin(), file_ptrs.size()),
                       &num_chunks, &file))
     goto err;
   if (flush_io_cache(&file) ||
       reinit_io_cache(&file,READ_CACHE,0L,0,0))
     goto err;
-  if (merge_buffers(&sort_param, &file, outfile,
+  if (merge_buffers(table->in_use, &sort_param, &file, outfile,
                     Sort_buffer(sort_memory, num_bytes),
                     file_ptr,
                     Merge_chunk_array(file_ptr, num_chunks), 0))

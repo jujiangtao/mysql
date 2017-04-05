@@ -119,7 +119,7 @@ uchar *hp_search(HP_INFO *info, HP_KEYDEF *keyinfo, const uchar *key,
       {
 	switch (nextflag) {
 	case 0:					/* Search after key */
-	  DBUG_PRINT("exit", ("found key at 0x%lx", (long) pos->ptr_to_rec));
+	  DBUG_PRINT("exit", ("found key at %p", pos->ptr_to_rec));
 	  info->current_hash_ptr=pos;
 	  DBUG_RETURN(info->current_ptr= pos->ptr_to_rec);
 	case 1:					/* Search next */
@@ -367,20 +367,13 @@ ulong hp_rec_hashnr(HP_KEYDEF *keydef, const uchar *rec)
     keydef		Key definition
     rec1		Record to compare
     rec2		Other record to compare
-    diff_if_only_endspace_difference
-			Different number of end space is significant    
-
-  NOTES
-    diff_if_only_endspace_difference is used to allow us to insert
-    'a' and 'a ' when there is an an unique key.
 
   RETURN
     0		Key is identical
     <> 0 	Key differes
 */
 
-int hp_rec_key_cmp(HP_KEYDEF *keydef, const uchar *rec1, const uchar *rec2,
-                   my_bool diff_if_only_endspace_difference)
+int hp_rec_key_cmp(HP_KEYDEF *keydef, const uchar *rec1, const uchar *rec2)
 {
   HA_KEYSEG *seg,*endseg;
 
@@ -415,7 +408,7 @@ int hp_rec_key_cmp(HP_KEYDEF *keydef, const uchar *rec1, const uchar *rec2,
       }
       if (seg->charset->coll->strnncollsp(seg->charset,
       					  pos1,char_length1,
-					  pos2,char_length2, 0))
+					  pos2,char_length2))
 	return 1;
     }
     else if (seg->type == HA_KEYTYPE_VARTEXT1)  /* Any VARCHAR segments */
@@ -450,9 +443,7 @@ int hp_rec_key_cmp(HP_KEYDEF *keydef, const uchar *rec1, const uchar *rec2,
 
       if (cs->coll->strnncollsp(seg->charset,
                                 pos1, char_length1,
-                                pos2, char_length2,
-                                seg->flag & HA_END_SPACE_ARE_EQUAL ?
-                                0 : diff_if_only_endspace_difference))
+                                pos2, char_length2))
 	return 1;
     }
     else
@@ -509,7 +500,7 @@ int hp_key_cmp(HP_KEYDEF *keydef, const uchar *rec, const uchar *key)
       
       if (seg->charset->coll->strnncollsp(seg->charset,
 					  (uchar*) pos, char_length_rec,
-					  (uchar*) key, char_length_key, 0))
+					  (uchar*) key, char_length_key))
 	return 1;
     }
     else if (seg->type == HA_KEYTYPE_VARTEXT1)  /* Any VARCHAR segments */
@@ -539,7 +530,7 @@ int hp_key_cmp(HP_KEYDEF *keydef, const uchar *rec, const uchar *key)
 
       if (cs->coll->strnncollsp(seg->charset,
                                 (uchar*) pos, char_length_rec,
-                                (uchar*) key, char_length_key, 0))
+                                (uchar*) key, char_length_key))
 	return 1;
     }
     else
@@ -608,7 +599,7 @@ uint hp_rb_make_key(HP_KEYDEF *keydef, uchar *key,
       {
 	float nr;
 	float4get(&nr, pos);
-	if (my_isnan(nr))
+	if (isnan(nr))
 	{
 	  /* Replace NAN with zero */
  	  memset(key, 0, length);
@@ -620,7 +611,7 @@ uint hp_rb_make_key(HP_KEYDEF *keydef, uchar *key,
       {
 	double nr;
 	float8get(&nr, pos);
-	if (my_isnan(nr))
+	if (isnan(nr))
 	{
  	  memset(key, 0, length);
 	  key+= length;

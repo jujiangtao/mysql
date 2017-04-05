@@ -894,7 +894,7 @@ HEX(SOUNDEX(_utf16le 0x00BF00C0))
 CREATE TABLE t1(a BLOB, b TEXT CHARSET utf16le);
 SELECT data_type, character_octet_length, character_maximum_length
 FROM information_schema.columns where table_name='t1';
-data_type	character_octet_length	character_maximum_length
+DATA_TYPE	CHARACTER_OCTET_LENGTH	CHARACTER_MAXIMUM_LENGTH
 blob	65535	65535
 text	65535	32767
 DROP TABLE t1;
@@ -1275,14 +1275,8 @@ t1	CREATE TABLE `t1` (
   PRIMARY KEY (`a`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1
 DROP TABLE t1;
-SET GLOBAL innodb_large_prefix=OFF;
-Warnings:
-Warning	131	Using innodb_large_prefix is deprecated and the parameter may be removed in future releases. See http://dev.mysql.com/doc/refman/5.7/en/innodb-file-format.html
-CREATE TABLE t1 (a VARCHAR(334) CHARACTER SET utf16le PRIMARY KEY);
-ERROR 42000: Specified key was too long; max key length is 767 bytes
-SET GLOBAL innodb_large_prefix=default;
-Warnings:
-Warning	131	Using innodb_large_prefix is deprecated and the parameter may be removed in future releases. See http://dev.mysql.com/doc/refman/5.7/en/innodb-file-format.html
+CREATE TABLE t1 (a VARCHAR(334) CHARACTER SET utf16le PRIMARY KEY) ROW_FORMAT=COMPACT;
+ERROR HY000: Index column size too large. The maximum column size is 767 bytes.
 #
 # Conversion to utf8
 #

@@ -18,49 +18,64 @@
 #include "statement_builder.h"
 #include "ngs_common/protocol_protobuf.h"
 #include "xpl_error.h"
-#include "ngs_common/bind.h"
+#include <boost/bind.hpp>
 
 
-void xpl::Statement_builder::add_collection(const Collection &collection) const
+ngs::Error_code xpl::Statement_builder::build() const
 {
-  if (!collection.has_name() || collection.name().empty())
-    throw ngs::Error_code(ER_X_BAD_TABLE, "Invalid name of table/collection");
+  try
+  {
+    add_statement();
+    return ngs::Success();
+  }
+  catch (const Expression_generator::Error &exc)
+  {
+    return ngs::Error(exc.error(), "%s", exc.what());
+  }
+  catch (const ngs::Error_code &error)
+  {
+    return error;
+  }
+}
 
-  if (collection.has_schema() && !collection.schema().empty())
-    m_builder.put_identifier(collection.schema()).dot();
+void xpl::Statement_builder::add_table(const Collection &table) const
+{
+  if (table.name().empty())
+    throw ngs::Error_code(ER_X_BAD_TABLE,
+                          m_is_relational ? "Invalid table" : "Invalid collection");
 
-  m_builder.put_identifier(collection.name());
+  if (table.schema().empty())
+    throw ngs::Error_code(ER_X_BAD_SCHEMA, "Invalid schema");
+
+  m_builder.put_identifier(table.schema()).dot().put_identifier(table.name());
 }
 
 
-void xpl::Crud_statement_builder::add_filter(const Filter &filter) const
+void xpl::Statement_builder::add_filter(const Filter &filter) const
 {
   if (filter.IsInitialized())
-    m_builder.put(" WHERE ").put_expr(filter);
+    m_builder.put(" WHERE ").gen(filter);
 }
 
 
-void xpl::Crud_statement_builder::add_order_item(const Order_item &item) const
+void xpl::Statement_builder::add_order_item(const Order_item &item) const
 {
-  m_builder.put_expr(item.expr());
+  m_builder.gen(item.expr());
   if (item.direction() == ::Mysqlx::Crud::Order::DESC)
     m_builder.put(" DESC");
 }
 
 
-void xpl::Crud_statement_builder::add_order(const Order_list &order) const
+void xpl::Statement_builder::add_order(const Order_list &order) const
 {
   if (order.size() == 0)
     return;
 
-  m_builder.put(" ORDER BY ")
-      .put_list(order, ngs::bind(&Crud_statement_builder::add_order_item,
-                                 this, ngs::placeholders::_1));
+  m_builder.put(" ORDER BY ").put_list(order, boost::bind(&Statement_builder::add_order_item, this, _1));
 }
 
 
-void xpl::Crud_statement_builder::add_limit(const Limit &limit,
-                                            const bool no_offset) const
+void xpl::Statement_builder::add_limit(const Limit &limit, bool no_offset) const
 {
   if (!limit.IsInitialized())
     return;
@@ -69,9 +84,7 @@ void xpl::Crud_statement_builder::add_limit(const Limit &limit,
   if (limit.has_offset())
   {
     if (no_offset && limit.offset() != 0)
-      throw ngs::Error_code(ER_X_INVALID_ARGUMENT,
-                            "Invalid parameter: non-zero offset "
-                            "value not allowed for this operation");
+      throw ngs::Error_code(ER_X_INVALID_ARGUMENT, "Invalid parameter: non-zero offset value not allowed for this operation");
     if (!no_offset)
       m_builder.put(limit.offset()).put(", ");
   }

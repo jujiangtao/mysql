@@ -17,19 +17,19 @@
 #define MYSQL_MEMORY_H
 
 /**
-  @file mysql/psi/mysql_memory.h
+  @file include/mysql/psi/mysql_memory.h
   Instrumentation helpers for memory allocation.
 */
 
-#include "mysql/psi/psi.h"
+#include "mysql/psi/psi_memory.h"
 
 #ifndef PSI_MEMORY_CALL
-#define PSI_MEMORY_CALL(M) PSI_DYNAMIC_CALL(M)
+#define PSI_MEMORY_CALL(M) psi_memory_service->M
 #endif
 
 /**
-  @defgroup Memory_instrumentation Memory Instrumentation
-  @ingroup Instrumentation_interface
+  @defgroup psi_api_memory Memory Instrumentation (API)
+  @ingroup psi_api
   @{
 */
 
@@ -56,7 +56,7 @@ static inline void inline_mysql_memory_register(
 #endif
 }
 
-/** @} (end of group Memory_instrumentation) */
+/** @} (end of group psi_api_memory) */
 
 #endif
 

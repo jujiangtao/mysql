@@ -18,6 +18,8 @@
 #include <my_time.h>
 #include <mysys_err.h>
 #include <m_string.h>
+#include "mysql/service_my_snprintf.h"
+#include "mysql/service_mysql_alloc.h"
 #include <m_ctype.h>
 #include "mysql.h"
 #include "mysql_version.h"
@@ -51,27 +53,6 @@
 #include "client_settings.h"
 #include "mysql_trace.h"
 
-
-
-#ifdef EMBEDDED_LIBRARY
-#undef net_flush
-my_bool	net_flush(NET *net);
-#endif
-
-#if defined(_WIN32)
-/* socket_errno is defined in my_global.h for all platforms */
-#define perror(A)
-#else
-#include <errno.h>
-#define SOCKET_ERROR -1
-#endif /* _WIN32 */
-
-/*
-  If allowed through some configuration, then this needs to
-  be changed
-*/
-#define MAX_LONG_DATA_LENGTH 8192
-#define unsigned_field(A) ((A)->flags & UNSIGNED_FLAG)
 
 static void append_wild(char *to,char *end,const char *wild);
 
@@ -625,7 +606,7 @@ default_local_infile_error(void *ptr, char *error_msg, uint error_msg_len)
     return data->error_num;
   }
   /* This can only happen if we got error on malloc of handle */
-  my_stpcpy(error_msg, ER(CR_OUT_OF_MEMORY));
+  my_stpcpy(error_msg, ER_CLIENT(CR_OUT_OF_MEMORY));
   return CR_OUT_OF_MEMORY;
 }
 
@@ -834,21 +815,6 @@ mysql_list_processes(MYSQL *mysql)
   mysql->status=MYSQL_STATUS_GET_RESULT;
   mysql->field_count=field_count;
   DBUG_RETURN(mysql_store_result(mysql));
-}
-
-
-int STDCALL
-mysql_shutdown(MYSQL *mysql, enum mysql_enum_shutdown_level shutdown_level)
-{
-  DBUG_ENTER("mysql_shutdown");
-  if (mysql_get_server_version(mysql) < 50709)
-  {
-    uchar level[1];
-    level[0]= (uchar) shutdown_level;
-    DBUG_RETURN (simple_command(mysql, COM_SHUTDOWN, level, 1, 0));
-  }
-
-  DBUG_RETURN(mysql_real_query(mysql, C_STRING_WITH_LEN("shutdown")));
 }
 
 
@@ -1103,7 +1069,7 @@ void my_net_local_init(NET *net)
   net->max_packet=   (uint) local_net_buffer_length;
   my_net_set_read_timeout(net, CLIENT_NET_READ_TIMEOUT);
   my_net_set_write_timeout(net, CLIENT_NET_WRITE_TIMEOUT);
-  net->retry_count=  1;
+  my_net_set_retry_count(net, CLIENT_NET_RETRY_COUNT);
   net->max_packet_size= MY_MAX(local_net_buffer_length, local_max_allowed_packet);
 }
 
@@ -1170,10 +1136,10 @@ mysql_escape_string(char *to,const char *from,ulong length)
 
   @see mysql_real_escape_string_quote
 
-  @param mysql  [in]  MySQL connection structure.
-  @param to     [out] Escaped string output buffer.
-  @param from   [in]  String to escape.
-  @param length [in]  String to escape length.
+  @param [in] mysql   MySQL connection structure.
+  @param [out] to     Escaped string output buffer.
+  @param [in] from    String to escape.
+  @param [in] length  String to escape length.
 
   @return Result value.
     @retval != (ulong)-1 Succeeded. Number of bytes written to the output
@@ -1191,7 +1157,7 @@ mysql_real_escape_string(MYSQL *mysql, char *to,const char *from,
                ("NO_BACKSLASH_ESCAPES sql mode requires usage of the "
                 "mysql_real_escape_string_quote function"));
     set_mysql_extended_error(mysql, CR_INSECURE_API_ERR, unknown_sqlstate,
-                             ER(CR_INSECURE_API_ERR),
+                             ER_CLIENT(CR_INSECURE_API_ERR),
                              "mysql_real_escape_string",
                              "mysql_real_escape_string_quote");
     return (ulong)-1;
@@ -1210,11 +1176,11 @@ mysql_real_escape_string(MYSQL *mysql, char *to,const char *from,
 
   This function should be used for escaping identifiers and string parameters.
 
-  @param mysql  [in]  MySQL connection structure.
-  @param to     [out] Escaped string output buffer.
-  @param from   [in]  String to escape.
-  @param length [in]  String to escape length.
-  @param quote  [in]  String quoting character used in an SQL statement. This
+  @param [in] mysql   MySQL connection structure.
+  @param [out] to     Escaped string output buffer.
+  @param [in] from    String to escape.
+  @param [in] length  String to escape length.
+  @param [in] quote   String quoting character used in an SQL statement. This
                       should be one of '\'', '"' or '`' depending on the
                       parameter quoting applied in the SQL statement.
 
@@ -1377,7 +1343,7 @@ static my_bool my_realloc_str(NET *net, ulong length)
         net->last_errno= CR_NET_PACKET_TOO_LARGE;
 
       my_stpcpy(net->sqlstate, unknown_sqlstate);
-      my_stpcpy(net->last_error, ER(net->last_errno));
+      my_stpcpy(net->last_error, ER_CLIENT(net->last_errno));
     }
     net->write_pos= net->buff+ buf_length;
   }
@@ -1404,14 +1370,14 @@ void set_stmt_error(MYSQL_STMT * stmt, int errcode,
                     const char *sqlstate, const char *err)
 {
   DBUG_ENTER("set_stmt_error");
-  DBUG_PRINT("enter", ("error: %d '%s'", errcode, ER(errcode)));
+  DBUG_PRINT("enter", ("error: %d '%s'", errcode, ER_CLIENT(errcode)));
   DBUG_ASSERT(stmt != 0);
 
   if (err == 0)
-    err= ER(errcode);
+    err= ER_CLIENT(errcode);
 
   stmt->last_errno= errcode;
-  my_stpcpy(stmt->last_error, ER(errcode));
+  my_stpcpy(stmt->last_error, ER_CLIENT(errcode));
   my_stpcpy(stmt->sqlstate, sqlstate);
 
   DBUG_VOID_RETURN;
@@ -2082,9 +2048,9 @@ static my_bool store_param(MYSQL_STMT *stmt, MYSQL_BIND *param)
 {
   NET *net= &stmt->mysql->net;
   DBUG_ENTER("store_param");
-  DBUG_PRINT("enter",("type: %d  buffer: 0x%lx  length: %lu  is_null: %d",
+  DBUG_PRINT("enter",("type: %d  buffer: %p  length: %lu  is_null: %d",
 		      param->buffer_type,
-		      (long) (param->buffer ? param->buffer : NullS),
+		      (param->buffer ? param->buffer : NullS),
                       *param->length, *param->is_null));
 
   if (*param->is_null)
@@ -2997,7 +2963,7 @@ my_bool STDCALL mysql_stmt_bind_param(MYSQL_STMT *stmt, MYSQL_BIND *my_bind)
     default:
       my_stpcpy(stmt->sqlstate, unknown_sqlstate);
       sprintf(stmt->last_error,
-	      ER(stmt->last_errno= CR_UNSUPPORTED_PARAM_TYPE),
+	      ER_CLIENT(stmt->last_errno= CR_UNSUPPORTED_PARAM_TYPE),
 	      param->buffer_type, count);
       DBUG_RETURN(1);
     }
@@ -3065,8 +3031,8 @@ mysql_stmt_send_long_data(MYSQL_STMT *stmt, uint param_number,
   MYSQL_BIND *param;
   DBUG_ENTER("mysql_stmt_send_long_data");
   DBUG_ASSERT(stmt != 0);
-  DBUG_PRINT("enter",("param no: %d  data: 0x%lx, length : %ld",
-		      param_number, (long) data, length));
+  DBUG_PRINT("enter",("param no: %d  data: %p, length : %ld",
+		      param_number, data, length));
 
   /*
     We only need to check for stmt->param_count, if it's not null
@@ -3083,7 +3049,7 @@ mysql_stmt_send_long_data(MYSQL_STMT *stmt, uint param_number,
   {
     /* Long data handling should be used only for string/binary types */
     my_stpcpy(stmt->sqlstate, unknown_sqlstate);
-    sprintf(stmt->last_error, ER(stmt->last_errno= CR_INVALID_BUFFER_USE),
+    sprintf(stmt->last_error, ER_CLIENT(stmt->last_errno= CR_INVALID_BUFFER_USE),
 	    param->param_number);
     DBUG_RETURN(1);
   }
@@ -4218,7 +4184,7 @@ my_bool STDCALL mysql_stmt_bind_result(MYSQL_STMT *stmt, MYSQL_BIND *my_bind)
     {
       my_stpcpy(stmt->sqlstate, unknown_sqlstate);
       sprintf(stmt->last_error,
-              ER(stmt->last_errno= CR_UNSUPPORTED_PARAM_TYPE),
+              ER_CLIENT(stmt->last_errno= CR_UNSUPPORTED_PARAM_TYPE),
               field->type, param_count);
       DBUG_RETURN(1);
     }

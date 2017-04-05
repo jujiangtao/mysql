@@ -121,3 +121,7 @@ SET SESSION debug="-d,simulate_err_on_write_gtid_into_table";
 --let $assert_cond= "[SELECT COUNT(*) FROM mysql.gtid_executed WHERE interval_end = 4]" = 0
 --source include/assert.inc
 
+# Cleanup
+--replace_result $master_uuid MASTER_UUID
+--eval SET SESSION GTID_NEXT='$master_uuid:5'
+DROP USER u1@h;

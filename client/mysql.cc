@@ -35,13 +35,11 @@
 #include <m_ctype.h>
 #include <stdarg.h>
 #include <my_dir.h>
-#ifndef __GNU_LIBRARY__
-#define __GNU_LIBRARY__		      // Skip warnings in getopt.h
-#endif
 #include "my_readline.h"
 #include <signal.h>
 #include <violite.h>
 #include "prealloced_array.h"
+#include "mysql/service_my_snprintf.h"
 
 #ifdef HAVE_SYS_IOCTL_H
 #include <sys/ioctl.h>
@@ -257,7 +255,8 @@ my_win_is_console_cached(FILE *file)
 #define MY_PRINT_CTRL 16  /* Replace TAB, NL, CR to "\t", "\n", "\r" */
 
 void tee_write(FILE *file, const char *s, size_t slen, int flags);
-void tee_fprintf(FILE *file, const char *fmt, ...);
+void tee_fprintf(FILE *file, const char *fmt, ...)
+  MY_ATTRIBUTE((format(printf, 2, 3)));
 void tee_fputs(const char *s, FILE *file);
 void tee_puts(const char *s, FILE *file);
 void tee_putc(int c, FILE *file);
@@ -1434,7 +1433,8 @@ int main(int argc,char *argv[])
     "statement.\n");
   put_info(buff,INFO_INFO);
 
-  uint protocol, ssl_mode;
+  uint protocol= MYSQL_PROTOCOL_DEFAULT;
+  uint ssl_mode= 0;
   if (!mysql_get_option(&mysql, MYSQL_OPT_PROTOCOL, &protocol) &&
       !mysql_get_option(&mysql, MYSQL_OPT_SSL_MODE, &ssl_mode))
   {
@@ -1521,12 +1521,11 @@ void mysql_end(int sig)
 /**
   SIGINT signal handler.
 
-  @description
     This function handles SIGINT (Ctrl - C). It sends a 'KILL [QUERY]' command
     to the server if a query is currently executing. On Windows, 'Ctrl - Break'
     is treated alike.
 
-  @param [IN]               Signal number
+  @param sig               Signal number
 */
 
 void handle_ctrlc_signal(int sig)
@@ -1547,12 +1546,11 @@ void handle_ctrlc_signal(int sig)
 /**
    Handler to perform a cleanup and quit the program.
 
-   @description
      This function would send a 'KILL [QUERY]' command to the server if a
      query is currently executing and then it invokes mysql_thread_end()/
      mysql_end() in order to terminate the mysql client process.
 
-  @param [IN]               Signal number
+  @param sig              Signal number
 */
 
 void handle_quit_signal(int sig)
@@ -1838,11 +1836,11 @@ static struct my_option my_long_options[] =
    "The maximum packet length to send to or receive from server.",
    &opt_max_allowed_packet, &opt_max_allowed_packet, 0,
    GET_ULONG, REQUIRED_ARG, 16 *1024L*1024L, 4096,
-   (longlong) 2*1024L*1024L*1024L, MALLOC_OVERHEAD, 1024, 0},
+   (longlong) 2*1024L*1024L*1024L, 0, 1024, 0},
   {"net_buffer_length", OPT_NET_BUFFER_LENGTH,
    "The buffer size for TCP/IP and socket communication.",
    &opt_net_buffer_length, &opt_net_buffer_length, 0, GET_ULONG,
-   REQUIRED_ARG, 16384, 1024, 512*1024*1024L, MALLOC_OVERHEAD, 1024, 0},
+   REQUIRED_ARG, 16384, 1024, 512*1024*1024L, 0, 1024, 0},
   {"select_limit", OPT_SELECT_LIMIT,
    "Automatic limit for SELECT when using --safe-updates.",
    &select_limit, &select_limit, 0, GET_ULONG, REQUIRED_ARG, 1000L,
@@ -2414,7 +2412,7 @@ reset_prompt(char *in_string, bool *ml_comment)
 /**
    It checks if the input is a short form command. It returns the command's
    pointer if a command is found, else return NULL. Note that if binary-mode
-   is set, then only \C is searched for.
+   is set, then only @\C is searched for.
 
    @param cmd_char    A character of one byte.
 
@@ -2818,12 +2816,12 @@ C_MODE_END
 
 #if defined(USE_NEW_EDITLINE_INTERFACE)
 static int fake_magic_space(int, int);
-extern "C" char *no_completion(const char*,int)
+char *no_completion(const char*,int)
 #elif defined(USE_LIBEDIT_INTERFACE)
 static int fake_magic_space(const char *, int);
-extern "C" int no_completion(const char*,int)
+int no_completion(const char*,int)
 #else
-extern "C" char *no_completion()
+char *no_completion()
 #endif
 {
   return 0;					/* No filename completion */
@@ -3205,7 +3203,7 @@ static void add_filtered_history(const char *string)
   Perform a check on the given string if it contains
   any of the histignore patterns.
 
-  @param string [IN]        String that needs to be checked.
+  @param [in] string         String that needs to be checked.
 
   @return Operation status
       @retval 0    No match found
@@ -3341,7 +3339,7 @@ static void get_current_db()
  The different commands
 ***************************************************************************/
 
-int mysql_real_query_for_lazy(const char *buf, size_t length)
+static int mysql_real_query_for_lazy(const char *buf, size_t length)
 {
   for (uint retry=0;; retry++)
   {
@@ -3357,7 +3355,7 @@ int mysql_real_query_for_lazy(const char *buf, size_t length)
   }
 }
 
-int mysql_store_result_for_lazy(MYSQL_RES **result)
+static int mysql_store_result_for_lazy(MYSQL_RES **result)
 {
   if ((*result=mysql_store_result(&mysql)))
     return 0;
@@ -4628,7 +4626,7 @@ static int com_source(String *buffer MY_ATTRIBUTE((unused)),
   end[0]=0;
   unpack_filename(source_name,source_name);
   /* open file name */
-  if (!(sql_file = my_fopen(source_name, O_RDONLY | O_BINARY,MYF(0))))
+  if (!(sql_file = my_fopen(source_name, O_RDONLY | MY_FOPEN_BINARY, MYF(0))))
   {
     char buff[FN_REFLEN+60];
     sprintf(buff,"Failed to open file '%s', error: %d", source_name,errno);
@@ -4792,15 +4790,15 @@ com_use(String *buffer MY_ATTRIBUTE((unused)), char *line)
 /**
   Normalize database name.
 
-  @param line [IN]          The command.
-  @param buff [OUT]         Normalized db name.
-  @param buff_size [IN]     Buffer size.
+  @param [in] line           The command.
+  @param [out] buff          Normalized db name.
+  @param [in] buff_size      Buffer size.
 
   @return Operation status
       @retval 0    Success
       @retval 1    Failure
 
-  @note Sometimes server normilizes the database names
+  @note Sometimes server normalizes the database names
         & APIs like mysql_select_db() expect normalized
         database names. Since it is difficult to perform
         the name conversion/normalization on the client
@@ -5399,7 +5397,7 @@ static void remove_cntrl(String &buffer)
   @param file   Stream to write to
   @param s      String to write
   @param slen   String length
-  @flags        Flags for --tab, --xml, --raw.
+  @param flags  Flags for --tab, --xml, --raw.
 */
 void tee_write(FILE *file, const char *s, size_t slen, int flags)
 {

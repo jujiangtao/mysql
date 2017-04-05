@@ -51,13 +51,18 @@ instrumentation due to their large number of instances. */
 #ifdef UNIV_PFS_MUTEX
 /* Key defines to register InnoDB mutexes with performance schema */
 extern mysql_pfs_key_t	autoinc_mutex_key;
+extern mysql_pfs_key_t	autoinc_persisted_mutex_key;
 extern mysql_pfs_key_t	buffer_block_mutex_key;
-extern mysql_pfs_key_t	buf_pool_mutex_key;
+extern mysql_pfs_key_t	buf_pool_flush_state_mutex_key;
+extern mysql_pfs_key_t	buf_pool_LRU_list_mutex_key;
+extern mysql_pfs_key_t	buf_pool_free_list_mutex_key;
+extern mysql_pfs_key_t	buf_pool_zip_free_mutex_key;
+extern mysql_pfs_key_t	buf_pool_zip_hash_mutex_key;
 extern mysql_pfs_key_t	buf_pool_zip_mutex_key;
 extern mysql_pfs_key_t	cache_last_read_mutex_key;
 extern mysql_pfs_key_t	dict_foreign_err_mutex_key;
+extern mysql_pfs_key_t  dict_persist_dirty_tables_mutex_key;
 extern mysql_pfs_key_t	dict_sys_mutex_key;
-extern mysql_pfs_key_t	file_format_max_mutex_key;
 extern mysql_pfs_key_t	fil_system_mutex_key;
 extern mysql_pfs_key_t	flush_list_mutex_key;
 extern mysql_pfs_key_t	fts_bg_threads_mutex_key;
@@ -69,6 +74,7 @@ extern mysql_pfs_key_t	hash_table_mutex_key;
 extern mysql_pfs_key_t	ibuf_bitmap_mutex_key;
 extern mysql_pfs_key_t	ibuf_mutex_key;
 extern mysql_pfs_key_t	ibuf_pessimistic_insert_mutex_key;
+extern mysql_pfs_key_t	lock_free_hash_mutex_key;
 extern mysql_pfs_key_t	log_sys_mutex_key;
 extern mysql_pfs_key_t	log_sys_write_mutex_key;
 extern mysql_pfs_key_t	log_cmdq_mutex_key;
@@ -125,6 +131,7 @@ extern	mysql_pfs_key_t	buf_block_lock_key;
 extern	mysql_pfs_key_t	buf_block_debug_latch_key;
 # endif /* UNIV_DEBUG */
 extern	mysql_pfs_key_t	dict_operation_lock_key;
+extern  mysql_pfs_key_t	dict_persist_checkpoint_key;
 extern	mysql_pfs_key_t	checkpoint_lock_key;
 extern	mysql_pfs_key_t	fil_space_latch_key;
 extern	mysql_pfs_key_t	fts_cache_rw_lock_key;

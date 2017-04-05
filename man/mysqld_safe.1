@@ -2,12 +2,12 @@
 .\"     Title: \fBmysqld_safe\fR
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 11/26/2016
+.\"      Date: 08/25/2016
 .\"    Manual: MySQL Database System
-.\"    Source: MySQL 5.7
+.\"    Source: MySQL 8.0
 .\"  Language: English
 .\"
-.TH "\FBMYSQLD_SAFE\FR" "1" "11/26/2016" "MySQL 5\&.7" "MySQL Database System"
+.TH "\FBMYSQLD_SAFE\FR" "1" "08/25/2016" "MySQL 8\&.0" "MySQL Database System"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -53,7 +53,7 @@ adds some safety features such as restarting the server when an error occurs and
 .ps -1
 .br
 .PP
-As of MySQL 5\&.7\&.6, for MySQL installation using an RPM distribution, server startup and shutdown is managed by systemd on several Linux platforms\&. On these platforms,
+For MySQL installation using an RPM distribution, server startup and shutdown is managed by systemd on several Linux platforms\&. On these platforms,
 \fBmysqld_safe\fR
 is no longer installed because it is unnecessary\&. For more information, see
 Section\ \&2.5.10, \(lqManaging MySQL Server with systemd\(rq\&.
@@ -77,7 +77,7 @@ Many of the options to
 \fBmysqld_safe\fR
 are the same as the options to
 \fBmysqld\fR\&. See
-Section\ \&6.1.4, \(lqServer Command Options\(rq\&.
+Section\ \&5.1.3, \(lqServer Command Options\(rq\&.
 .PP
 Options unknown to
 \fBmysqld_safe\fR
@@ -86,7 +86,7 @@ are passed to
 if they are specified on the command line, but ignored if they are specified in the
 [mysqld_safe]
 group of an option file\&. See
-Section\ \&5.2.6, \(lqUsing Option Files\(rq\&.
+Section\ \&4.2.6, \(lqUsing Option Files\(rq\&.
 .PP
 \fBmysqld_safe\fR
 reads all options from the
@@ -121,7 +121,7 @@ sections, but to be current you should rename such sections to
 .PP
 \fBmysqld_safe\fR
 accepts options on the command line and in option files, as described in the following table\&. For information about option files used by MySQL programs, see
-Section\ \&5.2.6, \(lqUsing Option Files\(rq\&.
+Section\ \&4.2.6, \(lqUsing Option Files\(rq\&.
 .sp
 .RS 4
 .ie n \{\
@@ -217,8 +217,6 @@ The name of an option file to be read instead of the usual option files\&. This 
 If
 \fBmysqld_safe\fR
 cannot find the server, use this option to indicate the path name to the directory where the server is located\&.
-.sp
-As of MySQL 5\&.7\&.17, this option is accepted only on the command line, not in option files\&.
 .RE
 .sp
 .RS 4
@@ -232,7 +230,7 @@ As of MySQL 5\&.7\&.17, this option is accepted only on the command line, not in
 \fB\-\-log\-error=\fR\fB\fIfile_name\fR\fR
 .sp
 Write the error log to the given file\&. See
-Section\ \&6.4.2, \(lqThe Error Log\(rq\&.
+Section\ \&5.4.2, \(lqThe Error Log\(rq\&.
 .RE
 .sp
 .RS 4
@@ -317,8 +315,6 @@ format, as in
 \fBmysqld_safe\fR
 prior to MySQL 5\&.6\&.
 .RE
-.sp
-This option was added in MySQL 5\&.7\&.11\&.
 .RE
 .sp
 .RS 4
@@ -332,30 +328,8 @@ This option was added in MySQL 5\&.7\&.11\&.
 \fB\-\-malloc\-lib=[\fR\fB\fIlib_name\fR\fR\fB]\fR
 The name of the library to use for memory allocation instead of the system
 malloc()
-library\&. As of MySQL 5\&.7\&.15, the option value must be one of the directories
-/usr/lib,
-/usr/lib64,
-/usr/lib/i386\-linux\-gnu, or
-/usr/lib/x86_64\-linux\-gnu\&. Prior to MySQL 5\&.7\&.15, any library can be used by specifying its path name, but there is a shortcut form to enable use of the
-tcmalloc
-library that is shipped with binary MySQL distributions for Linux in MySQL 5\&.7\&. It is possible that the shortcut form will not work under certain configurations, in which case you should specify a path name instead\&.
-.if n \{\
-.sp
-.\}
-.RS 4
-.it 1 an-trap
-.nr an-no-space-flag 1
-.nr an-break-flag 1
-.br
-.ps +1
-\fBNote\fR
-.ps -1
-.br
-As of MySQL 5\&.7\&.13, MySQL distributions no longer include a
-tcmalloc
 library\&.
-.sp .5v
-.RE
+.sp
 The
 \fB\-\-malloc\-lib\fR
 option works by modifying the
@@ -392,12 +366,7 @@ If the option is given as
 looks for a
 tcmalloc
 library in
-/usr/lib
-and then in the MySQL
-pkglibdir
-location (for example,
-/usr/local/mysql/lib
-or whatever is appropriate)\&. If
+/usr/lib\&. If
 tmalloc
 is found, its path name is added to the beginning of the
 LD_PRELOAD
@@ -461,7 +430,11 @@ in
 .RE
 Linux users can use the
 libtcmalloc_minimal\&.so
-included in binary packages by adding these lines to the
+library on any platform for which a
+tcmalloc
+package is installed in
+/usr/lib
+by adding these lines to the
 my\&.cnf
 file:
 .sp
@@ -476,10 +449,7 @@ malloc\-lib=tcmalloc
 .RE
 .\}
 .sp
-Those lines also suffice for users on any platform who have installed a
-tcmalloc
-package in
-/usr/lib\&. To use a specific
+To use a specific
 tcmalloc
 library, specify its full path name\&. Example:
 .sp
@@ -512,8 +482,6 @@ directory) that you want to start\&. This option is needed if you use the MySQL 
 cannot find the server, use the
 \fB\-\-ledir\fR
 option to indicate the path name to the directory where the server is located\&.
-.sp
-As of MySQL 5\&.7\&.15, this option can be given only on the command line and not in an option file\&.
 .RE
 .sp
 .RS 4
@@ -545,8 +513,6 @@ uses
 in the
 ledir
 directory\&.
-.sp
-As of MySQL 5\&.7\&.15, this option can be given only on the command line and not in an option file\&.
 .RE
 .sp
 .RS 4
@@ -622,15 +588,12 @@ for this to function properly\&.
 .\}
 \fB\-\-pid\-file=\fR\fB\fIfile_name\fR\fR
 .sp
-The path name that
-\fBmysqld\fR
-should use for its process ID file\&.
+The path name of the process ID file\&.
 .sp
-In MySQL 5\&.7\&.2 and higher,
 \fBmysqld_safe\fR
-has its own process ID file, which is always named
+creates a PID file named
 mysqld_safe\&.pid
-and located in the MySQL data directory\&.
+in the MySQL data directory when starting up\&.
 .RE
 .sp
 .RS 4
@@ -718,12 +681,12 @@ facility/severity is used for all log messages\&.
 .sp
 Using these options to control
 \fBmysqld\fR
-logging is deprecated as of MySQL 5\&.7\&.5\&. Use the server
+logging is deprecated\&. Use the server
 log_syslog
 system variable instead\&. To control the facility, use the server
 log_syslog_facility
 system variable\&. See
-Section\ \&6.4.2, \(lqThe Error Log\(rq\&.
+Section\ \&5.4.2, \(lqThe Error Log\(rq\&.
 .RE
 .sp
 .RS 4
@@ -752,10 +715,10 @@ mysqld\-\fItag\fR\&.
 .sp
 Using this option to control
 \fBmysqld\fR
-logging is deprecated as of MySQL 5\&.7\&.5\&. Use the server
+logging is deprecated\&. Use the server
 log_syslog_tag
 system variable instead\&. See
-Section\ \&6.4.2, \(lqThe Error Log\(rq\&.
+Section\ \&5.4.2, \(lqThe Error Log\(rq\&.
 .RE
 .sp
 .RS 4
@@ -986,10 +949,10 @@ Controlling
 \fBmysqld\fR
 logging from
 \fBmysqld_safe\fR
-is deprecated as of MySQL 5\&.7\&.5\&. Use the server\*(Aqs native
+is deprecated\&. Use the server\*(Aqs native
 syslog
 support instead\&. For more information, see
-Section\ \&6.4.2, \(lqThe Error Log\(rq\&.
+Section\ \&5.4.2, \(lqThe Error Log\(rq\&.
 .sp .5v
 .RE
 .SH "COPYRIGHT"

@@ -123,7 +123,7 @@ ALTER TABLE tables_priv
   MODIFY Db char(64) NOT NULL default '',
   MODIFY User char(32) NOT NULL default '',
   MODIFY Table_name char(64) NOT NULL default '',
-  ENGINE=MyISAM,
+  MODIFY Grantor char(93) NOT NULL default '',
   CONVERT TO CHARACTER SET utf8 COLLATE utf8_bin;
 
 ALTER TABLE tables_priv
@@ -134,9 +134,6 @@ ALTER TABLE tables_priv
                         'Create View','Show view','Trigger')
     COLLATE utf8_general_ci DEFAULT '' NOT NULL,
   COMMENT='Table privileges';
-
-ALTER TABLE tables_priv
-  MODIFY Grantor char(93) NOT NULL default '';
 
 #
 # columns_priv
@@ -154,7 +151,6 @@ ALTER TABLE columns_priv
   MODIFY User char(32) NOT NULL default '',
   MODIFY Table_name char(64) NOT NULL default '',
   MODIFY Column_name char(64) NOT NULL default '',
-  ENGINE=MyISAM,
   CONVERT TO CHARACTER SET utf8 COLLATE utf8_bin,
   COMMENT='Column privileges';
 
@@ -225,7 +221,7 @@ alter table func comment='User defined functions';
 ALTER TABLE user
   MODIFY Host char(60) NOT NULL default '',
   MODIFY User char(32) NOT NULL default '',
-  ENGINE=MyISAM, CONVERT TO CHARACTER SET utf8 COLLATE utf8_bin;
+  CONVERT TO CHARACTER SET utf8 COLLATE utf8_bin;
 ALTER TABLE user
   MODIFY Select_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
   MODIFY Insert_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
@@ -254,7 +250,7 @@ ALTER TABLE db
   MODIFY Host char(60) NOT NULL default '',
   MODIFY Db char(64) NOT NULL default '',
   MODIFY User char(32) NOT NULL default '',
-  ENGINE=MyISAM, CONVERT TO CHARACTER SET utf8 COLLATE utf8_bin;
+  CONVERT TO CHARACTER SET utf8 COLLATE utf8_bin;
 ALTER TABLE db
   MODIFY  Select_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
   MODIFY  Insert_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
@@ -402,7 +398,6 @@ UPDATE user LEFT JOIN db USING (Host,User) SET Create_user_priv='Y'
 
 ALTER TABLE procs_priv
   MODIFY User char(32) NOT NULL default '',
-  ENGINE=MyISAM,
   CONVERT TO CHARACTER SET utf8 COLLATE utf8_bin;
 
 ALTER TABLE procs_priv
@@ -420,121 +415,9 @@ ALTER TABLE procs_priv
 ALTER TABLE procs_priv
   MODIFY Timestamp timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER Proc_priv;
 
+
 ALTER TABLE procs_priv
   MODIFY Grantor char(93) DEFAULT '' NOT NULL;
-#
-# proc
-#
-
-# Correct the name fields to not binary, and expand sql_data_access
-ALTER TABLE proc MODIFY name char(64) DEFAULT '' NOT NULL,
-                 MODIFY specific_name char(64) DEFAULT '' NOT NULL,
-                 MODIFY sql_data_access
-                        enum('CONTAINS_SQL',
-                             'NO_SQL',
-                             'READS_SQL_DATA',
-                             'MODIFIES_SQL_DATA'
-                            ) DEFAULT 'CONTAINS_SQL' NOT NULL,
-                 MODIFY body longblob NOT NULL,
-                 MODIFY returns longblob NOT NULL,
-                 MODIFY sql_mode
-                        set('REAL_AS_FLOAT',
-                            'PIPES_AS_CONCAT',
-                            'ANSI_QUOTES',
-                            'IGNORE_SPACE',
-                            'NOT_USED',
-                            'ONLY_FULL_GROUP_BY',
-                            'NO_UNSIGNED_SUBTRACTION',
-                            'NO_DIR_IN_CREATE',
-                            'POSTGRESQL',
-                            'ORACLE',
-                            'MSSQL',
-                            'DB2',
-                            'MAXDB',
-                            'NO_KEY_OPTIONS',
-                            'NO_TABLE_OPTIONS',
-                            'NO_FIELD_OPTIONS',
-                            'MYSQL323',
-                            'MYSQL40',
-                            'ANSI',
-                            'NO_AUTO_VALUE_ON_ZERO',
-                            'NO_BACKSLASH_ESCAPES',
-                            'STRICT_TRANS_TABLES',
-                            'STRICT_ALL_TABLES',
-                            'NO_ZERO_IN_DATE',
-                            'NO_ZERO_DATE',
-                            'INVALID_DATES',
-                            'ERROR_FOR_DIVISION_BY_ZERO',
-                            'TRADITIONAL',
-                            'NO_AUTO_CREATE_USER',
-                            'HIGH_NOT_PRECEDENCE',
-                            'NO_ENGINE_SUBSTITUTION',
-                            'PAD_CHAR_TO_FULL_LENGTH'
-                            ) DEFAULT '' NOT NULL,
-                 DEFAULT CHARACTER SET utf8;
-
-# Correct the character set and collation
-ALTER TABLE proc CONVERT TO CHARACTER SET utf8;
-# Reset some fields after the conversion and change comment from char(64) to text
-ALTER TABLE proc  MODIFY db
-                         char(64) collate utf8_bin DEFAULT '' NOT NULL,
-                  MODIFY definer
-                         char(93) collate utf8_bin DEFAULT '' NOT NULL,
-                  MODIFY comment
-                         text collate utf8_bin DEFAULT '' NOT NULL;
-
-ALTER TABLE proc ADD character_set_client
-                     char(32) collate utf8_bin DEFAULT NULL
-                     AFTER comment;
-ALTER TABLE proc MODIFY character_set_client
-                        char(32) collate utf8_bin DEFAULT NULL;
-
-SELECT CASE WHEN COUNT(*) > 0 THEN 
-CONCAT ("WARNING: NULL values of the 'character_set_client' column ('mysql.proc' table) have been updated with a default value (", @@character_set_client, "). Please verify if necessary.")
-ELSE NULL 
-END 
-AS value FROM proc WHERE character_set_client IS NULL;
-
-UPDATE proc SET character_set_client = @@character_set_client 
-                     WHERE character_set_client IS NULL;
-
-ALTER TABLE proc ADD collation_connection
-                     char(32) collate utf8_bin DEFAULT NULL
-                     AFTER character_set_client;
-ALTER TABLE proc MODIFY collation_connection
-                        char(32) collate utf8_bin DEFAULT NULL;
-
-SELECT CASE WHEN COUNT(*) > 0 THEN 
-CONCAT ("WARNING: NULL values of the 'collation_connection' column ('mysql.proc' table) have been updated with a default value (", @@collation_connection, "). Please verify if necessary.")
-ELSE NULL 
-END 
-AS value FROM proc WHERE collation_connection IS NULL;
-
-UPDATE proc SET collation_connection = @@collation_connection
-                     WHERE collation_connection IS NULL;
-
-ALTER TABLE proc ADD db_collation
-                     char(32) collate utf8_bin DEFAULT NULL
-                     AFTER collation_connection;
-ALTER TABLE proc MODIFY db_collation
-                        char(32) collate utf8_bin DEFAULT NULL;
-
-SELECT CASE WHEN COUNT(*) > 0 THEN 
-CONCAT ("WARNING: NULL values of the 'db_collation' column ('mysql.proc' table) have been updated with default values. Please verify if necessary.")
-ELSE NULL
-END
-AS value FROM proc WHERE db_collation IS NULL;
-
-UPDATE proc AS p SET db_collation  = 
-                     ( SELECT DEFAULT_COLLATION_NAME 
-                       FROM INFORMATION_SCHEMA.SCHEMATA 
-                       WHERE SCHEMA_NAME = p.db)
-                     WHERE db_collation IS NULL;
-
-ALTER TABLE proc ADD body_utf8 longblob DEFAULT NULL
-                     AFTER db_collation;
-ALTER TABLE proc MODIFY body_utf8 longblob DEFAULT NULL;
-
 #
 # EVENT privilege
 #
@@ -548,82 +431,6 @@ UPDATE user SET Event_priv=Super_priv WHERE @hadEventPriv = 0;
 
 ALTER TABLE db add Event_priv enum('N','Y') character set utf8 DEFAULT 'N' NOT NULL;
 ALTER TABLE db MODIFY Event_priv enum('N','Y') character set utf8 DEFAULT 'N' NOT NULL;
-
-#
-# EVENT table
-#
-ALTER TABLE event DROP PRIMARY KEY;
-ALTER TABLE event ADD PRIMARY KEY(db, name);
-# Add sql_mode column just in case.
-ALTER TABLE event ADD sql_mode set ('NOT_USED') AFTER on_completion;
-# Update list of sql_mode values.
-ALTER TABLE event MODIFY sql_mode
-                        set('REAL_AS_FLOAT',
-                            'PIPES_AS_CONCAT',
-                            'ANSI_QUOTES',
-                            'IGNORE_SPACE',
-                            'NOT_USED',
-                            'ONLY_FULL_GROUP_BY',
-                            'NO_UNSIGNED_SUBTRACTION',
-                            'NO_DIR_IN_CREATE',
-                            'POSTGRESQL',
-                            'ORACLE',
-                            'MSSQL',
-                            'DB2',
-                            'MAXDB',
-                            'NO_KEY_OPTIONS',
-                            'NO_TABLE_OPTIONS',
-                            'NO_FIELD_OPTIONS',
-                            'MYSQL323',
-                            'MYSQL40',
-                            'ANSI',
-                            'NO_AUTO_VALUE_ON_ZERO',
-                            'NO_BACKSLASH_ESCAPES',
-                            'STRICT_TRANS_TABLES',
-                            'STRICT_ALL_TABLES',
-                            'NO_ZERO_IN_DATE',
-                            'NO_ZERO_DATE',
-                            'INVALID_DATES',
-                            'ERROR_FOR_DIVISION_BY_ZERO',
-                            'TRADITIONAL',
-                            'NO_AUTO_CREATE_USER',
-                            'HIGH_NOT_PRECEDENCE',
-                            'NO_ENGINE_SUBSTITUTION',
-                            'PAD_CHAR_TO_FULL_LENGTH'
-                            ) DEFAULT '' NOT NULL AFTER on_completion;
-ALTER TABLE event MODIFY name char(64) CHARACTER SET utf8 NOT NULL default '';
-
-ALTER TABLE event MODIFY COLUMN originator INT UNSIGNED NOT NULL;
-ALTER TABLE event ADD COLUMN originator INT UNSIGNED NOT NULL AFTER comment;
-
-ALTER TABLE event MODIFY COLUMN status ENUM('ENABLED','DISABLED','SLAVESIDE_DISABLED') NOT NULL default 'ENABLED';
-
-ALTER TABLE event ADD COLUMN time_zone char(64) CHARACTER SET latin1
-        NOT NULL DEFAULT 'SYSTEM' AFTER originator;
-
-ALTER TABLE event ADD character_set_client
-                      char(32) collate utf8_bin DEFAULT NULL
-                      AFTER time_zone;
-ALTER TABLE event MODIFY character_set_client
-                         char(32) collate utf8_bin DEFAULT NULL;
-
-ALTER TABLE event ADD collation_connection
-                      char(32) collate utf8_bin DEFAULT NULL
-                      AFTER character_set_client;
-ALTER TABLE event MODIFY collation_connection
-                         char(32) collate utf8_bin DEFAULT NULL;
-
-ALTER TABLE event ADD db_collation
-                      char(32) collate utf8_bin DEFAULT NULL
-                      AFTER collation_connection;
-ALTER TABLE event MODIFY db_collation
-                         char(32) collate utf8_bin DEFAULT NULL;
-
-ALTER TABLE event ADD body_utf8 longblob DEFAULT NULL
-                      AFTER db_collation;
-ALTER TABLE event MODIFY body_utf8 longblob DEFAULT NULL;
-
-ALTER TABLE event MODIFY definer char(93) CHARACTER SET utf8 COLLATE utf8_bin NOT NULL default '';
 
 #
 # TRIGGER privilege
@@ -656,9 +463,12 @@ UPDATE user SET Create_tablespace_priv = Super_priv WHERE @hadCreateTablespacePr
 -- Unlike 'performance_schema', the 'mysql' database is reserved already,
 -- so no user procedure is supposed to be there.
 --
--- NOTE: until upgrade is finished, stored routines are not available,
--- because system tables (e.g. mysql.proc) might be not usable.
+-- NOTE: until upgrade is finished, stored routines are not available, because
+-- system tables might be not usable.
 --
+SET @global_automatic_sp_privileges = @@GLOBAL.automatic_sp_privileges;
+SET GLOBAL automatic_sp_privileges = FALSE;
+
 drop procedure if exists mysql.die;
 create procedure mysql.die() signal sqlstate 'HY000' set message_text='Unexpected content found in the performance_schema database.';
 
@@ -674,6 +484,7 @@ EXECUTE stmt;
 DROP PREPARE stmt;
 
 drop procedure mysql.die;
+SET GLOBAL automatic_sp_privileges = @global_automatic_sp_privileges;
 
 ALTER TABLE user ADD plugin char(64) DEFAULT 'mysql_native_password' NOT NULL,  ADD authentication_string TEXT;
 ALTER TABLE user MODIFY plugin char(64) DEFAULT 'mysql_native_password' NOT NULL;
@@ -700,6 +511,11 @@ DROP TABLE tmp_proxies_priv;
 
 -- Checking for any duplicate hostname and username combination are exists.
 -- If exits we will throw error.
+
+-- We also need to avoid accessing privilege tables.
+SET @global_automatic_sp_privileges = @@GLOBAL.automatic_sp_privileges;
+SET GLOBAL automatic_sp_privileges = FALSE;
+
 DROP PROCEDURE IF EXISTS mysql.warn_duplicate_host_names;
 CREATE PROCEDURE mysql.warn_duplicate_host_names() SIGNAL SQLSTATE '45000'  SET MESSAGE_TEXT = 'Multiple accounts exist for @user_name, @host_name that differ only in Host lettercase; remove all except one of them';
 SET @cmd='call mysql.warn_duplicate_host_names()';
@@ -713,27 +529,49 @@ SHOW WARNINGS;
 DROP PREPARE stmt;
 DROP PROCEDURE mysql.warn_duplicate_host_names;
 
+SET GLOBAL automatic_sp_privileges = @global_automatic_sp_privileges;
+
 # Convering the host name to lower case for existing users
 UPDATE user SET host=LOWER( host ) WHERE LOWER( host ) <> host;
 
 #
-# mysql.ndb_binlog_index
+# Alter mysql.ndb_binlog_index only if it exists already.
 #
+
+SET @have_ndb_binlog_index= (select count(*) from information_schema.tables where table_schema='mysql' and table_name='ndb_binlog_index');
+
 # Change type from BIGINT to INT
-ALTER TABLE ndb_binlog_index
+SET @cmd="ALTER TABLE ndb_binlog_index
   MODIFY inserts INT UNSIGNED NOT NULL,
   MODIFY updates INT UNSIGNED NOT NULL,
   MODIFY deletes INT UNSIGNED NOT NULL,
-  MODIFY schemaops INT UNSIGNED NOT NULL;
+  MODIFY schemaops INT UNSIGNED NOT NULL";
+
+SET @str = IF(@have_ndb_binlog_index = 1, @cmd, 'SET @dummy = 0');
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
 # Add new columns
-ALTER TABLE ndb_binlog_index
+SET @cmd="ALTER TABLE ndb_binlog_index
   ADD orig_server_id INT UNSIGNED NOT NULL,
   ADD orig_epoch BIGINT UNSIGNED NOT NULL,
-  ADD gci INT UNSIGNED NOT NULL;
+  ADD gci INT UNSIGNED NOT NULL";
+
+SET @str = IF(@have_ndb_binlog_index = 1, @cmd, 'SET @dummy = 0');
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
 # New primary key
-ALTER TABLE ndb_binlog_index
+SET @cmd="ALTER TABLE ndb_binlog_index
   DROP PRIMARY KEY,
-  ADD PRIMARY KEY(epoch, orig_server_id, orig_epoch);
+  ADD PRIMARY KEY(epoch, orig_server_id, orig_epoch)";
+
+SET @str = IF(@have_ndb_binlog_index = 1, @cmd, 'SET @dummy = 0');
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
 
 --
 -- Check for accounts with old pre-4.1 passwords and issue a warning
@@ -743,6 +581,10 @@ ALTER TABLE ndb_binlog_index
 SET @deprecated_pwds=(SELECT COUNT(*) FROM mysql.user WHERE LENGTH(password) = 16);
 
 -- signal the deprecation error
+
+SET @global_automatic_sp_privileges = @@GLOBAL.automatic_sp_privileges;
+SET GLOBAL automatic_sp_privileges = FALSE;
+
 DROP PROCEDURE IF EXISTS mysql.warn_pre41_pwd;
 CREATE PROCEDURE mysql.warn_pre41_pwd() SIGNAL SQLSTATE '01000' SET MESSAGE_TEXT='Pre-4.1 password hash found. It is deprecated and will be removed in a future release. Please upgrade it to a new format.';
 SET @cmd='call mysql.warn_pre41_pwd()';
@@ -754,6 +596,7 @@ SHOW WARNINGS;
 DROP PREPARE stmt;
 DROP PROCEDURE mysql.warn_pre41_pwd;
 
+SET GLOBAL automatic_sp_privileges = @global_automatic_sp_privileges;
 --
 -- Add timestamp and expiry columns
 --
@@ -827,12 +670,6 @@ ALTER TABLE slave_worker_info
 # The Tls_version field at slave_master_info should be added after the Channel_name field
 ALTER TABLE slave_master_info ADD Tls_version TEXT CHARACTER SET utf8 COLLATE utf8_bin COMMENT 'Tls version';
 
-# If the order of columns Channel_name and Tls_version is wrong, this will correct the order
-# in slave_master_info table.
-ALTER TABLE slave_master_info
-  MODIFY COLUMN Tls_version TEXT CHARACTER SET utf8 COLLATE utf8_bin COMMENT 'Tls version'
-  AFTER Channel_name;
-
 SET @have_innodb= (SELECT COUNT(engine) FROM information_schema.engines WHERE engine='InnoDB' AND support != 'NO');
 SET @str=IF(@have_innodb <> 0, "ALTER TABLE innodb_table_stats STATS_PERSISTENT=0", "SET @dummy = 0");
 PREPARE stmt FROM @str;
@@ -845,16 +682,31 @@ EXECUTE stmt;
 DROP PREPARE stmt;
 
 #
-# ndb_binlog_index table
+# Alter mysql.ndb_binlog_index only if it exists already.
 #
-ALTER TABLE ndb_binlog_index
-  ADD COLUMN next_position BIGINT UNSIGNED NOT NULL;
-ALTER TABLE ndb_binlog_index
-  ADD COLUMN next_file VARCHAR(255) NOT NULL;
+
+SET @cmd="ALTER TABLE ndb_binlog_index
+  ADD COLUMN next_position BIGINT UNSIGNED NOT NULL";
+
+SET @str = IF(@have_ndb_binlog_index = 1, @cmd, 'SET @dummy = 0');
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+SET @cmd="ALTER TABLE ndb_binlog_index
+  ADD COLUMN next_file VARCHAR(255) NOT NULL";
+
+SET @str = IF(@have_ndb_binlog_index = 1, @cmd, 'SET @dummy = 0');
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
 
 --
 -- Check for non-empty host table and issue a warning
 --
+
+SET @global_automatic_sp_privileges = @@GLOBAL.automatic_sp_privileges;
+SET GLOBAL automatic_sp_privileges = FALSE;
 
 DROP PROCEDURE IF EXISTS mysql.warn_host_table_nonempty;
 CREATE PROCEDURE mysql.warn_host_table_nonempty() SIGNAL SQLSTATE '01000' SET MESSAGE_TEXT='Table mysql.host is not empty. It is deprecated and will be removed in a future release.';
@@ -878,6 +730,7 @@ SHOW WARNINGS;
 DROP PREPARE stmt;
 DROP PROCEDURE mysql.warn_host_table_nonempty;
 
+SET GLOBAL automatic_sp_privileges = @global_automatic_sp_privileges;
 --
 -- Upgrade help tables
 --
@@ -889,8 +742,9 @@ ALTER TABLE help_topic MODIFY url TEXT NOT NULL;
 -- Upgrade a table engine from MyISAM to InnoDB for the system tables
 -- help_topic, help_category, help_relation, help_keyword, plugin, servers,
 -- time_zone, time_zone_leap_second, time_zone_name, time_zone_transition,
--- time_zone_transition_type.
-
+-- time_zone_transition_type, columns_priv, db, procs_priv, proxies_priv,
+-- tables_priv, user.
+ALTER TABLE func ENGINE=InnoDB STATS_PERSISTENT=0;
 ALTER TABLE help_topic ENGINE=InnoDB STATS_PERSISTENT=0;
 ALTER TABLE help_category ENGINE=InnoDB STATS_PERSISTENT=0;
 ALTER TABLE help_relation ENGINE=InnoDB STATS_PERSISTENT=0;
@@ -902,6 +756,12 @@ ALTER TABLE time_zone_leap_second ENGINE=InnoDB STATS_PERSISTENT=0;
 ALTER TABLE time_zone_name ENGINE=InnoDB STATS_PERSISTENT=0;
 ALTER TABLE time_zone_transition ENGINE=InnoDB STATS_PERSISTENT=0;
 ALTER TABLE time_zone_transition_type ENGINE=InnoDB STATS_PERSISTENT=0;
+ALTER TABLE db ENGINE=InnoDB STATS_PERSISTENT=0;
+ALTER TABLE user ENGINE=InnoDB STATS_PERSISTENT=0;
+ALTER TABLE tables_priv ENGINE=InnoDB STATS_PERSISTENT=0;
+ALTER TABLE columns_priv ENGINE=InnoDB STATS_PERSISTENT=0;
+ALTER TABLE procs_priv ENGINE=InnoDB STATS_PERSISTENT=0;
+ALTER TABLE proxies_priv ENGINE=InnoDB STATS_PERSISTENT=0;
 
 # Move any distributed grant tables back to NDB after upgrade
 SET @cmd="ALTER TABLE mysql.user ENGINE=NDB";
@@ -939,3 +799,13 @@ SET @str = IF(@had_distributed_proxies_priv > 0, @cmd, "SET @dummy = 0");
 PREPARE stmt FROM @str;
 EXECUTE stmt;
 DROP PREPARE stmt;
+
+--
+-- CREATE_ROLE_ACL and DROP_ROLE_ACL
+--
+ALTER TABLE user ADD Create_role_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL AFTER account_locked;
+ALTER TABLE user MODIFY Create_role_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL AFTER account_locked;
+ALTER TABLE user ADD Drop_role_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL AFTER Create_role_priv;
+ALTER TABLE user MODIFY Drop_role_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL AFTER Create_role_priv;
+UPDATE user SET Create_role_priv= 'Y', Drop_role_priv= 'Y' WHERE Create_user_priv = 'Y';
+

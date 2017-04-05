@@ -64,7 +64,7 @@ static int sort_one_index(MI_CHECK *param, MI_INFO *info,MI_KEYDEF *keyinfo,
 static int sort_key_read(MI_SORT_PARAM *sort_param,void *key);
 static int sort_ft_key_read(MI_SORT_PARAM *sort_param,void *key);
 static int sort_get_next_record(MI_SORT_PARAM *sort_param);
-static int sort_key_cmp(MI_SORT_PARAM *sort_param, const void *a,const void *b);
+static int sort_key_cmp(const void *cmp_arg, const void *a,const void *b);
 static int sort_ft_key_write(MI_SORT_PARAM *sort_param, const void *a);
 static int sort_key_write(MI_SORT_PARAM *sort_param, const void *a);
 static my_off_t get_record_for_key(MI_INFO *info,MI_KEYDEF *keyinfo,
@@ -883,7 +883,7 @@ static int chk_index(MI_CHECK *param, MI_INFO *info, MI_KEYDEF *keyinfo,
   if (keypos != endpos)
   {
     mi_check_print_error(param,"Keyblock size at page %s is not correct.  Block length: %d  key length: %d",
-                llstr(page,llbuff), used_length, (keypos - buff));
+                         llstr(page,llbuff), used_length, (int)(keypos - buff));
     goto err;
   }
   DBUG_RETURN(0);
@@ -1190,7 +1190,7 @@ int chk_data_link(MI_CHECK *param, MI_INFO *info,int extend)
 	  block_info.rec_len > (uint) info->s->max_pack_length)
       {
 	mi_check_print_error(param,
-			     "Found block with wrong recordlength: %d at %s",
+			     "Found block with wrong recordlength: %ld at %s",
 			     block_info.rec_len, llstr(start_recpos,llbuff));
 	got_error=1;
 	break;
@@ -1517,7 +1517,7 @@ static int mi_drop_all_indexes(MI_CHECK *param, MI_INFO *info, my_bool force)
 	/* Save new datafile-name in temp_filename */
 
 int mi_repair(MI_CHECK *param, MI_INFO *info,
-	      char * name, int rep_quick, my_bool no_copy_stat)
+	      char * name, int rep_quick)
 {
   int error,got_error;
   ha_rows start_records,new_header_length;
@@ -1627,8 +1627,6 @@ int mi_repair(MI_CHECK *param, MI_INFO *info,
     mi_set_all_keys_active(share->state.key_map, share->base.keys);
   mi_drop_all_indexes(param, info, TRUE);
 
-  lock_memory(param);			/* Everything is alloced */
-
   /* Re-create all keys, which are set in key_map. */
   while (!(error=sort_get_next_record(&sort_param)))
   {
@@ -1731,11 +1729,6 @@ err:
     /* Replace the actual file with the temporary file */
     if (new_file >= 0)
     {
-      myf flags= 0;
-      if (param->testflag & T_BACKUP_DATA)
-        flags |= MY_REDEL_MAKE_BACKUP;
-      if (no_copy_stat)
-        flags |= MY_REDEL_NO_COPY_STAT;
       mysql_file_close(new_file, MYF(0));
       info->dfile=new_file= -1;
       /*
@@ -1754,7 +1747,8 @@ err:
         info->s->file_map= NULL;
       }
       if (change_to_newfile(share->data_file_name, MI_NAME_DEXT, DATA_TMP_EXT,
-                            flags) ||
+			    (param->testflag & T_BACKUP_DATA ?
+			     MYF(MY_REDEL_MAKE_BACKUP): MYF(0))) ||
 	  mi_open_datafile(info,share,name,-1))
 	got_error=1;
 
@@ -1907,22 +1901,6 @@ int movepoint(MI_INFO *info, uchar *record, my_off_t oldpos,
 } /* movepoint */
 
 
-	/* Tell system that we want all memory for our cache */
-
-void lock_memory(MI_CHECK *param MY_ATTRIBUTE((unused)))
-{
-#ifdef SUN_OS				/* Key-cacheing thrases on sun 4.1 */
-  if (param->opt_lock_memory)
-  {
-    int success = mlockall(MCL_CURRENT);	/* or plock(DATLOCK); */
-    if (geteuid() == 0 && success != 0)
-      mi_check_print_warning(param,
-			     "Failed to lock memory. errno %d",my_errno);
-  }
-#endif
-} /* lock_memory */
-
-
 	/* Flush all changed blocks to disk */
 
 int flush_blocks(MI_CHECK *param, KEY_CACHE *key_cache, File file)
@@ -1941,8 +1919,7 @@ int flush_blocks(MI_CHECK *param, KEY_CACHE *key_cache, File file)
 
 	/* Sort index for more efficent reads */
 
-int mi_sort_index(MI_CHECK *param, MI_INFO *info, char * name,
-                  my_bool no_copy_stat)
+int mi_sort_index(MI_CHECK *param, MI_INFO *info, char * name)
 {
   uint key;
   MI_KEYDEF *keyinfo;
@@ -2020,7 +1997,7 @@ int mi_sort_index(MI_CHECK *param, MI_INFO *info, char * name,
   share->kfile = -1;
   (void) mysql_file_close(new_file, MYF(MY_WME));
   if (change_to_newfile(share->index_file_name, MI_NAME_IEXT, INDEX_TMP_EXT,
-			no_copy_stat ? MYF(MY_REDEL_NO_COPY_STAT) : MYF(0)) ||
+			MYF(0)) ||
       mi_open_keyfile(share))
     goto err2;
   info->lock_type= F_UNLCK;			/* Force mi_readinfo to lock */
@@ -2224,8 +2201,6 @@ err:
     info		MyISAM handler to repair
     name		Name of table (for warnings)
     rep_quick		set to <> 0 if we should not change data file
-    no_copy_stat        Don't copy file stats from old to new file,
-                        assume that new file was created with correct stats
 
   RESULT
     0	ok
@@ -2233,7 +2208,7 @@ err:
 */
 
 int mi_repair_by_sort(MI_CHECK *param, MI_INFO *info,
-		      const char * name, int rep_quick, my_bool no_copy_stat)
+		      const char * name, int rep_quick)
 {
   int got_error;
   uint i;
@@ -2352,7 +2327,6 @@ int mi_repair_by_sort(MI_CHECK *param, MI_INFO *info,
     ((param->testflag & T_CREATE_MISSING_KEYS) ? info->state->records :
      (ha_rows) (sort_info.filelength/length+1));
   sort_param.key_cmp=sort_key_cmp;
-  sort_param.lock_in_memory=lock_memory;
   sort_param.tmpdir=param->tmpdir;
   sort_param.sort_info=&sort_info;
   sort_param.fix_datafile= (my_bool) (! rep_quick);
@@ -2556,15 +2530,11 @@ err:
     /* Replace the actual file with the temporary file */
     if (new_file >= 0)
     {
-      myf flags= 0;
-      if (param->testflag & T_BACKUP_DATA)
-        flags |= MY_REDEL_MAKE_BACKUP;
-      if (no_copy_stat)
-        flags |= MY_REDEL_NO_COPY_STAT;
       mysql_file_close(new_file, MYF(0));
       info->dfile=new_file= -1;
       if (change_to_newfile(share->data_file_name,MI_NAME_DEXT, DATA_TMP_EXT,
-                            flags) ||
+			    (param->testflag & T_BACKUP_DATA ?
+			     MYF(MY_REDEL_MAKE_BACKUP): MYF(0))) ||
 	  mi_open_datafile(info,share,name,-1))
 	got_error=1;
     }
@@ -2612,8 +2582,6 @@ err:
     info		MyISAM handler to repair
     name		Name of table (for warnings)
     rep_quick		set to <> 0 if we should not change data file
-    no_copy_stat        Don't copy file stats from old to new file,
-                        assume that new file was created with correct stats
 
   DESCRIPTION
     Same as mi_repair_by_sort but do it multithreaded
@@ -2648,7 +2616,7 @@ err:
 */
 
 int mi_repair_parallel(MI_CHECK *param, MI_INFO *info,
-                       const char * name, int rep_quick, my_bool no_copy_stat)
+			const char * name, int rep_quick)
 {
   int got_error;
   uint i,key, total_key_length, istep;
@@ -2867,7 +2835,6 @@ int mi_repair_parallel(MI_CHECK *param, MI_INFO *info,
       sort_param[i].key_write=sort_key_write;
     }
     sort_param[i].key_cmp=sort_key_cmp;
-    sort_param[i].lock_in_memory=lock_memory;
     sort_param[i].tmpdir=param->tmpdir;
     sort_param[i].sort_info=&sort_info;
     sort_param[i].master=0;
@@ -2950,8 +2917,8 @@ int mi_repair_parallel(MI_CHECK *param, MI_INFO *info,
     */
     sort_param[i].read_cache= ((rep_quick || !i) ? param->read_cache :
                                new_data_cache);
-    DBUG_PRINT("io_cache_share", ("thread: %u  read_cache: 0x%lx",
-                                  i, (long) &sort_param[i].read_cache));
+    DBUG_PRINT("io_cache_share", ("thread: %u  read_cache: %p",
+                                  i, &sort_param[i].read_cache));
 
     sort_param[i].sortbuff_size=
       param->sort_buffer_length/sort_info.total_keys;
@@ -3083,15 +3050,11 @@ err:
     /* Replace the actual file with the temporary file */
     if (new_file >= 0)
     {
-      myf flags= 0;
-      if (param->testflag & T_BACKUP_DATA)
-        flags |= MY_REDEL_MAKE_BACKUP;
-      if (no_copy_stat)
-        flags |= MY_REDEL_NO_COPY_STAT;
       mysql_file_close(new_file, MYF(0));
       info->dfile=new_file= -1;
       if (change_to_newfile(share->data_file_name, MI_NAME_DEXT, DATA_TMP_EXT,
-			    flags) ||
+			    (param->testflag & T_BACKUP_DATA ?
+			     MYF(MY_REDEL_MAKE_BACKUP): MYF(0))) ||
 	  mi_open_datafile(info,share,name,-1))
 	got_error=1;
     }
@@ -3376,7 +3339,7 @@ static int sort_get_next_record(MI_SORT_PARAM *sort_param)
 	  {
 	    if (!searching)
 	      mi_check_print_info(param,
-				  "Deleted block with impossible length %u at %s",
+				  "Deleted block with impossible length %lu at %s",
 				  block_info.block_len,llstr(pos,llbuff));
 	    error=1;
 	  }
@@ -3415,7 +3378,7 @@ static int sort_get_next_record(MI_SORT_PARAM *sort_param)
 	  {
 	    if (!searching)
 	      mi_check_print_info(param,
-				  "Found block with impossible length %u at %s; Skipped",
+				  "Found block with impossible length %lu at %s; Skipped",
 				  block_info.block_len+ (uint) (block_info.filepos-pos),
 				  llstr(pos,llbuff));
 	    if (found_record)
@@ -3607,7 +3570,7 @@ static int sort_get_next_record(MI_SORT_PARAM *sort_param)
 	  block_info.rec_len > (uint) share->max_pack_length)
       {
 	if (! searching)
-	  mi_check_print_info(param,"Found block with wrong recordlength: %d at %s\n",
+	  mi_check_print_info(param,"Found block with wrong recordlength: %ld at %s\n",
 			      block_info.rec_len,
 			      llstr(sort_param->pos,llbuff));
 	continue;
@@ -3778,9 +3741,10 @@ int sort_write_record(MI_SORT_PARAM *sort_param)
 
 	/* Compare two keys from _create_index_by_sort */
 
-static int sort_key_cmp(MI_SORT_PARAM *sort_param, const void *a,
+static int sort_key_cmp(const void *cmp_arg, const void *a,
 			const void *b)
 {
+  MI_SORT_PARAM *sort_param= (MI_SORT_PARAM*)cmp_arg;
   uint not_used[2];
   return (ha_key_cmp(sort_param->seg, *((uchar**) a), *((uchar**) b),
 		     USE_WHOLE_KEY, SEARCH_SAME, not_used));
@@ -3933,7 +3897,7 @@ static int sort_ft_key_write(MI_SORT_PARAM *sort_param, const void *a)
 
   if (ha_compare_text(sort_param->seg->charset,
                       ((uchar *)a)+1,a_len-1,
-                      ft_buf->lastkey+1,val_off-1, 0, 0)==0)
+                      ft_buf->lastkey+1,val_off-1, 0)==0)
   {
     if (!ft_buf->buf) /* store in second-level tree */
     {
@@ -4100,7 +4064,7 @@ static int sort_delete_record(MI_SORT_PARAM *sort_param)
   if (info->s->options & HA_OPTION_COMPRESS_RECORD)
   {
     mi_check_print_error(param,
-			 "Recover aborted; Can't run standard recovery on compressed tables with errors in data-file. Use switch 'myisamchk --safe-recover' to fix it\n",stderr);;
+			 "Recover aborted; Can't run standard recovery on compressed tables with errors in data-file. Use switch 'myisamchk --safe-recover' to fix it\n");;
     DBUG_RETURN(1);
   }
 

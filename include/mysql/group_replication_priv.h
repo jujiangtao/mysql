@@ -16,6 +16,10 @@
 #ifndef GROUP_REPLICATION_PRIV_INCLUDE
 #define	GROUP_REPLICATION_PRIV_INCLUDE
 
+/**
+  @file include/mysql/group_replication_priv.h
+*/
+
 #ifndef MYSQL_SERVER
 #define MYSQL_SERVER
 #endif
@@ -48,7 +52,7 @@ int group_replication_stop();
 /**
   Returns the server connection attribute
 
-  @Note This method implementation is on sql_class.cc
+  @note This method implementation is on sql_class.cc
 
   @return the pthread for the connection attribute.
 */

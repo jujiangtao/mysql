@@ -19,6 +19,8 @@
 #include "my_thread_local.h"   // my_errno
 #include "dynamic_ids.h"       // Server_ids
 #include "log.h"               // sql_print_error
+#include "mysqld.h"            // mysql_data_home
+#include "psi_memory_key.h"
 
 
 int init_ulongvar_from_file(ulong* var, IO_CACHE* f, ulong default_val);
@@ -85,7 +87,7 @@ int Rpl_info_file::do_init_info()
         end_io_cache(&info_file);
       my_close(info_fd, MYF(MY_WME));
     }
-    if ((info_fd = my_open(info_fname, O_CREAT|O_RDWR|O_BINARY, MYF(MY_WME))) < 0)
+    if ((info_fd = my_open(info_fname, O_CREAT | O_RDWR, MYF(MY_WME))) < 0)
     {
       sql_print_error("Failed to create a new info file (\
 file '%s', errno %d)", info_fname, my_errno());
@@ -112,7 +114,7 @@ file '%s')", info_fname);
       reinit_io_cache(&info_file, READ_CACHE, 0L,0,0);
     else
     {
-      if ((info_fd = my_open(info_fname, O_RDWR|O_BINARY, MYF(MY_WME))) < 0 )
+      if ((info_fd = my_open(info_fname, O_RDWR, MYF(MY_WME))) < 0 )
       {
         sql_print_error("Failed to open the existing info file (\
 file '%s', errno %d)", info_fname, my_errno());
@@ -612,9 +614,10 @@ int init_floatvar_from_file(float* var, IO_CACHE* f, float default_val)
    shorter or equal of @c long and separated by the single space.
 
    @param  buffer      Put the read values in this static buffer
-   @param  buffer      Size of the static buffer
+   @param  size        Size of the static buffer
    @param  buffer_act  Points to the final buffer as dynamic buffer may
                        be used if the static buffer is not big enough.
+   @param  f           IO_CACHE of the replication info file.
 
    @retval 0           All OK
    @retval non-zero  An error

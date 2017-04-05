@@ -14,8 +14,8 @@
    51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
 
 #include "json_binary.h"
-#include "json_dom.h"
-#include "mysqld.h"             // key_memory_JSON
+#include "current_thd.h"        // current_thd
+#include "json_dom.h"           // Json_dom
 #include "sql_class.h"          // THD
 #include "template_utils.h"     // down_cast
 #include <algorithm>            // std::min
@@ -91,7 +91,7 @@ enum enum_serialization_result
 
 static enum_serialization_result
 serialize_json_value(const Json_dom *dom, size_t type_pos, String *dest,
-                     size_t depth, bool small_parent);
+                     size_t depth);
 
 bool serialize(const Json_dom *dom, String *dest)
 {
@@ -102,7 +102,7 @@ bool serialize(const Json_dom *dom, String *dest)
   // Reserve space (one byte) for the type identifier.
   if (dest->append('\0'))
     return true;                              /* purecov: inspected */
-  return serialize_json_value(dom, 0, dest, 0, false) != OK;
+  return serialize_json_value(dom, 0, dest, 0) != OK;
 }
 
 
@@ -187,6 +187,26 @@ static void insert_offset_or_size(String *dest, size_t pos,
 
 
 /**
+  Check if the size of a document exceeds the maximum JSON binary size
+  (4 GB, aka UINT_MAX32). Raise an error if it is too big.
+
+  @param size  the size of the document
+  @return true if the document is too big, false otherwise
+*/
+static bool check_document_size(size_t size)
+{
+  if (size > UINT_MAX32)
+  {
+    /* purecov: begin inspected */
+    my_error(ER_JSON_VALUE_TOO_BIG, MYF(0));
+    return true;
+    /* purecov: end */
+  }
+  return false;
+}
+
+
+/**
   Append a length to a String. The number of bytes used to store the length
   uses a variable number of bytes depending on how large the length is. If the
   highest bit in a byte is 1, then the length is continued on the next byte.
@@ -217,6 +237,9 @@ static bool append_variable_length(String *dest, size_t length)
   }
   while (length != 0);
 
+  if (check_document_size(dest->length() + length))
+    return true;                              /* purecov: inspected */
+
   // Successfully appended the length.
   return false;
 }
@@ -232,7 +255,7 @@ static bool append_variable_length(String *dest, size_t length)
   @return  false on success, true on error
 */
 static bool read_variable_length(const char *data, size_t data_length,
-                                 size_t *length, size_t *num)
+                                 uint32 *length, uint8 *num)
 {
   /*
     It takes five bytes to represent UINT_MAX32, which is the largest
@@ -252,8 +275,8 @@ static bool read_variable_length(const char *data, size_t data_length,
         return true;                          /* purecov: inspected */
 
       // This was the last byte. Return successfully.
-      *num= i + 1;
-      *length= len;
+      *num= static_cast<uint8>(i + 1);
+      *length= static_cast<uint32>(len);
       return false;
     }
   }
@@ -286,14 +309,7 @@ static bool is_too_big_for_json(size_t offset_or_size, bool large)
   {
     if (!large)
       return true;
-
-    if (offset_or_size > UINT_MAX32)
-    {
-      /* purecov: begin inspected */
-      my_error(ER_JSON_VALUE_TOO_BIG, MYF(0));
-      return true;
-      /* purecov: end */
-    }
+    return check_document_size(offset_or_size);
   }
 
   return false;
@@ -315,16 +331,16 @@ static bool should_inline_value(const Json_dom *value, bool large,
 {
   switch (value->json_type())
   {
-  case Json_dom::J_NULL:
+  case enum_json_type::J_NULL:
     *inlined_val= JSONB_NULL_LITERAL;
     *inlined_type= JSONB_TYPE_LITERAL;
     return true;
-  case Json_dom::J_BOOLEAN:
+  case enum_json_type::J_BOOLEAN:
     *inlined_val= (down_cast<const Json_boolean*>(value)->value()) ?
                 JSONB_TRUE_LITERAL : JSONB_FALSE_LITERAL;
     *inlined_type= JSONB_TYPE_LITERAL;
     return true;
-  case Json_dom::J_INT:
+  case enum_json_type::J_INT:
     {
       const Json_int *i= down_cast<const Json_int*>(value);
       if (i->is_16bit() || (large && i->is_32bit()))
@@ -335,7 +351,7 @@ static bool should_inline_value(const Json_dom *value, bool large,
       }
       return false;
     }
-  case Json_dom::J_UINT:
+  case enum_json_type::J_UINT:
     {
       const Json_uint *i= down_cast<const Json_uint*>(value);
       if (i->is_16bit() || (large && i->is_32bit()))
@@ -392,7 +408,7 @@ append_value(String *dest, const Json_dom *value, size_t start_pos,
     return VALUE_TOO_BIG;
 
   insert_offset_or_size(dest, entry_pos + 1, offset, large);
-  return serialize_json_value(value, entry_pos, dest, depth, !large);
+  return serialize_json_value(value, entry_pos, dest, depth);
 }
 
 
@@ -580,14 +596,11 @@ serialize_json_object(const Json_object *object, String *dest, bool large,
   @param type_pos  the position of the type specifier to update
   @param dest      the destination string
   @param depth     the current nesting level
-  @param small_parent
-                   tells if @a dom is contained in an array or object
-                   which is stored in the small storage format
   @return          serialization status
 */
 static enum_serialization_result
 serialize_json_value(const Json_dom *dom, size_t type_pos, String *dest,
-                     size_t depth, bool small_parent)
+                     size_t depth)
 {
   const size_t start_pos= dest->length();
   DBUG_ASSERT(type_pos < start_pos);
@@ -596,7 +609,7 @@ serialize_json_value(const Json_dom *dom, size_t type_pos, String *dest,
 
   switch (dom->json_type())
   {
-  case Json_dom::J_ARRAY:
+  case enum_json_type::J_ARRAY:
     {
       const Json_array *array= down_cast<const Json_array*>(dom);
       (*dest)[type_pos]= JSONB_TYPE_SMALL_ARRAY;
@@ -612,16 +625,13 @@ serialize_json_value(const Json_dom *dom, size_t type_pos, String *dest,
       */
       if (result == VALUE_TOO_BIG)
       {
-        // If the parent uses the small storage format, it needs to grow too.
-        if (small_parent)
-          return VALUE_TOO_BIG;
         dest->length(start_pos);
         (*dest)[type_pos]= JSONB_TYPE_LARGE_ARRAY;
         result= serialize_json_array(array, dest, true, depth);
       }
       break;
     }
-  case Json_dom::J_OBJECT:
+  case enum_json_type::J_OBJECT:
     {
       const Json_object *object= down_cast<const Json_object*>(dom);
       (*dest)[type_pos]= JSONB_TYPE_SMALL_OBJECT;
@@ -637,16 +647,13 @@ serialize_json_value(const Json_dom *dom, size_t type_pos, String *dest,
       */
       if (result == VALUE_TOO_BIG)
       {
-        // If the parent uses the small storage format, it needs to grow too.
-        if (small_parent)
-          return VALUE_TOO_BIG;
         dest->length(start_pos);
         (*dest)[type_pos]= JSONB_TYPE_LARGE_OBJECT;
         result= serialize_json_object(object, dest, true, depth);
       }
       break;
     }
-  case Json_dom::J_STRING:
+  case enum_json_type::J_STRING:
     {
       const Json_string *jstr= down_cast<const Json_string*>(dom);
       size_t size= jstr->size();
@@ -657,7 +664,7 @@ serialize_json_value(const Json_dom *dom, size_t type_pos, String *dest,
       result= OK;
       break;
     }
-  case Json_dom::J_INT:
+  case enum_json_type::J_INT:
     {
       const Json_int *i= down_cast<const Json_int*>(dom);
       longlong val= i->value();
@@ -682,7 +689,7 @@ serialize_json_value(const Json_dom *dom, size_t type_pos, String *dest,
       result= OK;
       break;
     }
-  case Json_dom::J_UINT:
+  case enum_json_type::J_UINT:
     {
       const Json_uint *i= down_cast<const Json_uint*>(dom);
       ulonglong val= i->value();
@@ -707,7 +714,7 @@ serialize_json_value(const Json_dom *dom, size_t type_pos, String *dest,
       result= OK;
       break;
     }
-  case Json_dom::J_DOUBLE:
+  case enum_json_type::J_DOUBLE:
     {
       // Store the double in a platform-independent eight-byte format.
       const Json_double *d= down_cast<const Json_double*>(dom);
@@ -719,13 +726,13 @@ serialize_json_value(const Json_dom *dom, size_t type_pos, String *dest,
       result= OK;
       break;
     }
-  case Json_dom::J_NULL:
+  case enum_json_type::J_NULL:
     if (dest->append(JSONB_NULL_LITERAL))
       return FAILURE;                         /* purecov: inspected */
     (*dest)[type_pos]= JSONB_TYPE_LITERAL;
     result= OK;
     break;
-  case Json_dom::J_BOOLEAN:
+  case enum_json_type::J_BOOLEAN:
     {
       char c= (down_cast<const Json_boolean*>(dom)->value()) ?
         JSONB_TRUE_LITERAL : JSONB_FALSE_LITERAL;
@@ -735,7 +742,7 @@ serialize_json_value(const Json_dom *dom, size_t type_pos, String *dest,
       result= OK;
       break;
     }
-  case Json_dom::J_OPAQUE:
+  case enum_json_type::J_OPAQUE:
     {
       const Json_opaque *o= down_cast<const Json_opaque*>(dom);
       if (dest->append(static_cast<char>(o->type())) ||
@@ -746,7 +753,7 @@ serialize_json_value(const Json_dom *dom, size_t type_pos, String *dest,
       result= OK;
       break;
     }
-  case Json_dom::J_DECIMAL:
+  case enum_json_type::J_DECIMAL:
     {
       // Store DECIMALs as opaque values.
       const Json_decimal *jd= down_cast<const Json_decimal*>(dom);
@@ -755,20 +762,20 @@ serialize_json_value(const Json_dom *dom, size_t type_pos, String *dest,
       if (jd->get_binary(buf))
         return FAILURE;                       /* purecov: inspected */
       Json_opaque o(MYSQL_TYPE_NEWDECIMAL, buf, bin_size);
-      result= serialize_json_value(&o, type_pos, dest, depth, small_parent);
+      result= serialize_json_value(&o, type_pos, dest, depth);
       break;
     }
-  case Json_dom::J_DATETIME:
-  case Json_dom::J_DATE:
-  case Json_dom::J_TIME:
-  case Json_dom::J_TIMESTAMP:
+  case enum_json_type::J_DATETIME:
+  case enum_json_type::J_DATE:
+  case enum_json_type::J_TIME:
+  case enum_json_type::J_TIMESTAMP:
     {
       // Store datetime as opaque values.
       const Json_datetime *jdt= down_cast<const Json_datetime*>(dom);
       char buf[Json_datetime::PACKED_SIZE];
       jdt->to_packed(buf);
       Json_opaque o(jdt->field_type(), buf, Json_datetime::PACKED_SIZE);
-      result= serialize_json_value(&o, type_pos, dest, depth, small_parent);
+      result= serialize_json_value(&o, type_pos, dest, depth);
       break;
     }
   default:
@@ -794,8 +801,8 @@ serialize_json_value(const Json_dom *dom, size_t type_pos, String *dest,
 
 // Constructor for literals and errors.
 Value::Value(enum_type t)
-  : m_type(t), m_field_type(), m_data(), m_element_count(), m_length(),
-    m_int_value(), m_double_value(), m_large()
+  : m_data(nullptr), m_element_count(), m_length(), m_field_type(), m_type(t),
+    m_large()
 {
   DBUG_ASSERT(t == LITERAL_NULL || t == LITERAL_TRUE || t == LITERAL_FALSE ||
               t == ERROR);
@@ -804,8 +811,8 @@ Value::Value(enum_type t)
 
 // Constructor for int and uint.
 Value::Value(enum_type t, int64 val)
-  : m_type(t), m_field_type(), m_data(), m_element_count(), m_length(),
-    m_int_value(val), m_double_value(), m_large()
+  : m_int_value(val), m_element_count(), m_length(), m_field_type(), m_type(t),
+    m_large()
 {
   DBUG_ASSERT(t == INT || t == UINT);
 }
@@ -813,32 +820,32 @@ Value::Value(enum_type t, int64 val)
 
 // Constructor for double.
 Value::Value(double d)
-  : m_type(DOUBLE), m_field_type(), m_data(), m_element_count(), m_length(),
-    m_int_value(), m_double_value(d), m_large()
+  : m_double_value(d), m_element_count(), m_length(), m_field_type(),
+    m_type(DOUBLE), m_large()
 {}
 
 
 // Constructor for string.
-Value::Value(const char *data, size_t len)
-  : m_type(STRING), m_field_type(), m_data(data), m_element_count(),
-    m_length(len), m_int_value(), m_double_value(), m_large()
+Value::Value(const char *data, uint32 len)
+  : m_data(data), m_element_count(), m_length(len), m_field_type(),
+    m_type(STRING), m_large()
 {}
 
 
 // Constructor for arrays and objects.
-Value::Value(enum_type t, const char *data, size_t bytes,
-             size_t element_count, bool large)
-  : m_type(t), m_field_type(), m_data(data), m_element_count(element_count),
-    m_length(bytes), m_int_value(), m_double_value(), m_large(large)
+Value::Value(enum_type t, const char *data, uint32 bytes,
+             uint32 element_count, bool large)
+  : m_data(data), m_element_count(element_count), m_length(bytes),
+    m_field_type(), m_type(t), m_large(large)
 {
   DBUG_ASSERT(t == ARRAY || t == OBJECT);
 }
 
 
 // Constructor for opaque values.
-Value::Value(enum_field_types ft, const char *data, size_t len)
-  : m_type(OPAQUE), m_field_type(ft), m_data(data), m_element_count(),
-    m_length(len), m_int_value(), m_double_value(), m_large()
+Value::Value(enum_field_types ft, const char *data, uint32 len)
+  : m_data(data), m_element_count(), m_length(len), m_field_type(ft),
+    m_type(OPAQUE), m_large()
 {}
 
 
@@ -904,7 +911,7 @@ const char *Value::get_data() const
   Get the length in bytes of the STRING or OPAQUE value represented by
   this instance.
 */
-size_t Value::get_data_length() const
+uint32 Value::get_data_length() const
 {
   DBUG_ASSERT(m_type == STRING || m_type == OPAQUE);
   return m_length;
@@ -945,7 +952,7 @@ double Value::get_double() const
   Get the number of elements in an array, or the number of members in
   an object.
 */
-size_t Value::element_count() const
+uint32 Value::element_count() const
 {
   DBUG_ASSERT(m_type == ARRAY || m_type == OBJECT);
   return m_element_count;
@@ -1032,8 +1039,8 @@ static Value parse_scalar(uint8 type, const char *data, size_t len)
     }
   case JSONB_TYPE_STRING:
     {
-      size_t str_len;
-      size_t n;
+      uint32 str_len;
+      uint8 n;
       if (read_variable_length(data, len, &str_len, &n))
         return err();                         /* purecov: inspected */
       if (len < n + str_len)
@@ -1054,8 +1061,8 @@ static Value parse_scalar(uint8 type, const char *data, size_t len)
       enum_field_types field_type= static_cast<enum_field_types>(type_byte);
 
       // Then there's the length of the value.
-      size_t val_len;
-      size_t n;
+      uint32 val_len;
+      uint8 n;
       if (read_variable_length(data + 1, len - 1, &val_len, &n))
         return err();                         /* purecov: inspected */
       if (len < 1 + n + val_len)
@@ -1077,7 +1084,7 @@ static Value parse_scalar(uint8 type, const char *data, size_t len)
   @param large tells if the large or small storage format is used; true
                means read four bytes, false means read two bytes
 */
-static size_t read_offset_or_size(const char *data, bool large)
+static uint32 read_offset_or_size(const char *data, bool large)
 {
   return large ? uint4korr(data) : uint2korr(data);
 }
@@ -1106,8 +1113,8 @@ static Value parse_array_or_object(Value::enum_type t, const char *data,
   const size_t offset_size= large ? LARGE_OFFSET_SIZE : SMALL_OFFSET_SIZE;
   if (len < 2 * offset_size)
     return err();
-  const size_t element_count= read_offset_or_size(data, large);
-  const size_t bytes= read_offset_or_size(data + offset_size, large);
+  const uint32 element_count= read_offset_or_size(data, large);
+  const uint32 bytes= read_offset_or_size(data + offset_size, large);
 
   // The value can't have more bytes than what's available in the data buffer.
   if (bytes > len)
@@ -1217,7 +1224,7 @@ Value Value::element(size_t pos) const
     Otherwise, it's a non-inlined value, and the offset to where the value
     is stored, can be found right after the type byte in the entry.
   */
-  size_t value_offset= read_offset_or_size(m_data + entry_offset + 1, m_large);
+  uint32 value_offset= read_offset_or_size(m_data + entry_offset + 1, m_large);
 
   if (m_length < value_offset)
     return err();                             /* purecov: inspected */
@@ -1251,10 +1258,10 @@ Value Value::key(size_t pos) const
   const size_t entry_offset= 2 * offset_size + key_entry_size * pos;
 
   // The offset of the key is the first part of the key entry.
-  const size_t key_offset= read_offset_or_size(m_data + entry_offset, m_large);
+  const uint32 key_offset= read_offset_or_size(m_data + entry_offset, m_large);
 
   // The length of the key is the second part of the entry, always two bytes.
-  const size_t key_length= uint2korr(m_data + entry_offset + offset_size);
+  const uint16 key_length= uint2korr(m_data + entry_offset + offset_size);
 
   /*
     The key must start somewhere after the last value entry, and it must

@@ -25,6 +25,21 @@
 #include "pfs_column_types.h"
 #include "pfs_column_values.h"
 #include "pfs_global.h"
+#include "current_thd.h"
+#include "field.h"
+#include "sql_class.h"
+#include "mysqld.h"
+
+bool PFS_index_session_variables::match(const System_variable *pfs)
+{
+  if (m_fields >= 1)
+  {
+    if (!m_key.match(pfs))
+      return false;
+  }
+
+  return true;
+}
 
 THR_LOCK table_session_variables::m_table_lock;
 
@@ -80,7 +95,8 @@ ha_rows table_session_variables::get_row_count(void)
 
 table_session_variables::table_session_variables()
   : PFS_engine_table(&m_share, &m_pos),
-    m_sysvar_cache(false), m_row_exists(false), m_pos(0), m_next_pos(0)
+    m_sysvar_cache(false), m_row_exists(false), m_pos(0), m_next_pos(0),
+    m_context(NULL)
 {}
 
 void table_session_variables::reset_position(void)
@@ -94,14 +110,8 @@ int table_session_variables::rnd_init(bool scan)
   /* Build a cache of system variables for this thread. */
   m_sysvar_cache.materialize_all(current_thd);
 
-  /* Record the version of the system variable hash. */
+  /* Record the version of the system variable hash, store in TLS. */
   ulonglong hash_version= m_sysvar_cache.get_sysvar_hash_version();
-
-  /*
-    The table context holds the current version of the system variable hash.
-    If scan == true, then allocate a new context from mem_root and store in TLS.
-    If scan == false, then restore from TLS.
-  */
   m_context= (table_session_variables_context *)current_thd->alloc(sizeof(table_session_variables_context));
   new(m_context) table_session_variables_context(hash_version, !scan);
   return 0;
@@ -109,6 +119,12 @@ int table_session_variables::rnd_init(bool scan)
 
 int table_session_variables::rnd_next(void)
 {
+  if (m_context && !m_context->versions_match())
+  {
+    system_variable_warning();
+    return HA_ERR_END_OF_FILE;
+  }
+
   for (m_pos.set_at(&m_next_pos);
        m_pos.m_index < m_sysvar_cache.size();
        m_pos.next())
@@ -129,9 +145,11 @@ int table_session_variables::rnd_next(void)
 
 int table_session_variables::rnd_pos(const void *pos)
 {
-  /* If system variable hash changes, do nothing. */
   if (!m_context->versions_match())
+  {
+    system_variable_warning();
     return HA_ERR_RECORD_DELETED;
+  }
 
   set_position(pos);
   DBUG_ASSERT(m_pos.m_index < m_sysvar_cache.size());
@@ -148,12 +166,64 @@ int table_session_variables::rnd_pos(const void *pos)
   return HA_ERR_RECORD_DELETED;
 }
 
+int table_session_variables::index_init(uint idx, bool sorted)
+{
+  /*
+    Build a list of system variables from the global system variable hash.
+    Filter by scope.
+  */
+  m_sysvar_cache.materialize_all(current_thd);
+
+  /* Record the version of the system variable hash, store in TLS. */
+  ulonglong hash_version= m_sysvar_cache.get_sysvar_hash_version();
+  m_context= (table_session_variables_context *)current_thd->alloc(sizeof(table_session_variables_context));
+  new(m_context) table_session_variables_context(hash_version, false);
+
+  PFS_index_session_variables *result= NULL;
+  DBUG_ASSERT(idx == 0);
+  result= PFS_NEW(PFS_index_session_variables);
+  m_opened_index= result;
+  m_index= result;
+
+  return 0;
+}
+
+int table_session_variables::index_next(void)
+{
+  if (m_context && !m_context->versions_match())
+  {
+    system_variable_warning();
+    return HA_ERR_END_OF_FILE;
+  }
+
+  for (m_pos.set_at(&m_next_pos);
+       m_pos.m_index < m_sysvar_cache.size();
+       m_pos.next())
+  {
+    if (m_sysvar_cache.is_materialized())
+    {
+      const System_variable *system_var= m_sysvar_cache.get(m_pos.m_index);
+      if (system_var != NULL)
+      {
+        if (m_opened_index->match(system_var))
+        {
+          make_row(system_var);
+          m_next_pos.set_after(&m_pos);
+          return 0;
+        }
+      }
+    }
+  }
+
+  return HA_ERR_END_OF_FILE;
+}
+
 void table_session_variables
 ::make_row(const System_variable *system_var)
 {
   m_row_exists= false;
   m_row.m_variable_name.make_row(system_var->m_name, system_var->m_name_length);
-  m_row.m_variable_value.make_row(system_var);
+  m_row.m_variable_value.make_row(system_var->m_value_str, system_var->m_value_length);
   m_row_exists= true;
 }
 
@@ -182,7 +252,7 @@ int table_session_variables
         set_field_varchar_utf8(f, m_row.m_variable_name.m_str, m_row.m_variable_name.m_length);
         break;
       case 1: /* VARIABLE_VALUE */
-        m_row.m_variable_value.set_field(f);
+        set_field_varchar_utf8(f, m_row.m_variable_value.m_str, m_row.m_variable_value.m_length);
         break;
       default:
         DBUG_ASSERT(false);

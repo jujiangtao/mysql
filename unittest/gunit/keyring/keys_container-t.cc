@@ -22,6 +22,7 @@
 #include "mock_logger.h"
 #include <fstream>
 #include "i_serialized_object.h"
+#include "buffered_file_io.h"
 
 #if !defined(MERGE_UNITTESTS)
 #ifdef HAVE_PSI_INTERFACE
@@ -135,6 +136,8 @@ namespace keyring__keys_container_unittest
     delete sample_key; //unused in this test
   }
 
+// HAVE_UBSAN: undefined behaviour in gmock.
+#if !defined(HAVE_UBSAN)
   TEST_F(Keys_container_test, InitWithFileWithIncorrectKeyringVersion)
   {
     const char *keyring_incorrect_version= "./keyring_incorrect_version";
@@ -162,6 +165,7 @@ namespace keyring__keys_container_unittest
     remove(keyring_incorrect_tag);
     delete sample_key; //unused in this test
   }
+#endif  // HAVE_UBSAN
 
   TEST_F(Keys_container_test, StoreFetchRemove)
   {
@@ -246,6 +250,7 @@ namespace keyring__keys_container_unittest
 
     std::string key_data2("Robi2");
     Key *key2= new Key("Roberts_key2", "AES", "Robert", key_data2.c_str(), key_data2.length()+1);
+
     EXPECT_EQ(keys_container->store_key(key2), 0);
     ASSERT_TRUE(keys_container->get_number_of_keys() == 3);
 
@@ -290,7 +295,7 @@ namespace keyring__keys_container_unittest
     Buffered_file_io_dont_remove_backup(ILogger *logger)
       : Buffered_file_io(logger) {}
 
-    my_bool remove_backup(myf myFlags)
+    my_bool remove_backup()
     {
       return FALSE;
     }
@@ -574,6 +579,8 @@ namespace keyring__keys_container_unittest
     my_free(fetchedKey2->release_key_data());
   }
 
+// HAVE_UBSAN: undefined behaviour in gmock.
+#if !defined(HAVE_UBSAN)
   TEST_F(Keys_container_test_dont_close, BackupfileIsMalformedCheckItIsIgnoredAndDeleted)
   {
     ILogger *logger= new Mock_logger();
@@ -623,10 +630,11 @@ namespace keyring__keys_container_unittest
     my_free(fetchedKey->release_key_data());
     my_free(fetchedKey2->release_key_data());
   }
+#endif  // HAVE_UBSAN
 
-  TEST_F(Keys_container_test_dont_close, CheckIfKeyringIsNotRecreatedWhenKeyringfileDoesnotExist)
+  TEST_F(Keys_container_test_dont_close, CheckIfBackupIsCreatedAfterEachOperationAndIsUsedWhenKeyringDoesNotExist)
   {
-    Mock_logger *logger= new Mock_logger();
+    ILogger *logger= new Mock_logger();
     IKeyring_io *keyring_io= new Buffered_file_io_dont_remove_backup(logger);
     Keys_container *keys_container= new Keys_container(logger);
     EXPECT_EQ(keys_container->init(keyring_io, file_name), 0);
@@ -636,49 +644,12 @@ namespace keyring__keys_container_unittest
     ASSERT_TRUE(check_if_file_exists_and_TAG_is_correct("./keyring") == TRUE);
 
     remove("./keyring");
-    remove("./keyring.backup");
-    EXPECT_CALL(*logger,
-                 log(MY_ERROR_LEVEL, StrEq("Could not flush keys to keyring's backup")));
-    EXPECT_EQ(keys_container->store_key(sample_key2), 1);
-    ASSERT_TRUE(keys_container->get_number_of_keys() == 1);
+    //Now keyring file should be recreated based on keyring.backup
+    EXPECT_EQ(keys_container->store_key(sample_key2), 0);
+    ASSERT_TRUE(keys_container->get_number_of_keys() == 2);
 
-    EXPECT_EQ(check_if_file_exists_and_TAG_is_correct("./keyring.backup"), FALSE);
-    EXPECT_EQ(check_if_file_exists_and_TAG_is_correct("./keyring"), FALSE);
-
-    Key sample_key_id("Roberts_key", NULL, "Robert", NULL, 0);
-    IKey *fetchedKey= keys_container->fetch_key(&sample_key_id);
-    ASSERT_TRUE(fetchedKey != NULL);
-
-    ASSERT_TRUE(*fetchedKey->get_key_signature() == "Roberts_keyRobert");
-    ASSERT_TRUE(memcmp(fetchedKey->get_key_data(), "Robi", fetchedKey->get_key_data_size()) == 0);
-
-    remove(file_name.c_str());
-    delete keys_container;
-    delete logger;
-    delete sample_key2;
-    my_free(fetchedKey->release_key_data());
-  }
-
-  TEST_F(Keys_container_test_dont_close, CheckIfKeyringIsNotRecreatedWhenBackupFileExistsAndKeyringFileDoesnot)
-  {
-    Mock_logger *logger= new Mock_logger();
-    IKeyring_io *keyring_io= new Buffered_file_io_dont_remove_backup(logger);
-    Keys_container *keys_container= new Keys_container(logger);
-    EXPECT_EQ(keys_container->init(keyring_io, file_name), 0);
-    EXPECT_EQ(keys_container->store_key(sample_key), 0);
-    ASSERT_TRUE(keys_container->get_number_of_keys() == 1);
     EXPECT_EQ(check_if_file_exists_and_TAG_is_correct("./keyring.backup"), TRUE);
-    ASSERT_TRUE(check_if_file_exists_and_TAG_is_correct("./keyring") == TRUE);
-
-    remove("./keyring");
-    EXPECT_CALL(*logger,
-                 log(MY_ERROR_LEVEL, StrEq("Could not flush keys to keyring's backup")));
-    EXPECT_EQ(keys_container->store_key(sample_key2), 1);
-    ASSERT_TRUE(keys_container->get_number_of_keys() == 1);
-
-    //as the keyring file was removed keyring.backup file should have been truncated
-    EXPECT_EQ(check_if_file_exists_and_TAG_is_correct("./keyring.backup"), FALSE);
-    EXPECT_EQ(check_if_file_exists_and_TAG_is_correct("./keyring"), FALSE);
+    EXPECT_EQ(check_if_file_exists_and_TAG_is_correct("./keyring"), TRUE);
 
     Key sample_key_id("Roberts_key", NULL, "Robert", NULL, 0);
     IKey *fetchedKey= keys_container->fetch_key(&sample_key_id);
@@ -691,41 +662,7 @@ namespace keyring__keys_container_unittest
     remove(file_name.c_str());
     delete keys_container;
     delete logger;
-    delete sample_key2;
     my_free(fetchedKey->release_key_data());
-  }
-
-  TEST_F(Keys_container_test_dont_close, CheckIfKeyIsNotDumpedIntoKeyringFileIfKeyringFileHasBeenChanged)
-  {
-    Mock_logger *logger= new Mock_logger();
-    IKeyring_io *keyring_io_dont_remove_backup= new Buffered_file_io_dont_remove_backup(logger);
-    Keys_container *keys_container= new Keys_container(logger);
-
-    EXPECT_EQ(keys_container->init(keyring_io_dont_remove_backup, file_name), 0);
-    EXPECT_EQ(keys_container->store_key(sample_key), 0);
-    ASSERT_TRUE(keys_container->get_number_of_keys() == 1);
-
-    EXPECT_EQ(check_if_file_exists_and_TAG_is_correct("./keyring.backup"), TRUE);
-    EXPECT_EQ(check_if_file_exists_and_TAG_is_correct("./keyring"), TRUE);
-    remove("./keyring");
-    rename("keyring.backup","keyring");
-
-    EXPECT_EQ(check_if_file_exists_and_TAG_is_correct("./keyring.backup"), FALSE);
-    EXPECT_EQ(check_if_file_exists_and_TAG_is_correct("./keyring"), TRUE);
-
-    EXPECT_CALL(*logger,
-                log(MY_ERROR_LEVEL, StrEq("Keyring file has been changed outside the server.")));
-    EXPECT_CALL(*logger,
-                log(MY_ERROR_LEVEL, StrEq("Could not flush keys to keyring's backup")));
-    EXPECT_EQ(keys_container->store_key(sample_key2), 1);
-    ASSERT_TRUE(keys_container->get_number_of_keys() == 1);
-
-    //check if backup file was not created
-    EXPECT_EQ(check_if_file_exists_and_TAG_is_correct("./keyring.backup"), FALSE);
-    delete keys_container;
-    delete logger;
-    delete sample_key2;
-    remove("./keyring");
   }
 
   class Mock_keyring_io : public IKeyring_io
@@ -792,6 +729,8 @@ namespace keyring__keys_container_unittest
     EXPECT_CALL(*keyring_io, has_next_serialized_object()).WillOnce(Return(FALSE));
   }
 
+// HAVE_UBSAN: undefined behaviour in gmock.
+#if !defined(HAVE_UBSAN)
   TEST_F(Keys_container_with_mocked_io_test, ErrorFromIODuringInitOnGettingSerializedObject)
   {
     keyring_io= new Mock_keyring_io();
@@ -867,7 +806,10 @@ namespace keyring__keys_container_unittest
     delete invalid_key;
     delete sample_key; //unused in this test
   }
+#endif  // HAVE_UBSAN
 
+// HAVE_UBSAN: undefined behaviour in gmock.
+#if !defined(HAVE_UBSAN)
   TEST_F(Keys_container_with_mocked_io_test, ErrorFromSerializerOnFlushToBackupWhenStoringKey)
   {
     keyring_io= new Mock_keyring_io();
@@ -895,7 +837,10 @@ namespace keyring__keys_container_unittest
     delete sample_key;
     delete mock_serializer;
   }
+#endif  // HAVE_UBSAN
 
+// HAVE_UBSAN: undefined behaviour in gmock.
+#if !defined(HAVE_UBSAN)
   TEST_F(Keys_container_with_mocked_io_test, ErrorFromSerializerOnFlushToKeyringWhenStoringKey)
   {
     keyring_io= new Mock_keyring_io();
@@ -1045,7 +990,10 @@ namespace keyring__keys_container_unittest
     delete logger;
     delete mock_serializer;
   }
+#endif  // HAVE_UBSAN
 
+// HAVE_UBSAN: undefined behaviour in gmock.
+#if !defined(HAVE_UBSAN)
   TEST_F(Keys_container_with_mocked_io_test, StoreAndRemoveKey)
   {
     keyring_io= new Mock_keyring_io();
@@ -1210,6 +1158,7 @@ namespace keyring__keys_container_unittest
     delete logger;
     delete mock_serializer;
   }
+#endif  // HAVE_UBSAN
 
   TEST_F(Keys_container_with_mocked_io_test, Store2KeysAndRemoveThem)
   {

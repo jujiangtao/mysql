@@ -1,4 +1,4 @@
--- Copyright (c) 2007, 2016, Oracle and/or its affiliates. All rights reserved.
+-- Copyright (c) 2007, 2016 Oracle and/or its affiliates. All rights reserved.
 --
 -- This program is free software; you can redistribute it and/or modify
 -- it under the terms of the GNU General Public License as published by
@@ -17,21 +17,127 @@
 -- The system tables of MySQL Server
 --
 
+set @have_innodb= (select count(engine) from information_schema.engines where engine='INNODB' and support != 'NO');
+
+-- Tables below are NOT treated as DD tables by MySQL server yet.
+
+SET FOREIGN_KEY_CHECKS= 1;
+
+# Added sql_mode elements and making it as SET, instead of ENUM
+
+--
+-- New DD schema end
+--
+
 set sql_mode='';
 set default_storage_engine=myisam;
 
-CREATE TABLE IF NOT EXISTS db (   Host char(60) binary DEFAULT '' NOT NULL, Db char(64) binary DEFAULT '' NOT NULL, User char(32) binary DEFAULT '' NOT NULL, Select_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Insert_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Update_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Delete_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Create_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Drop_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Grant_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, References_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Index_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Alter_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Create_tmp_table_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Lock_tables_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Create_view_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Show_view_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Create_routine_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Alter_routine_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Execute_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Event_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Trigger_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, PRIMARY KEY Host (Host,Db,User), KEY User (User) ) engine=MyISAM CHARACTER SET utf8 COLLATE utf8_bin comment='Database privileges';
+CREATE TABLE IF NOT EXISTS db
+(
+Host char(60) binary DEFAULT '' NOT NULL,
+Db char(64) binary DEFAULT '' NOT NULL,
+User char(32) binary DEFAULT '' NOT NULL,
+Select_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Insert_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Update_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Delete_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Create_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Drop_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Grant_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+References_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Index_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Alter_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Create_tmp_table_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Lock_tables_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Create_view_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Show_view_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Create_routine_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Alter_routine_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Execute_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Event_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Trigger_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+PRIMARY KEY Host (Host,Db,User), KEY User (User)
+)
+engine=InnoDB STATS_PERSISTENT=0 CHARACTER SET utf8 COLLATE utf8_bin comment='Database privileges';
 
 -- Remember for later if db table already existed
 set @had_db_table= @@warning_count != 0;
 
-CREATE TABLE IF NOT EXISTS user (   Host char(60) binary DEFAULT '' NOT NULL, User char(32) binary DEFAULT '' NOT NULL, Select_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Insert_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Update_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Delete_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Create_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Drop_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Reload_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Shutdown_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Process_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, File_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Grant_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, References_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Index_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Alter_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Show_db_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Super_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Create_tmp_table_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Lock_tables_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Execute_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Repl_slave_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Repl_client_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Create_view_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Show_view_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Create_routine_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Alter_routine_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Create_user_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Event_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Trigger_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, Create_tablespace_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, ssl_type enum('','ANY','X509', 'SPECIFIED') COLLATE utf8_general_ci DEFAULT '' NOT NULL, ssl_cipher BLOB NOT NULL, x509_issuer BLOB NOT NULL, x509_subject BLOB NOT NULL, max_questions int(11) unsigned DEFAULT 0  NOT NULL, max_updates int(11) unsigned DEFAULT 0  NOT NULL, max_connections int(11) unsigned DEFAULT 0  NOT NULL, max_user_connections int(11) unsigned DEFAULT 0  NOT NULL, plugin char(64) DEFAULT 'mysql_native_password' NOT NULL, authentication_string TEXT, password_expired ENUM('N', 'Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, password_last_changed timestamp NULL DEFAULT NULL, password_lifetime smallint unsigned NULL DEFAULT NULL, account_locked ENUM('N', 'Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL, PRIMARY KEY Host (Host,User) ) engine=MyISAM CHARACTER SET utf8 COLLATE utf8_bin comment='Users and global privileges';
+CREATE TABLE IF NOT EXISTS user
+(
+Host char(60) binary DEFAULT '' NOT NULL,
+User char(32) binary DEFAULT '' NOT NULL,
+Select_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Insert_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Update_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Delete_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Create_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Drop_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Reload_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Shutdown_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Process_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+File_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Grant_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+References_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Index_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Alter_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Show_db_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Super_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Create_tmp_table_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Lock_tables_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Execute_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Repl_slave_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Repl_client_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Create_view_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Show_view_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Create_routine_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Alter_routine_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Create_user_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Event_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Trigger_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Create_tablespace_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+ssl_type enum('','ANY','X509', 'SPECIFIED') COLLATE utf8_general_ci DEFAULT '' NOT NULL,
+ssl_cipher BLOB NOT NULL,
+x509_issuer BLOB NOT NULL,
+x509_subject BLOB NOT NULL,
+max_questions int(11) unsigned DEFAULT 0  NOT NULL,
+max_updates int(11) unsigned DEFAULT 0  NOT NULL,
+max_connections int(11) unsigned DEFAULT 0  NOT NULL,
+max_user_connections int(11) unsigned DEFAULT 0  NOT NULL,
+plugin char(64) DEFAULT 'mysql_native_password' NOT NULL,
+authentication_string TEXT,
+password_expired ENUM('N', 'Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+password_last_changed timestamp NULL DEFAULT NULL,
+password_lifetime smallint unsigned NULL DEFAULT NULL,
+account_locked ENUM('N', 'Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Create_role_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+Drop_role_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
+PRIMARY KEY Host (Host,User)
+) engine=InnoDB STATS_PERSISTENT=0 CHARACTER SET utf8 COLLATE utf8_bin comment='Users and global privileges';
+
+CREATE TABLE IF NOT EXISTS default_roles
+(
+HOST CHAR(60) BINARY DEFAULT '' NOT NULL, USER CHAR(32) BINARY DEFAULT '' NOT NULL,
+DEFAULT_ROLE_HOST CHAR(60) BINARY DEFAULT '%' NOT NULL,
+DEFAULT_ROLE_USER CHAR(32) BINARY DEFAULT '' NOT NULL,
+PRIMARY KEY (HOST, USER, DEFAULT_ROLE_HOST, DEFAULT_ROLE_USER)
+) engine=InnoDB STATS_PERSISTENT=0 CHARACTER SET utf8 COLLATE utf8_bin comment='Default roles';
+
+CREATE TABLE IF NOT EXISTS role_edges
+(
+FROM_HOST CHAR(60) BINARY DEFAULT '' NOT NULL,
+FROM_USER CHAR(32) BINARY DEFAULT '' NOT NULL,
+TO_HOST CHAR(60) BINARY DEFAULT '' NOT NULL,
+TO_USER CHAR(32) BINARY DEFAULT '' NOT NULL,
+WITH_ADMIN_OPTION ENUM('N', 'Y') COLLATE UTF8_GENERAL_CI DEFAULT 'N' NOT NULL,
+PRIMARY KEY (FROM_HOST,FROM_USER,TO_HOST,TO_USER)
+) engine=InnoDB STATS_PERSISTENT=0 CHARACTER SET utf8 COLLATE utf8_bin comment='Role hierarchy and role grants';
 
 -- Remember for later if user table already existed
 set @had_user_table= @@warning_count != 0;
 
 
-CREATE TABLE IF NOT EXISTS func (  name char(64) binary DEFAULT '' NOT NULL, ret tinyint(1) DEFAULT '0' NOT NULL, dl char(128) DEFAULT '' NOT NULL, type enum ('function','aggregate') COLLATE utf8_general_ci NOT NULL, PRIMARY KEY (name) ) engine=MyISAM CHARACTER SET utf8 COLLATE utf8_bin   comment='User defined functions';
+CREATE TABLE IF NOT EXISTS func (  name char(64) binary DEFAULT '' NOT NULL, ret tinyint(1) DEFAULT '0' NOT NULL, dl char(128) DEFAULT '' NOT NULL, type enum ('function','aggregate') COLLATE utf8_general_ci NOT NULL, PRIMARY KEY (name) ) engine=INNODB STATS_PERSISTENT=0 CHARACTER SET utf8 COLLATE utf8_bin   comment='User defined functions';
 
 
 CREATE TABLE IF NOT EXISTS plugin ( name varchar(64) DEFAULT '' NOT NULL, dl varchar(128) DEFAULT '' NOT NULL, PRIMARY KEY (name) ) engine=InnoDB STATS_PERSISTENT=0 CHARACTER SET utf8 COLLATE utf8_general_ci comment='MySQL plugins';
@@ -40,9 +146,9 @@ CREATE TABLE IF NOT EXISTS plugin ( name varchar(64) DEFAULT '' NOT NULL, dl var
 CREATE TABLE IF NOT EXISTS servers ( Server_name char(64) NOT NULL DEFAULT '', Host char(64) NOT NULL DEFAULT '', Db char(64) NOT NULL DEFAULT '', Username char(64) NOT NULL DEFAULT '', Password char(64) NOT NULL DEFAULT '', Port INT(4) NOT NULL DEFAULT '0', Socket char(64) NOT NULL DEFAULT '', Wrapper char(64) NOT NULL DEFAULT '', Owner char(64) NOT NULL DEFAULT '', PRIMARY KEY (Server_name)) engine=InnoDB STATS_PERSISTENT=0 CHARACTER SET utf8 comment='MySQL Foreign Servers table';
 
 
-CREATE TABLE IF NOT EXISTS tables_priv ( Host char(60) binary DEFAULT '' NOT NULL, Db char(64) binary DEFAULT '' NOT NULL, User char(32) binary DEFAULT '' NOT NULL, Table_name char(64) binary DEFAULT '' NOT NULL, Grantor char(93) DEFAULT '' NOT NULL, Timestamp timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, Table_priv set('Select','Insert','Update','Delete','Create','Drop','Grant','References','Index','Alter','Create View','Show view','Trigger') COLLATE utf8_general_ci DEFAULT '' NOT NULL, Column_priv set('Select','Insert','Update','References') COLLATE utf8_general_ci DEFAULT '' NOT NULL, PRIMARY KEY (Host,Db,User,Table_name), KEY Grantor (Grantor) ) engine=MyISAM CHARACTER SET utf8 COLLATE utf8_bin   comment='Table privileges';
+CREATE TABLE IF NOT EXISTS tables_priv ( Host char(60) binary DEFAULT '' NOT NULL, Db char(64) binary DEFAULT '' NOT NULL, User char(32) binary DEFAULT '' NOT NULL, Table_name char(64) binary DEFAULT '' NOT NULL, Grantor char(93) DEFAULT '' NOT NULL, Timestamp timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, Table_priv set('Select','Insert','Update','Delete','Create','Drop','Grant','References','Index','Alter','Create View','Show view','Trigger') COLLATE utf8_general_ci DEFAULT '' NOT NULL, Column_priv set('Select','Insert','Update','References') COLLATE utf8_general_ci DEFAULT '' NOT NULL, PRIMARY KEY (Host,Db,User,Table_name), KEY Grantor (Grantor) ) engine=INNODB STATS_PERSISTENT=0 CHARACTER SET utf8   engine=InnoDB STATS_PERSISTENT=0 CHARACTER SET utf8 COLLATE utf8_bin   comment='Table privileges';
 
-CREATE TABLE IF NOT EXISTS columns_priv ( Host char(60) binary DEFAULT '' NOT NULL, Db char(64) binary DEFAULT '' NOT NULL, User char(32) binary DEFAULT '' NOT NULL, Table_name char(64) binary DEFAULT '' NOT NULL, Column_name char(64) binary DEFAULT '' NOT NULL, Timestamp timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, Column_priv set('Select','Insert','Update','References') COLLATE utf8_general_ci DEFAULT '' NOT NULL, PRIMARY KEY (Host,Db,User,Table_name,Column_name) ) engine=MyISAM CHARACTER SET utf8 COLLATE utf8_bin   comment='Column privileges';
+CREATE TABLE IF NOT EXISTS columns_priv ( Host char(60) binary DEFAULT '' NOT NULL, Db char(64) binary DEFAULT '' NOT NULL, User char(32) binary DEFAULT '' NOT NULL, Table_name char(64) binary DEFAULT '' NOT NULL, Column_name char(64) binary DEFAULT '' NOT NULL, Timestamp timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, Column_priv set('Select','Insert','Update','References') COLLATE utf8_general_ci DEFAULT '' NOT NULL, PRIMARY KEY (Host,Db,User,Table_name,Column_name) ) engine=InnoDB STATS_PERSISTENT=0 CHARACTER SET utf8 COLLATE utf8_bin   comment='Column privileges';
 
 
 CREATE TABLE IF NOT EXISTS help_topic ( help_topic_id int unsigned not null, name char(64) not null, help_category_id smallint unsigned not null, description text not null, example text not null, url text not null, primary key (help_topic_id), unique index (name) ) engine=INNODB STATS_PERSISTENT=0 CHARACTER SET utf8 comment='help topics';
@@ -72,9 +178,7 @@ CREATE TABLE IF NOT EXISTS time_zone_transition_type (   Time_zone_id int unsign
 CREATE TABLE IF NOT EXISTS time_zone_leap_second (   Transition_time bigint signed NOT NULL, Correction int signed NOT NULL, PRIMARY KEY TranTime (Transition_time) ) engine=INNODB STATS_PERSISTENT=0 CHARACTER SET utf8   comment='Leap seconds information for time zones';
 
 
-CREATE TABLE IF NOT EXISTS proc (db char(64) collate utf8_bin DEFAULT '' NOT NULL, name char(64) DEFAULT '' NOT NULL, type enum('FUNCTION','PROCEDURE') NOT NULL, specific_name char(64) DEFAULT '' NOT NULL, language enum('SQL') DEFAULT 'SQL' NOT NULL, sql_data_access enum( 'CONTAINS_SQL', 'NO_SQL', 'READS_SQL_DATA', 'MODIFIES_SQL_DATA') DEFAULT 'CONTAINS_SQL' NOT NULL, is_deterministic enum('YES','NO') DEFAULT 'NO' NOT NULL, security_type enum('INVOKER','DEFINER') DEFAULT 'DEFINER' NOT NULL, param_list blob NOT NULL, returns longblob DEFAULT '' NOT NULL, body longblob NOT NULL, definer char(93) collate utf8_bin DEFAULT '' NOT NULL, created timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, modified timestamp NOT NULL DEFAULT '0000-00-00 00:00:00', sql_mode set( 'REAL_AS_FLOAT', 'PIPES_AS_CONCAT', 'ANSI_QUOTES', 'IGNORE_SPACE', 'NOT_USED', 'ONLY_FULL_GROUP_BY', 'NO_UNSIGNED_SUBTRACTION', 'NO_DIR_IN_CREATE', 'POSTGRESQL', 'ORACLE', 'MSSQL', 'DB2', 'MAXDB', 'NO_KEY_OPTIONS', 'NO_TABLE_OPTIONS', 'NO_FIELD_OPTIONS', 'MYSQL323', 'MYSQL40', 'ANSI', 'NO_AUTO_VALUE_ON_ZERO', 'NO_BACKSLASH_ESCAPES', 'STRICT_TRANS_TABLES', 'STRICT_ALL_TABLES', 'NO_ZERO_IN_DATE', 'NO_ZERO_DATE', 'INVALID_DATES', 'ERROR_FOR_DIVISION_BY_ZERO', 'TRADITIONAL', 'NO_AUTO_CREATE_USER', 'HIGH_NOT_PRECEDENCE', 'NO_ENGINE_SUBSTITUTION', 'PAD_CHAR_TO_FULL_LENGTH') DEFAULT '' NOT NULL, comment text collate utf8_bin NOT NULL, character_set_client char(32) collate utf8_bin, collation_connection char(32) collate utf8_bin, db_collation char(32) collate utf8_bin, body_utf8 longblob, PRIMARY KEY (db,name,type)) engine=MyISAM character set utf8 comment='Stored Procedures';
-
-CREATE TABLE IF NOT EXISTS procs_priv ( Host char(60) binary DEFAULT '' NOT NULL, Db char(64) binary DEFAULT '' NOT NULL, User char(32) binary DEFAULT '' NOT NULL, Routine_name char(64) COLLATE utf8_general_ci DEFAULT '' NOT NULL, Routine_type enum('FUNCTION','PROCEDURE') NOT NULL, Grantor char(93) DEFAULT '' NOT NULL, Proc_priv set('Execute','Alter Routine','Grant') COLLATE utf8_general_ci DEFAULT '' NOT NULL, Timestamp timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, PRIMARY KEY (Host,Db,User,Routine_name,Routine_type), KEY Grantor (Grantor) ) engine=MyISAM CHARACTER SET utf8 COLLATE utf8_bin   comment='Procedure privileges';
+CREATE TABLE IF NOT EXISTS procs_priv ( Host char(60) binary DEFAULT '' NOT NULL, Db char(64) binary DEFAULT '' NOT NULL, User char(32) binary DEFAULT '' NOT NULL, Routine_name char(64) COLLATE utf8_general_ci DEFAULT '' NOT NULL, Routine_type enum('FUNCTION','PROCEDURE') NOT NULL, Grantor char(93) DEFAULT '' NOT NULL, Proc_priv set('Execute','Alter Routine','Grant') COLLATE utf8_general_ci DEFAULT '' NOT NULL, Timestamp timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, PRIMARY KEY (Host,Db,User,Routine_name,Routine_type), KEY Grantor (Grantor) ) engine=InnoDB STATS_PERSISTENT=0 CHARACTER SET utf8 COLLATE utf8_bin   comment='Procedure privileges';
 
 -- Create general_log
 CREATE TABLE IF NOT EXISTS general_log (event_time TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6), user_host MEDIUMTEXT NOT NULL, thread_id BIGINT(21) UNSIGNED NOT NULL, server_id INTEGER UNSIGNED NOT NULL, command_type VARCHAR(64) NOT NULL, argument MEDIUMBLOB NOT NULL) engine=CSV CHARACTER SET utf8 comment="General log";
@@ -82,53 +186,31 @@ CREATE TABLE IF NOT EXISTS general_log (event_time TIMESTAMP(6) NOT NULL DEFAULT
 -- Create slow_log
 CREATE TABLE IF NOT EXISTS slow_log (start_time TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6), user_host MEDIUMTEXT NOT NULL, query_time TIME(6) NOT NULL, lock_time TIME(6) NOT NULL, rows_sent INTEGER NOT NULL, rows_examined INTEGER NOT NULL, db VARCHAR(512) NOT NULL, last_insert_id INTEGER NOT NULL, insert_id INTEGER NOT NULL, server_id INTEGER UNSIGNED NOT NULL, sql_text MEDIUMBLOB NOT NULL, thread_id BIGINT(21) UNSIGNED NOT NULL) engine=CSV CHARACTER SET utf8 comment="Slow log";
 
-CREATE TABLE IF NOT EXISTS event ( db char(64) CHARACTER SET utf8 COLLATE utf8_bin NOT NULL default '', name char(64) CHARACTER SET utf8 NOT NULL default '', body longblob NOT NULL, definer char(93) CHARACTER SET utf8 COLLATE utf8_bin NOT NULL default '', execute_at DATETIME default NULL, interval_value int(11) default NULL, interval_field ENUM('YEAR','QUARTER','MONTH','DAY','HOUR','MINUTE','WEEK','SECOND','MICROSECOND','YEAR_MONTH','DAY_HOUR','DAY_MINUTE','DAY_SECOND','HOUR_MINUTE','HOUR_SECOND','MINUTE_SECOND','DAY_MICROSECOND','HOUR_MICROSECOND','MINUTE_MICROSECOND','SECOND_MICROSECOND') default NULL, created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, modified TIMESTAMP NOT NULL DEFAULT '0000-00-00 00:00:00', last_executed DATETIME default NULL, starts DATETIME default NULL, ends DATETIME default NULL, status ENUM('ENABLED','DISABLED','SLAVESIDE_DISABLED') NOT NULL default 'ENABLED', on_completion ENUM('DROP','PRESERVE') NOT NULL default 'DROP', sql_mode  set('REAL_AS_FLOAT','PIPES_AS_CONCAT','ANSI_QUOTES','IGNORE_SPACE','NOT_USED','ONLY_FULL_GROUP_BY','NO_UNSIGNED_SUBTRACTION','NO_DIR_IN_CREATE','POSTGRESQL','ORACLE','MSSQL','DB2','MAXDB','NO_KEY_OPTIONS','NO_TABLE_OPTIONS','NO_FIELD_OPTIONS','MYSQL323','MYSQL40','ANSI','NO_AUTO_VALUE_ON_ZERO','NO_BACKSLASH_ESCAPES','STRICT_TRANS_TABLES','STRICT_ALL_TABLES','NO_ZERO_IN_DATE','NO_ZERO_DATE','INVALID_DATES','ERROR_FOR_DIVISION_BY_ZERO','TRADITIONAL','NO_AUTO_CREATE_USER','HIGH_NOT_PRECEDENCE','NO_ENGINE_SUBSTITUTION','PAD_CHAR_TO_FULL_LENGTH') DEFAULT '' NOT NULL, comment char(64) CHARACTER SET utf8 COLLATE utf8_bin NOT NULL default '', originator INTEGER UNSIGNED NOT NULL, time_zone char(64) CHARACTER SET latin1 NOT NULL DEFAULT 'SYSTEM', character_set_client char(32) collate utf8_bin, collation_connection char(32) collate utf8_bin, db_collation char(32) collate utf8_bin, body_utf8 longblob, PRIMARY KEY (db, name) ) ENGINE=MyISAM DEFAULT CHARSET=utf8 COMMENT 'Events';
+--
+-- Only create the ndb_binlog_index table if the server is built with ndb.
+--
+SET @have_ndb= (select count(engine) from information_schema.engines where engine='ndbcluster');
+SET @cmd="CREATE TABLE IF NOT EXISTS ndb_binlog_index (
+  Position BIGINT UNSIGNED NOT NULL,
+  File VARCHAR(255) NOT NULL,
+  epoch BIGINT UNSIGNED NOT NULL,
+  inserts INT UNSIGNED NOT NULL,
+  updates INT UNSIGNED NOT NULL,
+  deletes INT UNSIGNED NOT NULL,
+  schemaops INT UNSIGNED NOT NULL,
+  orig_server_id INT UNSIGNED NOT NULL,
+  orig_epoch BIGINT UNSIGNED NOT NULL,
+  gci INT UNSIGNED NOT NULL,
+  next_position BIGINT UNSIGNED NOT NULL,
+  next_file VARCHAR(255) NOT NULL,
+  PRIMARY KEY(epoch, orig_server_id, orig_epoch)) ENGINE=MYISAM";
 
+CREATE TABLE IF NOT EXISTS component ( component_id int unsigned NOT NULL AUTO_INCREMENT, component_group_id int unsigned NOT NULL, component_urn text NOT NULL, PRIMARY KEY (component_id)) engine=INNODB DEFAULT CHARSET=utf8 COMMENT 'Components';
 
-CREATE TABLE IF NOT EXISTS ndb_binlog_index (Position BIGINT UNSIGNED NOT NULL, File VARCHAR(255) NOT NULL, epoch BIGINT UNSIGNED NOT NULL, inserts INT UNSIGNED NOT NULL, updates INT UNSIGNED NOT NULL, deletes INT UNSIGNED NOT NULL, schemaops INT UNSIGNED NOT NULL, orig_server_id INT UNSIGNED NOT NULL, orig_epoch BIGINT UNSIGNED NOT NULL, gci INT UNSIGNED NOT NULL, next_position BIGINT UNSIGNED NOT NULL, next_file VARCHAR(255) NOT NULL, PRIMARY KEY(epoch, orig_server_id, orig_epoch)) ENGINE=MYISAM;
-
-SET @sql_mode_orig=@@SESSION.sql_mode;
-SET SESSION sql_mode='NO_ENGINE_SUBSTITUTION';
-
-SET @create_innodb_table_stats="CREATE TABLE IF NOT EXISTS innodb_table_stats (
-	database_name			VARCHAR(64) NOT NULL,
-	table_name			VARCHAR(64) NOT NULL,
-	last_update			TIMESTAMP NOT NULL NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-	n_rows				BIGINT UNSIGNED NOT NULL,
-	clustered_index_size		BIGINT UNSIGNED NOT NULL,
-	sum_of_other_index_sizes	BIGINT UNSIGNED NOT NULL,
-	PRIMARY KEY (database_name, table_name)
-) ENGINE=INNODB DEFAULT CHARSET=utf8 COLLATE=utf8_bin STATS_PERSISTENT=0";
-
-SET @create_innodb_index_stats="CREATE TABLE IF NOT EXISTS innodb_index_stats (
-	database_name			VARCHAR(64) NOT NULL,
-	table_name			VARCHAR(64) NOT NULL,
-	index_name			VARCHAR(64) NOT NULL,
-	last_update			TIMESTAMP NOT NULL NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-	/* there are at least:
-	stat_name='size'
-	stat_name='n_leaf_pages'
-	stat_name='n_diff_pfx%' */
-	stat_name			VARCHAR(64) NOT NULL,
-	stat_value			BIGINT UNSIGNED NOT NULL,
-	sample_size			BIGINT UNSIGNED,
-	stat_description		VARCHAR(1024) NOT NULL,
-	PRIMARY KEY (database_name, table_name, index_name, stat_name)
-) ENGINE=INNODB DEFAULT CHARSET=utf8 COLLATE=utf8_bin STATS_PERSISTENT=0";
-
-set @have_innodb= (select count(engine) from information_schema.engines where engine='INNODB' and support != 'NO');
-
-SET @str=IF(@have_innodb <> 0, @create_innodb_table_stats, "SET @dummy = 0");
+SET @str = IF(@have_ndb = 1, @cmd, 'SET @dummy = 0');
 PREPARE stmt FROM @str;
 EXECUTE stmt;
 DROP PREPARE stmt;
-
-SET @str=IF(@have_innodb <> 0, @create_innodb_index_stats, "SET @dummy = 0");
-PREPARE stmt FROM @str;
-EXECUTE stmt;
-DROP PREPARE stmt;
-
-SET SESSION sql_mode=@sql_mode_orig;
 
 SET @cmd="CREATE TABLE IF NOT EXISTS slave_relay_log_info (
   Number_of_lines INTEGER UNSIGNED NOT NULL COMMENT 'Number of lines in the file or rows in the table. Used to version table definitions.', 
@@ -261,7 +343,474 @@ INSERT IGNORE INTO engine_cost VALUES
 INSERT IGNORE INTO engine_cost VALUES
   ("default", 0, "io_block_read_cost", DEFAULT, CURRENT_TIMESTAMP, DEFAULT);
 
+
 --
+-- Column statistics
+--
+
+CREATE TABLE IF NOT EXISTS column_stats (
+  database_name VARCHAR(64) NOT NULL,
+  table_name VARCHAR(64) NOT NULL,
+  column_name VARCHAR(64) NOT NULL,
+  histogram JSON NOT NULL,
+  PRIMARY KEY (database_name, table_name, column_name)
+) ENGINE=InnoDB CHARACTER SET=utf8 COLLATE=utf8_bin
+COMMENT="Column statistics";
+
+--
+--
+-- INFORMATION SCHEMA VIEWS INSTALLATION
+--
+
+-- Set explicit collation for columns that use utf8_tolower_ci.
+-- This is required to enable optimizer allow comparison between
+-- utf8_tolower_ci and utf8_general_ci columns and to pick right index.
+
+SET @collate_tolower= (SELECT IF(@@lower_case_table_names = 0,
+                                 '', 'COLLATE utf8_tolower_ci'));
+
+--
+-- INFORMATION_SCHEMA.COLLATIONS
+--
+CREATE OR REPLACE DEFINER=`root`@`localhost` VIEW information_schema.COLLATIONS AS
+  SELECT col.name AS COLLATION_NAME,
+         cs.name AS CHARACTER_SET_NAME,
+         col.id AS ID,
+         IF(EXISTS(SELECT * FROM mysql.character_sets
+                            WHERE mysql.character_sets.default_collation_id= col.id),
+            'Yes','') AS IS_DEFAULT,
+         IF(col.is_compiled,'Yes','') AS IS_COMPILED,
+         col.sort_length AS SORTLEN
+  FROM mysql.collations col JOIN mysql.character_sets cs ON col.character_set_id=cs.id;
+
+--
+-- INFORMATION_SCHEMA.CHARACTER_SETS
+--
+CREATE OR REPLACE DEFINER=`root`@`localhost` VIEW information_schema.CHARACTER_SETS as
+  SELECT cs.name AS CHARACTER_SET_NAME,
+         col.name AS DEFAULT_COLLATE_NAME,
+         cs.comment AS DESCRIPTION,
+         cs.mb_max_length AS MAXLEN
+  FROM mysql.character_sets cs JOIN mysql.collations col ON cs.default_collation_id = col.id;
+
+--
+-- INFORMATION_SCHEMA.COLLATION_CHARACTER_SET_APPLICABILITY
+--
+CREATE OR REPLACE DEFINER=`root`@`localhost` VIEW information_schema.COLLATION_CHARACTER_SET_APPLICABILITY AS
+  SELECT col.name AS COLLATION_NAME,
+         cs.name AS CHARACTER_SET_NAME
+  FROM mysql.character_sets cs JOIN mysql.collations col ON cs.id = col.character_set_id;
+
+--
+-- INFORMATION_SCHEMA.SCHEMATA
+--
+SET @str=CONCAT("
+CREATE OR REPLACE DEFINER=`root`@`localhost` VIEW information_schema.SCHEMATA AS
+  SELECT cat.name ", @collate_tolower, " AS CATALOG_NAME,
+    sch.name ", @collate_tolower, " AS SCHEMA_NAME,
+    cs.name AS DEFAULT_CHARACTER_SET_NAME,
+    col.name AS DEFAULT_COLLATION_NAME,
+    NULL AS SQL_PATH
+  FROM mysql.schemata sch JOIN mysql.catalogs cat ON cat.id=sch.catalog_id
+       JOIN mysql.collations col ON sch.default_collation_id = col.id
+       JOIN mysql.character_sets cs ON col.character_set_id= cs.id
+  WHERE CAN_ACCESS_DATABASE(sch.name)");
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+--
+-- INFORMATION_SCHEMA.TABLES
+--
+-- There are two definitions of information_schema.tables.
+-- 1. INFORMATION_SCHEMA.TABLES view which picks dynamic column
+--    statistics from mysql.table_stats which gets populated when
+--    we execute 'anaylze table' command.
+--
+-- 2. INFORMATION_SCHEMA.TABLES_DYNAMIC view which retrieves dynamic
+--    column statistics using a internal UDF which opens the user
+--    table and reads dynamic table statistics.
+--
+-- MySQL server uses definition 1) by default. The session variable
+-- information_schema_stats=latest would enable use of definition 2).
+--
+
+SET @str=CONCAT("
+CREATE OR REPLACE DEFINER=`root`@`localhost` VIEW information_schema.TABLES AS
+  SELECT cat.name ", @collate_tolower, " AS TABLE_CATALOG,
+    sch.name ", @collate_tolower, " AS TABLE_SCHEMA,
+    tbl.name ", @collate_tolower, " AS TABLE_NAME,
+    tbl.type AS TABLE_TYPE,
+    IF(tbl.type = 'BASE TABLE', tbl.engine, NULL) AS ENGINE,
+    IF(tbl.type = 'VIEW', NULL, 10 /* FRM_VER_TRUE_VARCHAR */) AS VERSION,
+    tbl.row_format AS ROW_FORMAT,
+    stat.table_rows AS TABLE_ROWS,
+    stat.avg_row_length AS AVG_ROW_LENGTH,
+    stat.data_length AS DATA_LENGTH,
+    stat.max_data_length AS MAX_DATA_LENGTH,
+    stat.index_length AS INDEX_LENGTH,
+    stat.data_free AS DATA_FREE,
+    stat.auto_increment AS AUTO_INCREMENT,
+    tbl.created AS CREATE_TIME,
+    stat.update_time AS UPDATE_TIME,
+    stat.check_time AS CHECK_TIME,
+    col.name AS TABLE_COLLATION,
+    stat.checksum AS CHECKSUM,
+    IF (tbl.type = 'VIEW', NULL, 
+        GET_DD_CREATE_OPTIONS(tbl.options,
+          IF(IFNULL(tbl.partition_expression,'NOT_PART_TBL')='NOT_PART_TBL', 0, 1)))
+        AS CREATE_OPTIONS,
+    INTERNAL_GET_COMMENT_OR_ERROR(sch.name, tbl.name, tbl.type, tbl.options, tbl.comment)
+       AS TABLE_COMMENT
+  FROM mysql.tables tbl JOIN mysql.schemata sch ON tbl.schema_id=sch.id
+       JOIN mysql.catalogs cat ON cat.id=sch.catalog_id
+       LEFT JOIN mysql.collations col ON tbl.collation_id=col.id
+       LEFT JOIN mysql.table_stats stat ON tbl.name=stat.table_name
+       AND sch.name=stat.schema_name
+  WHERE CAN_ACCESS_TABLE(sch.name, tbl.name) AND NOT tbl.hidden");
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+SET @str=CONCAT("
+CREATE OR REPLACE DEFINER=`root`@`localhost` VIEW information_schema.TABLES_DYNAMIC AS
+  SELECT cat.name ", @collate_tolower, " AS TABLE_CATALOG,
+    sch.name ", @collate_tolower, " AS TABLE_SCHEMA,
+    tbl.name ", @collate_tolower, " AS TABLE_NAME,
+    tbl.type AS TABLE_TYPE,
+    IF(tbl.type = 'BASE TABLE', tbl.engine, NULL) AS ENGINE,
+    IF(tbl.type = 'VIEW', NULL, 10 /* FRM_VER_TRUE_VARCHAR */) AS VERSION,
+    tbl.row_format AS ROW_FORMAT,
+    INTERNAL_TABLE_ROWS(sch.name, tbl.name,
+                        IF(IFNULL(tbl.partition_type,'')='',tbl.engine,''),
+                        tbl.se_private_id) AS TABLE_ROWS,
+    INTERNAL_AVG_ROW_LENGTH(sch.name, tbl.name,
+                            IF(IFNULL(tbl.partition_type,'')='',tbl.engine,''),
+                            tbl.se_private_id) AS AVG_ROW_LENGTH,
+    INTERNAL_DATA_LENGTH(sch.name, tbl.name,
+                         IF(IFNULL(tbl.partition_type,'')='',tbl.engine,''),
+                         tbl.se_private_id) AS DATA_LENGTH,
+    INTERNAL_MAX_DATA_LENGTH(sch.name, tbl.name,
+                             IF(IFNULL(tbl.partition_type,'')='',tbl.engine,''),
+                             tbl.se_private_id) AS MAX_DATA_LENGTH,
+    INTERNAL_INDEX_LENGTH(sch.name, tbl.name,
+                          IF(IFNULL(tbl.partition_type,'')='',tbl.engine,''),
+                          tbl.se_private_id) AS INDEX_LENGTH,
+    INTERNAL_DATA_FREE(sch.name, tbl.name,
+                       IF(IFNULL(tbl.partition_type,'')='',tbl.engine,''),
+                       tbl.se_private_id) AS DATA_FREE,
+    INTERNAL_AUTO_INCREMENT(sch.name, tbl.name,
+                            IF(IFNULL(tbl.partition_type,'')='',tbl.engine,''),
+                            tbl.se_private_id) AS AUTO_INCREMENT,
+    tbl.created AS CREATE_TIME,
+    INTERNAL_UPDATE_TIME(sch.name, tbl.name,
+                         IF(IFNULL(tbl.partition_type,'')='',tbl.engine,''),
+                         tbl.se_private_id) AS UPDATE_TIME,
+    INTERNAL_CHECK_TIME(sch.name, tbl.name,
+                        IF(IFNULL(tbl.partition_type,'')='',tbl.engine,''),
+                        tbl.se_private_id) AS CHECK_TIME,
+    col.name AS TABLE_COLLATION,
+    INTERNAL_CHECKSUM(sch.name, tbl.name,
+                      IF(IFNULL(tbl.partition_type,'')='',tbl.engine,''),
+                      tbl.se_private_id) AS CHECKSUM,
+    IF (tbl.type = 'VIEW', NULL, 
+        GET_DD_CREATE_OPTIONS(tbl.options,
+          IF(IFNULL(tbl.partition_expression,'NOT_PART_TBL')='NOT_PART_TBL', 0, 1)))
+        AS CREATE_OPTIONS,
+    INTERNAL_GET_COMMENT_OR_ERROR(sch.name, tbl.name, tbl.type, tbl.options, tbl.comment)
+       AS TABLE_COMMENT
+  FROM mysql.tables tbl JOIN mysql.schemata sch ON tbl.schema_id=sch.id
+       JOIN mysql.catalogs cat ON cat.id=sch.catalog_id
+       LEFT JOIN mysql.collations col ON tbl.collation_id=col.id
+  WHERE CAN_ACCESS_TABLE(sch.name, tbl.name) AND NOT tbl.hidden");
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+--
+-- INFORMATION_SCHEMA.COLUMNS
+--
+
+SET @str=CONCAT("
+CREATE OR REPLACE DEFINER=`root`@`localhost` VIEW information_schema.COLUMNS AS
+  SELECT
+    cat.name ", @collate_tolower, " AS TABLE_CATALOG,
+    sch.name ", @collate_tolower, " AS TABLE_SCHEMA,
+    tbl.name ", @collate_tolower, " AS TABLE_NAME,
+    col.name COLLATE utf8_tolower_ci AS COLUMN_NAME,
+    col.ordinal_position AS ORDINAL_POSITION,
+    col.default_value_utf8 AS COLUMN_DEFAULT,
+    IF (col.is_nullable = 1, 'YES','NO') AS IS_NULLABLE,
+    SUBSTRING_INDEX(SUBSTRING_INDEX(col.column_type_utf8, '(', 1), ' ', 1) AS DATA_TYPE,
+    INTERNAL_DD_CHAR_LENGTH(col.type, col.char_length, coll.name, 0) AS CHARACTER_MAXIMUM_LENGTH,
+    INTERNAL_DD_CHAR_LENGTH(col.type, col.char_length, coll.name, 1) AS CHARACTER_OCTET_LENGTH,
+    IF (col.numeric_precision = 0, NULL, col.numeric_precision) AS NUMERIC_PRECISION,
+    IF (col.numeric_scale = 0 && col.numeric_precision = 0, NULL, col.numeric_scale) AS NUMERIC_SCALE,
+    col.datetime_precision AS DATETIME_PRECISION,
+    CASE col.type
+      WHEN 'MYSQL_TYPE_STRING' THEN (IF (cs.name='binary',NULL, cs.name))
+      WHEN 'MYSQL_TYPE_VAR_STRING' THEN (IF (cs.name='binary',NULL, cs.name))
+      WHEN 'MYSQL_TYPE_VARCHAR' THEN (IF (cs.name='binary',NULL, cs.name))
+      WHEN 'MYSQL_TYPE_TINY_BLOB' THEN (IF (cs.name='binary',NULL, cs.name))
+      WHEN 'MYSQL_TYPE_MEDIUM_BLOB' THEN (IF (cs.name='binary',NULL, cs.name))
+      WHEN 'MYSQL_TYPE_BLOB' THEN (IF (cs.name='binary',NULL, cs.name))
+      WHEN 'MYSQL_TYPE_LONG_BLOB' THEN (IF (cs.name='binary',NULL, cs.name))
+      WHEN 'MYSQL_TYPE_ENUM' THEN (IF (cs.name='binary',NULL, cs.name))
+      WHEN 'MYSQL_TYPE_SET' THEN (IF (cs.name='binary',NULL, cs.name))
+      ELSE NULL
+    END AS CHARACTER_SET_NAME,
+    CASE col.type
+      WHEN 'MYSQL_TYPE_STRING' THEN (IF (cs.name='binary',NULL, coll.name))
+      WHEN 'MYSQL_TYPE_VAR_STRING' THEN (IF (cs.name='binary',NULL, coll.name))
+      WHEN 'MYSQL_TYPE_VARCHAR' THEN (IF (cs.name='binary',NULL, coll.name))
+      WHEN 'MYSQL_TYPE_TINY_BLOB' THEN (IF (cs.name='binary',NULL, coll.name))
+      WHEN 'MYSQL_TYPE_MEDIUM_BLOB' THEN (IF (cs.name='binary',NULL, coll.name))
+      WHEN 'MYSQL_TYPE_BLOB' THEN (IF (cs.name='binary',NULL, coll.name))
+      WHEN 'MYSQL_TYPE_LONG_BLOB' THEN (IF (cs.name='binary',NULL, coll.name))
+      WHEN 'MYSQL_TYPE_ENUM' THEN (IF (cs.name='binary',NULL, coll.name))
+      WHEN 'MYSQL_TYPE_SET' THEN (IF (cs.name='binary',NULL, coll.name))
+      ELSE NULL
+    END AS COLLATION_NAME,
+    col.column_type_utf8 AS COLUMN_TYPE,
+    col.column_key AS COLUMN_KEY,
+    IF(IFNULL(col.generation_expression_utf8,'IS_NOT_GC')='IS_NOT_GC',
+       IF (col.is_auto_increment=TRUE,
+            CONCAT(IFNULL(CONCAT('on update ', col.update_option, ' '),''),
+                    'auto_increment'),
+           IFNULL(CONCAT('on update ', col.update_option),'')),
+      IF(col.is_virtual, 'VIRTUAL GENERATED', 'STORED GENERATED')) AS EXTRA,
+    GET_DD_COLUMN_PRIVILEGES(sch.name, tbl.name, col.name) AS `PRIVILEGES`,
+    IFNULL(col.comment, '') AS COLUMN_COMMENT,
+    IFNULL(col.generation_expression_utf8, '') AS GENERATION_EXPRESSION
+  FROM mysql.columns col JOIN mysql.tables tbl ON col.table_id=tbl.id
+       JOIN mysql.schemata sch ON tbl.schema_id=sch.id
+       JOIN mysql.catalogs cat ON cat.id=sch.catalog_id
+       JOIN mysql.collations coll ON col.collation_id=coll.id
+       JOIN mysql.character_sets cs ON coll.character_set_id= cs.id
+  WHERE INTERNAL_GET_VIEW_WARNING_OR_ERROR(sch.name, tbl.name, tbl.type, tbl.options) AND
+        CAN_ACCESS_COLUMN(sch.name, tbl.name, col.name) AND NOT tbl.hidden");
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+--
+-- INFORMATION_SCHEMA.STATISTICS
+--
+-- There are two definitions of information_schema.statistics.
+-- 1. INFORMATION_SCHEMA.STATISTICS view which picks dynamic column
+--    statistics from mysql.index_stats which gets populated when
+--    we execute 'anaylze table' command.
+--
+-- 2. INFORMATION_SCHEMA.STATISTICS_DYNAMIC view which retrieves dynamic
+--    column statistics using a internal UDF which opens the user
+--    table and reads dynamic table statistics.
+--
+-- MySQL server uses definition 1) by default. The session variable
+-- information_schema_stats=latest would enable use of definition 2).
+--
+
+SET @str=CONCAT("
+CREATE OR REPLACE DEFINER=`root`@`localhost` VIEW information_schema.STATISTICS_BASE AS
+  (SELECT cat.name ", @collate_tolower, " AS TABLE_CATALOG,
+    sch.name ", @collate_tolower, " AS TABLE_SCHEMA,
+    tbl.name ", @collate_tolower, " AS TABLE_NAME,
+    IF (idx.type = 'PRIMARY' OR idx.type = 'UNIQUE','0','1') AS NON_UNIQUE,
+    sch.name ", @collate_tolower, " AS INDEX_SCHEMA,
+    idx.name COLLATE utf8_tolower_ci AS INDEX_NAME,
+    icu.ordinal_position AS SEQ_IN_INDEX,
+    col.name COLLATE utf8_tolower_ci AS COLUMN_NAME,
+    CASE WHEN icu.order = 'DESC' THEN 'D'
+         WHEN icu.order = 'ASC'  THEN 'A'
+         ELSE NULL END AS COLLATION,
+    GET_DD_INDEX_SUB_PART_LENGTH(icu.length, col.type, col.char_length,
+                                 col.collation_id, idx.options) AS SUB_PART,
+    NULL AS PACKED,
+    if (col.is_nullable = 1, 'YES','') AS NULLABLE,
+    CASE WHEN idx.type = 'SPATIAL' THEN 'SPATIAL'
+         WHEN idx.algorithm = 'SE_PRIVATE' THEN ''
+         ELSE idx.algorithm END AS INDEX_TYPE,
+    IF (idx.type = 'PRIMARY' OR idx.type = 'UNIQUE',
+        '',IF(INTERNAL_KEYS_DISABLED(sch.name, tbl.name, tbl.options),'disabled', ''))
+      AS COMMENT,
+    idx.comment AS INDEX_COMMENT,
+    IF (idx.is_visible, 'YES', 'NO') AS IS_VISIBLE,
+    idx.ordinal_position AS INDEX_ORDINAL_POSITION,
+    icu.ordinal_position AS COLUMN_ORDINAL_POSITION,
+    tbl.engine AS ENGINE,
+    tbl.se_private_id AS SE_PRIVATE_ID
+  FROM mysql.index_column_usage icu JOIN mysql.indexes idx ON idx.id=icu.index_id
+    JOIN mysql.tables tbl ON idx.table_id=tbl.id
+    JOIN mysql.columns col ON icu.column_id=col.id
+    JOIN mysql.schemata sch ON tbl.schema_id=sch.id
+    JOIN mysql.catalogs cat ON cat.id=sch.catalog_id
+    JOIN mysql.collations coll ON tbl.collation_id=coll.id
+  WHERE CAN_ACCESS_TABLE(sch.name, tbl.name) AND NOT tbl.hidden)");
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+CREATE OR REPLACE DEFINER=`root`@`localhost` VIEW information_schema.STATISTICS AS
+ (SELECT TABLE_CATALOG,
+    TABLE_SCHEMA,
+    sb.TABLE_NAME AS `TABLE_NAME`,
+    NON_UNIQUE,
+    INDEX_SCHEMA,
+    sb.INDEX_NAME AS `INDEX_NAME`,
+    SEQ_IN_INDEX,
+    sb.COLUMN_NAME AS `COLUMN_NAME`,
+    COLLATION,
+    stat.cardinality AS CARDINALITY,
+    SUB_PART,
+    PACKED,
+    NULLABLE,
+    INDEX_TYPE,
+    COMMENT,
+    INDEX_COMMENT,
+    IS_VISIBLE
+  FROM information_schema.STATISTICS_BASE sb
+    LEFT JOIN mysql.index_stats stat
+                 ON sb.table_name=stat.table_name
+                and sb.table_schema=stat.schema_name
+                and sb.index_name=stat.index_name
+                and sb.column_name=stat.column_name);
+
+CREATE OR REPLACE DEFINER=`root`@`localhost` VIEW information_schema.STATISTICS_DYNAMIC AS
+ (SELECT TABLE_CATALOG,
+    TABLE_SCHEMA,
+    TABLE_NAME,
+    NON_UNIQUE,
+    INDEX_SCHEMA,
+    INDEX_NAME,
+    SEQ_IN_INDEX,
+    COLUMN_NAME,
+    COLLATION,
+    INTERNAL_INDEX_COLUMN_CARDINALITY(TABLE_SCHEMA,TABLE_NAME, INDEX_NAME,
+                                      INDEX_ORDINAL_POSITION,
+                                      COLUMN_ORDINAL_POSITION,
+                                      ENGINE,
+                                      SE_PRIVATE_ID)
+      AS CARDINALITY,
+    SUB_PART,
+    PACKED,
+    NULLABLE,
+    INDEX_TYPE,
+    COMMENT,
+    INDEX_COMMENT,
+    IS_VISIBLE
+  FROM INFORMATION_SCHEMA.STATISTICS_BASE);
+
+--
+-- INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+--
+SET @str=CONCAT("
+CREATE OR REPLACE DEFINER=`root`@`localhost` VIEW information_schema.TABLE_CONSTRAINTS AS
+  (SELECT cat.name ", @collate_tolower, " AS CONSTRAINT_CATALOG,
+          sch.name ", @collate_tolower, " AS CONSTRAINT_SCHEMA,
+          CONVERT(idx.name USING utf8) AS CONSTRAINT_NAME,
+          sch.name ", @collate_tolower, " AS TABLE_SCHEMA,
+          tbl.name ", @collate_tolower, " AS TABLE_NAME,
+          IF (idx.type='PRIMARY', 'PRIMARY KEY', idx.type) AS CONSTRAINT_TYPE
+    FROM mysql.indexes idx JOIN mysql.tables tbl ON idx.table_id = tbl.id
+         JOIN mysql.schemata sch ON tbl.schema_id= sch.id
+         JOIN mysql.catalogs cat ON cat.id=sch.catalog_id
+         AND idx.type IN ('PRIMARY', 'UNIQUE')
+    WHERE CAN_ACCESS_TABLE(sch.name, tbl.name) AND NOT tbl.hidden)
+  UNION
+  (SELECT cat.name ", @collate_tolower, " AS CONSTRAINT_CATALOG,
+          sch.name ", @collate_tolower, " AS CONSTRAINT_SCHEMA,
+          CONVERT(fk.name USING utf8)  AS CONSTRAINT_NAME,
+          sch.name ", @collate_tolower, " AS TABLE_SCHEMA,
+          tbl.name ", @collate_tolower, " AS TABLE_NAME,
+          'FOREIGN KEY' AS CONSTRAINT_TYPE
+    FROM mysql.foreign_keys fk JOIN mysql.tables tbl ON fk.table_id = tbl.id
+         JOIN mysql.schemata sch ON fk.schema_id= sch.id
+         JOIN mysql.catalogs cat ON cat.id=sch.catalog_id
+    WHERE CAN_ACCESS_TABLE(sch.name, tbl.name) AND NOT tbl.hidden)");
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+
+--
+-- INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+--
+SET @str=CONCAT("
+CREATE OR REPLACE DEFINER=`root`@`localhost` VIEW information_schema.KEY_COLUMN_USAGE AS
+  (SELECT cat.name ", @collate_tolower, " AS CONSTRAINT_CATALOG,
+     sch.name ", @collate_tolower, " AS CONSTRAINT_SCHEMA,
+     CONVERT(idx.name USING utf8) AS CONSTRAINT_NAME,
+     cat.name ", @collate_tolower, " AS TABLE_CATALOG,
+     sch.name ", @collate_tolower, " AS TABLE_SCHEMA,
+     tbl.name ", @collate_tolower, " AS TABLE_NAME,
+     col.name COLLATE utf8_tolower_ci AS COLUMN_NAME,
+     icu.ordinal_position AS ORDINAL_POSITION,
+     NULL AS POSITION_IN_UNIQUE_CONSTRAINT,
+     NULL AS REFERENCED_TABLE_SCHEMA,
+     NULL AS REFERENCED_TABLE_NAME,
+     NULL AS REFERENCED_COLUMN_NAME
+   FROM mysql.indexes idx JOIN mysql.tables tbl ON idx.table_id = tbl.id
+     JOIN mysql.schemata sch ON tbl.schema_id= sch.id
+     JOIN mysql.catalogs cat ON cat.id=sch.catalog_id
+     JOIN mysql.index_column_usage icu ON icu.index_id=idx.id
+     JOIN mysql.columns col ON icu.column_id=col.id
+     AND idx.type IN ('PRIMARY', 'UNIQUE')
+   WHERE CAN_ACCESS_COLUMN(sch.name, tbl.name, col.name) AND NOT tbl.hidden)
+  UNION
+  (SELECT cat.name ", @collate_tolower, " AS CONSTRAINT_CATALOG,
+     sch.name ", @collate_tolower, " AS CONSTRAINT_SCHEMA,
+     CONVERT(fk.name USING utf8) AS CONSTRAINT_NAME,
+     cat.name ", @collate_tolower, " AS TABLE_CATALOG,
+     sch.name ", @collate_tolower, " AS TABLE_SCHEMA,
+     tbl.name ", @collate_tolower, " AS TABLE_NAME,
+     col.name COLLATE utf8_tolower_ci AS COLUMN_NAME,
+     fkcu.ordinal_position AS ORDINAL_POSITION,
+     icu.ordinal_position AS POSITION_IN_UNIQUE_CONSTRAINT,
+     fk.referenced_table_schema AS REFERENCED_TABLE_SCHEMA,
+     fk.referenced_table_name AS REFERENCED_TABLE_NAME,
+     fkcu.referenced_column_name AS REFERENCED_COLUMN_NAME
+   FROM mysql.foreign_keys fk JOIN mysql.tables tbl ON fk.table_id = tbl.id
+     JOIN mysql.foreign_key_column_usage fkcu ON fkcu.foreign_key_id=fk.id
+     JOIN mysql.schemata sch ON fk.schema_id= sch.id
+     JOIN mysql.catalogs cat ON cat.id=sch.catalog_id
+     JOIN mysql.columns col ON fkcu.column_id=col.id
+     JOIN mysql.indexes idx ON fk.unique_constraint_id=idx.id
+     JOIN mysql.index_column_usage icu ON idx.id=icu.index_id
+     AND icu.column_id=col.id
+   WHERE CAN_ACCESS_COLUMN(sch.name, tbl.name, col.name) AND NOT tbl.hidden)");
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+--
+-- INFORMATION_SCHEMA.VIEWS
+--
+SET @str=CONCAT("
+CREATE OR REPLACE DEFINER=`root`@`localhost` VIEW information_schema.VIEWS AS
+  SELECT cat.name ", @collate_tolower, " AS TABLE_CATALOG,
+    sch.name ", @collate_tolower, " AS TABLE_SCHEMA,
+    vw.name ", @collate_tolower, " AS TABLE_NAME,
+    IF(CAN_ACCESS_VIEW(sch.name, vw.name, vw.view_definer, vw.options) = TRUE,
+       vw.view_definition_utf8, '') AS VIEW_DEFINITION,
+    vw.view_check_option AS CHECK_OPTION,
+    vw.view_is_updatable AS IS_UPDATABLE,
+    vw.view_definer AS DEFINER,
+    IF (vw.view_security_type = 'DEFAULT', 'DEFINER', vw.view_security_type)
+      AS SECURITY_TYPE,
+    cs.name AS CHARACTER_SET_CLIENT,
+    conn_coll.name AS COLLATION_CONNECTION
+  FROM mysql.tables vw JOIN mysql.schemata sch ON vw.schema_id=sch.id
+       JOIN mysql.catalogs cat ON cat.id=sch.catalog_id
+       JOIN mysql.collations conn_coll ON conn_coll.id= vw.view_connection_collation_id
+       JOIN mysql.collations client_coll ON client_coll.id= vw.view_client_collation_id
+       JOIN mysql.character_sets cs ON cs.id= client_coll.character_set_id
+  WHERE vw.type = 'VIEW' AND CAN_ACCESS_TABLE(sch.name, vw.name)");
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+-- END OF INFORMATION SCHEMA INSTALLATION
+
+
 -- PERFORMANCE SCHEMA INSTALLATION
 -- Note that this script is also reused by mysql_upgrade,
 -- so we have to be very careful here to not destroy any
@@ -292,9 +841,9 @@ PREPARE stmt FROM @str;
 EXECUTE stmt;
 DROP PREPARE stmt;
 
-SET @broken_routines = (select count(*) from mysql.proc where db='performance_schema');
+SET @broken_routines = (select count(*) from information_schema.routines where routine_schema='performance_schema');
 
-SET @broken_events = (select count(*) from mysql.event where db='performance_schema');
+SET @broken_events = (select count(*) from information_schema.events where event_schema='performance_schema');
 
 SET @broken_pfs= (select @broken_tables + @broken_views + @broken_routines + @broken_events);
 
@@ -332,7 +881,9 @@ set @have_pfs= (select count(engine) from information_schema.engines where engin
 
 SET @cmd="CREATE TABLE performance_schema.cond_instances("
   "NAME VARCHAR(128) not null,"
-  "OBJECT_INSTANCE_BEGIN BIGINT unsigned not null"
+  "OBJECT_INSTANCE_BEGIN BIGINT unsigned not null,"
+  "PRIMARY KEY (OBJECT_INSTANCE_BEGIN) USING HASH,"
+  "KEY (NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -363,7 +914,8 @@ SET @cmd="CREATE TABLE performance_schema.events_waits_current("
   "NESTING_EVENT_TYPE ENUM('TRANSACTION', 'STATEMENT', 'STAGE', 'WAIT'),"
   "OPERATION VARCHAR(32) not null,"
   "NUMBER_OF_BYTES BIGINT,"
-  "FLAGS INTEGER unsigned"
+  "FLAGS INTEGER unsigned,"
+  "PRIMARY KEY (THREAD_ID, EVENT_ID)"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -394,7 +946,8 @@ SET @cmd="CREATE TABLE performance_schema.events_waits_history("
   "NESTING_EVENT_TYPE ENUM('TRANSACTION', 'STATEMENT', 'STAGE', 'WAIT'),"
   "OPERATION VARCHAR(32) not null,"
   "NUMBER_OF_BYTES BIGINT,"
-  "FLAGS INTEGER unsigned"
+  "FLAGS INTEGER unsigned,"
+  "PRIMARY KEY (THREAD_ID, EVENT_ID)"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -444,7 +997,9 @@ SET @cmd="CREATE TABLE performance_schema.events_waits_summary_by_instance("
   "SUM_TIMER_WAIT BIGINT unsigned not null,"
   "MIN_TIMER_WAIT BIGINT unsigned not null,"
   "AVG_TIMER_WAIT BIGINT unsigned not null,"
-  "MAX_TIMER_WAIT BIGINT unsigned not null"
+  "MAX_TIMER_WAIT BIGINT unsigned not null,"
+  "PRIMARY KEY (OBJECT_INSTANCE_BEGIN),"
+  "KEY (EVENT_NAME)"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -463,7 +1018,8 @@ SET @cmd="CREATE TABLE performance_schema.events_waits_summary_by_host_by_event_
   "SUM_TIMER_WAIT BIGINT unsigned not null,"
   "MIN_TIMER_WAIT BIGINT unsigned not null,"
   "AVG_TIMER_WAIT BIGINT unsigned not null,"
-  "MAX_TIMER_WAIT BIGINT unsigned not null"
+  "MAX_TIMER_WAIT BIGINT unsigned not null,"
+  "UNIQUE KEY (HOST, EVENT_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -482,7 +1038,8 @@ SET @cmd="CREATE TABLE performance_schema.events_waits_summary_by_user_by_event_
   "SUM_TIMER_WAIT BIGINT unsigned not null,"
   "MIN_TIMER_WAIT BIGINT unsigned not null,"
   "AVG_TIMER_WAIT BIGINT unsigned not null,"
-  "MAX_TIMER_WAIT BIGINT unsigned not null"
+  "MAX_TIMER_WAIT BIGINT unsigned not null,"
+  "UNIQUE KEY (USER, EVENT_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -502,7 +1059,8 @@ SET @cmd="CREATE TABLE performance_schema.events_waits_summary_by_account_by_eve
   "SUM_TIMER_WAIT BIGINT unsigned not null,"
   "MIN_TIMER_WAIT BIGINT unsigned not null,"
   "AVG_TIMER_WAIT BIGINT unsigned not null,"
-  "MAX_TIMER_WAIT BIGINT unsigned not null"
+  "MAX_TIMER_WAIT BIGINT unsigned not null,"
+  "UNIQUE KEY `ACCOUNT` (USER, HOST, EVENT_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -521,7 +1079,8 @@ SET @cmd="CREATE TABLE performance_schema.events_waits_summary_by_thread_by_even
   "SUM_TIMER_WAIT BIGINT unsigned not null,"
   "MIN_TIMER_WAIT BIGINT unsigned not null,"
   "AVG_TIMER_WAIT BIGINT unsigned not null,"
-  "MAX_TIMER_WAIT BIGINT unsigned not null"
+  "MAX_TIMER_WAIT BIGINT unsigned not null,"
+  "PRIMARY KEY (THREAD_ID, EVENT_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -539,7 +1098,8 @@ SET @cmd="CREATE TABLE performance_schema.events_waits_summary_global_by_event_n
   "SUM_TIMER_WAIT BIGINT unsigned not null,"
   "MIN_TIMER_WAIT BIGINT unsigned not null,"
   "AVG_TIMER_WAIT BIGINT unsigned not null,"
-  "MAX_TIMER_WAIT BIGINT unsigned not null"
+  "MAX_TIMER_WAIT BIGINT unsigned not null,"
+  "PRIMARY KEY (EVENT_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -554,7 +1114,9 @@ DROP PREPARE stmt;
 SET @cmd="CREATE TABLE performance_schema.file_instances("
   "FILE_NAME VARCHAR(512) not null,"
   "EVENT_NAME VARCHAR(128) not null,"
-  "OPEN_COUNT INTEGER unsigned not null"
+  "OPEN_COUNT INTEGER unsigned not null,"
+  "PRIMARY KEY (FILE_NAME) USING HASH,"
+  "KEY (EVENT_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -589,7 +1151,8 @@ SET @cmd="CREATE TABLE performance_schema.file_summary_by_event_name("
   "SUM_TIMER_MISC BIGINT unsigned not null,"
   "MIN_TIMER_MISC BIGINT unsigned not null,"
   "AVG_TIMER_MISC BIGINT unsigned not null,"
-  "MAX_TIMER_MISC BIGINT unsigned not null"
+  "MAX_TIMER_MISC BIGINT unsigned not null,"
+  "PRIMARY KEY (EVENT_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -626,7 +1189,10 @@ SET @cmd="CREATE TABLE performance_schema.file_summary_by_instance("
   "SUM_TIMER_MISC BIGINT unsigned not null,"
   "MIN_TIMER_MISC BIGINT unsigned not null,"
   "AVG_TIMER_MISC BIGINT unsigned not null,"
-  "MAX_TIMER_MISC BIGINT unsigned not null"
+  "MAX_TIMER_MISC BIGINT unsigned not null,"
+  "PRIMARY KEY (OBJECT_INSTANCE_BEGIN) USING HASH,"
+  "KEY (FILE_NAME) USING HASH,"
+  "KEY (EVENT_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -646,7 +1212,11 @@ SET @cmd="CREATE TABLE performance_schema.socket_instances("
   "SOCKET_ID INTEGER not null,"
   "IP VARCHAR(64) not null,"
   "PORT INTEGER not null,"
-  "STATE ENUM('IDLE','ACTIVE') not null"
+  "STATE ENUM('IDLE','ACTIVE') not null,"
+  "PRIMARY KEY (OBJECT_INSTANCE_BEGIN) USING HASH,"
+  "KEY (THREAD_ID) USING HASH,"
+  "KEY (SOCKET_ID) USING HASH,"
+  "KEY (IP, PORT) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -682,7 +1252,9 @@ SET @cmd="CREATE TABLE performance_schema.socket_summary_by_instance("
   "SUM_TIMER_MISC BIGINT unsigned not null,"
   "MIN_TIMER_MISC BIGINT unsigned not null,"
   "AVG_TIMER_MISC BIGINT unsigned not null,"
-  "MAX_TIMER_MISC BIGINT unsigned not null"
+  "MAX_TIMER_MISC BIGINT unsigned not null,"
+  "PRIMARY KEY (OBJECT_INSTANCE_BEGIN) USING HASH,"
+  "KEY (EVENT_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -717,7 +1289,8 @@ SET @cmd="CREATE TABLE performance_schema.socket_summary_by_event_name("
   "SUM_TIMER_MISC BIGINT unsigned not null,"
   "MIN_TIMER_MISC BIGINT unsigned not null,"
   "AVG_TIMER_MISC BIGINT unsigned not null,"
-  "MAX_TIMER_MISC BIGINT unsigned not null"
+  "MAX_TIMER_MISC BIGINT unsigned not null,"
+  "PRIMARY KEY (EVENT_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -758,7 +1331,9 @@ SET @cmd="CREATE TABLE performance_schema.host_cache("
   "FIRST_SEEN TIMESTAMP(0) NOT NULL default 0,"
   "LAST_SEEN TIMESTAMP(0) NOT NULL default 0,"
   "FIRST_ERROR_SEEN TIMESTAMP(0) null default 0,"
-  "LAST_ERROR_SEEN TIMESTAMP(0) null default 0"
+  "LAST_ERROR_SEEN TIMESTAMP(0) null default 0,"
+  "PRIMARY KEY (IP) USING HASH,"
+  "KEY (HOST) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -773,7 +1348,10 @@ DROP PREPARE stmt;
 SET @cmd="CREATE TABLE performance_schema.mutex_instances("
   "NAME VARCHAR(128) not null,"
   "OBJECT_INSTANCE_BEGIN BIGINT unsigned not null,"
-  "LOCKED_BY_THREAD_ID BIGINT unsigned"
+  "LOCKED_BY_THREAD_ID BIGINT unsigned,"
+  "PRIMARY KEY (OBJECT_INSTANCE_BEGIN) USING HASH,"
+  "KEY (NAME) USING HASH,"
+  "KEY (LOCKED_BY_THREAD_ID) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -793,7 +1371,8 @@ SET @cmd="CREATE TABLE performance_schema.objects_summary_global_by_type("
   "SUM_TIMER_WAIT BIGINT unsigned not null,"
   "MIN_TIMER_WAIT BIGINT unsigned not null,"
   "AVG_TIMER_WAIT BIGINT unsigned not null,"
-  "MAX_TIMER_WAIT BIGINT unsigned not null"
+  "MAX_TIMER_WAIT BIGINT unsigned not null,"
+  "UNIQUE KEY `OBJECT` (OBJECT_TYPE, OBJECT_SCHEMA, OBJECT_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -825,7 +1404,10 @@ SET @cmd="CREATE TABLE performance_schema.rwlock_instances("
   "NAME VARCHAR(128) not null,"
   "OBJECT_INSTANCE_BEGIN BIGINT unsigned not null,"
   "WRITE_LOCKED_BY_THREAD_ID BIGINT unsigned,"
-  "READ_LOCKED_BY_COUNT INTEGER unsigned not null"
+  "READ_LOCKED_BY_COUNT INTEGER unsigned not null,"
+  "PRIMARY KEY (OBJECT_INSTANCE_BEGIN) USING HASH,"
+  "KEY (NAME) USING HASH,"
+  "KEY (WRITE_LOCKED_BY_THREAD_ID) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -840,9 +1422,10 @@ DROP PREPARE stmt;
 SET @cmd="CREATE TABLE performance_schema.setup_actors("
   "HOST CHAR(60) collate utf8_bin default '%' not null,"
   "USER CHAR(32) collate utf8_bin default '%' not null,"
-  "ROLE CHAR(16) collate utf8_bin default '%' not null,"
+  "`ROLE` CHAR(32) collate utf8_bin default '%' not null,"
   "ENABLED ENUM ('YES', 'NO') not null default 'YES',"
-  "HISTORY ENUM ('YES', 'NO') not null default 'YES'"
+  "HISTORY ENUM ('YES', 'NO') not null default 'YES',"
+  "PRIMARY KEY (HOST, USER, `ROLE`) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -856,7 +1439,8 @@ DROP PREPARE stmt;
 
 SET @cmd="CREATE TABLE performance_schema.setup_consumers("
   "NAME VARCHAR(64) not null,"
-  "ENABLED ENUM ('YES', 'NO') not null"
+  "ENABLED ENUM ('YES', 'NO') not null,"
+  "PRIMARY KEY (NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -871,7 +1455,8 @@ DROP PREPARE stmt;
 SET @cmd="CREATE TABLE performance_schema.setup_instruments("
   "NAME VARCHAR(128) not null,"
   "ENABLED ENUM ('YES', 'NO') not null,"
-  "TIMED ENUM ('YES', 'NO') not null"
+  "TIMED ENUM ('YES', 'NO') not null,"
+  "PRIMARY KEY (NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -888,7 +1473,8 @@ SET @cmd="CREATE TABLE performance_schema.setup_objects("
   "OBJECT_SCHEMA VARCHAR(64) default '%',"
   "OBJECT_NAME VARCHAR(64) not null default '%',"
   "ENABLED ENUM ('YES', 'NO') not null default 'YES',"
-  "TIMED ENUM ('YES', 'NO') not null default 'YES'"
+  "TIMED ENUM ('YES', 'NO') not null default 'YES',"
+  "UNIQUE KEY `OBJECT` (OBJECT_TYPE, OBJECT_SCHEMA, OBJECT_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -902,7 +1488,8 @@ DROP PREPARE stmt;
 
 SET @cmd="CREATE TABLE performance_schema.setup_timers("
   "NAME VARCHAR(64) not null,"
-  "TIMER_NAME ENUM ('CYCLE', 'NANOSECOND', 'MICROSECOND', 'MILLISECOND', 'TICK') not null"
+  "TIMER_NAME ENUM ('CYCLE', 'NANOSECOND', 'MICROSECOND', 'MILLISECOND', 'TICK') not null,"
+  "PRIMARY KEY (NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -953,7 +1540,8 @@ SET @cmd="CREATE TABLE performance_schema.table_io_waits_summary_by_index_usage(
   "SUM_TIMER_DELETE BIGINT unsigned not null,"
   "MIN_TIMER_DELETE BIGINT unsigned not null,"
   "AVG_TIMER_DELETE BIGINT unsigned not null,"
-  "MAX_TIMER_DELETE BIGINT unsigned not null"
+  "MAX_TIMER_DELETE BIGINT unsigned not null,"
+  "UNIQUE KEY `OBJECT` (OBJECT_TYPE, OBJECT_SCHEMA, OBJECT_NAME, INDEX_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -1003,7 +1591,8 @@ SET @cmd="CREATE TABLE performance_schema.table_io_waits_summary_by_table("
   "SUM_TIMER_DELETE BIGINT unsigned not null,"
   "MIN_TIMER_DELETE BIGINT unsigned not null,"
   "AVG_TIMER_DELETE BIGINT unsigned not null,"
-  "MAX_TIMER_DELETE BIGINT unsigned not null"
+  "MAX_TIMER_DELETE BIGINT unsigned not null,"
+  "UNIQUE KEY `OBJECT` (OBJECT_TYPE, OBJECT_SCHEMA, OBJECT_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -1083,7 +1672,8 @@ SET @cmd="CREATE TABLE performance_schema.table_lock_waits_summary_by_table("
   "SUM_TIMER_WRITE_EXTERNAL BIGINT unsigned not null,"
   "MIN_TIMER_WRITE_EXTERNAL BIGINT unsigned not null,"
   "AVG_TIMER_WRITE_EXTERNAL BIGINT unsigned not null,"
-  "MAX_TIMER_WRITE_EXTERNAL BIGINT unsigned not null"
+  "MAX_TIMER_WRITE_EXTERNAL BIGINT unsigned not null,"
+  "UNIQUE KEY `OBJECT` (OBJECT_TYPE, OBJECT_SCHEMA, OBJECT_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -1108,11 +1698,17 @@ SET @cmd="CREATE TABLE performance_schema.threads("
   "PROCESSLIST_STATE VARCHAR(64),"
   "PROCESSLIST_INFO LONGTEXT,"
   "PARENT_THREAD_ID BIGINT unsigned,"
-  "ROLE VARCHAR(64),"
+  "`ROLE` VARCHAR(64),"
   "INSTRUMENTED ENUM ('YES', 'NO') not null,"
   "HISTORY ENUM ('YES', 'NO') not null,"
   "CONNECTION_TYPE VARCHAR(16),"
-  "THREAD_OS_ID BIGINT unsigned"
+  "THREAD_OS_ID BIGINT unsigned,"
+  "PRIMARY KEY (THREAD_ID) USING HASH,"
+  "KEY (PROCESSLIST_ID) USING HASH,"
+  "KEY (THREAD_OS_ID) USING HASH,"
+  "KEY (NAME) USING HASH,"
+  "KEY `PROCESSLIST_ACCOUNT` (PROCESSLIST_USER, PROCESSLIST_HOST) USING HASH,"
+  "KEY (PROCESSLIST_HOST) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -1136,7 +1732,8 @@ SET @cmd="CREATE TABLE performance_schema.events_stages_current("
   "WORK_COMPLETED BIGINT unsigned,"
   "WORK_ESTIMATED BIGINT unsigned,"
   "NESTING_EVENT_ID BIGINT unsigned,"
-  "NESTING_EVENT_TYPE ENUM('TRANSACTION', 'STATEMENT', 'STAGE', 'WAIT')"
+  "NESTING_EVENT_TYPE ENUM('TRANSACTION', 'STATEMENT', 'STAGE', 'WAIT'),"
+  "PRIMARY KEY (THREAD_ID, EVENT_ID) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -1160,7 +1757,8 @@ SET @cmd="CREATE TABLE performance_schema.events_stages_history("
   "WORK_COMPLETED BIGINT unsigned,"
   "WORK_ESTIMATED BIGINT unsigned,"
   "NESTING_EVENT_ID BIGINT unsigned,"
-  "NESTING_EVENT_TYPE ENUM('TRANSACTION', 'STATEMENT', 'STAGE', 'WAIT')"
+  "NESTING_EVENT_TYPE ENUM('TRANSACTION', 'STATEMENT', 'STAGE', 'WAIT'),"
+  "PRIMARY KEY (THREAD_ID, EVENT_ID) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -1203,7 +1801,8 @@ SET @cmd="CREATE TABLE performance_schema.events_stages_summary_by_thread_by_eve
   "SUM_TIMER_WAIT BIGINT unsigned not null,"
   "MIN_TIMER_WAIT BIGINT unsigned not null,"
   "AVG_TIMER_WAIT BIGINT unsigned not null,"
-  "MAX_TIMER_WAIT BIGINT unsigned not null"
+  "MAX_TIMER_WAIT BIGINT unsigned not null,"
+  "PRIMARY KEY (THREAD_ID, EVENT_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -1222,7 +1821,8 @@ SET @cmd="CREATE TABLE performance_schema.events_stages_summary_by_host_by_event
   "SUM_TIMER_WAIT BIGINT unsigned not null,"
   "MIN_TIMER_WAIT BIGINT unsigned not null,"
   "AVG_TIMER_WAIT BIGINT unsigned not null,"
-  "MAX_TIMER_WAIT BIGINT unsigned not null"
+  "MAX_TIMER_WAIT BIGINT unsigned not null,"
+  "UNIQUE KEY (HOST, EVENT_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -1241,7 +1841,8 @@ SET @cmd="CREATE TABLE performance_schema.events_stages_summary_by_user_by_event
   "SUM_TIMER_WAIT BIGINT unsigned not null,"
   "MIN_TIMER_WAIT BIGINT unsigned not null,"
   "AVG_TIMER_WAIT BIGINT unsigned not null,"
-  "MAX_TIMER_WAIT BIGINT unsigned not null"
+  "MAX_TIMER_WAIT BIGINT unsigned not null,"
+  "UNIQUE KEY (USER, EVENT_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -1261,7 +1862,8 @@ SET @cmd="CREATE TABLE performance_schema.events_stages_summary_by_account_by_ev
   "SUM_TIMER_WAIT BIGINT unsigned not null,"
   "MIN_TIMER_WAIT BIGINT unsigned not null,"
   "AVG_TIMER_WAIT BIGINT unsigned not null,"
-  "MAX_TIMER_WAIT BIGINT unsigned not null"
+  "MAX_TIMER_WAIT BIGINT unsigned not null,"
+  "UNIQUE KEY `ACCOUNT` (USER, HOST, EVENT_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -1279,7 +1881,8 @@ SET @cmd="CREATE TABLE performance_schema.events_stages_summary_global_by_event_
   "SUM_TIMER_WAIT BIGINT unsigned not null,"
   "MIN_TIMER_WAIT BIGINT unsigned not null,"
   "AVG_TIMER_WAIT BIGINT unsigned not null,"
-  "MAX_TIMER_WAIT BIGINT unsigned not null"
+  "MAX_TIMER_WAIT BIGINT unsigned not null,"
+  "PRIMARY KEY (EVENT_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -1332,7 +1935,8 @@ SET @cmd="CREATE TABLE performance_schema.events_statements_current("
   "NO_GOOD_INDEX_USED BIGINT unsigned not null,"
   "NESTING_EVENT_ID BIGINT unsigned,"
   "NESTING_EVENT_TYPE ENUM('TRANSACTION', 'STATEMENT', 'STAGE', 'WAIT'),"
-  "NESTING_EVENT_LEVEL INTEGER"
+  "NESTING_EVENT_LEVEL INTEGER,"
+  "PRIMARY KEY (THREAD_ID, EVENT_ID) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -1385,7 +1989,8 @@ SET @cmd="CREATE TABLE performance_schema.events_statements_history("
   "NO_GOOD_INDEX_USED BIGINT unsigned not null,"
   "NESTING_EVENT_ID BIGINT unsigned,"
   "NESTING_EVENT_TYPE ENUM('TRANSACTION', 'STATEMENT', 'STAGE', 'WAIT'),"
-  "NESTING_EVENT_LEVEL INTEGER"
+  "NESTING_EVENT_LEVEL INTEGER,"
+  "PRIMARY KEY (THREAD_ID, EVENT_ID) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -1476,7 +2081,8 @@ SET @cmd="CREATE TABLE performance_schema.events_statements_summary_by_thread_by
   "SUM_SORT_ROWS BIGINT unsigned not null,"
   "SUM_SORT_SCAN BIGINT unsigned not null,"
   "SUM_NO_INDEX_USED BIGINT unsigned not null,"
-  "SUM_NO_GOOD_INDEX_USED BIGINT unsigned not null"
+  "SUM_NO_GOOD_INDEX_USED BIGINT unsigned not null,"
+  "PRIMARY KEY (THREAD_ID, EVENT_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -1514,7 +2120,8 @@ SET @cmd="CREATE TABLE performance_schema.events_statements_summary_by_host_by_e
   "SUM_SORT_ROWS BIGINT unsigned not null,"
   "SUM_SORT_SCAN BIGINT unsigned not null,"
   "SUM_NO_INDEX_USED BIGINT unsigned not null,"
-  "SUM_NO_GOOD_INDEX_USED BIGINT unsigned not null"
+  "SUM_NO_GOOD_INDEX_USED BIGINT unsigned not null,"
+  "UNIQUE KEY (HOST, EVENT_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -1552,7 +2159,8 @@ SET @cmd="CREATE TABLE performance_schema.events_statements_summary_by_user_by_e
   "SUM_SORT_ROWS BIGINT unsigned not null,"
   "SUM_SORT_SCAN BIGINT unsigned not null,"
   "SUM_NO_INDEX_USED BIGINT unsigned not null,"
-  "SUM_NO_GOOD_INDEX_USED BIGINT unsigned not null"
+  "SUM_NO_GOOD_INDEX_USED BIGINT unsigned not null,"
+  "UNIQUE KEY (USER, EVENT_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -1591,7 +2199,8 @@ SET @cmd="CREATE TABLE performance_schema.events_statements_summary_by_account_b
   "SUM_SORT_ROWS BIGINT unsigned not null,"
   "SUM_SORT_SCAN BIGINT unsigned not null,"
   "SUM_NO_INDEX_USED BIGINT unsigned not null,"
-  "SUM_NO_GOOD_INDEX_USED BIGINT unsigned not null"
+  "SUM_NO_GOOD_INDEX_USED BIGINT unsigned not null,"
+  "UNIQUE KEY `ACCOUNT` (USER, HOST, EVENT_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -1628,7 +2237,8 @@ SET @cmd="CREATE TABLE performance_schema.events_statements_summary_global_by_ev
   "SUM_SORT_ROWS BIGINT unsigned not null,"
   "SUM_SORT_SCAN BIGINT unsigned not null,"
   "SUM_NO_INDEX_USED BIGINT unsigned not null,"
-  "SUM_NO_GOOD_INDEX_USED BIGINT unsigned not null"
+  "SUM_NO_GOOD_INDEX_USED BIGINT unsigned not null,"
+  "PRIMARY KEY (EVENT_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -1664,7 +2274,8 @@ SET @cmd="CREATE TABLE performance_schema.events_transactions_current("
   "NUMBER_OF_RELEASE_SAVEPOINT BIGINT unsigned,"
   "OBJECT_INSTANCE_BEGIN BIGINT unsigned,"
   "NESTING_EVENT_ID BIGINT unsigned,"
-  "NESTING_EVENT_TYPE ENUM('TRANSACTION', 'STATEMENT', 'STAGE', 'WAIT')"
+  "NESTING_EVENT_TYPE ENUM('TRANSACTION', 'STATEMENT', 'STAGE', 'WAIT'),"
+  "PRIMARY KEY (THREAD_ID, EVENT_ID) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -1700,7 +2311,8 @@ SET @cmd="CREATE TABLE performance_schema.events_transactions_history("
   "NUMBER_OF_RELEASE_SAVEPOINT BIGINT unsigned,"
   "OBJECT_INSTANCE_BEGIN BIGINT unsigned,"
   "NESTING_EVENT_ID BIGINT unsigned,"
-  "NESTING_EVENT_TYPE ENUM('TRANSACTION', 'STATEMENT', 'STAGE', 'WAIT')"
+  "NESTING_EVENT_TYPE ENUM('TRANSACTION', 'STATEMENT', 'STAGE', 'WAIT'),"
+  "PRIMARY KEY (THREAD_ID, EVENT_ID) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -1765,7 +2377,8 @@ SET @cmd="CREATE TABLE performance_schema.events_transactions_summary_by_thread_
   "SUM_TIMER_READ_ONLY BIGINT unsigned not null,"
   "MIN_TIMER_READ_ONLY BIGINT unsigned not null,"
   "AVG_TIMER_READ_ONLY BIGINT unsigned not null,"
-  "MAX_TIMER_READ_ONLY BIGINT unsigned not null"
+  "MAX_TIMER_READ_ONLY BIGINT unsigned not null,"
+  "PRIMARY KEY (THREAD_ID, EVENT_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -1794,7 +2407,8 @@ SET @cmd="CREATE TABLE performance_schema.events_transactions_summary_by_host_by
   "SUM_TIMER_READ_ONLY BIGINT unsigned not null,"
   "MIN_TIMER_READ_ONLY BIGINT unsigned not null,"
   "AVG_TIMER_READ_ONLY BIGINT unsigned not null,"
-  "MAX_TIMER_READ_ONLY BIGINT unsigned not null"
+  "MAX_TIMER_READ_ONLY BIGINT unsigned not null,"
+  "UNIQUE KEY (HOST, EVENT_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -1823,7 +2437,8 @@ SET @cmd="CREATE TABLE performance_schema.events_transactions_summary_by_user_by
   "SUM_TIMER_READ_ONLY BIGINT unsigned not null,"
   "MIN_TIMER_READ_ONLY BIGINT unsigned not null,"
   "AVG_TIMER_READ_ONLY BIGINT unsigned not null,"
-  "MAX_TIMER_READ_ONLY BIGINT unsigned not null"
+  "MAX_TIMER_READ_ONLY BIGINT unsigned not null,"
+  "UNIQUE KEY (USER, EVENT_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -1853,7 +2468,8 @@ SET @cmd="CREATE TABLE performance_schema.events_transactions_summary_by_account
   "SUM_TIMER_READ_ONLY BIGINT unsigned not null,"
   "MIN_TIMER_READ_ONLY BIGINT unsigned not null,"
   "AVG_TIMER_READ_ONLY BIGINT unsigned not null,"
-  "MAX_TIMER_READ_ONLY BIGINT unsigned not null"
+  "MAX_TIMER_READ_ONLY BIGINT unsigned not null,"
+  "UNIQUE KEY `ACCOUNT` (USER, HOST, EVENT_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -1881,7 +2497,113 @@ SET @cmd="CREATE TABLE performance_schema.events_transactions_summary_global_by_
   "SUM_TIMER_READ_ONLY BIGINT unsigned not null,"
   "MIN_TIMER_READ_ONLY BIGINT unsigned not null,"
   "AVG_TIMER_READ_ONLY BIGINT unsigned not null,"
-  "MAX_TIMER_READ_ONLY BIGINT unsigned not null"
+  "MAX_TIMER_READ_ONLY BIGINT unsigned not null,"
+  "PRIMARY KEY (EVENT_NAME) USING HASH"
+  ")ENGINE=PERFORMANCE_SCHEMA;";
+
+SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+--
+-- TABLE EVENTS_ERRORS_SUMMARY_BY_ACCOUNT_BY_ERROR
+--
+
+SET @cmd="CREATE TABLE performance_schema.events_errors_summary_by_account_by_error("
+  "USER CHAR(32) collate utf8_bin default null,"
+  "HOST CHAR(60) collate utf8_bin default null,"
+  "ERROR_NUMBER INTEGER,"
+  "ERROR_NAME VARCHAR(64),"
+  "SQL_STATE VARCHAR(5),"
+  "SUM_ERROR_RAISED  BIGINT unsigned not null,"
+  "SUM_ERROR_HANDLED BIGINT unsigned not null,"
+  "FIRST_SEEN TIMESTAMP(0) null default 0,"
+  "LAST_SEEN TIMESTAMP(0) null default 0,"
+  "UNIQUE KEY `ACCOUNT` (USER, HOST, ERROR_NUMBER) USING HASH"
+  ")ENGINE=PERFORMANCE_SCHEMA;";
+
+SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+----
+---- TABLE EVENTS_ERRORS_SUMMARY_BY_HOST_BY_ERROR
+----
+
+SET @cmd="CREATE TABLE performance_schema.events_errors_summary_by_host_by_error("
+  "HOST CHAR(60) collate utf8_bin default null,"
+  "ERROR_NUMBER INTEGER,"
+  "ERROR_NAME VARCHAR(64),"
+  "SQL_STATE VARCHAR(5),"
+  "SUM_ERROR_RAISED  BIGINT unsigned not null,"
+  "SUM_ERROR_HANDLED BIGINT unsigned not null,"
+  "FIRST_SEEN TIMESTAMP(0) null default 0,"
+  "LAST_SEEN TIMESTAMP(0) null default 0,"
+  "UNIQUE KEY (HOST, ERROR_NUMBER) USING HASH"
+  ")ENGINE=PERFORMANCE_SCHEMA;";
+
+SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+----
+---- TABLE EVENTS_ERRORS_SUMMARY_BY_USER_BY_ERROR
+----
+
+SET @cmd="CREATE TABLE performance_schema.events_errors_summary_by_user_by_error("
+  "USER CHAR(32) collate utf8_bin default null,"
+  "ERROR_NUMBER INTEGER,"
+  "ERROR_NAME VARCHAR(64),"
+  "SQL_STATE VARCHAR(5),"
+  "SUM_ERROR_RAISED  BIGINT unsigned not null,"
+  "SUM_ERROR_HANDLED BIGINT unsigned not null,"
+  "FIRST_SEEN TIMESTAMP(0) null default 0,"
+  "LAST_SEEN TIMESTAMP(0) null default 0,"
+  "UNIQUE KEY (USER, ERROR_NUMBER) USING HASH"
+  ")ENGINE=PERFORMANCE_SCHEMA;";
+
+SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+--
+-- TABLE EVENTS_ERRORS_SUMMARY_BY_THREAD_BY_ERROR
+--
+
+SET @cmd="CREATE TABLE performance_schema.events_errors_summary_by_thread_by_error("
+  "THREAD_ID BIGINT unsigned not null,"
+  "ERROR_NUMBER INTEGER,"
+  "ERROR_NAME VARCHAR(64),"
+  "SQL_STATE VARCHAR(5),"
+  "SUM_ERROR_RAISED  BIGINT unsigned not null,"
+  "SUM_ERROR_HANDLED BIGINT unsigned not null,"
+  "FIRST_SEEN TIMESTAMP(0) null default 0,"
+  "LAST_SEEN TIMESTAMP(0) null default 0,"
+  "UNIQUE KEY (THREAD_ID, ERROR_NUMBER) USING HASH"
+  ")ENGINE=PERFORMANCE_SCHEMA;";
+
+SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+--
+-- TABLE EVENTS_ERRORS_SUMMARY_GLOBAL_BY_ERROR
+--
+
+SET @cmd="CREATE TABLE performance_schema.events_errors_summary_global_by_error("
+  "ERROR_NUMBER INTEGER,"
+  "ERROR_NAME VARCHAR(64),"
+  "SQL_STATE VARCHAR(5),"
+  "SUM_ERROR_RAISED  BIGINT unsigned not null,"
+  "SUM_ERROR_HANDLED BIGINT unsigned not null,"
+  "FIRST_SEEN TIMESTAMP(0) null default 0,"
+  "LAST_SEEN TIMESTAMP(0) null default 0,"
+  "UNIQUE KEY (ERROR_NUMBER) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -1896,7 +2618,8 @@ DROP PREPARE stmt;
 SET @cmd="CREATE TABLE performance_schema.hosts("
   "HOST CHAR(60) collate utf8_bin default null,"
   "CURRENT_CONNECTIONS bigint not null,"
-  "TOTAL_CONNECTIONS bigint not null"
+  "TOTAL_CONNECTIONS bigint not null,"
+  "UNIQUE KEY (HOST) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -1911,7 +2634,8 @@ DROP PREPARE stmt;
 SET @cmd="CREATE TABLE performance_schema.users("
   "USER CHAR(32) collate utf8_bin default null,"
   "CURRENT_CONNECTIONS bigint not null,"
-  "TOTAL_CONNECTIONS bigint not null"
+  "TOTAL_CONNECTIONS bigint not null,"
+  "UNIQUE KEY (USER) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -1927,7 +2651,8 @@ SET @cmd="CREATE TABLE performance_schema.accounts("
   "USER CHAR(32) collate utf8_bin default null,"
   "HOST CHAR(60) collate utf8_bin default null,"
   "CURRENT_CONNECTIONS bigint not null,"
-  "TOTAL_CONNECTIONS bigint not null"
+  "TOTAL_CONNECTIONS bigint not null,"
+  "UNIQUE KEY `ACCOUNT` (USER, HOST) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -1950,7 +2675,8 @@ SET @cmd="CREATE TABLE performance_schema.memory_summary_global_by_event_name("
   "HIGH_COUNT_USED BIGINT not null,"
   "LOW_NUMBER_OF_BYTES_USED BIGINT not null,"
   "CURRENT_NUMBER_OF_BYTES_USED BIGINT not null,"
-  "HIGH_NUMBER_OF_BYTES_USED BIGINT not null"
+  "HIGH_NUMBER_OF_BYTES_USED BIGINT not null,"
+  "PRIMARY KEY (EVENT_NAME)"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -1974,7 +2700,8 @@ SET @cmd="CREATE TABLE performance_schema.memory_summary_by_thread_by_event_name
   "HIGH_COUNT_USED BIGINT not null,"
   "LOW_NUMBER_OF_BYTES_USED BIGINT not null,"
   "CURRENT_NUMBER_OF_BYTES_USED BIGINT not null,"
-  "HIGH_NUMBER_OF_BYTES_USED BIGINT not null"
+  "HIGH_NUMBER_OF_BYTES_USED BIGINT not null,"
+  "PRIMARY KEY (THREAD_ID, EVENT_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -1999,7 +2726,8 @@ SET @cmd="CREATE TABLE performance_schema.memory_summary_by_account_by_event_nam
   "HIGH_COUNT_USED BIGINT not null,"
   "LOW_NUMBER_OF_BYTES_USED BIGINT not null,"
   "CURRENT_NUMBER_OF_BYTES_USED BIGINT not null,"
-  "HIGH_NUMBER_OF_BYTES_USED BIGINT not null"
+  "HIGH_NUMBER_OF_BYTES_USED BIGINT not null,"
+  "UNIQUE KEY `ACCOUNT` (USER, HOST, EVENT_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -2023,7 +2751,8 @@ SET @cmd="CREATE TABLE performance_schema.memory_summary_by_host_by_event_name("
   "HIGH_COUNT_USED BIGINT not null,"
   "LOW_NUMBER_OF_BYTES_USED BIGINT not null,"
   "CURRENT_NUMBER_OF_BYTES_USED BIGINT not null,"
-  "HIGH_NUMBER_OF_BYTES_USED BIGINT not null"
+  "HIGH_NUMBER_OF_BYTES_USED BIGINT not null,"
+  "UNIQUE KEY (HOST, EVENT_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -2047,7 +2776,8 @@ SET @cmd="CREATE TABLE performance_schema.memory_summary_by_user_by_event_name("
   "HIGH_COUNT_USED BIGINT not null,"
   "LOW_NUMBER_OF_BYTES_USED BIGINT not null,"
   "CURRENT_NUMBER_OF_BYTES_USED BIGINT not null,"
-  "HIGH_NUMBER_OF_BYTES_USED BIGINT not null"
+  "HIGH_NUMBER_OF_BYTES_USED BIGINT not null,"
+  "UNIQUE KEY (USER, EVENT_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -2088,7 +2818,8 @@ SET @cmd="CREATE TABLE performance_schema.events_statements_summary_by_digest("
   "SUM_NO_INDEX_USED BIGINT unsigned not null,"
   "SUM_NO_GOOD_INDEX_USED BIGINT unsigned not null,"
   "FIRST_SEEN TIMESTAMP(0) NOT NULL default 0,"
-  "LAST_SEEN TIMESTAMP(0) NOT NULL default 0"
+  "LAST_SEEN TIMESTAMP(0) NOT NULL default 0,"
+  "UNIQUE KEY (SCHEMA_NAME, DIGEST) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 
@@ -2133,7 +2864,8 @@ SET @cmd="CREATE TABLE performance_schema.events_statements_summary_by_program("
   "SUM_SORT_ROWS bigint(20) unsigned NOT NULL,"
   "SUM_SORT_SCAN bigint(20) unsigned NOT NULL,"
   "SUM_NO_INDEX_USED bigint(20) unsigned NOT NULL,"
-  "SUM_NO_GOOD_INDEX_USED bigint(20) unsigned NOT NULL"
+  "SUM_NO_GOOD_INDEX_USED bigint(20) unsigned NOT NULL,"
+  "PRIMARY KEY (OBJECT_TYPE, OBJECT_SCHEMA, OBJECT_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -2180,7 +2912,12 @@ SET @cmd="CREATE TABLE performance_schema.prepared_statements_instances("
   "SUM_SORT_ROWS bigint(20) unsigned NOT NULL,"
   "SUM_SORT_SCAN bigint(20) unsigned NOT NULL,"
   "SUM_NO_INDEX_USED bigint(20) unsigned NOT NULL,"
-  "SUM_NO_GOOD_INDEX_USED bigint(20) unsigned NOT NULL"
+  "SUM_NO_GOOD_INDEX_USED bigint(20) unsigned NOT NULL,"
+  "PRIMARY KEY (OBJECT_INSTANCE_BEGIN) USING HASH,"
+  "UNIQUE KEY (OWNER_THREAD_ID, OWNER_EVENT_ID) USING HASH,"
+  "KEY (STATEMENT_ID) USING HASH,"
+  "KEY (STATEMENT_NAME) USING HASH,"
+  "KEY (OWNER_OBJECT_TYPE, OWNER_OBJECT_SCHEMA, OWNER_OBJECT_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -2211,7 +2948,8 @@ SET @cmd="CREATE TABLE performance_schema.replication_connection_configuration("
   "CONNECTION_RETRY_INTERVAL INTEGER not null,"
   "CONNECTION_RETRY_COUNT BIGINT unsigned not null,"
   "HEARTBEAT_INTERVAL DOUBLE(10,3) unsigned not null COMMENT 'Number of seconds after which a heartbeat will be sent .',"
-  "TLS_VERSION VARCHAR(255) not null"
+  "TLS_VERSION VARCHAR(255) not null,"
+  "PRIMARY KEY (CHANNEL_NAME) USING HASH"
   ") ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -2274,7 +3012,9 @@ SET @cmd="CREATE TABLE performance_schema.replication_connection_status("
   "RECEIVED_TRANSACTION_SET LONGTEXT not null,"
   "LAST_ERROR_NUMBER INTEGER not null,"
   "LAST_ERROR_MESSAGE VARCHAR(1024) not null,"
-  "LAST_ERROR_TIMESTAMP TIMESTAMP(0) not null"
+  "LAST_ERROR_TIMESTAMP TIMESTAMP(0) not null,"
+  "PRIMARY KEY (CHANNEL_NAME) USING HASH,"
+  "KEY (THREAD_ID) USING HASH"
   ") ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -2288,7 +3028,8 @@ DROP PREPARE stmt;
 
 SET @cmd="CREATE TABLE performance_schema.replication_applier_configuration("
   "CHANNEL_NAME CHAR(64) collate utf8_general_ci not null,"
-  "DESIRED_DELAY INTEGER not null"
+  "DESIRED_DELAY INTEGER not null,"
+  "PRIMARY KEY (CHANNEL_NAME) USING HASH"
   ") ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -2304,7 +3045,8 @@ SET @cmd="CREATE TABLE performance_schema.replication_applier_status("
   "CHANNEL_NAME CHAR(64) collate utf8_general_ci not null,"
   "SERVICE_STATE ENUM('ON','OFF') not null,"
   "REMAINING_DELAY INTEGER unsigned,"
-  "COUNT_TRANSACTIONS_RETRIES BIGINT unsigned not null"
+  "COUNT_TRANSACTIONS_RETRIES BIGINT unsigned not null,"
+  "PRIMARY KEY (CHANNEL_NAME) USING HASH"
   ") ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -2322,7 +3064,9 @@ SET @cmd="CREATE TABLE performance_schema.replication_applier_status_by_coordina
   "SERVICE_STATE ENUM('ON','OFF') not null,"
   "LAST_ERROR_NUMBER INTEGER not null,"
   "LAST_ERROR_MESSAGE VARCHAR(1024) not null,"
-  "LAST_ERROR_TIMESTAMP TIMESTAMP(0) not null"
+  "LAST_ERROR_TIMESTAMP TIMESTAMP(0) not null,"
+  "PRIMARY KEY (CHANNEL_NAME) USING HASH,"
+  "KEY (THREAD_ID) USING HASH"
   ") ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -2342,7 +3086,9 @@ SET @cmd="CREATE TABLE performance_schema.replication_applier_status_by_worker("
   "LAST_SEEN_TRANSACTION CHAR(57) not null,"
   "LAST_ERROR_NUMBER INTEGER not null,"
   "LAST_ERROR_MESSAGE VARCHAR(1024) not null,"
-  "LAST_ERROR_TIMESTAMP TIMESTAMP(0) not null"
+  "LAST_ERROR_TIMESTAMP TIMESTAMP(0) not null,"
+  "PRIMARY KEY (CHANNEL_NAME, WORKER_ID) USING HASH,"
+  "KEY (THREAD_ID) USING HASH"
   ") ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -2358,7 +3104,8 @@ SET @cmd="CREATE TABLE performance_schema.session_connect_attrs("
   "PROCESSLIST_ID INT NOT NULL,"
   "ATTR_NAME VARCHAR(32) NOT NULL,"
   "ATTR_VALUE VARCHAR(1024),"
-  "ORDINAL_POSITION INT"
+  "ORDINAL_POSITION INT,"
+  "PRIMARY KEY (PROCESSLIST_ID, ATTR_NAME)"
   ")ENGINE=PERFORMANCE_SCHEMA CHARACTER SET utf8 COLLATE utf8_bin;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -2390,7 +3137,10 @@ SET @cmd="CREATE TABLE performance_schema.table_handles("
   "OWNER_THREAD_ID BIGINT unsigned,"
   "OWNER_EVENT_ID BIGINT unsigned,"
   "INTERNAL_LOCK VARCHAR(64),"
-  "EXTERNAL_LOCK VARCHAR(64)"
+  "EXTERNAL_LOCK VARCHAR(64),"
+  "PRIMARY KEY (OBJECT_INSTANCE_BEGIN) USING HASH,"
+  "KEY (OBJECT_TYPE, OBJECT_SCHEMA, OBJECT_NAME) USING HASH,"
+  "KEY (OWNER_THREAD_ID, OWNER_EVENT_ID) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -2412,7 +3162,10 @@ SET @cmd="CREATE TABLE performance_schema.metadata_locks("
   "LOCK_STATUS VARCHAR(32) not null,"
   "SOURCE VARCHAR(64),"
   "OWNER_THREAD_ID BIGINT unsigned,"
-  "OWNER_EVENT_ID BIGINT unsigned"
+  "OWNER_EVENT_ID BIGINT unsigned,"
+  "PRIMARY KEY (OBJECT_INSTANCE_BEGIN) USING HASH,"
+  "KEY (OBJECT_TYPE, OBJECT_SCHEMA, OBJECT_NAME) USING HASH,"
+  "KEY (OWNER_THREAD_ID, OWNER_EVENT_ID) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -2427,7 +3180,8 @@ DROP PREPARE stmt;
 SET @cmd="CREATE TABLE performance_schema.user_variables_by_thread("
   "THREAD_ID BIGINT unsigned not null,"
   "VARIABLE_NAME VARCHAR(64) not null,"
-  "VARIABLE_VALUE LONGBLOB"
+  "VARIABLE_VALUE LONGBLOB,"
+  "PRIMARY KEY (THREAD_ID, VARIABLE_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -2442,7 +3196,8 @@ DROP PREPARE stmt;
 SET @cmd="CREATE TABLE performance_schema.variables_by_thread("
   "THREAD_ID BIGINT unsigned not null,"
   "VARIABLE_NAME VARCHAR(64) not null,"
-  "VARIABLE_VALUE VARCHAR(1024)"
+  "VARIABLE_VALUE VARCHAR(1024),"
+  "PRIMARY KEY (THREAD_ID, VARIABLE_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -2456,7 +3211,8 @@ DROP PREPARE stmt;
 
 SET @cmd="CREATE TABLE performance_schema.global_variables("
   "VARIABLE_NAME VARCHAR(64) not null,"
-  "VARIABLE_VALUE VARCHAR(1024)"
+  "VARIABLE_VALUE VARCHAR(1024),"
+  "PRIMARY KEY (VARIABLE_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -2470,7 +3226,25 @@ DROP PREPARE stmt;
 
 SET @cmd="CREATE TABLE performance_schema.session_variables("
   "VARIABLE_NAME VARCHAR(64) not null,"
-  "VARIABLE_VALUE VARCHAR(1024)"
+  "VARIABLE_VALUE VARCHAR(1024),"
+  "PRIMARY KEY (VARIABLE_NAME) USING HASH"
+  ")ENGINE=PERFORMANCE_SCHEMA;";
+
+SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+--
+-- TABLE VARIABLES_INFO
+--
+
+SET @cmd="CREATE TABLE performance_schema.variables_info("
+  "VARIABLE_NAME varchar(64) not null,"
+  "VARIABLE_SOURCE ENUM('COMPILED','GLOBAL','SERVER','EXPLICIT','EXTRA','USER','LOGIN','COMMAND_LINE','PERSISTED','DYNAMIC'),"
+  "VARIABLE_PATH varchar(1024),"
+  "MIN_VALUE varchar(64),"
+  "MAX_VALUE varchar(64)"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -2485,7 +3259,8 @@ DROP PREPARE stmt;
 SET @cmd="CREATE TABLE performance_schema.status_by_thread("
   "THREAD_ID BIGINT unsigned not null,"
   "VARIABLE_NAME VARCHAR(64) not null,"
-  "VARIABLE_VALUE VARCHAR(1024)"
+  "VARIABLE_VALUE VARCHAR(1024),"
+  "PRIMARY KEY (THREAD_ID, VARIABLE_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -2500,7 +3275,8 @@ DROP PREPARE stmt;
 SET @cmd="CREATE TABLE performance_schema.status_by_user("
   "USER CHAR(32) collate utf8_bin default null,"
   "VARIABLE_NAME VARCHAR(64) not null,"
-  "VARIABLE_VALUE VARCHAR(1024)"
+  "VARIABLE_VALUE VARCHAR(1024),"
+  "UNIQUE KEY (USER, VARIABLE_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -2515,7 +3291,8 @@ DROP PREPARE stmt;
 SET @cmd="CREATE TABLE performance_schema.status_by_host("
   "HOST CHAR(60) collate utf8_bin default null,"
   "VARIABLE_NAME VARCHAR(64) not null,"
-  "VARIABLE_VALUE VARCHAR(1024)"
+  "VARIABLE_VALUE VARCHAR(1024),"
+  "UNIQUE KEY (HOST, VARIABLE_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -2531,7 +3308,8 @@ SET @cmd="CREATE TABLE performance_schema.status_by_account("
   "USER CHAR(32) collate utf8_bin default null,"
   "HOST CHAR(60) collate utf8_bin default null,"
   "VARIABLE_NAME VARCHAR(64) not null,"
-  "VARIABLE_VALUE VARCHAR(1024)"
+  "VARIABLE_VALUE VARCHAR(1024),"
+  "UNIQUE KEY `ACCOUNT` (USER, HOST, VARIABLE_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -2545,7 +3323,8 @@ DROP PREPARE stmt;
 
 SET @cmd="CREATE TABLE performance_schema.global_status("
   "VARIABLE_NAME VARCHAR(64) not null,"
-  "VARIABLE_VALUE VARCHAR(1024)"
+  "VARIABLE_VALUE VARCHAR(1024),"
+  "PRIMARY KEY (VARIABLE_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -2559,7 +3338,8 @@ DROP PREPARE stmt;
 
 SET @cmd="CREATE TABLE performance_schema.session_status("
   "VARIABLE_NAME VARCHAR(64) not null,"
-  "VARIABLE_VALUE VARCHAR(1024)"
+  "VARIABLE_VALUE VARCHAR(1024),"
+  "PRIMARY KEY (VARIABLE_NAME) USING HASH"
   ")ENGINE=PERFORMANCE_SCHEMA;";
 
 SET @str = IF(@have_pfs = 1, @cmd, 'SET @dummy = 0');
@@ -2567,7 +3347,7 @@ PREPARE stmt FROM @str;
 EXECUTE stmt;
 DROP PREPARE stmt;
 
-CREATE TABLE IF NOT EXISTS proxies_priv (Host char(60) binary DEFAULT '' NOT NULL, User char(32) binary DEFAULT '' NOT NULL, Proxied_host char(60) binary DEFAULT '' NOT NULL, Proxied_user char(32) binary DEFAULT '' NOT NULL, With_grant BOOL DEFAULT 0 NOT NULL, Grantor char(93) DEFAULT '' NOT NULL, Timestamp timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, PRIMARY KEY Host (Host,User,Proxied_host,Proxied_user), KEY Grantor (Grantor) ) engine=MyISAM CHARACTER SET utf8 COLLATE utf8_bin comment='User proxy privileges';
+CREATE TABLE IF NOT EXISTS proxies_priv (Host char(60) binary DEFAULT '' NOT NULL, User char(32) binary DEFAULT '' NOT NULL, Proxied_host char(60) binary DEFAULT '' NOT NULL, Proxied_user char(32) binary DEFAULT '' NOT NULL, With_grant BOOL DEFAULT 0 NOT NULL, Grantor char(93) DEFAULT '' NOT NULL, Timestamp timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, PRIMARY KEY Host (Host,User,Proxied_host,Proxied_user), KEY Grantor (Grantor) ) engine=InnoDB STATS_PERSISTENT=0 CHARACTER SET utf8 COLLATE utf8_bin comment='User proxy privileges';
 
 -- Remember for later if proxies_priv table already existed
 set @had_proxies_priv_table= @@warning_count != 0;
@@ -2681,6 +3461,11 @@ PREPARE stmt FROM @str;
 EXECUTE stmt;
 DROP PREPARE stmt;
 
+SET @str=IF(@have_ndbinfo,'DROP VIEW IF EXISTS `ndbinfo`.`tc_time_track_stats`','SET @dummy = 0');
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
 SET @str=IF(@have_ndbinfo,'DROP VIEW IF EXISTS `ndbinfo`.`disk_write_speed_base`','SET @dummy = 0');
 PREPARE stmt FROM @str;
 EXECUTE stmt;
@@ -2752,6 +3537,11 @@ EXECUTE stmt;
 DROP PREPARE stmt;
 
 SET @str=IF(@have_ndbinfo,'DROP VIEW IF EXISTS `ndbinfo`.`config_params`','SET @dummy = 0');
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+SET @str=IF(@have_ndbinfo,'DROP VIEW IF EXISTS `ndbinfo`.`config_values`','SET @dummy = 0');
 PREPARE stmt FROM @str;
 EXECUTE stmt;
 DROP PREPARE stmt;
@@ -2925,6 +3715,17 @@ PREPARE stmt FROM @str;
 EXECUTE stmt;
 DROP PREPARE stmt;
 
+# ndbinfo.ndb$tc_time_track_stats
+SET @str=IF(@have_ndbinfo,'DROP TABLE IF EXISTS `ndbinfo`.`ndb$tc_time_track_stats`','SET @dummy = 0');
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+SET @str=IF(@have_ndbinfo,'CREATE TABLE `ndbinfo`.`ndb$tc_time_track_stats` (`node_id` INT UNSIGNED COMMENT "node id",`block_number` INT UNSIGNED COMMENT "Block number",`block_instance` INT UNSIGNED COMMENT "Block instance",`comm_node_id` INT UNSIGNED COMMENT "node_id of API or DB",`upper_bound` BIGINT UNSIGNED COMMENT "Upper bound in micros of interval",`scans` BIGINT UNSIGNED COMMENT "scan histogram interval",`scan_errors` BIGINT UNSIGNED COMMENT "scan error histogram interval",`scan_fragments` BIGINT UNSIGNED COMMENT "scan fragment histogram interval",`scan_fragment_errors` BIGINT UNSIGNED COMMENT "scan fragment error histogram interval",`transactions` BIGINT UNSIGNED COMMENT "transaction histogram interval",`transaction_errors` BIGINT UNSIGNED COMMENT "transaction error histogram interval",`read_key_ops` BIGINT UNSIGNED COMMENT "read key operation histogram interval",`write_key_ops` BIGINT UNSIGNED COMMENT "write key operation histogram interval",`index_key_ops` BIGINT UNSIGNED COMMENT "index key operation histogram interval",`key_op_errors` BIGINT UNSIGNED COMMENT "key operation error histogram interval") COMMENT="Time tracking of transaction, key operations and scan ops" ENGINE=NDBINFO','SET @dummy = 0');
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
 # ndbinfo.ndb$disk_write_speed_base
 SET @str=IF(@have_ndbinfo,'DROP TABLE IF EXISTS `ndbinfo`.`ndb$disk_write_speed_base`','SET @dummy = 0');
 PREPARE stmt FROM @str;
@@ -3084,6 +3885,17 @@ PREPARE stmt FROM @str;
 EXECUTE stmt;
 DROP PREPARE stmt;
 
+# ndbinfo.ndb$config_values
+SET @str=IF(@have_ndbinfo,'DROP TABLE IF EXISTS `ndbinfo`.`ndb$config_values`','SET @dummy = 0');
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+SET @str=IF(@have_ndbinfo,'CREATE TABLE `ndbinfo`.`ndb$config_values` (`node_id` INT UNSIGNED,`config_param` INT UNSIGNED COMMENT "Parameter number",`config_value` VARCHAR(512) COMMENT "Parameter value") COMMENT="Configuration parameter values" ENGINE=NDBINFO','SET @dummy = 0');
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
 # ndbinfo.ndb$blocks
 SET @str=IF(@have_ndbinfo,'DROP TABLE IF EXISTS `ndbinfo`.`ndb$blocks`','SET @dummy = 0');
 PREPARE stmt FROM @str;
@@ -3123,7 +3935,7 @@ PREPARE stmt FROM @str;
 EXECUTE stmt;
 DROP PREPARE stmt;
 
-SET @str=IF(@have_ndbinfo,'CREATE TABLE `ndbinfo`.`ndb$config_params` (param_number INT UNSIGNED, param_name VARCHAR(512)) ENGINE=NDBINFO','SET @dummy = 0');
+SET @str=IF(@have_ndbinfo,'CREATE TABLE `ndbinfo`.`ndb$config_params` (param_number INT UNSIGNED, param_name VARCHAR(512), param_description VARCHAR(512), param_type VARCHAR(512), param_default VARCHAR(512), param_min VARCHAR(512), param_max VARCHAR(512), param_mandatory INT UNSIGNED, param_status VARCHAR(512)) ENGINE=NDBINFO','SET @dummy = 0');
 PREPARE stmt FROM @str;
 EXECUTE stmt;
 DROP PREPARE stmt;
@@ -3216,6 +4028,12 @@ PREPARE stmt FROM @str;
 EXECUTE stmt;
 DROP PREPARE stmt;
 
+# ndbinfo.tc_time_track_stats
+SET @str=IF(@have_ndbinfo,'CREATE OR REPLACE DEFINER=`root`@`localhost` SQL SECURITY INVOKER VIEW `ndbinfo`.`tc_time_track_stats` AS SELECT * from `ndbinfo`.`ndb$tc_time_track_stats`','SET @dummy = 0');
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
 # ndbinfo.disk_write_speed_base
 SET @str=IF(@have_ndbinfo,'CREATE OR REPLACE DEFINER=`root`@`localhost` SQL SECURITY INVOKER VIEW `ndbinfo`.`disk_write_speed_base` AS SELECT * from `ndbinfo`.`ndb$disk_write_speed_base`','SET @dummy = 0');
 PREPARE stmt FROM @str;
@@ -3291,12 +4109,6 @@ PREPARE stmt FROM @str;
 EXECUTE stmt;
 DROP PREPARE stmt;
 
-# Finally turn off offline mode
-SET @str=IF(@have_ndbinfo,'SET @@global.ndbinfo_offline=FALSE','SET @dummy = 0');
-PREPARE stmt FROM @str;
-EXECUTE stmt;
-DROP PREPARE stmt;
-
 # ndbinfo.operations_per_fragment
 # This is the end-user view of ndb$frag_operations. It adds some 
 # dictionary information such as the table name and type, and the name of the
@@ -3343,7 +4155,13 @@ EXECUTE stmt;
 DROP PREPARE stmt;
 
 # ndbinfo.config_params
-SET @str=IF(@have_ndbinfo,'CREATE OR REPLACE DEFINER=`root`@`localhost` SQL SECURITY INVOKER VIEW `ndbinfo`.`config_params` AS SELECT param_number, param_name FROM `ndbinfo`.`ndb$config_params`','SET @dummy = 0');
+SET @str=IF(@have_ndbinfo,'CREATE OR REPLACE DEFINER=`root`@`localhost` SQL SECURITY INVOKER VIEW `ndbinfo`.`config_params` AS SELECT param_number, param_name, param_description, param_type, param_default, param_min, param_max, param_mandatory, param_status FROM `ndbinfo`.`ndb$config_params`','SET @dummy = 0');
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+# ndbinfo.config_values
+SET @str=IF(@have_ndbinfo,'CREATE OR REPLACE DEFINER=`root`@`localhost` SQL SECURITY INVOKER VIEW `ndbinfo`.`config_values` AS SELECT node_id, config_param, config_value FROM `ndbinfo`.`ndb$config_values`','SET @dummy = 0');
 PREPARE stmt FROM @str;
 EXECUTE stmt;
 DROP PREPARE stmt;
@@ -3353,3 +4171,61 @@ SET @str=IF(@have_ndbinfo,'SET @@global.ndbinfo_offline=FALSE','SET @dummy = 0')
 PREPARE stmt FROM @str;
 EXECUTE stmt;
 DROP PREPARE stmt;
+
+--
+-- INFORMATION SCHEMA VIEWS implementing SHOW statements
+--
+
+CREATE OR REPLACE DEFINER=`root`@`localhost` VIEW information_schema.SHOW_STATISTICS AS
+  (SELECT
+    TABLE_SCHEMA as `Database`,
+    sb.TABLE_NAME AS `Table`,
+    NON_UNIQUE AS `Non_unique`,
+    sb.INDEX_NAME AS `Key_name`,
+    SEQ_IN_INDEX AS `Seq_in_index`,
+    sb.COLUMN_NAME AS `Column_name`,
+    COLLATION AS `Collation`,
+    stat.cardinality AS `Cardinality`,
+    SUB_PART AS `Sub_part`,
+    PACKED AS `Packed`,
+    NULLABLE AS `Null`,
+    INDEX_TYPE AS `Index_type`,
+    COMMENT AS `Comment`,
+    INDEX_COMMENT AS `Index_comment`,
+    IS_VISIBLE AS `Visible`,
+    INDEX_ORDINAL_POSITION,
+    COLUMN_ORDINAL_POSITION
+  FROM information_schema.STATISTICS_BASE sb
+    LEFT JOIN mysql.index_stats stat
+                 ON sb.table_name=stat.table_name
+                and sb.table_schema=stat.schema_name
+                and sb.index_name=stat.index_name
+                and sb.column_name=stat.column_name);
+
+
+CREATE OR REPLACE DEFINER=`root`@`localhost` VIEW information_schema.SHOW_STATISTICS_DYNAMIC AS
+  (SELECT
+    TABLE_SCHEMA as `Database`,
+    TABLE_NAME AS `Table`,
+    NON_UNIQUE AS `Non_unique`,
+    INDEX_NAME AS `Key_name`,
+    SEQ_IN_INDEX AS `Seq_in_index`,
+    COLUMN_NAME AS `Column_name`,
+    COLLATION AS `Collation`,
+    INTERNAL_INDEX_COLUMN_CARDINALITY(TABLE_SCHEMA, TABLE_NAME, INDEX_NAME,
+                                      INDEX_ORDINAL_POSITION,
+                                      COLUMN_ORDINAL_POSITION,
+                                      ENGINE,
+                                      SE_PRIVATE_ID)
+      AS `Cardinality`,
+    SUB_PART AS `Sub_part`,
+    PACKED AS `Packed`,
+    NULLABLE AS `Null`,
+    INDEX_TYPE AS `Index_type`,
+    COMMENT AS `Comment`,
+    INDEX_COMMENT AS `Index_comment`,
+    IS_VISIBLE AS `Visible`,
+    INDEX_ORDINAL_POSITION,
+    COLUMN_ORDINAL_POSITION
+  FROM information_schema.STATISTICS_BASE);
+

@@ -22,6 +22,7 @@
 
 #include <string>
 #include <vector>
+#include <boost/scoped_ptr.hpp>
 #include "ngs/client_session.h"
 
 #include "sql_data_context.h"
@@ -76,15 +77,9 @@ public:
   Session_options &options() { return m_options; }
   Session_status_variables &get_status_variables() { return m_status_variables; }
 
-  bool can_see_user(const std::string &user) const;
+  bool can_see_user(const char *user) const;
 
-  template<Common_status_variables::Variable Common_status_variables::*variable>
-  void update_status();
-  template<Common_status_variables::Variable Common_status_variables::*variable>
-  void update_status(long param);
-
-  void update_status(Common_status_variables::Variable
-                     Common_status_variables::*variable);
+  template<void (Common_status_variables::*method)()> void update_status();
 
 private: // reimpl ngs::Session
   virtual void on_kill();
@@ -102,20 +97,6 @@ private:
 };
 
 
-template<Common_status_variables::Variable Common_status_variables::*variable>
-void Session::update_status()
-{
-  ++(m_status_variables.*variable);
-  ++(Global_status_variables::instance().*variable);
-}
-
-
-template<Common_status_variables::Variable Common_status_variables::*variable>
-void Session::update_status(long param)
-{
-  (m_status_variables.*variable) += param;
-  (Global_status_variables::instance().*variable) += param;
-}
 } // namespace xpl
 
 #endif  // _XPL_SESSION_H_

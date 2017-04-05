@@ -116,7 +116,7 @@ SELECT @@session.delay_key_write;
 
 --disable_warnings
 SELECT @@delay_key_write = VARIABLE_VALUE 
-FROM INFORMATION_SCHEMA.GLOBAL_VARIABLES 
+FROM performance_schema.global_variables 
 WHERE VARIABLE_NAME='delay_key_write';
 --enable_warnings
 

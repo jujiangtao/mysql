@@ -19,6 +19,7 @@
 
 /* classes for sum functions */
 
+#include "my_global.h"
 #include "my_tree.h"        // TREE
 #include "item.h"           // Item_result_field
 #include "sql_alloc.h"      // Sql_alloc
@@ -40,7 +41,7 @@ class PT_order_list;
   Note that update_field/reset_field are not in that
   class, because they're simply not called when
   GROUP BY/DISTINCT can be handled with help of index on grouped 
-  fields (quick_group = 0);
+  fields (quick_group is false);
 */
 
 class Aggregator : public Sql_alloc
@@ -109,7 +110,7 @@ public:
 };
 
 
-class st_select_lex;
+class SELECT_LEX;
 
 /**
   Class Item_sum is the base class used for special expressions that SQL calls
@@ -118,34 +119,40 @@ class st_select_lex;
 
  GENERAL NOTES
 
-  A set function cannot be used in certain positions where expressions are
-  accepted. There are some quite explicable restrictions for the usage of 
-  set functions.
+  A set function cannot be used in all positions where expressions are accepted.
+  There are some quite explicable restrictions for the use of set functions.
 
   In the query:
+
     SELECT AVG(b) FROM t1 WHERE SUM(b) > 20 GROUP by a
-  the usage of the set function AVG(b) is legal, while the usage of SUM(b)
-  is illegal. A WHERE condition must contain expressions that can be 
-  evaluated for each row of the table. Yet the expression SUM(b) can be
-  evaluated only for each group of rows with the same value of column a.
+
+  the set function AVG(b) is valid, while the usage of SUM(b) is invalid.
+  A WHERE condition must contain expressions that can be evaluated for each row
+  of the table. Yet the expression SUM(b) can be evaluated only for each group
+  of rows with the same value of column a.
   In the query:
+
     SELECT AVG(b) FROM t1 WHERE c > 30 GROUP BY a HAVING SUM(b) > 20
-  both set function expressions AVG(b) and SUM(b) are legal.
+
+  both set function expressions AVG(b) and SUM(b) are valid.
 
   We can say that in a query without nested selects an occurrence of a
   set function in an expression of the SELECT list or/and in the HAVING
-  clause is legal, while in the WHERE clause it's illegal.
+  clause is valid, while in the WHERE clause, FROM clause or GROUP BY clause
+  it is invalid.
 
-  The general rule to detect whether a set function is legal in a query with
+  The general rule to detect whether a set function is valid in a query with
   nested subqueries is much more complicated.
 
-  Consider the the following query:
+  Consider the following query:
+
     SELECT t1.a FROM t1 GROUP BY t1.a
       HAVING t1.a > ALL (SELECT t2.c FROM t2 WHERE SUM(t1.b) < t2.c).
+
   The set function SUM(b) is used here in the WHERE clause of the subquery.
-  Nevertheless it is legal since it is under the HAVING clause of the query
-  to which this function relates. The expression SUM(t1.b) is evaluated
-  for each group defined in the main query, not for groups of the subquery.
+  Nevertheless it is valid since it is contained in the HAVING clause of the
+  outer query. The expression SUM(t1.b) is evaluated for each group defined
+ in the main query, not for groups of the subquery.
 
   The problem of finding the query where to aggregate a particular
   set function is not so simple as it seems to be.
@@ -154,32 +161,42 @@ class st_select_lex;
     SELECT t1.a FROM t1 GROUP BY t1.a
      HAVING t1.a > ALL(SELECT t2.c FROM t2 GROUP BY t2.c
                          HAVING SUM(t1.a) < t2.c)
-  the set function can be evaluated for both outer and inner selects.
+
+  the set function can be evaluated in both the outer and the inner query block.
   If we evaluate SUM(t1.a) for the outer query then we get the value of t1.a
-  multiplied by the cardinality of a group in table t1. In this case 
-  in each correlated subquery SUM(t1.a) is used as a constant. But we also
-  can evaluate SUM(t1.a) for the inner query. In this case t1.a will be a
-  constant for each correlated subquery and summation is performed
-  for each group of table t2.
+  multiplied by the cardinality of a group in table t1. In this case,
+  SUM(t1.a) is used as a constant value in each correlated subquery.
+  But SUM(t1.a) can also be evaluated for the inner query.
+  In this case t1.a will be a constant value for each correlated subquery and
+  summation is performed for each group of table t2.
   (Here it makes sense to remind that the query
+
     SELECT c FROM t GROUP BY a HAVING SUM(1) < a 
-  is quite legal in our SQL).
 
-  So depending on what query we assign the set function to we
-  can get different result sets.
+  is quite valid in our SQL).
 
-  The general rule to detect the query where a set function is to be
-  evaluated can be formulated as follows.
-  Consider a set function S(E) where E is an expression with occurrences
-  of column references C1, ..., CN. Resolve these column references against
-  subqueries that contain the set function S(E). Let Q be the innermost
-  subquery of those subqueries. (It should be noted here that S(E)
-  in no way can be evaluated in the subquery embedding the subquery Q,
-  otherwise S(E) would refer to at least one unbound column reference)
+  So depending on what query block we assign the set function to we
+  can get different results.
+
+  The general rule to detect the query block Q where a set function will be
+  aggregated (evaluated) can be formulated as follows.
+
+  Reference: SQL2011 @<set function specification@> syntax rules 6 and 7.
+
+  Consider a set function S(E) where E is an expression which contains
+  column references C1, ..., Cn. Resolve all column references Ci against
+  the query block Qi containing the set function S(E). Let Q be the innermost
+  query block of all query blocks Qi. (It should be noted here that S(E)
+  in no way can be aggregated in the query block containing the subquery Q,
+  otherwise S(E) would refer to at least one unbound column reference).
   If S(E) is used in a construct of Q where set functions are allowed then
-  we evaluate S(E) in Q.
-  Otherwise we look for a innermost subquery containing S(E) of those where
-  usage of S(E) is allowed.
+  we aggregate S(E) in Q.
+  Otherwise:
+  - if ANSI SQL mode is enabled (MODE_ANSI), then report an error.
+  - otherwise, look for the innermost query block containing S(E) of those
+    where usage of S(E) is allowed. The place of aggregation depends on which
+    clause the subquery is contained within; It will be different when
+    contained in a WHERE clause versus in the select list or in HAVING clause.
 
   Let's demonstrate how this rule is applied to the following queries.
 
@@ -187,90 +204,100 @@ class st_select_lex;
        HAVING t1.a > ALL(SELECT t2.b FROM t2 GROUP BY t2.b
                            HAVING t2.b > ALL(SELECT t3.c FROM t3 GROUP BY t3.c
                                                 HAVING SUM(t1.a+t2.b) < t3.c))
-  For this query the set function SUM(t1.a+t2.b) depends on t1.a and t2.b
+  For this query the set function SUM(t1.a+t2.b) contains t1.a and t2.b
   with t1.a defined in the outermost query, and t2.b defined for its
-  subquery. The set function is in the HAVING clause of the subquery and can
-  be evaluated in this subquery.
+  subquery. The set function is contained in the HAVING clause of the subquery
+  and can be evaluated in this subquery.
 
   2. SELECT t1.a FROM t1 GROUP BY t1.a
        HAVING t1.a > ALL(SELECT t2.b FROM t2
                            WHERE t2.b > ALL (SELECT t3.c FROM t3 GROUP BY t3.c
                                                HAVING SUM(t1.a+t2.b) < t3.c))
-  Here the set function SUM(t1.a+t2.b)is in the WHERE clause of the second
-  subquery - the most upper subquery where t1.a and t2.b are defined.
+  The set function SUM(t1.a+t2.b) is contained in the WHERE clause of the second
+  query block - the outermost query block where t1.a and t2.b are defined.
   If we evaluate the function in this subquery we violate the context rules.
-  So we evaluate the function in the third subquery (over table t3) where it
-  is used under the HAVING clause.
+  So we evaluate the function in the third query block (over table t3) where it
+  is used under the HAVING clause; if in ANSI SQL mode, an error is thrown.
 
   3. SELECT t1.a FROM t1 GROUP BY t1.a
        HAVING t1.a > ALL(SELECT t2.b FROM t2
                            WHERE t2.b > ALL (SELECT t3.c FROM t3 
                                                WHERE SUM(t1.a+t2.b) < t3.c))
-  In this query evaluation of SUM(t1.a+t2.b) is not legal neither in the second
-  nor in the third subqueries. So this query is invalid.
+  In this query, evaluation of SUM(t1.a+t2.b) is not valid neither in the second
+  nor in the third query block.
 
-  Mostly set functions cannot be nested. In the query
+  Set functions can generally not be nested. In the query
+
     SELECT t1.a from t1 GROUP BY t1.a HAVING AVG(SUM(t1.b)) > 20
-  the expression SUM(b) is not acceptable, though it is under a HAVING clause.
-  Yet it is acceptable in the query:
+
+  the expression SUM(b) is not valid, even though it is contained inside
+  a HAVING clause.
+  However, it is acceptable in the query:
+
     SELECT t.1 FROM t1 GROUP BY t1.a HAVING SUM(t1.b) > 20.
 
-  An argument of a set function does not have to be a reference to a table
-  column as we saw it in examples above. This can be a more complex expression
+  An argument of a set function does not have to be a simple column reference
+  as seen in examples above. This can be a more complex expression
+
     SELECT t1.a FROM t1 GROUP BY t1.a HAVING SUM(t1.b+1) > 20.
-  The expression SUM(t1.b+1) has a very clear semantics in this context:
+
+  The expression SUM(t1.b+1) has clear semantics in this context:
   we sum up the values of t1.b+1 where t1.b varies for all values within a
   group of rows that contain the same t1.a value.
 
-  A set function for an outer query yields a constant within a subquery. So
-  the semantics of the query
+  A set function for an outer query yields a constant value within a subquery.
+  So the semantics of the query
+
     SELECT t1.a FROM t1 GROUP BY t1.a
       HAVING t1.a IN (SELECT t2.c FROM t2 GROUP BY t2.c
                         HAVING AVG(t2.c+SUM(t1.b)) > 20)
-  is still clear. For a group of the rows with the same t1.a values we
-  calculate the value of SUM(t1.b). This value 's' is substituted in the
-  the subquery:
+
+  is still clear. For a group of rows with the same value for t1.a, calculate
+  the value of SUM(t1.b) as 's'. This value is substituted in the subquery:
+
     SELECT t2.c FROM t2 GROUP BY t2.c HAVING AVG(t2.c+s)
-  than returns some result set.
 
   By the same reason the following query with a subquery 
+
     SELECT t1.a FROM t1 GROUP BY t1.a
       HAVING t1.a IN (SELECT t2.c FROM t2 GROUP BY t2.c
                         HAVING AVG(SUM(t1.b)) > 20)
-  is also acceptable.
+  is also valid.
 
  IMPLEMENTATION NOTES
 
-  Three methods were added to the class to check the constraints specified
-  in the previous section. These methods utilize several new members.
+  The member base_select contains a reference to the query block that the
+  set function is contained within.
 
-  The field 'nest_level' contains the number of the level for the subquery
-  containing the set function. The main SELECT is of level 0, its subqueries
-  are of levels 1, the subqueries of the latter are of level 2 and so on.
+  The member aggr_select contains a reference to the query block where the
+  set function is aggregated.
 
-  The field 'aggr_level' is to contain the nest level of the subquery
-  where the set function is aggregated.
-
-  The field 'max_arg_level' is for the maximun of the nest levels of the
-  unbound column references occurred in the set function. A column reference
-  is unbound  within a set function if it is not bound by any subquery
+  The field max_aggr_level holds the maximum of the nest levels of the
+  unbound column references contained in the set function. A column reference
+  is unbound within a set function if it is not bound by any subquery
   used as a subexpression in this function. A column reference is bound by
   a subquery if it is a reference to the column by which the aggregation
   of some set function that is used in the subquery is calculated.
   For the set function used in the query
+
     SELECT t1.a FROM t1 GROUP BY t1.a
       HAVING t1.a > ALL(SELECT t2.b FROM t2 GROUP BY t2.b
                           HAVING t2.b > ALL(SELECT t3.c FROM t3 GROUP BY t3.c
                                               HAVING SUM(t1.a+t2.b) < t3.c))
-  the value of max_arg_level is equal to 1 since t1.a is bound in the main
+
+  the value of max_aggr_level is equal to 1 since t1.a is bound in the main
   query, and t2.b is bound by the first subquery whose nest level is 1.
-  Obviously a set function cannot be aggregated in the subquery whose
-  nest level is less than max_arg_level. (Yet it can be aggregated in the
-  subqueries whose nest level is greater than max_arg_level.)
+  Obviously a set function cannot be aggregated in a subquery whose
+  nest level is less than max_aggr_level. (Yet it can be aggregated in the
+  subqueries whose nest level is greater than max_aggr_level.)
   In the query
-    SELECT t.a FROM t1 HAVING AVG(t1.a+(SELECT MIN(t2.c) FROM t2))
-  the value of the max_arg_level for the AVG set function is 0 since
+    SELECT t1.a FROM t1 HAVING AVG(t1.a+(SELECT MIN(t2.c) FROM t2))
+
+  the value of the max_aggr_level for the AVG set function is 0 since
   the reference t2.c is bound in the subquery.
+
+  If a set function contains no column references (like COUNT(*)),
+  max_aggr_level is -1.
 
   The field 'max_sum_func_level' is to contain the maximum of the
   nest levels of the set functions that are used as subexpressions of
@@ -290,20 +317,19 @@ class st_select_lex;
   Item_sum, first, on the descent, we call the method init_sum_func_check
   that initialize members used at checking. Then, on the ascent, we
   call the method check_sum_func that validates the set function usage
-  and reports an error if it is illegal.
-  The method register_sum_func serves to link the items for the set functions
-  that are aggregated in the embedding (sub)queries. Circular chains of such
-  functions are attached to the corresponding st_select_lex structures
+  and reports an error if it is invalid.
+  The method check_sum_func serves to link the items for the set functions
+  that are aggregated in the containing query blocks. Circular chains of such
+  functions are attached to the corresponding SELECT_LEX structures
   through the field inner_sum_func_list.
 
   Exploiting the fact that the members mentioned above are used in one
   recursive function we could have allocated them on the thread stack.
   Yet we don't do it now.
   
-  We assume that the nesting level of subquries does not exceed 127.
-  TODO: to catch queries where the limit is exceeded to make the
-  code clean here.  
-    
+  It is assumed that the nesting level of subqueries does not exceed 63
+  (valid nesting levels are stored in a 64-bit bitmap called nesting_map).
+  The assumption is enforced in LEX::new_query().
 */
 
 class Item_sum :public Item_result_field
@@ -331,8 +357,8 @@ private:
 
   /**
     Indicates how the aggregate function was specified by the parser :
-    1 if it was written as AGGREGATE(DISTINCT),
-    0 if it was AGGREGATE()
+     true if it was written as AGGREGATE(DISTINCT),
+     false if it was AGGREGATE()
   */
   bool with_distinct;
 
@@ -347,15 +373,14 @@ public:
     VARIANCE_FUNC, SUM_BIT_FUNC, UDF_SUM_FUNC, GROUP_CONCAT_FUNC
   };
 
-  Item **ref_by; /* pointer to a ref to the object used to register it */
-  Item_sum *next; /* next in the circular chain of registered objects  */
-  Item_sum *in_sum_func;  /* embedding set function if any */ 
-  st_select_lex * aggr_sel; /* select where the function is aggregated       */ 
-  int8 nest_level;        /* number of the nesting level of the set function */
-  int8 aggr_level;        /* nesting level of the aggregating subquery       */
-  int8 max_arg_level;     /* max level of unbound column references          */
-  int8 max_sum_func_level;/* max level of aggregation for embedded functions */
-  bool quick_group;			/* If incremental update of fields */
+  Item **ref_by;  ///< pointer to a ref to the object used to register it
+  Item_sum *next; ///< next in the circular chain of registered objects
+  Item_sum *in_sum_func;   ///< the containing set function if any
+  SELECT_LEX *base_select; ///< query block where function is placed
+  SELECT_LEX *aggr_select; ///< query block where function is aggregated
+  int8 max_aggr_level;     ///< max level of unbound column references
+  int8 max_sum_func_level; ///< max level of aggregation for contained functions
+  bool quick_group;        ///< If incremental update of fields
 
 protected:  
   uint arg_count;
@@ -367,24 +392,26 @@ protected:
 public:  
 
   void mark_as_sum_func();
-  void mark_as_sum_func(st_select_lex *);
+  void mark_as_sum_func(SELECT_LEX *);
   Item_sum(const POS &pos)
-    :super(pos), next(NULL), quick_group(1), arg_count(0), forced_const(FALSE)
+    :super(pos), next(NULL), quick_group(true), arg_count(0),
+     forced_const(false)
   {
     init_aggregator();
   }
 
 
-  Item_sum(Item *a) :next(NULL), quick_group(1), arg_count(1), args(tmp_args),
-   forced_const(FALSE)
+  Item_sum(Item *a)
+    :next(NULL), quick_group(true), arg_count(1), args(tmp_args),
+     forced_const(false)
   {
     args[0]=a;
     mark_as_sum_func();
     init_aggregator();
   }
   Item_sum(const POS &pos, Item *a)
-    :super(pos), next(NULL), quick_group(1), arg_count(1), args(tmp_args),
-     forced_const(FALSE)
+    :super(pos), next(NULL), quick_group(true), arg_count(1), args(tmp_args),
+     forced_const(false)
   {
     args[0]=a;
     init_aggregator();
@@ -392,12 +419,20 @@ public:
 
   Item_sum(const POS &pos, PT_item_list *opt_list);
 
-  //Copy constructor, need to perform subselects with temporary tables
+  /// Copy constructor, need to perform subqueries with temporary tables
   Item_sum(THD *thd, Item_sum *item);
 
   virtual bool itemize(Parse_context *pc, Item **res);
   enum Type type() const { return SUM_FUNC_ITEM; }
   virtual enum Sumfunctype sum_func () const=0;
+  virtual void fix_after_pullout(SELECT_LEX *parent_select,
+                                 SELECT_LEX *removed_select)
+  {
+    // Just make sure we are not aggregating into a context that is merged up.
+    DBUG_ASSERT(base_select != removed_select &&
+                aggr_select != removed_select);
+  }
+
   /**
     Resets the aggregate value to its default and aggregates the current
     value of its attribute(s).
@@ -425,7 +460,7 @@ public:
   */
   virtual void update_field()=0;
   virtual bool keep_field_type(void) const { return 0; }
-  virtual void fix_length_and_dec();
+  virtual bool resolve_type(THD *thd);
   virtual Item *result_item(Field *field)
     { return new Item_field(field); }
   table_map used_tables() const { return used_tables_cache; }
@@ -434,7 +469,7 @@ public:
   void make_const () 
   { 
     used_tables_cache= 0; 
-    forced_const= TRUE; 
+    forced_const= true;
   }
   virtual bool const_item() const { return forced_const; }
   virtual bool const_during_execution() const { return false; }
@@ -458,7 +493,7 @@ public:
                    Aggregator::SIMPLE_AGGREGATOR);
     aggregator_clear();
   }
-  virtual void make_unique() { force_copy_fields= TRUE; }
+  virtual void make_unique() { force_copy_fields= true; }
   virtual Field *create_tmp_field(bool group, TABLE *table);
   bool walk(Item_processor processor, enum_walk walk, uchar *arg);
   virtual bool clean_up_after_removal(uchar *arg);
@@ -466,9 +501,6 @@ public:
   virtual bool aggregate_check_distinct(uchar *arg);
   bool init_sum_func_check(THD *thd);
   bool check_sum_func(THD *thd, Item **ref);
-  bool register_sum_func(THD *thd, Item **ref);
-  st_select_lex *depended_from() 
-    { return (nest_level == aggr_level ? 0 : aggr_sel); }
 
   Item *get_arg(uint i) { return args[i]; }
   Item *set_arg(uint i, THD *thd, Item *new_val);
@@ -480,8 +512,8 @@ public:
   void init_aggregator()
   {
     aggr= NULL;
-    with_distinct= FALSE;
-    force_copy_fields= FALSE;
+    with_distinct= false;
+    force_copy_fields= false;
   }
 
   /**
@@ -506,7 +538,7 @@ public:
   void set_distinct(bool distinct)
   {
     with_distinct= distinct;
-    quick_group= with_distinct ? 0 : 1;
+    quick_group= !with_distinct;
   }
 
   /*
@@ -599,7 +631,9 @@ class Aggregator_distinct : public Aggregator
       If set deactivates creation and usage of the temporary table (in the
       'table' member) and the Unique instance (in the 'tree' member) as well as
       the calculation of the final value on the first call to
-      Item_[sum|avg|count]::val_xxx().
+      @c Item_sum::val_xxx(),
+      @c Item_avg::val_xxx(),
+      @c Item_count::val_xxx().
      */
     CONST_NULL,
     /**
@@ -637,7 +671,7 @@ public:
   virtual bool arg_is_null(bool use_null_value);
 
   bool unique_walk_function(void *element);
-  static int composite_key_cmp(void* arg, uchar* key1, uchar* key2);
+  static int composite_key_cmp(const void* arg, const void* a, const void* b);
 };
 
 
@@ -676,11 +710,11 @@ protected:
   bool is_evaluated;
 public:
   Item_sum_num(const POS &pos, Item *item_par) 
-    :Item_sum(pos, item_par), is_evaluated(FALSE)
+    :Item_sum(pos, item_par), is_evaluated(false)
   {}
 
   Item_sum_num(const POS &pos, PT_item_list *list) 
-    :Item_sum(pos, list), is_evaluated(FALSE)
+    :Item_sum(pos, list), is_evaluated(false)
   {}
 
   Item_sum_num(THD *thd, Item_sum_num *item) 
@@ -724,8 +758,14 @@ public:
     return get_time_from_int(ltime);
   }
   enum Item_result result_type () const { return INT_RESULT; }
-  void fix_length_and_dec()
-  { decimals=0; max_length=21; maybe_null=null_value=0; }
+  virtual bool resolve_type(THD *thd)
+  {
+    decimals= 0;
+    max_length= 21;
+    maybe_null= false;
+    null_value= FALSE;
+    return false;
+  }
 };
 
 
@@ -736,7 +776,7 @@ protected:
   double sum;
   my_decimal dec_buffs[2];
   uint curr_dec_buff;
-  void fix_length_and_dec();
+  virtual bool resolve_type(THD *thd);
 
 public:
   Item_sum_sum(const POS &pos, Item *item_par, bool distinct)
@@ -786,7 +826,8 @@ class Item_sum_count :public Item_sum_int
   /**
     Constructs an instance for COUNT(DISTINCT)
 
-    @param list  a list of the arguments to the aggregate function
+    @param pos  Position of token in the parser.
+    @param list A list of the arguments to the aggregate function
 
     This constructor is called by the parser only for COUNT (DISTINCT).
   */
@@ -794,7 +835,7 @@ class Item_sum_count :public Item_sum_int
   Item_sum_count(const POS &pos, PT_item_list *list)
     :Item_sum_int(pos, list), count(0)
   {
-    set_distinct(TRUE);
+    set_distinct(true);
   }
   Item_sum_count(THD *thd, Item_sum_count *item)
     :Item_sum_int(thd, item), count(item->count)
@@ -823,17 +864,44 @@ class Item_sum_count :public Item_sum_int
 /* Item to get the value of a stored sum function */
 
 class Item_sum_avg;
+class Item_sum_bit;
+
+
+/**
+  This is used in connection which a parent Item_sum:
+  - which can produce different result types (is "hybrid")
+  - which stores function's value into a temporary table's column (one
+  row per group).
+  - which stores in the column some internal piece of information which should
+  not be returned to the user, so special implementations are needed.
+*/
+class Item_sum_hybrid_field: public Item_result_field
+{
+protected:
+  /// The tmp table's column containing the value of the set function.
+  Field *field;
+  /// Stores the Item's result type.
+  Item_result hybrid_type;
+public:
+  enum Item_result result_type () const { return hybrid_type; }
+  bool mark_field_in_map(uchar *arg)
+  {
+    /*
+      Filesort (find_all_keys) over a temporary table collects the columns it
+      needs.
+    */
+    return Item::mark_field_in_map(pointer_cast<Mark_field *>(arg), field);
+  }
+};
+
 
 /**
   Common abstract class for:
     Item_avg_field
     Item_variance_field
 */
-class Item_sum_num_field: public Item_result_field
+class Item_sum_num_field: public Item_sum_hybrid_field
 {
-protected:
-  Field *field;
-  Item_result hybrid_type;
 public:
   longlong val_int()
   {
@@ -853,16 +921,7 @@ public:
     return hybrid_type == DECIMAL_RESULT ?
       MYSQL_TYPE_NEWDECIMAL : MYSQL_TYPE_DOUBLE;
   }
-  enum Item_result result_type () const { return hybrid_type; }
   bool is_null() { update_null_value(); return null_value; }
-  bool mark_field_in_map(uchar *arg)
-  {
-    /*
-      Filesort (find_all_keys) over a temporary table collects the columns it
-      needs.
-    */
-    return Item::mark_field_in_map(pointer_cast<Mark_field *>(arg), field);
-  }
 };
 
 
@@ -876,8 +935,33 @@ public:
   double val_real();
   my_decimal *val_decimal(my_decimal *);
   String *val_str(String*);
-  void fix_length_and_dec() {}
+  virtual bool resolve_type(THD *thd) { return false; }
   const char *func_name() const { DBUG_ASSERT(0); return "avg_field"; }
+};
+
+
+/// This is used in connection with an Item_sum_bit, @see Item_sum_hybrid_field
+class Item_sum_bit_field :public Item_sum_hybrid_field
+{
+protected:
+  ulonglong reset_bits;
+public:
+  Item_sum_bit_field(Item_result res_type, Item_sum_bit *item,
+                     ulonglong reset_bits);
+  longlong val_int();
+  double val_real();
+  my_decimal *val_decimal(my_decimal *);
+  String *val_str(String*);
+  bool resolve_type(THD *thd) { return false; }
+  bool get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate);
+  bool get_time(MYSQL_TIME *ltime);
+  enum Type type() const { return FIELD_BIT_ITEM; }
+  enum_field_types field_type() const
+  {
+    return hybrid_type == INT_RESULT ?
+      MYSQL_TYPE_LONGLONG : MYSQL_TYPE_VAR_STRING;
+  }
+  const char *func_name() const { DBUG_ASSERT(0); return "sum_bit_field"; }
 };
 
 
@@ -896,7 +980,7 @@ public:
     :Item_sum_sum(thd, item), count(item->count),
     prec_increment(item->prec_increment) {}
 
-  void fix_length_and_dec();
+  virtual bool resolve_type(THD *thd);
   enum Sumfunctype sum_func () const 
   {
     return has_with_distinct() ? AVG_DISTINCT_FUNC : AVG_FUNC;
@@ -931,11 +1015,7 @@ class Item_sum_variance;
 class Item_variance_field :public Item_sum_num_field
 {
 protected:
-  uint f_precision0, f_scale0;
-  uint f_precision1, f_scale1;
-  uint dec_bin_size0, dec_bin_size1;
   uint sample;
-  uint prec_increment;
 public:
   Item_variance_field(Item_sum_variance *item);
   enum Type type() const {return FIELD_VARIANCE_ITEM; }
@@ -944,7 +1024,7 @@ public:
   { return val_string_from_real(str); }
   my_decimal *val_decimal(my_decimal *dec_buf)
   { return val_decimal_from_real(dec_buf); }
-  void fix_length_and_dec() {}
+  virtual bool resolve_type(THD *thd) { return false; }
   const char *func_name() const { DBUG_ASSERT(0); return "variance_field"; }
 };
 
@@ -971,11 +1051,10 @@ But, this falls prey to catastrophic cancellation.  Instead, use the recurrence 
 
 class Item_sum_variance : public Item_sum_num
 {
-  void fix_length_and_dec();
+  virtual bool resolve_type(THD *thd);
 
 public:
   Item_result hybrid_type;
-  int cur_dec;
   double recurrence_m, recurrence_s;    /* Used in recurrence relation. */
   ulonglong count;
   uint f_precision0, f_scale0;
@@ -1067,12 +1146,12 @@ protected:
   Item_sum_hybrid(Item *item_par,int sign)
     :Item_sum(item_par), value(0), arg_cache(0), cmp(0),
     hybrid_type(INT_RESULT), hybrid_field_type(MYSQL_TYPE_LONGLONG),
-    cmp_sign(sign), was_values(TRUE)
+    cmp_sign(sign), was_values(true)
   { collation.set(&my_charset_bin); }
   Item_sum_hybrid(const POS &pos, Item *item_par,int sign)
     :Item_sum(pos, item_par), value(0), arg_cache(0), cmp(0),
     hybrid_type(INT_RESULT), hybrid_field_type(MYSQL_TYPE_LONGLONG),
-    cmp_sign(sign), was_values(TRUE)
+    cmp_sign(sign), was_values(true)
   { collation.set(&my_charset_bin); }
 
   Item_sum_hybrid(THD *thd, Item_sum_hybrid *item)
@@ -1081,7 +1160,7 @@ protected:
     cmp_sign(item->cmp_sign), was_values(item->was_values)
   { }
   bool fix_fields(THD *, Item **);
-  void setup_hybrid(Item *item, Item *value_arg);
+  bool setup_hybrid(Item *item, Item *value_arg);
   void clear();
   double val_real();
   longlong val_int();
@@ -1142,34 +1221,65 @@ public:
 };
 
 
-class Item_sum_bit :public Item_sum_int
+/**
+  Base class used to implement BIT_AND, BIT_OR and BIT_XOR set functions.
+ */
+class Item_sum_bit :public Item_sum
 {
 protected:
-  ulonglong reset_bits,bits;
-
+  /// Stores the neutral element for function
+  ulonglong reset_bits;
+  /// Stores the result value for the INT_RESULT
+  ulonglong bits;
+  /// Stores the result value for the STRING_RESULT
+  String value_buff;
+  /// Stores the Item's result type. Can only be INT_RESULT or STRING_RESULT
+  Item_result hybrid_type;
+  /// Buffer used to avoid String allocation in the constructor
+  const char initial_value_buff_storage[1] = {0};
 public:
-  Item_sum_bit(const POS &pos, Item *item_par,ulonglong reset_arg)
-    :Item_sum_int(pos, item_par), reset_bits(reset_arg), bits(reset_arg)
+  Item_sum_bit(const POS &pos, Item *item_par, ulonglong reset_arg)
+    :Item_sum(pos, item_par), reset_bits(reset_arg), bits(reset_arg),
+     value_buff(initial_value_buff_storage, 1, &my_charset_bin)
   {}
 
-  Item_sum_bit(THD *thd, Item_sum_bit *item)
-    :Item_sum_int(thd, item), reset_bits(item->reset_bits), bits(item->bits)
-  {}
+  /// Copy constructor, used for executing subqueries with temporary tables
+  Item_sum_bit(THD *thd, Item_sum_bit *item):
+    Item_sum(thd, item), reset_bits(item->reset_bits), bits(item->bits),
+    value_buff(initial_value_buff_storage, 1, &my_charset_bin),
+    hybrid_type(item->hybrid_type)
+  {
+    /**
+      This constructor should only be called during the Optimize stage.
+      Asserting that the item was not evaluated yet.
+    */
+    DBUG_ASSERT(item->value_buff.length() == 1);
+    DBUG_ASSERT(item->bits == item->reset_bits);
+  }
+
+  Item *result_item(Field *field)
+  { return new Item_sum_bit_field(hybrid_type, this, reset_bits); }
+
   enum Sumfunctype sum_func () const {return SUM_BIT_FUNC;}
+  enum Item_result result_type () const { return hybrid_type; }
   void clear();
   longlong val_int();
+  double val_real();
+  String *val_str(String *str);
+  my_decimal *val_decimal(my_decimal *decimal_value);
+  bool get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate);
+  bool get_time(MYSQL_TIME *ltime);
   void reset_field();
   void update_field();
-  void fix_length_and_dec()
-  {
-    decimals= 0; max_length=21; unsigned_flag= 1; maybe_null= null_value= 0;
-    check_deprecated_bin_op(args[0], NULL);
-  }
+  virtual bool resolve_type(THD *thd);
+  bool fix_fields(THD *thd, Item **ref);
   void cleanup()
   {
     bits= reset_bits;
-    Item_sum_int::cleanup();
+    Item_sum::cleanup();
   }
+  template<class Char_op, class Int_op>
+  bool eval_op(Char_op char_op, Int_op int_op);
 };
 
 
@@ -1217,8 +1327,6 @@ class Item_sum_xor :public Item_sum_bit
   User defined aggregates
 */
 
-#ifdef HAVE_DLOPEN
-
 class Item_udf_sum : public Item_sum
 {
   typedef Item_sum super;
@@ -1228,10 +1336,10 @@ protected:
 public:
   Item_udf_sum(const POS &pos, udf_func *udf_arg, PT_item_list *opt_list)
     :Item_sum(pos, opt_list), udf(udf_arg)
-  { quick_group=0;}
+  { quick_group= false;}
   Item_udf_sum(THD *thd, Item_udf_sum *item)
     :Item_sum(thd, item), udf(item->udf)
-  { udf.not_original= TRUE; }
+  { udf.not_original= true; }
 
   virtual bool itemize(Parse_context *pc, Item **res);
   const char *func_name() const { return udf.name(); }
@@ -1240,16 +1348,15 @@ public:
     DBUG_ASSERT(fixed == 0);
 
     if (init_sum_func_check(thd))
-      return TRUE;
+      return true;
 
     fixed= 1;
     if (udf.fix_fields(thd, this, this->arg_count, this->args))
-      return TRUE;
+      return true;
 
     return check_sum_func(thd, ref);
   }
   enum Sumfunctype sum_func () const { return UDF_SUM_FUNC; }
-  virtual bool have_field_update(void) const { return 0; }
 
   void clear();
   bool add();
@@ -1287,7 +1394,11 @@ class Item_sum_udf_float :public Item_udf_sum
   {
     return get_time_from_real(ltime);
   }
-  void fix_length_and_dec() { fix_num_length_and_dec(); }
+  virtual bool resolve_type(THD *thd)
+  {
+    fix_num_length_and_dec();
+    return false;
+   }
   Item *copy_or_same(THD* thd);
 };
 
@@ -1314,7 +1425,12 @@ public:
     return get_time_from_int(ltime);
   }
   enum Item_result result_type () const { return INT_RESULT; }
-  void fix_length_and_dec() { decimals=0; max_length=21; }
+  virtual bool resolve_type(THD *thd)
+  {
+    decimals= 0;
+    max_length= 21;
+    return false;
+  }
   Item *copy_or_same(THD* thd);
 };
 
@@ -1360,7 +1476,7 @@ public:
     return get_time_from_string(ltime);
   }
   enum Item_result result_type () const { return STRING_RESULT; }
-  void fix_length_and_dec();
+  virtual bool resolve_type(THD *thd);
   Item *copy_or_same(THD* thd);
 };
 
@@ -1387,11 +1503,14 @@ public:
     return get_time_from_decimal(ltime);
   }
   enum Item_result result_type () const { return DECIMAL_RESULT; }
-  void fix_length_and_dec() { fix_num_length_and_dec(); }
+  virtual bool resolve_type(THD *thd)
+  {
+    fix_num_length_and_dec();
+    return false;
+   }
   Item *copy_or_same(THD* thd);
 };
 
-#endif /* HAVE_DLOPEN */
 
 C_MODE_START
 int group_concat_key_cmp_with_distinct(const void* arg, const void* key1,

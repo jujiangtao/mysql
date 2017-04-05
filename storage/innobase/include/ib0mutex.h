@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2013, 2016, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2013, 2015, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -22,8 +22,6 @@ Policy based mutexes.
 
 Created 2013-03-26 Sunny Bains.
 ***********************************************************************/
-
-#ifndef UNIV_INNOCHECKSUM
 
 #ifndef ib0mutex_h
 #define ib0mutex_h
@@ -377,8 +375,8 @@ private:
 	/** Wakeup a waiting thread */
 	void signal() UNIV_NOTHROW
 	{
-		syscall(SYS_futex, &m_lock_word, FUTEX_WAKE_PRIVATE, 1, 0, 0,
-			0);
+		syscall(SYS_futex, &m_lock_word, FUTEX_WAKE_PRIVATE,
+			MUTEX_STATE_LOCKED, 0, 0, 0);
 	}
 
 	/** Poll waiting for mutex to be unlocked.
@@ -1162,5 +1160,3 @@ private:
 };
 
 #endif /* ib0mutex_h */
-
-#endif /* !UNIV_INNOCHECKSUM */

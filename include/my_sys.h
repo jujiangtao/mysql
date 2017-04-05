@@ -16,14 +16,13 @@
 #ifndef _my_sys_h
 #define _my_sys_h
 
-#include "my_global.h"                  /* C_MODE_START, C_MODE_END */
-#include "m_ctype.h"                    /* for CHARSET_INFO */
+/**
+  @file include/my_sys.h
+*/
 
-#include "my_thread.h"                  /* Needed for psi.h */
-#include "mysql/psi/psi.h"
-#include "mysql/service_mysql_alloc.h"
-#include "mysql/psi/mysql_memory.h"
-#include "mysql/psi/mysql_thread.h"
+#include "my_global.h"
+#include "m_ctype.h"                    /* CHARSET_INFO */
+#include "my_alloc.h"                   /* USED_MEM */
 
 #ifdef HAVE_ALLOCA_H
 #include <alloca.h>
@@ -34,6 +33,29 @@
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
+#include <string.h>
+
+#include "pfs_thread_provider.h"        /* build time optimization for mysql_thread_t */
+#include "mysql/psi/mysql_thread.h"     /* mysql_thread_t */
+
+#include "pfs_mutex_provider.h"         /* build time optimization for mysql_mutex_t */
+#include "mysql/psi/mysql_mutex.h"      /* mysql_mutex_t */
+
+#include "pfs_rwlock_provider.h"        /* build time optimization for mysql_rwlock_t */
+#include "mysql/psi/mysql_rwlock.h"     /* mysql_rwlock_t */
+
+#include "pfs_cond_provider.h"          /* build time optimization for mysql_cond_t */
+#include "mysql/psi/mysql_cond.h"       /* mysql_cond_t */
+
+#include "mysql/psi/psi_file.h"         /* PSI_file_service_t */
+#include "mysql/psi/psi_socket.h"       /* PSI_socket_service_t */
+#include "mysql/psi/psi_stage.h"        /* PSI_stage_info */
+#include "mysql/psi/psi_statement.h"    /* PSI_statement_service_t */
+#include "mysql/psi/psi_transaction.h"  /* PSI_transaction_service_t */
+#include "mysql/psi/psi_table.h"        /* PSI_table_service_t */
+#include "mysql/psi/psi_mdl.h"          /* PSI_mdl_service_t */
+#include "mysql/psi/psi_idle.h"         /* PSI_idle_service_t */
+#include "mysql/psi/psi_error.h"        /* PSI_error_service_t */
 
 C_MODE_START
 
@@ -52,8 +74,6 @@ C_MODE_START
 # define MEM_NOACCESS(a,len) ((void) 0)
 # define MEM_CHECK_ADDRESSABLE(a,len) ((void) 0)
 #endif /* HAVE_VALGRIND */
-
-#include <typelib.h>
 
 #define MY_INIT(name)   { my_progname= name; my_init(); }
 
@@ -89,7 +109,6 @@ C_MODE_START
 #define MY_RESOLVE_LINK 128	/* my_realpath(); Only resolve links */
 #define MY_HOLD_ORIGINAL_MODES 128  /* my_copy() holds to file modes */
 #define MY_REDEL_MAKE_BACKUP 256
-#define MY_REDEL_NO_COPY_STAT 512 /* my_redel() doesn't call my_copystat() */
 #define MY_SEEK_NOT_DONE 32	/* my_lock may have to do a seek */
 #define MY_DONT_WAIT	64	/* my_lock() don't wait if can't lock */
 #define MY_ZEROFILL	32	/* my_malloc(), fill array with zero */
@@ -208,11 +227,8 @@ extern uint    my_large_page_size;
 
 #define my_alloca(SZ) alloca((size_t) (SZ))
 
-#include <errno.h>			/* errno is a define */
-
 extern char *home_dir;			/* Home directory for user */
 extern const char *my_progname;		/* program-name (printed in errors) */
-extern char curr_dir[];		/* Current directory for user */
 extern void (*error_handler_hook)(uint my_err, const char *str,myf MyFlags);
 extern void (*fatal_error_handler_hook)(uint my_err, const char *str,
 				       myf MyFlags);
@@ -301,12 +317,6 @@ struct st_my_file_info
 };
 
 extern struct st_my_file_info *my_file_info;
-
-/* needed for client-only build */
-#ifndef PSI_FILE_KEY_DEFINED
-typedef unsigned int PSI_file_key;
-#define PSI_FILE_KEY_DEFINED
-#endif
 
 typedef struct st_dynamic_array
 {
@@ -467,6 +477,7 @@ typedef struct st_io_cache		/* Used when cacheing files */
   my_bool alloced_buffer;
 } IO_CACHE;
 
+typedef int (*qsort_cmp)(const void *,const void *);
 typedef int (*qsort2_cmp)(const void *, const void *, const void *);
 
 typedef void (*my_error_reporter)(enum loglevel level, const char *format, ...)
@@ -517,8 +528,6 @@ my_off_t my_b_safe_tell(IO_CACHE* info); /* picks the correct tell() */
 
 typedef uint32 ha_checksum;
 
-#include <my_alloc.h>
-
 
 	/* Prototypes for mysys and my_func functions */
 
@@ -561,8 +570,8 @@ extern size_t my_pwrite(File Filedes,const uchar *Buffer,size_t Count,
 extern size_t my_fread(FILE *stream,uchar *Buffer,size_t Count,myf MyFlags);
 extern size_t my_fwrite(FILE *stream,const uchar *Buffer,size_t Count,
 		      myf MyFlags);
-extern my_off_t my_fseek(FILE *stream,my_off_t pos,int whence,myf MyFlags);
-extern my_off_t my_ftell(FILE *stream,myf MyFlags);
+extern my_off_t my_fseek(FILE *stream,my_off_t pos,int whence);
+extern my_off_t my_ftell(FILE *stream);
 
 /* implemented in my_syslog.c */
 
@@ -749,13 +758,6 @@ File create_temp_file(char *to, const char *dir, const char *pfx,
 		      int mode, myf MyFlags);
 
 // Use Prealloced_array or std::vector or something similar in C++
-#if defined(__cplusplus)
-
-#define init_dynamic_array please_use_an_appropriately_typed_container
-#define my_init_dynamic_array please_use_an_appropriately_typed_container
-
-#else
-
 extern my_bool my_init_dynamic_array(DYNAMIC_ARRAY *array,
                                      PSI_memory_key key,
                                      uint element_size,
@@ -763,18 +765,14 @@ extern my_bool my_init_dynamic_array(DYNAMIC_ARRAY *array,
                                      uint init_alloc,
                                      uint alloc_increment);
 /* init_dynamic_array() function is deprecated */
-extern my_bool init_dynamic_array(DYNAMIC_ARRAY *array, uint element_size,
-                                  uint init_alloc, uint alloc_increment);
+
 #define dynamic_element(array,array_index,type) \
   ((type)((array)->buffer) +(array_index))
-
-#endif  /* __cplusplus */
 
 /* Some functions are still in use in C++, because HASH uses DYNAMIC_ARRAY */
 extern my_bool insert_dynamic(DYNAMIC_ARRAY *array, const void *element);
 extern void *alloc_dynamic(DYNAMIC_ARRAY *array);
 extern void *pop_dynamic(DYNAMIC_ARRAY*);
-extern void get_dynamic(DYNAMIC_ARRAY *array, void *element, uint array_index);
 extern void claim_dynamic(DYNAMIC_ARRAY *array);
 extern void delete_dynamic(DYNAMIC_ARRAY *array);
 extern void freeze_size(DYNAMIC_ARRAY *array);
@@ -807,10 +805,7 @@ extern void free_root(MEM_ROOT *root, myf MyFLAGS);
 extern void reset_root_defaults(MEM_ROOT *mem_root, size_t block_size,
                                 size_t prealloc_size);
 extern char *strdup_root(MEM_ROOT *root,const char *str);
-static inline char *safe_strdup_root(MEM_ROOT *root, const char *str)
-{
-  return str ? strdup_root(root, str) : 0;
-}
+extern char *safe_strdup_root(MEM_ROOT *root, const char *str);
 extern char *strmake_root(MEM_ROOT *root,const char *str,size_t len);
 extern void *memdup_root(MEM_ROOT *root,const void *str, size_t len);
 extern void set_memroot_max_capacity(MEM_ROOT *mem_root, size_t size);
@@ -820,8 +815,49 @@ extern my_bool my_compress(uchar *, size_t *, size_t *);
 extern my_bool my_uncompress(uchar *, size_t , size_t *);
 extern uchar *my_compress_alloc(const uchar *packet, size_t *len,
                                 size_t *complen);
-extern int packfrm(uchar *, size_t, uchar **, size_t *);
-extern int unpackfrm(uchar **, size_t *, const uchar *);
+
+
+/**
+  This function takes the submitted serialized meta data and compresses it.
+
+  @param[in] meta_data                    The serialized meta data
+  @param[in] meta_data_length             The size of the meta data blob
+  @param[out] compressed_meta_data        The compressed serialized
+                                          meta data
+  @param[out] compressed_meta_data_length The size of the compressed
+                                          meta data blob
+
+  @retval 0 Success
+  @retval 1 Error
+*/
+
+extern my_bool compress_serialized_meta_data(uchar *meta_data,
+                                      size_t meta_data_length,
+                                      uchar **compressed_meta_data,
+                                      size_t *compressed_meta_data_length);
+
+
+/**
+  This function takes the submitted compressed serialized meta data and
+  uncompresses it.
+
+  @param[in] compressed_meta_data         The compressed serialized
+                                          meta data
+  @param[in] compressed_meta_data_length  The size of the compressed
+                                          meta data blob
+  @param[out] meta_data                   The uncompressed serialized
+                                          meta data
+  @param[out] meta_data_length            The size of the uncompressed
+                                          meta data blob
+
+  @retval 0 Success
+  @retval 1 Error
+*/
+
+extern my_bool uncompress_serialized_meta_data(uchar *compressed_meta_data,
+                                        size_t compressed_meta_data_length,
+                                        uchar **meta_data,
+                                        size_t *meta_data_length);
 
 extern ha_checksum my_checksum(ha_checksum crc, const uchar *mem,
                                size_t count);
@@ -839,12 +875,10 @@ static inline void my_sleep(time_t m_seconds)
 #endif
 }
 
-extern ulong crc32(ulong crc, const uchar *buf, uint len);
 extern uint my_set_max_open_files(uint files);
 void my_free_open_file_info(void);
 
 extern time_t my_time(myf flags);
-extern ulonglong my_getsystime(void);
 extern ulonglong my_micro_time();
 extern my_bool my_gethwaddr(uchar *to);
 
@@ -853,14 +887,6 @@ extern my_bool my_gethwaddr(uchar *to);
 
 #ifndef MAP_NOSYNC
 #define MAP_NOSYNC      0
-#endif
-
-/*
-  Not defined in FreeBSD 11.
-  Was never implemented in FreeBSD, so we just set it to 0.
-*/
-#ifndef MAP_NORESERVE
-#define MAP_NORESERVE 0
 #endif
 
 #ifdef HAVE_MMAP64
@@ -958,10 +984,39 @@ int my_win_translate_command_line_args(const CHARSET_INFO *cs, int *ac, char ***
 #endif /* _WIN32 */
 
 #ifdef HAVE_PSI_INTERFACE
-extern MYSQL_PLUGIN_IMPORT struct PSI_bootstrap *PSI_hook;
-extern void set_psi_server(PSI *psi);
 void my_init_mysys_psi_keys(void);
-#endif
+#endif /* HAVE_PSI_INTERFACE */
+
+#ifdef HAVE_PSI_INTERFACE
+extern MYSQL_PLUGIN_IMPORT struct PSI_thread_bootstrap *psi_thread_hook;
+extern void set_psi_thread_service(PSI_thread_service_t *psi);
+extern MYSQL_PLUGIN_IMPORT struct PSI_mutex_bootstrap *psi_mutex_hook;
+extern void set_psi_mutex_service(PSI_mutex_service_t *psi);
+extern MYSQL_PLUGIN_IMPORT struct PSI_rwlock_bootstrap *psi_rwlock_hook;
+extern void set_psi_rwlock_service(PSI_rwlock_service_t *psi);
+extern MYSQL_PLUGIN_IMPORT struct PSI_cond_bootstrap *psi_cond_hook;
+extern void set_psi_cond_service(PSI_cond_service_t *psi);
+extern MYSQL_PLUGIN_IMPORT struct PSI_file_bootstrap *psi_file_hook;
+extern void set_psi_file_service(PSI_file_service_t *psi);
+extern MYSQL_PLUGIN_IMPORT struct PSI_socket_bootstrap *psi_socket_hook;
+extern void set_psi_socket_service(PSI_socket_service_t *psi);
+extern MYSQL_PLUGIN_IMPORT struct PSI_table_bootstrap *psi_table_hook;
+extern void set_psi_table_service(PSI_table_service_t *psi);
+extern MYSQL_PLUGIN_IMPORT struct PSI_mdl_bootstrap *psi_mdl_hook;
+extern void set_psi_mdl_service(PSI_mdl_service_t *psi);
+extern MYSQL_PLUGIN_IMPORT struct PSI_idle_bootstrap *psi_idle_hook;
+extern void set_psi_idle_service(PSI_idle_service_t *psi);
+extern MYSQL_PLUGIN_IMPORT struct PSI_stage_bootstrap *psi_stage_hook;
+extern void set_psi_stage_service(PSI_stage_service_t *psi);
+extern MYSQL_PLUGIN_IMPORT struct PSI_statement_bootstrap *psi_statement_hook;
+extern void set_psi_statement_service(PSI_statement_service_t *psi);
+extern MYSQL_PLUGIN_IMPORT struct PSI_transaction_bootstrap *psi_transaction_hook;
+extern void set_psi_transaction_service(PSI_transaction_service_t *psi);
+extern MYSQL_PLUGIN_IMPORT struct PSI_memory_bootstrap *psi_memory_hook;
+extern void set_psi_memory_service(PSI_memory_service_t *psi);
+extern MYSQL_PLUGIN_IMPORT struct PSI_error_bootstrap *psi_error_hook;
+extern void set_psi_error_service(PSI_error_service_t *psi);
+#endif /* HAVE_PSI_INTERFACE */
 
 struct st_mysql_file;
 extern struct st_mysql_file *mysql_stdin;

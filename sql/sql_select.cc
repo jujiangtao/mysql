@@ -14,7 +14,7 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 /**
-  @file
+  @file sql/sql_select.cc
 
   @brief Evaluate query expressions, throughout resolving, optimization and
          execution.
@@ -24,6 +24,8 @@
 */
 
 #include "sql_select.h"
+
+#include "current_thd.h"
 #include "sql_table.h"                          // primary_key_name
 #include "sql_derived.h"
 #include "probes_mysql.h"
@@ -31,9 +33,11 @@
 #include "key.h"                 // key_copy, key_cmp, key_cmp_if_same
 #include "lock.h"                // mysql_unlock_some_tables,
                                  // mysql_unlock_read_tables
+#include "mysqld.h"              // stage_init
 #include "sql_show.h"            // append_identifier
 #include "sql_base.h"
 #include "auth_common.h"         // *_ACL
+#include "opt_range.h"           // QUICK_SELECT_I
 #include "sql_test.h"            // misc. debug printing utilities
 #include "records.h"             // init_read_record, end_read_record
 #include "filesort.h"            // filesort_free_buffers
@@ -45,6 +49,7 @@
 #include "item_sum.h"            // Item_sum
 #include "sql_planner.h"         // calculate_condition_filter
 #include "opt_hints.h"           // hint_key_state()
+#include "sql_cache.h"           // query_cache
 
 #include <algorithm>
 
@@ -57,8 +62,9 @@ static store_key *get_store_key(THD *thd,
 				Key_use *keyuse, table_map used_tables,
 				KEY_PART_INFO *key_part, uchar *key_buff,
 				uint maybe_null);
+static uint actual_key_flags(KEY *key_info);
 bool const_expression_in_where(Item *conds,Item *item, Item **comp_item);
-uint find_shortest_key(TABLE *table, const key_map *usable_keys);
+
 /**
   Handle a data manipulation query, from preparation through cleanup
 
@@ -119,6 +125,10 @@ bool handle_query(THD *thd, LEX *lex, Query_result *result,
   lex->used_tables=0;                         // Updated by setup_fields
 
   THD_STAGE_INFO(thd, stage_init);
+
+  if (thd->lex->set_var_list.elements &&
+      resolve_var_assignments(thd, lex))
+    goto err;
 
   if (single_query)
   {
@@ -324,124 +334,133 @@ static bool sj_table_is_included(JOIN *join, JOIN_TAB *join_tab)
   @retval FALSE  OK 
   @retval TRUE   Out of memory error
 
-  @details
     Setup the strategies to eliminate semi-join duplicates.
     At the moment there are 5 strategies:
 
-    1. DuplicateWeedout (use of temptable to remove duplicates based on rowids
+    -# DuplicateWeedout (use of temptable to remove duplicates based on rowids
                          of row combinations)
-    2. FirstMatch (pick only the 1st matching row combination of inner tables)
-    3. LooseScan (scanning the sj-inner table in a way that groups duplicates
+    -# FirstMatch (pick only the 1st matching row combination of inner tables)
+    -# LooseScan (scanning the sj-inner table in a way that groups duplicates
                   together and picking the 1st one)
-    4. MaterializeLookup (Materialize inner tables, then setup a scan over
+    -# MaterializeLookup (Materialize inner tables, then setup a scan over
                           outer correlated tables, lookup in materialized table)
-    5. MaterializeScan (Materialize inner tables, then setup a scan over
+    -# MaterializeScan (Materialize inner tables, then setup a scan over
                         materialized tables, perform lookup in outer tables)
-    
+
     The join order has "duplicate-generating ranges", and every range is
     served by one strategy or a combination of FirstMatch with with some
     other strategy.
-    
+
     "Duplicate-generating range" is defined as a range within the join order
     that contains all of the inner tables of a semi-join. All ranges must be
     disjoint, if tables of several semi-joins are interleaved, then the ranges
     are joined together, which is equivalent to converting
-      SELECT ... WHERE oe1 IN (SELECT ie1 ...) AND oe2 IN (SELECT ie2 )
+
+     `SELECT ... WHERE oe1 IN (SELECT ie1 ...) AND oe2 IN (SELECT ie2 )`
+
     to
-      SELECT ... WHERE (oe1, oe2) IN (SELECT ie1, ie2 ... ...)
-    .
+
+      `SELECT ... WHERE (oe1, oe2) IN (SELECT ie1, ie2 ... ...)`.
 
     Applicability conditions are as follows:
 
-    DuplicateWeedout strategy
-    ~~~~~~~~~~~~~~~~~~~~~~~~~
+    @par DuplicateWeedout strategy
 
+    @code
       (ot|nt)*  [ it ((it|ot|nt)* (it|ot))]  (nt)*
       +------+  +=========================+  +---+
         (1)                 (2)               (3)
+    @endcode
 
-       (1) - Prefix of OuterTables (those that participate in 
-             IN-equality and/or are correlated with subquery) and outer 
-             Non-correlated tables.
-       (2) - The handled range. The range starts with the first sj-inner
-             table, and covers all sj-inner and outer tables 
-             Within the range,  Inner, Outer, outer non-correlated tables
-             may follow in any order.
-       (3) - The suffix of outer non-correlated tables.
-    
-    FirstMatch strategy
-    ~~~~~~~~~~~~~~~~~~~
+    -# Prefix of OuterTables (those that participate in IN-equality and/or are
+       correlated with subquery) and outer Non-correlated tables.
 
+    -# The handled range. The range starts with the first sj-inner table, and
+       covers all sj-inner and outer tables Within the range, Inner, Outer,
+       outer non-correlated tables may follow in any order.
+
+    -# The suffix of outer non-correlated tables.
+
+    @par FirstMatch strategy
+
+    @code
       (ot|nt)*  [ it ((it|nt)* it) ]  (nt)*
       +------+  +==================+  +---+
         (1)             (2)          (3)
 
-      (1) - Prefix of outer correlated and non-correlated tables
-      (2) - The handled range, which may contain only inner and
-            non-correlated tables.
-      (3) - The suffix of outer non-correlated tables.
+    @endcode
+    -# Prefix of outer correlated and non-correlated tables
 
-    LooseScan strategy 
-    ~~~~~~~~~~~~~~~~~~
+    -# The handled range, which may contain only inner and non-correlated
+       tables.
 
+    -# The suffix of outer non-correlated tables.
+
+    @par LooseScan strategy
+
+    @code
      (ot|ct|nt) [ loosescan_tbl (ot|nt|it)* it ]  (ot|nt)*
      +--------+   +===========+ +=============+   +------+
         (1)           (2)          (3)              (4)
-     
-      (1) - Prefix that may contain any outer tables. The prefix must contain
-            all the non-trivially correlated outer tables. (non-trivially means
-            that the correlation is not just through the IN-equality).
-      
-      (2) - Inner table for which the LooseScan scan is performed.
-            Notice that special requirements for existence of certain indexes
-            apply to this table, @see class Loose_scan_opt.
+    @endcode
 
-      (3) - The remainder of the duplicate-generating range. It is served by 
-            application of FirstMatch strategy. Outer IN-correlated tables
-            must be correlated to the LooseScan table but not to the inner
-            tables in this range. (Currently, there can be no outer tables
-            in this range because of implementation restrictions,
-            @see Optimize_table_order::advance_sj_state()).
+    -# Prefix that may contain any outer tables. The prefix must contain all
+       the non-trivially correlated outer tables. (non-trivially means that
+       the correlation is not just through the IN-equality).
 
-      (4) - The suffix of outer correlated and non-correlated tables.
+    -# Inner table for which the LooseScan scan is performed.  Notice that
+       special requirements for existence of certain indexes apply to this
+       table, @see class Loose_scan_opt.
 
-    MaterializeLookup strategy
-    ~~~~~~~~~~~~~~~~~~~~~~~~~~
+    -# The remainder of the duplicate-generating range. It is served by
+       application of FirstMatch strategy. Outer IN-correlated tables must be
+       correlated to the LooseScan table but not to the inner tables in this
+       range. (Currently, there can be no outer tables in this range because
+       of implementation restrictions, @see
+       Optimize_table_order::advance_sj_state()).
 
+    -# The suffix of outer correlated and non-correlated tables.
+
+    @par MaterializeLookup strategy
+
+    @code
      (ot|nt)*  [ it (it)* ]  (nt)*
      +------+  +==========+  +---+
         (1)         (2)        (3)
+    @endcode
 
-      (1) - Prefix of outer correlated and non-correlated tables.
+    -# Prefix of outer correlated and non-correlated tables.
 
-      (2) - The handled range, which may contain only inner tables.
+    -# The handled range, which may contain only inner tables.
             The inner tables are materialized in a temporary table that is
             later used as a lookup structure for the outer correlated tables.
 
-      (3) - The suffix of outer non-correlated tables.
+    -# The suffix of outer non-correlated tables.
 
-    MaterializeScan strategy
-    ~~~~~~~~~~~~~~~~~~~~~~~~~~
+    @par MaterializeScan strategy
 
+    @code
      (ot|nt)*  [ it (it)* ]  (ot|nt)*
      +------+  +==========+  +-----+
         (1)         (2)         (3)
+    @endcode
 
-      (1) - Prefix of outer correlated and non-correlated tables.
+    -# Prefix of outer correlated and non-correlated tables.
 
-      (2) - The handled range, which may contain only inner tables.
+    -# The handled range, which may contain only inner tables.
             The inner tables are materialized in a temporary table which is
             later used to setup a scan.
 
-      (3) - The suffix of outer correlated and non-correlated tables.
+    -# The suffix of outer correlated and non-correlated tables.
 
-  Note that MaterializeLookup and MaterializeScan has overlap in their patterns.
-  It may be possible to consolidate the materialization strategies into one.
-  
+  Note that MaterializeLookup and MaterializeScan has overlap in their
+  patterns. It may be possible to consolidate the materialization strategies
+  into one.
+
   The choice between the strategies is made by the join optimizer (see
-  advance_sj_state() and fix_semijoin_strategies()).
-  This function sets up all fields/structures/etc needed for execution except
-  for setup/initialization of semi-join materialization which is done in 
+  advance_sj_state() and fix_semijoin_strategies()).  This function sets up
+  all fields/structures/etc needed for execution except for
+  setup/initialization of semi-join materialization which is done in
   setup_materialized_table().
 */
 
@@ -831,9 +850,9 @@ void JOIN::reset()
     }
   }
   clear_sj_tmp_tables(this);
-  if (current_ref_ptrs != items0)
+  if (current_ref_item_slice != REF_SLICE_SAVE)
   {
-    set_items_ref_array(items0);
+    set_ref_item_slice(REF_SLICE_SAVE);
     set_group_rpa= false;
   }
 
@@ -961,8 +980,8 @@ bool JOIN::destroy()
   tmp_table_param.copy_funcs.empty();
   tmp_table_param.cleanup();
  /* Cleanup items referencing temporary table columns */
-  cleanup_item_list(tmp_all_fields1);
-  cleanup_item_list(tmp_all_fields3);
+  cleanup_item_list(tmp_all_fields[REF_SLICE_TMP1]);
+  cleanup_item_list(tmp_all_fields[REF_SLICE_TMP3]);
   destroy_sj_tmp_tables(this);
 
   List_iterator<Semijoin_mat_exec> sjm_list_it(sjm_exec_list);
@@ -1210,7 +1229,7 @@ void calc_length_and_keyparts(Key_use *keyuse, JOIN_TAB *tab, const uint key,
 
   @param join          The join object being handled
   @param j             The join_tab which will have the ref access populated
-  @param first_keyuse  First key part of (possibly multi-part) key
+  @param org_keyuse  First key part of (possibly multi-part) key
   @param used_tables   Bitmap of available tables
 
   @return False if success, True if error
@@ -1755,7 +1774,7 @@ void QEP_TAB::push_index_cond(const JOIN_TAB *join_tab,
   if (condition() &&
       tbl->file->index_flags(keyno, 0, 1) &
       HA_DO_INDEX_COND_PUSHDOWN &&
-      hint_key_state(join_->thd, tbl, keyno, ICP_HINT_ENUM,
+      hint_key_state(join_->thd, table_ref, keyno, ICP_HINT_ENUM,
                      OPTIMIZER_SWITCH_INDEX_CONDITION_PUSHDOWN) &&
       join_->thd->lex->sql_command != SQLCOM_UPDATE_MULTI &&
       join_->thd->lex->sql_command != SQLCOM_DELETE_MULTI &&
@@ -2344,8 +2363,7 @@ bool error_if_full_join(JOIN *join)
 
     if (tab->type() == JT_ALL && (!tab->quick()))
     {
-      my_message(ER_UPDATE_WITHOUT_KEY_IN_SAFE_MODE,
-                 ER(ER_UPDATE_WITHOUT_KEY_IN_SAFE_MODE), MYF(0));
+      my_error(ER_UPDATE_WITHOUT_KEY_IN_SAFE_MODE, MYF(0));
       return true;
     }
   }
@@ -2500,8 +2518,10 @@ bool QEP_shared_owner::and_with_condition(Item *add_cond)
     - However, if this is a JOIN for a [sub]select, which is not
     a correlated subquery itself, but has subqueries, we can free it
     fully and also free JOINs of all its subqueries. The exception
-    is a subquery in SELECT list, e.g: @n
-    SELECT a, (select max(b) from t1) group by c @n
+    is a subquery in SELECT list, e.g:
+    @code
+    SELECT a, (select max(b) from t1) group by c
+    @endcode
     This subquery will not be evaluated at first sweep and its value will
     not be inserted into the temporary table. Instead, it's evaluated
     when selecting from the temporary table. Therefore, it can't be freed
@@ -2572,10 +2592,6 @@ void JOIN::join_free()
 /**
   Free resources of given join.
 
-  @param fill   true if we should free all resources, call with full==1
-                should be last, before it this function can be called with
-                full==0
-
   @note
     With subquery this function definitely will be called several times,
     but even for simple query it can be called several times.
@@ -2626,9 +2642,9 @@ void JOIN::cleanup()
   }
 
   /* Restore ref array to original state */
-  if (current_ref_ptrs != items0)
+  if (current_ref_item_slice != REF_SLICE_SAVE)
   {
-    set_items_ref_array(items0);
+    set_ref_item_slice(REF_SLICE_SAVE);
     set_group_rpa= false;
   }
   DBUG_VOID_RETURN;
@@ -2642,8 +2658,8 @@ void JOIN::cleanup()
   with non-JOIN statements (i.e. single-table UPDATE and DELETE).
 
 
-  @param order            Linked list of ORDER BY arguments
-  @param cond             WHERE expression
+  @param order            Linked list of ORDER BY arguments.
+  @param where            Where condition.
 
   @return pointer to new filtered ORDER list or NULL if whole list eliminated
 
@@ -2858,9 +2874,8 @@ count_field_types(SELECT_LEX *select_lex, Temp_table_param *param,
     {
       if (! field->const_item())
       {
-	Item_sum *sum_item=(Item_sum*) field->real_item();
-        if (!sum_item->depended_from() ||
-            sum_item->depended_from() == select_lex)
+	Item_sum *sum_item=down_cast<Item_sum *>(field->real_item());
+        if (sum_item->aggr_select == select_lex)
         {
           if (!sum_item->quick_group)
             param->quick_group=0;			// UDF SUM function
@@ -3092,10 +3107,10 @@ bool JOIN::make_sum_func_list(List<Item> &field_list,
   func= sum_funcs;
   while ((item=it++))
   {
-    if (item->type() == Item::SUM_FUNC_ITEM && !item->const_item() &&
-        (!((Item_sum*) item)->depended_from() ||
-         ((Item_sum *)item)->depended_from() == select_lex))
-      *func++= (Item_sum*) item;
+    if (item->type() == Item::SUM_FUNC_ITEM &&
+        !item->const_item() &&
+        down_cast<Item_sum *>(item)->aggr_select == select_lex)
+      *func++= down_cast<Item_sum *>(item);
   }
   if (before_group_by && rollup.state == ROLLUP::STATE_INITED)
   {
@@ -3119,7 +3134,7 @@ bool JOIN::make_sum_func_list(List<Item> &field_list,
   Free joins of subselect of this select.
 
   @param thd      THD pointer
-  @param select   pointer to st_select_lex which subselects joins we will free
+  @param select   pointer to SELECT_LEX which subselects joins we will free
 */
 
 void free_underlaid_joins(THD *thd, SELECT_LEX *select)
@@ -3225,7 +3240,7 @@ bool JOIN::rollup_make_fields(List<Item> &fields_arg, List<Item> &sel_fields,
     rollup.fields[0] will contain list where a,b,c is NULL
     rollup.fields[1] will contain list where b,c is NULL
     ...
-    rollup.ref_pointer_array[#] points to fields for rollup.fields[#]
+    rollup.ref_item_array[#] points to fields for rollup.fields[#]
     ...
     sum_funcs_end[0] points to all sum functions
     sum_funcs_end[1] points to all sum functions, except grand totals
@@ -3239,7 +3254,7 @@ bool JOIN::rollup_make_fields(List<Item> &fields_arg, List<Item> &sel_fields,
     bool real_fields= 0;
     Item *item;
     List_iterator<Item> new_it(rollup.fields[pos]);
-    Ref_ptr_array ref_array_start= rollup.ref_pointer_arrays[pos];
+    Ref_item_array ref_array_start= rollup.ref_item_arrays[pos];
     ORDER *start_group;
 
     /* Point to first hidden field */
@@ -3263,10 +3278,9 @@ bool JOIN::rollup_make_fields(List<Item> &fields_arg, List<Item> &sel_fields,
         ref_array_ix= 0;
       }
 
-      if (item->type() == Item::SUM_FUNC_ITEM && !item->const_item() &&
-          (!((Item_sum*) item)->depended_from() ||
-           ((Item_sum *)item)->depended_from() == select_lex))
-          
+      if (item->type() == Item::SUM_FUNC_ITEM &&
+          !item->const_item() &&
+          down_cast<Item_sum *>(item)->aggr_select == select_lex)
       {
 	/*
 	  This is a top level summary function that must be replaced with
@@ -3331,6 +3345,7 @@ bool JOIN::rollup_make_fields(List<Item> &fields_arg, List<Item> &sel_fields,
     TRUE on error  
 */
 
+MY_ATTRIBUTE((warn_unused_result))
 bool JOIN::clear()
 {
   /* 
@@ -3429,7 +3444,7 @@ bool JOIN::add_having_as_tmp_table_cond(uint curr_tmp_table)
     not read yet for example subquery in having, then it will be kept as it is
     in original having_cond of join.
   */
-  Item* sort_table_cond= make_cond_for_table(having_cond, used_tables,
+  Item* sort_table_cond= make_cond_for_table(thd, having_cond, used_tables,
                                              (table_map) 0, false);
   if (sort_table_cond)
   {
@@ -3447,7 +3462,7 @@ bool JOIN::add_having_as_tmp_table_cond(uint curr_tmp_table)
 				 "select and having",
                                      QT_ORDINARY););
 
-    having_cond= make_cond_for_table(having_cond, ~ (table_map) 0,
+    having_cond= make_cond_for_table(thd, having_cond, ~ (table_map) 0,
                                      ~used_tables, false);
     DBUG_EXECUTE("where",
                  print_where(having_cond, "having after sort",
@@ -3471,7 +3486,7 @@ bool JOIN::add_having_as_tmp_table_cond(uint curr_tmp_table)
     .) tmp tables are created, but not instantiated (this is done during
        execution). JOIN_TABs dedicated to tmp tables are filled appropriately.
        see JOIN::create_intermediate_table.
-    .) prepare fields lists (fields, all_fields, ref_pointer_array slices) for
+    .) prepare fields lists (fields, all_fields, ref_item_array slices) for
        each required stage of execution. These fields lists are set for
        tmp tables' tabs and for the tab of last table in the join.
     .) fill info for sorting/grouping/dups removal is prepared and saved to
@@ -3539,7 +3554,10 @@ bool JOIN::make_tmp_tables_info()
     tmp_table_param.precomputed_group_by=
       !qep_tab[0].quick()->is_agg_loose_index_scan();
 
-  /* Create a tmp table if distinct or if the sort is too complicated */
+  /*
+    Create the first temporary table if distinct elimination is requested or
+    if the sort is too complicated to be evaluated as a filesort.
+  */
   if (need_tmp)
   {
     curr_tmp_table= primary_tables;
@@ -3548,11 +3566,23 @@ bool JOIN::make_tmp_tables_info()
       first_select= sub_select_op;
 
     /*
-      Create temporary table on first execution of this join.
-      (Will be reused if this is a subquery that is executed several times.)
+      Make a copy of the base slice in the save slice.
+      This is needed because later steps will overwrite the base slice with
+      another slice (1-3).
+      After this slice has been used, overwrite the base slice again with
+      the copy in the save slice.
     */
-    init_items_ref_array();
+    if (alloc_ref_item_slice(thd, REF_SLICE_SAVE))
+      DBUG_RETURN(true);
 
+    copy_ref_item_slice(REF_SLICE_SAVE, REF_SLICE_BASE);
+    current_ref_item_slice= REF_SLICE_SAVE;
+
+    /*
+      Create temporary table for use in a single execution.
+      (Will be reused if this is a subquery that is executed several times
+       for one execution of the statement)
+    */
     ORDER_with_src tmp_group;
     if (!simple_group && !(test_flags & TEST_NO_KEY_GROUP))
       tmp_group= group_list;
@@ -3581,31 +3611,42 @@ bool JOIN::make_tmp_tables_info()
         qep_tab[const_tables].position()->sj_strategy != SJ_OPT_LOOSE_SCAN &&
         qep_tab[const_tables].use_order()));
 
-    /* Change sum_fields reference to calculated fields in tmp_table */
-    DBUG_ASSERT(items1.is_null());
-    items1= select_lex->ref_ptr_array_slice(2);
+    /*
+      Allocate a slice of ref items that describe the items to be copied
+      from the first temporary table.
+    */
+    if (alloc_ref_item_slice(thd, REF_SLICE_TMP1))
+      DBUG_RETURN(true);
+
+    // Change sum_fields reference to calculated fields in tmp_table
     if (sort_and_group || qep_tab[curr_tmp_table].table()->group ||
         tmp_table_param.precomputed_group_by)
     {
-      if (change_to_use_tmp_fields(thd, items1,
-                                   tmp_fields_list1, tmp_all_fields1,
-                                   fields_list.elements, all_fields))
+      if (change_to_use_tmp_fields(thd,
+                                   ref_items[REF_SLICE_TMP1],
+                                   tmp_fields_list[REF_SLICE_TMP1],
+                                   tmp_all_fields[REF_SLICE_TMP1],
+                                   fields_list.elements,
+                                   all_fields))
         DBUG_RETURN(true);
     }
     else
     {
-      if (change_refs_to_tmp_fields(thd, items1,
-                                    tmp_fields_list1, tmp_all_fields1,
-                                    fields_list.elements, all_fields))
+      if (change_refs_to_tmp_fields(thd,
+                                    ref_items[REF_SLICE_TMP1],
+                                    tmp_fields_list[REF_SLICE_TMP1],
+                                    tmp_all_fields[REF_SLICE_TMP1],
+                                    fields_list.elements,
+                                    all_fields))
         DBUG_RETURN(true);
     }
-    curr_all_fields= &tmp_all_fields1;
-    curr_fields_list= &tmp_fields_list1;
+    curr_all_fields= &tmp_all_fields[REF_SLICE_TMP1];
+    curr_fields_list= &tmp_fields_list[REF_SLICE_TMP1];
     // Need to set them now for correct group_fields setup, reset at the end.
-    set_items_ref_array(items1);
-    qep_tab[curr_tmp_table].ref_array= &items1;
-    qep_tab[curr_tmp_table].all_fields= &tmp_all_fields1;
-    qep_tab[curr_tmp_table].fields= &tmp_fields_list1;
+    set_ref_item_slice(REF_SLICE_TMP1);
+    qep_tab[curr_tmp_table].ref_item_slice= REF_SLICE_TMP1;
+    qep_tab[curr_tmp_table].all_fields= &tmp_all_fields[REF_SLICE_TMP1];
+    qep_tab[curr_tmp_table].fields= &tmp_fields_list[REF_SLICE_TMP1];
     setup_tmptable_write_func(&qep_tab[curr_tmp_table]);
 
     /*
@@ -3650,7 +3691,7 @@ bool JOIN::make_tmp_tables_info()
     }
     /*
       If we have different sort & group then we must sort the data by group
-      and copy it to another tmp table
+      and copy it to a second temporary table.
       This code is also used if we are using distinct something
       we haven't been able to store in the temporary table yet
       like SEC_TO_TIME(SUM(...)).
@@ -3659,14 +3700,16 @@ bool JOIN::make_tmp_tables_info()
     if ((group_list &&
          (!test_if_subpart(group_list, order) || select_distinct)) ||
         (select_distinct && tmp_table_param.using_outer_summary_function))
-    {					/* Must copy to another table */
+    {
       DBUG_PRINT("info",("Creating group table"));
       
       calc_group_buffer(this, group_list);
-      count_field_types(select_lex, &tmp_table_param, tmp_all_fields1,
+      count_field_types(select_lex, &tmp_table_param,
+                        tmp_all_fields[REF_SLICE_TMP1],
                         select_distinct && !group_list, false);
       tmp_table_param.hidden_field_count= 
-        tmp_all_fields1.elements - tmp_fields_list1.elements;
+        tmp_all_fields[REF_SLICE_TMP1].elements -
+        tmp_fields_list[REF_SLICE_TMP1].elements;
       
       if (!exec_tmp_table->group && !exec_tmp_table->distinct)
       {
@@ -3721,21 +3764,29 @@ bool JOIN::make_tmp_tables_info()
         if (setup_sum_funcs(thd, sum_funcs))
           DBUG_RETURN(true);
       }
-      // No sum funcs anymore
-      DBUG_ASSERT(items2.is_null());
 
-      items2= select_lex->ref_ptr_array_slice(3);
-      if (change_to_use_tmp_fields(thd, items2,
-                                   tmp_fields_list2, tmp_all_fields2, 
-                                   fields_list.elements, tmp_all_fields1))
+      /*
+        Allocate a slice of ref items that describe the items to be copied
+        from the second temporary table.
+      */
+      if (alloc_ref_item_slice(thd, REF_SLICE_TMP2))
         DBUG_RETURN(true);
 
-      curr_fields_list= &tmp_fields_list2;
-      curr_all_fields= &tmp_all_fields2;
-      set_items_ref_array(items2);
-      qep_tab[curr_tmp_table].ref_array= &items2;
-      qep_tab[curr_tmp_table].all_fields= &tmp_all_fields2;
-      qep_tab[curr_tmp_table].fields= &tmp_fields_list2;
+      // No sum funcs anymore
+      if (change_to_use_tmp_fields(thd,
+                                   ref_items[REF_SLICE_TMP2],
+                                   tmp_fields_list[REF_SLICE_TMP2],
+                                   tmp_all_fields[REF_SLICE_TMP2],
+                                   fields_list.elements,
+                                   tmp_all_fields[REF_SLICE_TMP1]))
+        DBUG_RETURN(true);
+
+      curr_fields_list= &tmp_fields_list[REF_SLICE_TMP2];
+      curr_all_fields= &tmp_all_fields[REF_SLICE_TMP2];
+      set_ref_item_slice(REF_SLICE_TMP2);
+      qep_tab[curr_tmp_table].ref_item_slice= REF_SLICE_TMP2;
+      qep_tab[curr_tmp_table].all_fields= &tmp_all_fields[REF_SLICE_TMP2];
+      qep_tab[curr_tmp_table].fields= &tmp_fields_list[REF_SLICE_TMP2];
       setup_tmptable_write_func(&qep_tab[curr_tmp_table]);
 
       tmp_table_param.field_count+= tmp_table_param.sum_func_count;
@@ -3789,34 +3840,63 @@ bool JOIN::make_tmp_tables_info()
                       false);
   }
 
-  if (grouped || implicit_grouping || tmp_table_param.sum_func_count)
+  /*
+    Set up structures for a temporary table but do not actually create
+    the temporary table if one of these conditions are true:
+    - The query is implicitly grouped.
+    - The query is explicitly grouped and
+        + implemented as a simple grouping, or
+        + LIMIT 1 is specified, or
+        + ROLLUP is specified, or
+        + <some unknown condition>.
+  */
+
+  if (grouped || implicit_grouping)
   {
     if (make_group_fields(this, this))
       DBUG_RETURN(true);
 
-    DBUG_ASSERT(items3.is_null());
+    // "save" slice of ref_items array is needed due to overwriting strategy.
+    if (ref_items[REF_SLICE_SAVE].is_null())
+    {
+      if (alloc_ref_item_slice(thd, REF_SLICE_SAVE))
+        DBUG_RETURN(true);
 
-    if (items0.is_null())
-      init_items_ref_array();
-    items3= select_lex->ref_ptr_array_slice(4);
-    setup_copy_fields(thd, &tmp_table_param,
-                      items3, tmp_fields_list3, tmp_all_fields3,
-                      curr_fields_list->elements, *curr_all_fields);
+      copy_ref_item_slice(REF_SLICE_SAVE, REF_SLICE_BASE);
+      current_ref_item_slice= REF_SLICE_SAVE;
+    }
 
-    curr_fields_list= &tmp_fields_list3;
-    curr_all_fields= &tmp_all_fields3;
-    set_items_ref_array(items3);
+    /*
+      Allocate a slice of ref items that describe the items to be copied
+      from the record buffer for this temporary table.
+    */
+    if (alloc_ref_item_slice(thd, REF_SLICE_TMP3))
+      DBUG_RETURN(true);
+    setup_copy_fields(thd,
+                      &tmp_table_param,
+                      ref_items[REF_SLICE_TMP3],
+                      tmp_fields_list[REF_SLICE_TMP3],
+                      tmp_all_fields[REF_SLICE_TMP3],
+                      curr_fields_list->elements,
+                      *curr_all_fields);
+
+    curr_fields_list= &tmp_fields_list[REF_SLICE_TMP3];
+    curr_all_fields= &tmp_all_fields[REF_SLICE_TMP3];
+    set_ref_item_slice(REF_SLICE_TMP3);
     if (qep_tab)
     {
       // Set grouped fields on the last table
-      qep_tab[primary_tables + tmp_tables - 1].ref_array= &items3;
-      qep_tab[primary_tables + tmp_tables - 1].all_fields= &tmp_all_fields3;
-      qep_tab[primary_tables + tmp_tables - 1].fields= &tmp_fields_list3;
+      qep_tab[primary_tables + tmp_tables - 1].ref_item_slice= REF_SLICE_TMP3;
+      qep_tab[primary_tables + tmp_tables - 1].all_fields=
+        &tmp_all_fields[REF_SLICE_TMP3];
+      qep_tab[primary_tables + tmp_tables - 1].fields=
+        &tmp_fields_list[REF_SLICE_TMP3];
     }
     if (make_sum_func_list(*curr_all_fields, *curr_fields_list, true, true))
       DBUG_RETURN(true);
     const bool need_distinct=
-      !(qep_tab && qep_tab[0].quick() && qep_tab[0].quick()->is_agg_loose_index_scan());
+      !(qep_tab && qep_tab[0].quick() &&
+        qep_tab[0].quick()->is_agg_loose_index_scan());
     if (prepare_sum_aggregators(sum_funcs, need_distinct))
       DBUG_RETURN(true);
     if (setup_sum_funcs(thd, sum_funcs) || thd->is_fatal_error)
@@ -3904,7 +3984,7 @@ bool JOIN::make_tmp_tables_info()
   }
   fields= curr_fields_list;
   // Reset before execution
-  set_items_ref_array(items0);
+  set_ref_item_slice(REF_SLICE_SAVE);
   if (qep_tab)
   {
     qep_tab[primary_tables + tmp_tables - 1].next_select=
@@ -3929,7 +4009,9 @@ void JOIN::unplug_join_tabs()
 /**
   @brief Add Filesort object to the given table to sort if with filesort
 
-  @param tab        the JOIN_TAB object to attach created Filesort object to
+  @param idx        JOIN_TAB's position in the qep_tab array. The
+                    created Filesort object gets attached to this.
+
   @param sort_order List of expressions to sort the table by
 
   @note This function moves tab->select, if any, to filesort->select
@@ -3987,7 +4069,7 @@ JOIN::add_sorting_to_table(uint idx, ORDER_with_src *sort_order)
 }
 
 /**
-  Find a cheaper access key than a given @a key
+  Find a cheaper access key than a given key.
 
   @param          tab                 NULL or JOIN_TAB of the accessed table
   @param          order               Linked list of ORDER BY arguments
@@ -4017,7 +4099,7 @@ JOIN::add_sorting_to_table(uint idx, ORDER_with_src *sort_order)
 
 bool
 test_if_cheaper_ordering(const JOIN_TAB *tab, ORDER *order, TABLE *table,
-                         key_map usable_keys,  int ref_key,
+                         Key_map usable_keys,  int ref_key,
                          ha_rows select_limit,
                          int *new_key, int *new_key_direction,
                          ha_rows *new_select_limit, uint *new_used_key_parts,
@@ -4035,7 +4117,7 @@ test_if_cheaper_ordering(const JOIN_TAB *tab, ORDER *order, TABLE *table,
   if (join)
     ASSERT_BEST_REF_IN_JOIN_ORDER(join);
   uint nr;
-  key_map keys;
+  Key_map keys;
   uint best_key_parts= 0;
   int best_key_direction= 0;
   ha_rows best_records= 0;
@@ -4267,8 +4349,7 @@ test_if_cheaper_ordering(const JOIN_TAB *tab, ORDER *order, TABLE *table,
   Find a key to apply single table UPDATE/DELETE by a given ORDER
 
   @param       order           Linked list of ORDER BY arguments
-  @param       table           Table to find a key
-  @param       select          Pointer to access/update select->quick (if any)
+  @param       tab             Table to find a key
   @param       limit           LIMIT clause parameter 
   @param [out] need_sort       TRUE if filesort needed
   @param [out] reverse
@@ -4405,7 +4486,7 @@ uint actual_key_parts(const KEY *key_info)
   @return key flags.
 */
 
-uint actual_key_flags(KEY *key_info)
+static uint actual_key_flags(KEY *key_info)
 {
   return key_info->table->in_use->
     optimizer_switch_flag(OPTIMIZER_SWITCH_USE_INDEX_EXTENSIONS) ?

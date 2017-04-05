@@ -1,4 +1,4 @@
-/* Copyright (c) 2005, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2005, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -28,20 +28,15 @@
   Most function are just inline wrappers around library calls
 */
 
-#if defined(MYSQL_SERVER) || defined(EMBEDDED_LIBRARY)
+#include "my_global.h"
 #include "sql_string.h"                         /* String */
-#endif
 
-C_MODE_START
 #include <decimal.h>
-C_MODE_END
+#include <algorithm>
 
-class String;
 typedef struct st_mysql_time MYSQL_TIME;
 
 #define DECIMAL_LONGLONG_DIGITS 22
-#define DECIMAL_LONG_DIGITS 10
-#define DECIMAL_LONG3_DIGITS 8
 
 /** maximum length of buffer in our big digits (uint32). */
 #define DECIMAL_BUFF_LENGTH 9
@@ -179,7 +174,7 @@ public:
   /** Swap two my_decimal values */
   void swap(my_decimal &rhs)
   {
-    swap_variables(my_decimal, *this, rhs);
+    std::swap(*this, rhs);
   }
 
   // Error reporting in server code only.
@@ -285,14 +280,6 @@ int my_decimal_string_length(const my_decimal *d)
 
 
 inline
-int my_decimal_max_length(const my_decimal *d)
-{
-  /* -1 because we do not count \0 */
-  return decimal_string_size(d) - 1;
-}
-
-
-inline
 int my_decimal_get_binary_size(uint precision, uint scale)
 {
   return decimal_bin_size((int)precision, (int)scale);
@@ -368,11 +355,8 @@ inline bool str_set_decimal(const my_decimal *val, String *str,
   return str_set_decimal(E_DEC_FATAL_ERROR, val, 0, 0, 0, str, cs);
 }
 
-#ifndef MYSQL_CLIENT
-class String;
 int my_decimal2string(uint mask, const my_decimal *d, uint fixed_prec,
 		      uint fixed_dec, char filler, String *str);
-#endif
 
 inline
 int my_decimal2int(uint mask, const my_decimal *d, my_bool unsigned_flag,
@@ -401,6 +385,13 @@ inline int my_decimal2lldiv_t(uint mask, const my_decimal *d, lldiv_t *to)
 }
 
 
+inline int string2decimal(const char *from,
+                          decimal_t *to,
+                          char **end)
+{
+  return internal_str2dec(from, to, end, FALSE);
+}
+
 inline int str2my_decimal(uint mask, const char *str,
                           my_decimal *d, char **end)
 {
@@ -411,7 +402,6 @@ inline int str2my_decimal(uint mask, const char *str,
 int str2my_decimal(uint mask, const char *from, size_t length,
                    const CHARSET_INFO *charset, my_decimal *decimal_value);
 
-#if defined(MYSQL_SERVER) || defined(EMBEDDED_LIBRARY)
 inline
 int string2my_decimal(uint mask, const String *str, my_decimal *d)
 {
@@ -422,8 +412,6 @@ int string2my_decimal(uint mask, const String *str, my_decimal *d)
 my_decimal *date2my_decimal(const MYSQL_TIME *ltime, my_decimal *dec);
 my_decimal *time2my_decimal(const MYSQL_TIME *ltime, my_decimal *dec);
 my_decimal *timeval2my_decimal(const struct timeval *tm, my_decimal *dec);
-
-#endif /*defined(MYSQL_SERVER) || defined(EMBEDDED_LIBRARY) */
 
 inline
 int double2my_decimal(uint mask, double val, my_decimal *d)
@@ -506,7 +494,9 @@ int my_decimal_mod(uint mask, my_decimal *res, const my_decimal *a,
 
 /**
   @return
-    -1 if a<b, 1 if a>b and 0 if a==b
+    @retval -1 if a @< b
+    @retval 1 if a @> b
+    @retval 0 if a == b
 */
 inline
 int my_decimal_cmp(const my_decimal *a, const my_decimal *b)

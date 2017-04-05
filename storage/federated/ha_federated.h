@@ -1,4 +1,4 @@
-/* Copyright (c) 2004, 2014, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2004, 2015, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -20,7 +20,10 @@
   that you can implement.
 */
 
+#include "my_global.h"
 #include <mysql.h>
+#include "thr_lock.h"
+#include "handler.h"
 #include "prealloced_array.h"
 
 /* 
@@ -126,13 +129,6 @@ public:
   */
   ha_federated *trx_next;
   /*
-    The name of the index type that will be used for display
-    don't implement this method unless you really have indexes
-   */
-  // perhaps get index type
-  const char *index_type(uint inx) { return "REMOTE"; }
-  const char **bas_ext() const;
-  /*
     This is a list of flags that says what the storage engine
     implements. The current table flags are documented in
     handler.h
@@ -197,7 +193,7 @@ public:
     return (double) rows /  20.0+1;
   }
 
-  const key_map *keys_to_use_for_scanning() { return &key_map_full; }
+  const Key_map *keys_to_use_for_scanning() { return &key_map_full; }
   /*
     Everything below are methods that we implment in ha_federated.cc.
 

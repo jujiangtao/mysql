@@ -66,24 +66,11 @@ ELSE()
     PROTO_LITE_SRCS PROTO_LITE_HDRS
     ${PROTOBUF_MYSQLX_FILES})
 
-  MY_CHECK_CXX_COMPILER_FLAG("-Wignored-qualifiers" HAVE_NO_IGNORED_QUALIFIERS)
-  IF(HAVE_NO_IGNORED_QUALIFIERS)
+  IF(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     ADD_COMPILE_FLAGS(${PROTO_SRCS} COMPILE_FLAGS
-      "-Wno-ignored-qualifiers")
+      "-Wno-ignored-qualifiers -Wno-sign-compare -Wno-unused-variable")
   ENDIF()
-
-  MY_CHECK_CXX_COMPILER_FLAG("-Wsign-compare" CXX_HAVE_SIGN_COMPARE)
-  IF(CXX_HAVE_SIGN_COMPARE)
-    ADD_COMPILE_FLAGS(${PROTO_SRCS} COMPILE_FLAGS
-      "-Wno-sign-compare")
-  ENDIF()
-
-  MY_CHECK_CXX_COMPILER_FLAG("-Wunused-variable" CXX_HAVE_UNUSED_VARIABLE)
-  IF(CXX_HAVE_UNUSED_VARIABLE)
-    ADD_COMPILE_FLAGS(${PROTO_SRCS} COMPILE_FLAGS
-      "-Wno-unused-variable")
-  ENDIF()
-
+  
   INCLUDE_DIRECTORIES(${CMAKE_CURRENT_BINARY_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/protocol/errors
     ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -129,6 +116,10 @@ ELSE()
       ${BOOST_SOURCES_DIR}/libs/atomic/src/lockpool.cpp)
   ENDIF()
 
+  # Built *without* -DMYSQL_DYNAMIC_PLUGIN
+  ADD_CONVENIENCE_LIBRARY(xplugin
+    ${xplugin_SRC} ${xplugin_HDRS} ${xplugin_PROTOBUF_SRC} ${BOOST_LIB_SOURCES})
+
   ADD_COMPILE_FLAGS(
     src/xpl_plugin.cc
     src/xpl_performance_schema.cc
@@ -137,20 +128,25 @@ ELSE()
     "-I${xplugin_PROTOBUF_DIR}"
     "-I${CMAKE_CURRENT_BINARY_DIR}/generated/")
 
+  TARGET_LINK_LIBRARIES(xplugin ${LIBEVENT_LIBRARY} ${LIBEVENT_LIBRARIES})
+  IF(MSVC)
+    TARGET_LINK_LIBRARIES(xplugin strings) 
+  ENDIF(MSVC)
+  
+  # These are built *with* -DMYSQL_DYNAMIC_PLUGIN
   MYSQL_ADD_PLUGIN(mysqlx
     src/xpl_plugin.cc
     src/xpl_performance_schema.cc
-    ${xplugin_SRC} ${xplugin_HDRS} ${xplugin_PROTOBUF_SRC} ${BOOST_LIB_SOURCES}
-    LINK_LIBRARIES ${xplugin_PROTOBUF_LIB} ${LIBEVENT_LIBRARY} ${LIBEVENT_LIBRARIES}
+    LINK_LIBRARIES xplugin ${xplugin_PROTOBUF_LIB}
     MODULE_ONLY MODULE_OUTPUT_NAME "mysqlx")
 
   IF(WITH_PROTOBUF STREQUAL "system")
     TARGET_LINK_LIBRARIES(mysqlx "${PROTOBUF_LIBRARY}")
   ENDIF()
 
-  ADD_DEPENDENCIES(mysqlx GenError)
+  ADD_DEPENDENCIES(xplugin GenError)
   IF (WITH_LIBEVENT STREQUAL "bundled")
-    ADD_DEPENDENCIES(mysqlx ${LIBEVENT_LIBRARY})
+    ADD_DEPENDENCIES(xplugin ${LIBEVENT_LIBRARY})
   ENDIF()
 
   IF(XPLUGIN_LOG_PROTOBUF)
@@ -189,15 +185,14 @@ ELSE()
 
   ADD_DEPENDENCIES(mysqlxtest GenError)
 
-  MY_CHECK_CXX_COMPILER_FLAG("-Wunused-but-set-parameter" HAVE_UNUSED_BUT_SET)
-  IF(HAVE_UNUSED_BUT_SET)
-    ADD_COMPILE_FLAGS(${mysqlxtest_SRC} COMPILE_FLAGS
-      "-Wno-unused-but-set-parameter")
-  ENDIF()
-
-  MY_CHECK_CXX_COMPILER_FLAG("-Wunused-parameter" HAVE_UNUSED_PARAMETER)
-  IF(HAVE_UNUSED_PARAMETER)
+  IF(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     ADD_COMPILE_FLAGS(${mysqlxtest_SRC} COMPILE_FLAGS "-Wno-unused-parameter")
+
+    MY_CHECK_CXX_COMPILER_FLAG("-Wunused-but-set-parameter" HAVE_UNUSED_BUT_SET)
+    IF(HAVE_UNUSED_BUT_SET)
+      ADD_COMPILE_FLAGS(${mysqlxtest_SRC} COMPILE_FLAGS
+        "-Wno-unused-but-set-parameter")
+    ENDIF()
   ENDIF()
 
   GET_PROPERTY(OLD_COMPILE_FLAGS TARGET mysqlxtest PROPERTY COMPILE_FLAGS)

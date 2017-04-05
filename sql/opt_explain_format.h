@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2011, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -17,13 +17,21 @@
 #ifndef OPT_EXPLAIN_FORMAT_INCLUDED
 #define OPT_EXPLAIN_FORMAT_INCLUDED
 
-/** @file "EXPLAIN FORMAT=<format> <command>" 
+/**
+  @file sql/opt_explain_format.h
+  EXPLAIN FORMAT=@<format@> @<command@>.
 */
 
+#include "sql_alloc.h"
+#include "parse_tree_node_base.h"
+#include "sql_list.h"
+#include "sql_string.h"
 
-#include "sql_class.h"
-
+class Item;
+class Query_result;
+class SELECT_LEX_UNIT;
 struct st_join_table;
+enum class enum_explain_type;
 
 /**
   Types of traditional "extra" column parts and property names for hierarchical
@@ -172,8 +180,8 @@ public:
   {
     const char *str;
     size_t length;
-    Lazy *deferred; //< encapsulated expression to evaluate it later (on demand)
-    
+    Lazy *deferred; ///< encapsulated expression to evaluate it later (on demand)
+
     mem_root_str() { cleanup(); }
     void cleanup()
     {
@@ -181,20 +189,7 @@ public:
       length= 0;
       deferred= NULL;
     }
-    bool is_empty()
-    {
-      if (deferred)
-      {
-        StringBuffer<128> buff(system_charset_info);
-        if (deferred->eval(&buff) || set(buff))
-        {
-          DBUG_ASSERT(!"OOM!");
-          return true; // ignore OOM
-        }
-        deferred= NULL; // prevent double evaluation, if any
-      }
-      return str == NULL;
-    }
+    bool is_empty();
     bool set(const char *str_arg)
     {
       return set(str_arg, strlen(str_arg));
@@ -211,14 +206,8 @@ public:
 
       @return false if success, true if error
     */
-    bool set(const char *str_arg, size_t length_arg)
-    {
-      deferred= NULL;
-      if (!(str= strndup_root(current_thd->mem_root, str_arg, length_arg)))
-        return true; /* purecov: inspected */
-      length= length_arg;
-      return false;
-    }
+    bool set(const char *str_arg, size_t length_arg);
+
     /**
       Save expression for further evaluation
 
@@ -293,7 +282,7 @@ public:
           will be pushed into "items" list instead.
   */
   column<uint> col_id; ///< "id" column: seq. number of SELECT withing the query
-  column<SELECT_LEX::type_enum> col_select_type; ///< "select_type" column
+  column<enum_explain_type> col_select_type; ///< "select_type" column
   mem_root_str col_table_name; ///< "table" to which the row of output refers
   List<const char> col_partitions; ///< "partitions" column
   mem_root_str col_join_type; ///< "type" column, see join_type_str array
@@ -410,24 +399,6 @@ public:
 
 
 /**
-  Argument for Item::explain_subquery_checker()
-
-  Just a tuple of (destination, type) to pass as a single argument.
-  See a commentary for Item_subselect::explain_subquery_checker
-*/
-
-struct Explain_subquery_marker
-{
-  class qep_row *destination; ///< hosting TABLE/JOIN_TAB
-  enum_parsing_context type; ///< CTX_WHERE/CTX_HAVING/CTX_ORDER_BY/CTX_GROUP_BY
-
-  Explain_subquery_marker(qep_row *destination_arg,
-                          enum_parsing_context type_arg)
-  : destination(destination_arg), type(type_arg)
-  {}
-};
-
-/**
   Enumeration of ORDER BY, GROUP BY and DISTINCT clauses for array indexing
 
   See Explain_format_flags::sorts
@@ -449,12 +420,12 @@ enum Explain_sort_clause
 enum Explain_sort_property
 {
   ESP_none           = 0,
-  ESP_EXISTS         = 1 << 0, //< Original query has this clause
-  ESP_IS_SIMPLE      = 1 << 1, //< Clause is effective for single JOIN_TAB only
-  ESP_USING_FILESORT = 1 << 2, //< Clause causes a filesort
-  ESP_USING_TMPTABLE = 1 << 3, //< Clause creates an intermediate table
-  ESP_DUPS_REMOVAL   = 1 << 4, //< Duplicate removal for DISTINCT
-  ESP_CHECKED        = 1 << 5  //< Properties were already checked
+  ESP_EXISTS         = 1 << 0, ///< Original query has this clause
+  ESP_IS_SIMPLE      = 1 << 1, ///< Clause is effective for single JOIN_TAB only
+  ESP_USING_FILESORT = 1 << 2, ///< Clause causes a filesort
+  ESP_USING_TMPTABLE = 1 << 3, ///< Clause creates an intermediate table
+  ESP_DUPS_REMOVAL   = 1 << 4, ///< Duplicate removal for DISTINCT
+  ESP_CHECKED        = 1 << 5  ///< Properties were already checked
 };
 
 
@@ -560,6 +531,7 @@ public:
 
     @param context      context type
     @param subquery     for CTX_WHERE: unit of the subquery
+    @param flags        Format flags, see Explain_format_flags.
   */
   virtual bool begin_context(enum_parsing_context context,
                              SELECT_LEX_UNIT *subquery = 0,

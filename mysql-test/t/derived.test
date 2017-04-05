@@ -2594,7 +2594,7 @@ CREATE TABLE t2 (
 INSERT INTO t2 VALUES (9,'_:L'), (10,'_<2'), (11,'_<N');
 
 let $query=
-SELECT t1_inv_date
+t1_inv_date
 FROM t1 LEFT JOIN
      (SELECT curr.t2_end_date As end_date,
              (SELECT prev.t2_end_date
@@ -2607,8 +2607,12 @@ FROM t1 LEFT JOIN
      ON periods.prev_end_date < t1_inv_date AND
         periods.end_date >= t1_inv_date;
 
-eval explain $query;
-eval $query;
+eval explain SELECT $query;
+eval SELECT $query;
+
+# A merge hint overrides the heuristic to not merge.
+eval explain SELECT /*+ MERGE(periods) */ $query;
+eval SELECT /*+ MERGE(periods) */ $query;
 
 DROP TABLE t1, t2;
 
@@ -2689,6 +2693,15 @@ SET position = (SELECT COUNT(t2.position) + 1
 WHERE id = 3;
 
 DROP TABLE users;
+
+--echo # Bug#22783011 assertion failed: base_select != removed_select &&
+--echo #              aggr_select != removed_select
+
+CREATE TABLE t(a INTEGER) engine=innodb;
+INSERT INTO t VALUES(1);
+--error ER_INVALID_GROUP_FUNC_USE
+SELECT (SELECT 1 FROM (SELECT 1 FROM t WHERE SUM(1)) AS t);
+DROP TABLE t;
 
 --echo # Bug#23074801: Delete from joined tables with where using derived table
 --echo #               fails with error 1093

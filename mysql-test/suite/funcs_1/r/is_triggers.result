@@ -35,16 +35,16 @@ EVENT_MANIPULATION	varchar(6)	NO
 EVENT_OBJECT_CATALOG	varchar(512)	NO			
 EVENT_OBJECT_SCHEMA	varchar(64)	NO			
 EVENT_OBJECT_TABLE	varchar(64)	NO			
-ACTION_ORDER	bigint(4)	NO		0	
-ACTION_CONDITION	longtext	YES		NULL	
-ACTION_STATEMENT	longtext	NO		NULL	
+ACTION_ORDER	bigint(4)	NO			
+ACTION_CONDITION	varchar(65535)	YES			
+ACTION_STATEMENT	varchar(65535)	NO			
 ACTION_ORIENTATION	varchar(9)	NO			
 ACTION_TIMING	varchar(6)	NO			
-ACTION_REFERENCE_OLD_TABLE	varchar(64)	YES		NULL	
-ACTION_REFERENCE_NEW_TABLE	varchar(64)	YES		NULL	
+ACTION_REFERENCE_OLD_TABLE	varchar(64)	YES			
+ACTION_REFERENCE_NEW_TABLE	varchar(64)	YES			
 ACTION_REFERENCE_OLD_ROW	varchar(3)	NO			
 ACTION_REFERENCE_NEW_ROW	varchar(3)	NO			
-CREATED	datetime(2)	YES		NULL	
+CREATED	datetime	YES			
 SQL_MODE	varchar(8192)	NO			
 DEFINER	varchar(93)	NO			
 CHARACTER_SET_CLIENT	varchar(32)	NO			
@@ -85,16 +85,16 @@ EVENT_MANIPULATION	varchar(6)	NO
 EVENT_OBJECT_CATALOG	varchar(512)	NO			
 EVENT_OBJECT_SCHEMA	varchar(64)	NO			
 EVENT_OBJECT_TABLE	varchar(64)	NO			
-ACTION_ORDER	bigint(4)	NO		0	
-ACTION_CONDITION	longtext	YES		NULL	
-ACTION_STATEMENT	longtext	NO		NULL	
+ACTION_ORDER	bigint(4)	NO			
+ACTION_CONDITION	varchar(65535)	YES			
+ACTION_STATEMENT	varchar(65535)	NO			
 ACTION_ORIENTATION	varchar(9)	NO			
 ACTION_TIMING	varchar(6)	NO			
-ACTION_REFERENCE_OLD_TABLE	varchar(64)	YES		NULL	
-ACTION_REFERENCE_NEW_TABLE	varchar(64)	YES		NULL	
+ACTION_REFERENCE_OLD_TABLE	varchar(64)	YES			
+ACTION_REFERENCE_NEW_TABLE	varchar(64)	YES			
 ACTION_REFERENCE_OLD_ROW	varchar(3)	NO			
 ACTION_REFERENCE_NEW_ROW	varchar(3)	NO			
-CREATED	datetime(2)	YES		NULL	
+CREATED	datetime	YES			
 SQL_MODE	varchar(8192)	NO			
 DEFINER	varchar(93)	NO			
 CHARACTER_SET_CLIENT	varchar(32)	NO			
@@ -144,8 +144,8 @@ trg1	INSERT	t1	SET @test_before = 2, new.f1 = @test_before	BEFORE	#	ONLY_FULL_GR
 # Establish connection testuser2 (user=testuser2)
 SHOW GRANTS FOR 'testuser2'@'localhost';
 Grants for testuser2@localhost
-GRANT USAGE ON *.* TO 'testuser2'@'localhost'
-GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, REFERENCES, INDEX, ALTER, CREATE VIEW, SHOW VIEW ON `db_datadict`.`t1` TO 'testuser2'@'localhost'
+GRANT USAGE ON *.* TO `testuser2`@`localhost`
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, REFERENCES, INDEX, ALTER, CREATE VIEW, SHOW VIEW ON `db_datadict`.`t1` TO `testuser2`@`localhost`
 # No TRIGGER Privilege --> no result for query
 SELECT * FROM information_schema.triggers
 WHERE trigger_name = 'trg1';
@@ -155,8 +155,8 @@ Trigger	Event	Table	Statement	Timing	Created	sql_mode	Definer	character_set_clie
 # Establish connection testuser3 (user=testuser3)
 SHOW GRANTS FOR 'testuser3'@'localhost';
 Grants for testuser3@localhost
-GRANT TRIGGER ON *.* TO 'testuser3'@'localhost'
-GRANT SELECT ON `db_datadict`.`t1` TO 'testuser3'@'localhost'
+GRANT TRIGGER ON *.* TO `testuser3`@`localhost`
+GRANT SELECT ON `db_datadict`.`t1` TO `testuser3`@`localhost`
 # TRIGGER Privilege + SELECT Privilege on t1 --> result for query
 SELECT * FROM information_schema.triggers
 WHERE trigger_name = 'trg1';
@@ -168,7 +168,7 @@ trg1	INSERT	t1	SET @test_before = 2, new.f1 = @test_before	BEFORE	#	ONLY_FULL_GR
 # Establish connection testuser4 (user=testuser4)
 SHOW GRANTS FOR 'testuser4'@'localhost';
 Grants for testuser4@localhost
-GRANT TRIGGER ON *.* TO 'testuser4'@'localhost'
+GRANT TRIGGER ON *.* TO `testuser4`@`localhost`
 # TRIGGER Privilege + no SELECT Privilege on t1 --> result for query
 SELECT * FROM db_datadict.t1;
 ERROR 42000: SELECT command denied to user 'testuser4'@'localhost' for table 't1'

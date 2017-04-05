@@ -49,7 +49,7 @@ int what_to_do = 0;
 void (*DBError)(MYSQL *mysql, string when);
 
 static int first_error = 0;
-vector<string> tables4repair, tables4rebuild, alter_table_cmds, failed_tables;
+vector<string> tables4repair, tables4rebuild, alter_table_cmds;
 
 
 static int process_all_databases();
@@ -106,12 +106,16 @@ static int process_selected_tables(string db, vector<string> table_names)
     return 1;
   vector<string>::iterator it;
 
+  /*
+    TODO (a bug): properly handle all-in-1 option:
+    we should create and pass a table list to handle_request_for_tables().
+  */
   for (it= table_names.begin(); it != table_names.end(); it++)
   {
-    if (what_to_do != DO_UPGRADE)
-      *it= escape_table_name(*it);
+    *it= escape_table_name(*it);
     handle_request_for_tables(*it);
   }
+
   return 0;
 } /* process_selected_tables */
 
@@ -156,6 +160,7 @@ static string escape_db_table_name(string src, size_t dot_pos)
   return res;
 }
 
+
 static int process_all_tables_in_db(string database)
 {
   MYSQL_RES *res= NULL;
@@ -180,7 +185,7 @@ static int process_all_tables_in_db(string database)
   while ((row = mysql_fetch_row(res)))
   {
     /* Skip views if we don't perform renaming. */
-    if ((what_to_do != DO_UPGRADE) && (num_columns == 2) && (strcmp(row[1], "VIEW") == 0))
+    if ((num_columns == 2) && (strcmp(row[1], "VIEW") == 0))
       continue;
 
     table_names.push_back(row[0]);
@@ -204,26 +209,6 @@ static int run_query(string query)
 }
 
 
-static int fix_table_storage_name(string name)
-{
-  if (strncmp(name.c_str(), "#mysql50#", 9))
-    return 1;
-  int rc= run_query("RENAME TABLE `" + name + "` TO `" + name.substr(9) + "`");
-  if (verbose)
-    printf("%-50s %s\n", name.c_str(), rc ? "FAILED" : "OK");
-  return rc;
-}
-
-static int fix_database_storage_name(string name)
-{
-  if (strncmp(name.c_str(), "#mysql50#", 9))
-    return 1;
-  int rc= run_query("ALTER DATABASE `" + name + "` UPGRADE DATA DIRECTORY NAME");
-  if (verbose)
-    printf("%-50s %s\n", name.c_str(), rc ? "FAILED" : "OK");
-  return rc;
-}
-
 static int rebuild_table(string name)
 {
   int rc= 0;
@@ -245,17 +230,6 @@ static int process_one_db(string database)
     && database == opt_skip_database)
     return 0;
 
-  if (what_to_do == DO_UPGRADE)
-  {
-    int rc= 0;
-    if (opt_fix_db_names && !strncmp(database.c_str(),"#mysql50#", 9))
-    {
-      rc= fix_database_storage_name(database);
-      database= database.substr(9);
-    }
-    if (rc || !opt_fix_table_names)
-      return rc;
-  }
   return process_all_tables_in_db(database);
 }
 
@@ -309,8 +283,6 @@ static int handle_request_for_tables(string tables)
   case DO_OPTIMIZE:
     operation= (opt_write_binlog) ? "OPTIMIZE" : "OPTIMIZE NO_WRITE_TO_BINLOG";
     break;
-  case DO_UPGRADE:
-    return fix_table_storage_name(tables);
   }
 
   string query= operation + " TABLE " + tables + " " + options;
@@ -341,6 +313,7 @@ static void print_result()
 
   prev[0] = '\0';
   prev_alter[0]= 0;
+
   for (i = 0; (row = mysql_fetch_row(res)); i++)
   {
     int changed = strcmp(prev, row[0]);
@@ -369,9 +342,9 @@ static void print_result()
         }
 
       }
-      found_error=   0;
-      table_rebuild= 0;
-      prev_alter[0]= '\0';
+      found_error=0;
+      table_rebuild=0;
+      prev_alter[0]= 0;
       if (opt_silent)
         continue;
     }
@@ -379,41 +352,39 @@ static void print_result()
       printf("%-50s %s", row[0], row[3]);
     else if (!status && changed)
     {
-      printf("%s\n%-9s: %s", row[0], row[2], row[3]);
+      if (opt_auto_repair && what_to_do != DO_REPAIR)
+      {
+        printf("%-50s To be repaired, cause follows:\nServer issued %-9s: %s", row[0], row[2], row[3]);
+      }
+      else
+      {
+        printf("%s\n%-9s: %s", row[0], row[2], row[3]);
+      }
       if (opt_auto_repair && strcmp(row[2],"note"))
       {
         const char *alter_txt= strstr(row[3], "ALTER TABLE");
-        found_error= 1;
+        found_error=1;
         if (alter_txt)
         {
-          table_rebuild= 1;
-          const char *match_str;
+          table_rebuild=1;
           if (!strncmp(row[3], KEY_PARTITIONING_CHANGED_STR,
-                       strlen(KEY_PARTITIONING_CHANGED_STR)))
+                       strlen(KEY_PARTITIONING_CHANGED_STR)) &&
+              strstr(alter_txt, "PARTITION BY"))
           {
-            if (strstr(alter_txt, "PARTITION BY") &&
-                strlen(alter_txt) < MAX_ALTER_STR_SIZE)
+            if (strlen(alter_txt) >= MAX_ALTER_STR_SIZE)
+            {
+              printf("Error: Alter command too long (>= %d),"
+                     " please do \"%s\" or dump/reload to fix it!\n",
+                     MAX_ALTER_STR_SIZE,
+                     alter_txt);
+              table_rebuild= 0;
+              prev_alter[0]= 0;
+            }
+            else
             {
               strncpy(prev_alter, alter_txt, MAX_ALTER_STR_SIZE-1);
               prev_alter[MAX_ALTER_STR_SIZE-1]= 0;
             }
-            else
-            {
-               printf("\nError: Alter command unknown or too long (%d >= %d), "
-                      "please investigate the above or dump/reload to fix it!"
-                      "\n",
-                      (int)strlen(alter_txt),
-                      MAX_ALTER_STR_SIZE);
-              found_error=   0;
-              table_rebuild= 0;
-              prev_alter[0]= '\0';
-              failed_tables.push_back(row[0]);
-            }
-          }
-          else if ((match_str= strstr(alter_txt, "` UPGRADE PARTITIONING")) &&
-                   strlen(match_str) == 22)
-          {
-            strcpy(prev_alter, alter_txt);
           }
         }
       }
@@ -451,8 +422,9 @@ void Mysql::Tools::Check::mysql_check(MYSQL* connection, int what_to_do,
                 my_bool opt_frm, my_bool opt_fix_table_names,
                 my_bool opt_fix_db_names, my_bool opt_upgrade,
                 my_bool opt_write_binlog, uint verbose,
-                string opt_skip_database, vector<string> arguments,
-                void (*dberror)(MYSQL *mysql, string when))
+                std::string opt_skip_database,
+                std::vector<std::string> arguments,
+                void (*dberror)(MYSQL *mysql, std::string when))
 {
   ::sock= connection;
   ::what_to_do= what_to_do;
@@ -498,15 +470,8 @@ void Mysql::Tools::Check::mysql_check(MYSQL* connection, int what_to_do,
     process_databases(arguments);
   if (::opt_auto_repair)
   {
-    if (!::opt_silent)
-    {
-      if (!(tables4repair.empty() && tables4rebuild.empty()))
-        puts("\nRepairing tables");
-
-      if (!(alter_table_cmds.empty()))
-        puts("\nUpgrading tables");
-    }
-
+    if (!::opt_silent && !(tables4repair.empty() && tables4rebuild.empty()))
+      puts("\nRepairing tables");
     ::what_to_do = DO_REPAIR;
 
     vector<string>::iterator it;
@@ -520,23 +485,7 @@ void Mysql::Tools::Check::mysql_check(MYSQL* connection, int what_to_do,
     }
     for (it = alter_table_cmds.begin(); it != alter_table_cmds.end() ; it++)
     {
-      if (0 == run_query(*it))
-        printf("Running  : %s\nstatus   : OK\n", (*it).c_str());
-      else
-      {
-        fprintf(stderr, "Failed to %s\n", (*it).c_str());
-        fprintf(stderr, "Error: %s\n", mysql_error(sock));
-      }
-    }
-    if (!failed_tables.empty())
-    {
-      fprintf(stderr,
-              "These tables cannot be automatically upgraded,"
-              " see the log above:\n");
-    }
-    for (it = failed_tables.begin(); it != failed_tables.end() ; it++)
-    {
-      fprintf(stderr, "%s\n", it->c_str());
+      run_query(*it);
     }
   }
 }
@@ -569,22 +518,6 @@ int Program::check_all_databases(MYSQL* connection)
   this->m_connection= connection;
   this->m_process_all_dbs= true;
   return this->set_what_to_do(DO_CHECK)
-    ->execute(vector<string>());
-}
-
-int Program::upgrade_databases(MYSQL* connection, vector<string> databases)
-{
-  this->m_connection= connection;
-  this->m_process_all_dbs= false;
-  return this->set_what_to_do(DO_UPGRADE)
-    ->execute(databases);
-}
-
-int Program::upgrade_all_databases(MYSQL* connection)
-{
-  this->m_connection= connection;
-  this->m_process_all_dbs= true;
-  return this->set_what_to_do(DO_UPGRADE)
     ->execute(vector<string>());
 }
 

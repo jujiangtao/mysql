@@ -26,11 +26,6 @@ Created 7/1/1994 Heikki Tuuri
 #include "ha_prototypes.h"
 
 #include "rem0cmp.h"
-
-#ifdef UNIV_NONINL
-#include "rem0cmp.ic"
-#endif
-
 #include "handler0alter.h"
 #include "srv0srv.h"
 
@@ -96,7 +91,7 @@ innobase_mysql_cmp(
 
 	if (CHARSET_INFO* cs = get_charset(cs_num, MYF(MY_WME))) {
 		return(cs->coll->strnncollsp(
-			       cs, a, a_length, b, b_length, 0));
+			       cs, a, a_length, b, b_length));
 	}
 
 	ib::fatal() << "Unable to find charset-collation " << cs_num;
@@ -371,7 +366,7 @@ cmp_whole_field(
 	case DATA_CHAR:
 		return(my_charset_latin1.coll->strnncollsp(
 			       &my_charset_latin1,
-			       a, a_length, b, b_length, 0));
+			       a, a_length, b, b_length));
 	case DATA_BLOB:
 		if (prtype & DATA_BINARY_TYPE) {
 			ib::error() << "Comparing a binary BLOB"
@@ -1002,7 +997,7 @@ Compare two physical record fields.
 @retval positive if rec1 field is greater than rec2
 @retval negative if rec1 field is less than rec2
 @retval 0 if rec1 field equals to rec2 */
-static MY_ATTRIBUTE((nonnull, warn_unused_result))
+static MY_ATTRIBUTE((warn_unused_result))
 int
 cmp_rec_rec_simple_field(
 /*=====================*/
@@ -1017,7 +1012,7 @@ cmp_rec_rec_simple_field(
 	const byte*	rec2_b_ptr;
 	ulint		rec1_f_len;
 	ulint		rec2_f_len;
-	const dict_col_t*	col	= dict_index_get_nth_col(index, n);
+	const dict_col_t*	col	= index->get_col(n);
 
 	ut_ad(!rec_offs_nth_extern(offsets1, n));
 	ut_ad(!rec_offs_nth_extern(offsets2, n));
@@ -1069,8 +1064,7 @@ cmp_rec_rec_simple(
 		      == rec_offs_nth_sql_null(offsets2, n));
 
 		if (rec_offs_nth_sql_null(offsets1, n)) {
-			ut_ad(!(dict_index_get_nth_col(index, n)->prtype
-				& DATA_NOT_NULL));
+			ut_ad(!(index->get_col(n)->prtype & DATA_NOT_NULL));
 			null_eq = true;
 		}
 	}
@@ -1190,7 +1184,7 @@ cmp_rec_rec_with_match(
 		} else {
 			const dict_col_t*	col;
 
-			col	= dict_index_get_nth_col(index, cur_field);
+			col	= index->get_col(cur_field);
 
 			mtype = col->mtype;
 			prtype = col->prtype;

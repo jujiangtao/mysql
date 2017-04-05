@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -16,8 +16,10 @@
 
 #include "tc_log.h"
 
-#include "log.h"           // sql_print_error
-#include "sql_class.h"     // THD
+#include "log.h"            // sql_print_error
+#include "mysqld.h"         // mysql_data_home
+#include "psi_memory_key.h" // key_memory_TC_LOG_MMAP_pages
+#include "sql_class.h"      // THD
 
 #include "pfs_file_provider.h"
 #include "mysql/psi/mysql_file.h"
@@ -85,7 +87,6 @@ ulong tc_log_page_waits= 0;
 
 static const char tc_log_magic[]={(char) 254, 0x23, 0x05, 0x74};
 
-ulong opt_tc_log_size= TC_LOG_MIN_SIZE;
 ulong tc_log_max_pages_used=0, tc_log_page_size=0, tc_log_cur_pages_used=0;
 
 int TC_LOG_MMAP::open(const char *opt_name)
@@ -98,10 +99,6 @@ int TC_LOG_MMAP::open(const char *opt_name)
   DBUG_ASSERT(opt_name && opt_name[0]);
 
   tc_log_page_size= my_getpagesize();
-  if (TC_LOG_PAGE_SIZE > tc_log_page_size)
-  {
-    DBUG_ASSERT(TC_LOG_PAGE_SIZE % tc_log_page_size == 0);
-  }
 
   fn_format(logname,opt_name,mysql_data_home,"",MY_UNPACK_FILENAME);
   if ((fd= mysql_file_open(key_file_tclog, logname, O_RDWR, MYF(0))) < 0)
@@ -337,13 +334,12 @@ int TC_LOG_MMAP::prepare(THD *thd, bool all)
    If tc_log = TC_LOG_MMAP then xid is written in a special memory-mapped
    log.
 
-  @retval
-    0  - error
-  @retval
-    \# - otherwise, "cookie", a number that will be passed as an argument
+  @returns "cookie", a number that will be passed as an argument
     to unlog() call. tc_log can define it any way it wants,
     and use for whatever purposes. TC_LOG_MMAP sets it
     to the position in memory where xid was logged to.
+  @retval
+    0  error
 */
 
 ulong TC_LOG_MMAP::log_xid(my_xid xid)
@@ -515,8 +511,8 @@ int TC_LOG_MMAP::recover()
     goto err1;
   }
 
-  if (my_hash_init(&xids, &my_charset_bin, tc_log_page_size/3, 0,
-                   sizeof(my_xid), 0, 0, MYF(0),
+  if (my_hash_init(&xids, &my_charset_bin, tc_log_page_size/3,
+                   sizeof(my_xid), nullptr, nullptr, 0,
                    PSI_INSTRUMENT_ME))
     goto err1;
 

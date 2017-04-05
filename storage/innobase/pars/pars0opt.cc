@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1997, 2014, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1997, 2016, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -24,11 +24,6 @@ Created 12/21/1997 Heikki Tuuri
 *******************************************************/
 
 #include "pars0opt.h"
-
-#ifdef UNIV_NONINL
-#include "pars0opt.ic"
-#endif
-
 #include "row0sel.h"
 #include "row0ins.h"
 #include "row0upd.h"
@@ -361,7 +356,7 @@ opt_calc_index_goodness(
 
 	for (j = 0; j < n_fields; j++) {
 
-		col_no = dict_index_get_nth_col_no(index, j);
+		col_no = index->get_col_no(j);
 
 		exp = opt_look_for_col_in_cond_before(
 			OPT_EQUAL, col_no,
@@ -395,14 +390,14 @@ opt_calc_index_goodness(
 	if (goodness >= 4 * dict_index_get_n_unique(index)) {
 		goodness += 1024;
 
-		if (dict_index_is_clust(index)) {
+		if (index->is_clustered()) {
 
 			goodness += 1024;
 		}
 	}
 
 	/* We have to test for goodness here, as last_op may not be set */
-	if (goodness && dict_index_is_clust(index)) {
+	if (goodness && index->is_clustered()) {
 
 		goodness++;
 	}
@@ -535,8 +530,7 @@ opt_check_order_by(
 
 			ut_a((dict_index_get_n_unique(plan->index)
 			      <= plan->n_exact_match)
-			     || (dict_index_get_nth_col_no(plan->index,
-							   plan->n_exact_match)
+			     || (plan->index->get_col_no(plan->n_exact_match)
 				 == order_col_no));
 		}
 	}
@@ -575,7 +569,7 @@ opt_search_plan_for_table(
 
 	/* Calculate goodness for each index of the table */
 
-	index = dict_table_get_first_index(table);
+	index = table->first_index();
 	best_index = index; /* Eliminate compiler warning */
 	best_goodness = 0;
 
@@ -630,7 +624,7 @@ opt_search_plan_for_table(
 						   best_last_op);
 	}
 
-	if (dict_index_is_clust(best_index)
+	if (best_index->is_clustered()
 	    && (plan->n_exact_match >= dict_index_get_n_unique(best_index))) {
 
 		plan->unique_search = TRUE;
@@ -717,8 +711,7 @@ opt_classify_comparison(
 	if ((dict_index_get_n_fields(plan->index) > plan->n_exact_match)
 	    && opt_look_for_col_in_comparison_before(
 		    OPT_COMPARISON,
-		    dict_index_get_nth_col_no(plan->index,
-					      plan->n_exact_match),
+		    plan->index->get_col_no(plan->n_exact_match),
 		    cond, sel_node, i, &op)) {
 
 		if (sel_node->asc && ((op == '<') || (op == PARS_LE_TOKEN))) {
@@ -947,13 +940,13 @@ opt_find_all_cols(
 
 	/* Fill in the field_no fields in sym_node */
 
-	sym_node->field_nos[SYM_CLUST_FIELD_NO] = dict_index_get_nth_col_pos(
-		dict_table_get_first_index(index->table), sym_node->col_no);
-	if (!dict_index_is_clust(index)) {
+	sym_node->field_nos[SYM_CLUST_FIELD_NO] =
+		index->table->first_index()->get_col_pos(sym_node->col_no);
+	if (!index->is_clustered()) {
 
 		ut_a(plan);
 
-		col_pos = dict_index_get_nth_col_pos(index, sym_node->col_no);
+		col_pos = index->get_col_pos(sym_node->col_no);
 
 		if (col_pos == ULINT_UNDEFINED) {
 
@@ -1087,7 +1080,7 @@ opt_clust_access(
 
 	plan->no_prefetch = FALSE;
 
-	if (dict_index_is_clust(index)) {
+	if (index->is_clustered()) {
 		plan->clust_map = NULL;
 		plan->clust_ref = NULL;
 
@@ -1096,7 +1089,7 @@ opt_clust_access(
 
 	table = index->table;
 
-	clust_index = dict_table_get_first_index(table);
+	clust_index = table->first_index();
 
 	n_fields = dict_index_get_n_unique(clust_index);
 
@@ -1118,9 +1111,8 @@ opt_clust_access(
 		tables, and they should not contain column prefix indexes. */
 
 		if (dict_is_sys_table(index->table->id)
-		    && (dict_index_get_nth_field(index, pos)->prefix_len != 0
-		    || dict_index_get_nth_field(clust_index, i)
-		    ->prefix_len != 0)) {
+		    && (index->get_field(pos)->prefix_len != 0
+		    || clust_index->get_field(i)->prefix_len != 0)) {
 			ib::error() << "Error in pars0opt.cc: table "
 				<< index->table->name
 				<< " has prefix_len != 0";
@@ -1131,6 +1123,15 @@ opt_clust_access(
 		ut_ad(pos != ULINT_UNDEFINED);
 	}
 }
+
+#ifdef UNIV_SQL_DEBUG
+/** Print info of a query plan.
+@param[in,out]	sel_node	select node */
+static
+void
+opt_print_query_plan(
+	sel_node_t*	sel_node);
+#endif
 
 /*******************************************************************//**
 Optimizes a select. Decides which indexes to tables to use. The tables
@@ -1210,13 +1211,13 @@ opt_search_plan(
 #endif
 }
 
-#if 1//def UNIV_SQL_DEBUG
-/********************************************************************//**
-Prints info of a query plan. */
+#ifdef UNIV_SQL_DEBUG
+/** Print info of a query plan.
+@param[in,out]	sel_node	select node */
+static
 void
 opt_print_query_plan(
-/*=================*/
-	sel_node_t*	sel_node)	/*!< in: select node */
+	sel_node_t*	sel_node)
 {
 	plan_t*	plan;
 	ulint	n_fields;

@@ -27,14 +27,15 @@
 #   define MYSQL_DYNAMIC_PLUGIN 1
 # endif
 # include <my_thread.h>
+# include <my_atomic.h>
 # include <thr_mutex.h>
 # include <thr_cond.h>
 # include <mutex_lock.h>
 # include "xpl_performance_schema.h"
 #endif
 
+#include <boost/function.hpp>
 #include <deque>
-#include "ngs_common/bind.h"
 
 namespace ngs
 {
@@ -373,8 +374,7 @@ namespace ngs
     class Signal_when_done
     {
     public:
-      typedef ngs::function<void ()> Callback;
-      Signal_when_done(Wait_for_signal &signal_variable, Callback callback)
+      Signal_when_done(Wait_for_signal &signal_variable, boost::function<void ()> callback)
       : m_signal_variable(signal_variable), m_callback(callback)
       {
       }
@@ -388,13 +388,13 @@ namespace ngs
       {
         m_signal_variable.begin_execution_ready();
         m_callback();
-        Callback().swap(m_callback);
+        m_callback.clear();
         m_signal_variable.end_execution_ready();
       }
 
     private:
       Wait_for_signal &m_signal_variable;
-      Callback m_callback;
+      boost::function<void ()> m_callback;
     };
 protected:
     void begin_execution_ready()

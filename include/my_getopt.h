@@ -1,5 +1,5 @@
-	/*
-   Copyright (c) 2002, 2014, Oracle and/or its affiliates. All rights reserved.
+/*
+   Copyright (c) 2002, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -16,6 +16,10 @@
 
 #ifndef _my_getopt_h
 #define _my_getopt_h
+
+/**
+  @file include/my_getopt.h
+*/
 
 #include "my_sys.h"                             /* loglevel */
 
@@ -60,6 +64,36 @@ C_MODE_START
 */
 enum get_opt_arg_type { NO_ARG, OPT_ARG, REQUIRED_ARG };
 
+/**
+  Enumeration of the my_option::arg_source.m_source attribute. This enum values
+  define how system variables are set. For example if a variable is set by
+  global option file /etc/my.cnf then my_option::arg_source.m_source
+  will be set to GLOBAL, or if a variable is set from command line then
+  my_option::arg_source.m_source will hold value as COMMAND_LINE.
+*/
+enum enum_variable_source
+{
+  COMPILED= 1,
+  GLOBAL,
+  SERVER,
+  EXPLICIT,
+  EXTRA,
+  MYSQL_USER,
+  LOGIN,
+  COMMAND_LINE,
+  PERSISTED,
+  DYNAMIC
+};
+
+struct get_opt_arg_source
+{
+  /**
+    config file path OR compiled default values
+  */
+  const char* m_name;
+  enum enum_variable_source m_source;
+};
+
 struct st_typelib;
 
 struct my_option
@@ -95,7 +129,8 @@ struct my_option
   longlong   def_value;                 /**< Default value */
   longlong   min_value;                 /**< Min allowed value (for numbers) */
   ulonglong  max_value;                 /**< Max allowed value (for numbers) */
-  longlong   sub_size;                  /**< Unused                          */
+  struct get_opt_arg_source *arg_source;/**< Represents source/path from where this
+                                             variable is set. */
   long       block_size;                /**< Value should be a mult. of this (for numbers) */
   void       *app_type;                 /**< To be used by an application */
 };
@@ -125,7 +160,6 @@ extern int my_handle_options (int *argc, char ***argv,
                               const char **command_list, my_bool ignore_unknown_option);
 extern void print_cmdline_password_warning();
 extern void my_cleanup_options(const struct my_option *options);
-extern void my_cleanup_options(const struct my_option *options);
 extern void my_print_help(const struct my_option *options);
 extern void my_print_variables(const struct my_option *options);
 extern void my_print_variables_ex(const struct my_option *options, FILE* file);
@@ -137,11 +171,12 @@ longlong getopt_ll_limit_value(longlong, const struct my_option *,
                                my_bool *fix);
 double getopt_double_limit_value(double num, const struct my_option *optp,
                                  my_bool *fix);
-my_bool getopt_compare_strings(const char *s, const char *t, uint length);
 ulonglong max_of_int_range(int var_type);
 
 ulonglong getopt_double2ulonglong(double);
 double getopt_ulonglong2double(ulonglong);
+int findopt(char *, uint, const struct my_option **);
+
 
 C_MODE_END
 

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -466,7 +466,7 @@ int _mi_insert(MI_INFO *info, MI_KEYDEF *keyinfo,
   uchar *endpos, *prev_key;
   MI_KEY_PARAM s_temp;
   DBUG_ENTER("_mi_insert");
-  DBUG_PRINT("enter",("key_pos: 0x%lx", (long) key_pos));
+  DBUG_PRINT("enter",("key_pos: %p", key_pos));
   DBUG_EXECUTE("key",_mi_print_key(DBUG_FILE,keyinfo->seg,key,USE_WHOLE_KEY););
 
   nod_flag=mi_test_if_nod(anc_buff);
@@ -487,8 +487,8 @@ int _mi_insert(MI_INFO *info, MI_KEYDEF *keyinfo,
   {
     DBUG_PRINT("test",("t_length: %d  ref_len: %d",
 		       t_length,s_temp.ref_length));
-    DBUG_PRINT("test",("n_ref_len: %d  n_length: %d  key_pos: 0x%lx",
-		       s_temp.n_ref_length,s_temp.n_length, (long) s_temp.key));
+    DBUG_PRINT("test",("n_ref_len: %d  n_length: %d  key_pos: %p",
+		       s_temp.n_ref_length,s_temp.n_length, s_temp.key));
   }
 #endif
   if (t_length > 0)
@@ -530,15 +530,11 @@ int _mi_insert(MI_INFO *info, MI_KEYDEF *keyinfo,
       uint alen, blen, ft2len=info->s->ft2_keyinfo.keylength;
       /* the very first key on the page is always unpacked */
       DBUG_ASSERT((*b & 128) == 0);
-#if HA_FT_MAXLEN >= 127 /* TODO: Undefined symbol */
-      blen= mi_uint2korr(b); b+=2;
-#else
       blen= *b++;
-#endif
       get_key_length(alen,a);
       DBUG_ASSERT(info->ft1_to_ft2==0);
       if (alen == blen &&
-          ha_compare_text(keyinfo->seg->charset, a, alen, b, blen, 0, 0)==0)
+          ha_compare_text(keyinfo->seg->charset, a, alen, b, blen, 0)==0)
       {
         /* yup. converting */
         info->ft1_to_ft2=(DYNAMIC_ARRAY *)
@@ -691,8 +687,8 @@ uchar *_mi_find_half_pos(uint nod_flag, MI_KEYDEF *keyinfo, uchar *page,
   } while (page < end);
   *return_key_length=length;
   *after_key=page;
-  DBUG_PRINT("exit",("returns: 0x%lx  page: 0x%lx  half: 0x%lx",
-                     (long) lastpos, (long) page, (long) end));
+  DBUG_PRINT("exit",("returns: %p  page: %p  half: %p",
+                     lastpos, page, end));
   DBUG_RETURN(lastpos);
 } /* _mi_find_half_pos */
 
@@ -745,8 +741,8 @@ static uchar *_mi_find_last_pos(MI_KEYDEF *keyinfo, uchar *page,
   }
   *return_key_length=last_length;
   *after_key=lastpos;
-  DBUG_PRINT("exit",("returns: 0x%lx  page: 0x%lx  end: 0x%lx",
-                     (long) prevpos,(long) page,(long) end));
+  DBUG_PRINT("exit",("returns: %p  page: %p  end: %p",
+                     prevpos, page, end));
   DBUG_RETURN(prevpos);
 } /* _mi_find_last_pos */
 
@@ -915,11 +911,14 @@ int _mi_ck_write_tree(MI_INFO *info, uint keynr, uchar *key,
 } /* _mi_ck_write_tree */
 
 
-/* typeof(_mi_keys_compare)=qsort_cmp2 */
+/* typeof(_mi_keys_compare)=qsort2_cmp */
 
-static int keys_compare(bulk_insert_param *param, uchar *key1, uchar *key2)
+static int keys_compare(const void *a, const void *b, const void *c)
 {
   uint not_used[2];
+  bulk_insert_param *param= (bulk_insert_param*)a;
+  uchar *key1= (uchar*)b;
+  uchar *key2= (uchar*)c;
   return ha_key_cmp(param->info->s->keyinfo[param->keynr].seg,
                     key1, key2, USE_WHOLE_KEY, SEARCH_SAME,
                     not_used);
@@ -1012,7 +1011,7 @@ int mi_init_bulk_insert(MI_INFO *info, ulong cache_size, ha_rows rows)
       init_tree(&info->bulk_insert[i],
                 cache_size * key[i].maxlength,
                 cache_size * key[i].maxlength, 0,
-		(qsort_cmp2)keys_compare, 0,
+		keys_compare, 0,
 		(tree_element_free) keys_free, (void *)params++);
     }
     else

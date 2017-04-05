@@ -65,7 +65,7 @@ int mysql_del_sys_var_chain(sys_var *chain);
 
 enum enum_var_type
 {
-  OPT_DEFAULT= 0, OPT_SESSION, OPT_GLOBAL
+  OPT_DEFAULT= 0, OPT_SESSION, OPT_GLOBAL, OPT_PERSIST
 };
 
 /**
@@ -114,6 +114,7 @@ protected:
   on_update_function on_update;
   const char *const deprecation_substitute;
   bool is_os_charset; ///< true if the value is in character_set_filesystem
+  struct get_opt_arg_source source;
 
 public:
   sys_var(sys_var_chain *chain, const char *name_arg, const char *comment,
@@ -140,6 +141,15 @@ public:
   uchar *value_ptr(THD *thd, enum_var_type type, LEX_STRING *base);
   virtual void update_default(longlong new_def_value)
   { option.def_value= new_def_value; }
+  longlong get_default() { return option.def_value; }
+  virtual bool is_default(THD *thd, set_var *var);
+  virtual longlong get_min_value() { return option.min_value; }
+  virtual ulonglong get_max_value() { return option.max_value; }
+  virtual void set_arg_source(get_opt_arg_source *src) {}
+  enum_variable_source get_source() { return source.m_source; }
+  const char* get_source_name() { return source.m_name; }
+  void set_source(enum_variable_source src) { option.arg_source->m_source= src; }
+  void set_source_name(const char* path) { option.arg_source->m_name= path; }
 
   /**
      Update the system variable with the default value from either
@@ -173,6 +183,7 @@ public:
   {
     switch (query_type)
     {
+      case OPT_PERSIST:
       case OPT_GLOBAL:  return scope() & (GLOBAL | SESSION);
       case OPT_SESSION: return scope() & (SESSION | ONLY_SESSION);
       case OPT_DEFAULT: return scope() & (SESSION | ONLY_SESSION);
@@ -232,12 +243,21 @@ class set_var_base :public Sql_alloc
 public:
   set_var_base() {}
   virtual ~set_var_base() {}
-  virtual int check(THD *thd)=0;           /* To check privileges etc. */
-  virtual int update(THD *thd)=0;                  /* To set the value */
-  virtual int light_check(THD *thd) { return check(thd); }   /* for PS */
-  virtual void print(THD *thd, String *str)=0;	/* To self-print */
-  /// @returns whether this variable is @@@@optimizer_trace.
+  virtual int resolve(THD *thd)=0;         ///< Check privileges & fix_fields
+  virtual int check(THD *thd)=0;           ///< Evaluate the expression
+  virtual int update(THD *thd)=0;          ///< Set the value
+  virtual void print(THD *thd, String *str)=0;	///< To self-print
+
+  /**
+    @returns whether this variable is @@@@optimizer_trace.
+  */
   virtual bool is_var_optimizer_trace() const { return false; }
+
+  /**
+    Used only by prepared statements to resolve and check. No locking of tables
+    between the two phases.
+  */
+  virtual int light_check(THD *thd) { return (resolve(thd) || check(thd)); }
 };
 
 
@@ -264,8 +284,10 @@ public:
   set_var(enum_var_type type_arg, sys_var *var_arg,
           const LEX_STRING *base_name_arg, Item *value_arg);
 
+  int resolve(THD *thd);
   int check(THD *thd);
   int update(THD *thd);
+  void update_source();
   int light_check(THD *thd);
   void print(THD *thd, String *str);	/* To self-print */
 #ifdef OPTIMIZER_TRACE
@@ -286,6 +308,7 @@ public:
   set_var_user(Item_func_set_user_var *item)
     :user_var_item(item)
   {}
+  int resolve(THD *thd);
   int check(THD *thd);
   int update(THD *thd);
   int light_check(THD *thd);
@@ -302,6 +325,7 @@ public:
   set_var_password(st_lex_user *user_arg,char *password_arg)
     :user(user_arg), password(password_arg)
   {}
+  int resolve(THD*) { return 0; }
   int check(THD *thd);
   int update(THD *thd);
   void print(THD *thd, String *str);	/* To self-print */
@@ -327,6 +351,7 @@ public:
      character_set_results(result_coll_arg),
      collation_connection(connection_coll_arg)
   {}
+  int resolve(THD*) { return 0; }
   int check(THD *thd);
   int update(THD *thd);
   void print(THD *thd, String *str);	/* To self-print */
@@ -334,7 +359,6 @@ public:
 
 
 /* optional things, have_* variables */
-extern SHOW_COMP_OPTION have_ndbcluster, have_partitioning;
 extern SHOW_COMP_OPTION have_profiling;
 
 extern SHOW_COMP_OPTION have_ssl, have_symlink, have_dlopen;
@@ -357,7 +381,7 @@ void unlock_plugin_mutex();
 sys_var *find_sys_var(THD *thd, const char *str, size_t length=0);
 sys_var *find_sys_var_ex(THD *thd, const char *str, size_t length=0,
                          bool throw_error= false, bool locked= false);
-int sql_set_variables(THD *thd, List<set_var_base> *var_list);
+int sql_set_variables(THD *thd, List<set_var_base> *var_list, bool opened);
 
 bool fix_delay_key_write(sys_var *self, THD *thd, enum_var_type type);
 

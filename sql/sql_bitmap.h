@@ -1,4 +1,4 @@
-/* Copyright (c) 2003, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2003, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -22,8 +22,11 @@
 #ifndef SQL_BITMAP_INCLUDED
 #define SQL_BITMAP_INCLUDED
 
-#include <my_sys.h>
-#include <my_bitmap.h>
+#include "my_global.h"
+#include "m_string.h"         // longlong2str
+#include "my_bitmap.h"        // MY_BITMAP
+#include "my_byteorder.h"     // int8store
+
 
 template <uint default_width> class Bitmap
 {
@@ -194,4 +197,14 @@ public:
   }
   enum { BITMAP_END= 64 };
 };
+
+
+#if MAX_INDEXES <= 64
+typedef Bitmap<64>  Key_map;          /* Used for finding keys */
+#elif MAX_INDEXES > 255
+#error "MAX_INDEXES values greater than 255 is not supported."
+#else
+typedef Bitmap<((MAX_INDEXES+7)/8*8)> Key_map; /* Used for finding keys */
+#endif
+
 #endif /* SQL_BITMAP_INCLUDED */

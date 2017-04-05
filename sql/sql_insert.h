@@ -1,4 +1,4 @@
-/* Copyright (c) 2006, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2006, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -16,16 +16,17 @@
 #ifndef SQL_INSERT_INCLUDED
 #define SQL_INSERT_INCLUDED
 
-#include "sql_class.h"            // Query_result_interceptor
+#include "query_result.h"         // Query_result_interceptor
 #include "sql_cmd_dml.h"          // Sql_cmd_dml
 #include "sql_data_change.h"      // enum_duplicates
 
 struct TABLE_LIST;
 typedef List<Item> List_item;
+typedef struct st_mysql_lock MYSQL_LOCK;
 
 int check_that_all_fields_are_given_values(THD *thd, TABLE *entry,
                                            TABLE_LIST *table_list);
-void prepare_triggers_for_insert_stmt(TABLE *table);
+void prepare_triggers_for_insert_stmt(THD *thd, TABLE *table);
 int write_record(THD *thd, TABLE *table,
                  COPY_INFO *info, COPY_INFO *update);
 bool validate_default_values_of_unset_fields(THD *thd, TABLE *table);
@@ -56,6 +57,7 @@ public:
      Creates a Query_result_insert for routing a result set to an existing
      table.
 
+     @param thd              Thread handle
      @param table_list_par   The table reference for the destination table.
      @param table_par        The destination table. May be NULL.
      @param target_columns   See details.
@@ -64,7 +66,7 @@ public:
                              keys. May be NULL.
      @param update_values    The values to be assigned in case of duplicate
                              keys. May be NULL.
-     @param duplicate        The policy for handling duplicates.
+     @param duplic           The policy for handling duplicates.
 
      @todo This constructor takes 8 arguments, 6 of which are used to
      immediately construct a COPY_INFO object. Obviously the constructor
@@ -94,18 +96,20 @@ public:
      @li Otherwise it is:
 @verbatim
      INSERT INTO a_table [(columns1)] SELECT ...
-@verbatim
+@endverbatim
      target_columns is columns1, if not empty then 'info' must manage defaults
      of other columns than columns1.
   */
-  Query_result_insert(TABLE_LIST *table_list_par,
+  Query_result_insert(THD *thd,
+                      TABLE_LIST *table_list_par,
                       TABLE *table_par,
                       List<Item> *target_columns,
                       List<Item> *target_or_source_columns,
                       List<Item> *update_fields,
                       List<Item> *update_values,
                       enum_duplicates duplic)
-    :table_list(table_list_par),
+    :Query_result_interceptor(thd),
+     table_list(table_list_par),
      table(table_par),
      fields(target_or_source_columns),
      bulk_insert_started(false),
@@ -157,27 +161,15 @@ class Query_result_create: public Query_result_insert {
   /* m_lock or thd->extra_lock */
   MYSQL_LOCK **m_plock;
 public:
-  Query_result_create(TABLE_LIST *table_arg,
+  Query_result_create(THD *thd,
+                      TABLE_LIST *table_arg,
                       HA_CREATE_INFO *create_info_par,
                       Alter_info *alter_info_arg,
                       List<Item> &select_fields,
                       enum_duplicates duplic,
-                      TABLE_LIST *select_tables_arg)
-    :Query_result_insert (NULL, // table_list_par
-                          NULL, // table_par
-                          NULL, // target_columns
-                          &select_fields,
-                          NULL, // update_fields
-                          NULL, // update_values
-                          duplic),
-     create_table(table_arg),
-     create_info(create_info_par),
-     select_tables(select_tables_arg),
-     alter_info(alter_info_arg),
-     m_plock(NULL)
-  {}
-  int prepare(List<Item> &list, SELECT_LEX_UNIT *u);
+                      TABLE_LIST *select_tables_arg);
 
+  int prepare(List<Item> &list, SELECT_LEX_UNIT *u);
   int binlog_show_create_table(TABLE **tables, uint count);
   void store_values(List<Item> &values);
   void send_error(uint errcode,const char *err);
@@ -186,7 +178,6 @@ public:
 
   // Needed for access from local class MY_HOOKS in prepare(), since thd is proteted.
   const THD *get_thd(void) { return thd; }
-  const HA_CREATE_INFO *get_create_info() { return create_info; };
   int prepare2(void);
 };
 

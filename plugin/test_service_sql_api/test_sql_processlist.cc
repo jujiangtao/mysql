@@ -265,7 +265,7 @@ static int sql_get_null(void *ctx)
   pctx->sql_str_len[row][col]=  sizeof("[NULL]")-1;
 
   DBUG_RETURN(false);
-};
+}
 
 
 static int sql_get_integer(void * ctx, longlong value)
@@ -334,7 +334,7 @@ static int sql_get_decimal(void * ctx, const decimal_t * value)
   memcpy((void*)pctx->sql_decimal_value[row][col].buf, (void*)value->buf,(int)value->len);
 
   DBUG_RETURN(false);
-};
+}
 
 
 static int sql_get_double(void * ctx, double value, uint32 decimals)

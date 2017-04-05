@@ -42,9 +42,9 @@ ha_federated       storage/federated  FEDERATED_PLUGIN
 ha_partition       storage/partition  PARTITION_PLUGIN  partition
 mypluglib          plugin/fulltext    SIMPLE_PARSER
 libpluginmecab     plugin/fulltext    MECAB
-keyring_file       plugin/keyring     KEYRING_PLUGIN keyring_file
-keyring_udf        plugin/keyring_udf KEYRING_UDF keyring_udf
 adt_null           plugin/audit_null  AUDIT_NULL
+keyring_udf        plugin/keyring_udf KEYRING_UDF keyring_udf
+keyring_file       plugin/keyring     KEYRING_PLUGIN        keyring_file
 test_security_context  plugin/audit_null  TEST_SECURITY_CONTEXT  test_security_context
 libdaemon_example  plugin/daemon_example DAEMONEXAMPLE
 replication_observers_example_plugin    plugin/replication_observers_example RPL_OBS_EXAMPLE
@@ -82,4 +82,7 @@ libtest_sql_lock                        plugin/test_service_sql_api TEST_SQL_LOC
 libtest_sql_sqlmode                     plugin/test_service_sql_api TEST_SQL_SQLMODE
 libtest_sql_replication                 plugin/test_service_sql_api TEST_SQL_REPLICATION
 libtest_sql_errors                      plugin/test_service_sql_api TEST_SQL_ERRORS
-connection_control  plugin/connection_control   CONNECTION_CONTROL_PLUGIN    connection_control
+# Test component
+component_example_component1    components/example  EXAMPLE_COMPONENT_1
+component_example_component2    components/example  EXAMPLE_COMPONENT_2
+component_example_component3    components/example  EXAMPLE_COMPONENT_3

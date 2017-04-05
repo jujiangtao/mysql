@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2011, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -13,8 +13,15 @@
    along with this program; if not, write to the Free Software Foundation,
    51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
 
-#include "opt_trace.h"
 #include "opt_explain_json.h"
+
+#include "current_thd.h"            // current_thd
+#include "opt_trace.h"              // Opt_trace_object
+#include "opt_trace_context.h"      // Opt_trace_context
+#include "query_result.h"           // Query_result
+#include "protocol.h"               // Protocol
+#include "sql_class.h"              // THD
+
 
 /**
   Property names, former parts of traditional "extra" column
@@ -267,8 +274,6 @@ public:
 
   /**
     Set nested ORDER BY/GROUP BY/DISTINCT node to @c ctx
-
-    @param json                 Formatter
 
     @retval false               Ok
     @retval true                Error
@@ -540,7 +545,7 @@ public:
 class table_base_ctx : virtual public context, virtual public qep_row
 {
 protected:
-  bool is_hidden_id; //< if true, don't output K_SELECT_ID property
+  bool is_hidden_id; ///< if true, don't output K_SELECT_ID property
 
 public:
   table_base_ctx(enum_parsing_context type_arg,
@@ -956,11 +961,14 @@ public:
 class simple_sort_ctx : public joinable_ctx
 {
 protected:
-  joinable_ctx *join_tab; //< single JOIN_TAB that we sort
+  /** Single JOIN_TAB that we sort. */
+  joinable_ctx *join_tab;
 
 private:
-  const bool using_tmptable; //< true if the clause creates intermediate table
-  const bool using_filesort; //< true if the clause uses filesort
+  /** True if the clause creates intermediate table. */
+  const bool using_tmptable;
+  /** True if the clause uses filesort. */
+  const bool using_filesort;
 
 public:
   simple_sort_ctx(enum_parsing_context type_arg, const char *name_arg,
@@ -1015,7 +1023,8 @@ protected:
 
 class simple_sort_with_subqueries_ctx : public simple_sort_ctx
 {
-  const subquery_list_enum subquery_type; //< type of this clause subqueries
+  /** Type of this clause subqueries. */
+  const subquery_list_enum subquery_type;
   List<subquery_ctx> subqueries;
 
 public:
@@ -1139,8 +1148,10 @@ TODO
 
 class sort_ctx : public join_ctx
 {
-  const bool using_tmptable; //< the clause creates temporary table
-  const bool using_filesort; //< the clause uses filesort
+  /** The clause creates temporary table. */
+  const bool using_tmptable;
+  /** The clause uses filesort. */
+  const bool using_filesort;
 
 public:
   sort_ctx(enum_parsing_context type_arg, const char *name_arg,
@@ -1171,7 +1182,8 @@ protected:
 
 class sort_with_subqueries_ctx : public sort_ctx
 {
-  const subquery_list_enum subquery_type; //< subquery type for this clause
+  /** Subquery type for this clause. */
+  const subquery_list_enum subquery_type;
   List<subquery_ctx> subqueries;
 
 public:

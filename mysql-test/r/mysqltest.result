@@ -234,7 +234,7 @@ mysqltest: At line 2: Spurious text after `query` expression
 mysqltest: At line 1: Missing argument(s) to 'error'
 mysqltest: At line 1: Missing argument(s) to 'error'
 mysqltest: At line 1: The sqlstate definition must start with an uppercase S
-mysqltest: At line 1: The error name definition must start with an uppercase E
+mysqltest: At line 1: The error name definition must start with an uppercase E or C
 mysqltest: At line 1: Invalid argument to error: '9eeeee' - the errno may only consist of digits[0-9]
 mysqltest: At line 1: Invalid argument to error: '1sssss' - the errno may only consist of digits[0-9]
 mysqltest: At line 1: The sqlstate must be exactly 5 chars long
@@ -1006,3 +1006,269 @@ R
 select "a" as R;
 R
 R
+#
+# Bug#22224687 : MTR TEST UTILITY SCRIPT 'INCLUDE/SEARCH_PATTERN.INC' SHOULD BE EXTENDED
+#
+# SEARCH_PATTERN = 'jan feb', SEARCH_ECHO = NONE
+Pattern "jan feb" found
+# SEARCH_PATTERN = 'jan feb', SEARCH_ECHO = FIRST
+1: jan feb mar
+Pattern "jan feb" found
+# SEARCH_PATTERN = 'jan feb', SEARCH_ECHO = ALL
+1: jan feb mar
+5: jan feb mar
+9: jan feb mar
+13: jan feb mar
+17: jan feb oct
+Pattern "jan feb" found
+# SEARCH_PATTERN = 'apr may', SEARCH_ECHO = FIRST, IGNORE_PATTERN = 'jun'
+Pattern "apr may" not found
+# SEARCH_PATTERN = 'apr may', SEARCH_ECHO = ALL, IGNORE_PATTERN = 'jun'
+Pattern "apr may" not found
+# SEARCH_PATTERN = 'jan feb', SEARCH_ECHO = ALL, IGNORE_PATTERN = 'mar'
+17: jan feb oct
+Pattern "jan feb" found
+# SEARCH_PATTERN = 'jan feb', SEARCH_ECHO = ALL, IGNORE_PATTERN = 'march'
+1: jan feb mar
+5: jan feb mar
+9: jan feb mar
+13: jan feb mar
+17: jan feb oct
+Pattern "jan feb" found
+# SEARCH_PATTERN = 'jan feb', SEARCH_ECHO = FIRST, SEARCH_ECHO_CTX = 1
+1: jan feb mar
+2: apr may jun
+Pattern "jan feb" found
+# SEARCH_PATTERN = 'jan feb', SEARCH_ECHO = FIRST, SEARCH_ECHO_CTX = 2
+1: jan feb mar
+2: apr may jun
+3: jul aug sept
+Pattern "jan feb" found
+# SEARCH_PATTERN = 'jan feb', SEARCH_ECHO = ALL, SEARCH_ECHO_CTX = 3
+1: jan feb mar
+2: apr may jun
+3: jul aug sept
+4: oct nov dec
+---
+2: apr may jun
+3: jul aug sept
+4: oct nov dec
+5: jan feb mar
+6: apr may jun
+7: jul aug sept
+8: oct nov dec
+---
+6: apr may jun
+7: jul aug sept
+8: oct nov dec
+9: jan feb mar
+10: apr may jun
+11: jul aug sept
+12: oct nov dec
+---
+10: apr may jun
+11: jul aug sept
+12: oct nov dec
+13: jan feb mar
+14: apr may jun
+15: jul aug sept
+16: oct nov dec
+---
+14: apr may jun
+15: jul aug sept
+16: oct nov dec
+17: jan feb oct
+---
+Pattern "jan feb" found
+# SEARCH_PATTERN = 'nov dec', SEARCH_ECHO = FIRST, IGNORE_PATTERN = 'oct', SEARCH_ECHO_CTX = 3
+Pattern "nov dec" not found
+# SEARCH_PATTERN = 'nov dec', SEARCH_ECHO = ALL, IGNORE_PATTERN = 'oct', SEARCH_ECHO_CTX = 3
+Pattern "nov dec" not found
+# SEARCH_PATTERN = 'nov dec', SEARCH_ECHO = ALL, IGNORE_PATTERN = 'october', SEARCH_ECHO_CTX = 3
+1: jan feb mar
+2: apr may jun
+3: jul aug sept
+4: oct nov dec
+5: jan feb mar
+6: apr may jun
+7: jul aug sept
+---
+5: jan feb mar
+6: apr may jun
+7: jul aug sept
+8: oct nov dec
+9: jan feb mar
+10: apr may jun
+11: jul aug sept
+---
+9: jan feb mar
+10: apr may jun
+11: jul aug sept
+12: oct nov dec
+13: jan feb mar
+14: apr may jun
+15: jul aug sept
+---
+13: jan feb mar
+14: apr may jun
+15: jul aug sept
+16: oct nov dec
+17: jan feb oct
+---
+Pattern "nov dec" found
+#
+# Bug#17944190 : MYSQLTEST CANNOT PARSE PERL BLOCK INSIDE IF THAT EVALUATES TO FALSE
+#
+True block
+Hello
+#
+# Bug#23035906 : MTR: MYSQLTEST PARSES QUOTES IN SQL COMMENTS LITERALLY LEADING TO EOL JUNK ERROR
+#
+SELECT 100 + /* Shouldn't fail */ 1 AS result;
+result
+101
+SELECT 100 /* Shouldn't fail */ + 1 AS result;
+result
+101
+SELECT 100 +
+/*
+Shouldn't
+fail
+*/
+1 AS result;
+result
+101
+SELECT 100
+/*
+Shouldn't
+fail
+*/
++ 1 AS result;
+result
+101
+SELECT 100 /* shouldn't / fail */ + 1 AS result;
+result
+101
+SELECT 100 /* shouldn't * fail */ + 1 AS result;
+result
+101
+SELECT 100 /* shouldn't /* fail */ + 1 AS result;
+result
+101
+SELECT 100 /* shouldn't /* fail */ + 1 AS res1, 'ABC' AS res2;
+res1	res2
+101	ABC
+SELECT 100 + /* "shouldnt fail */ 1 AS result;
+result
+101
+SELECT 100 + /* "shouldn't fail" */ 1 AS result;
+result
+101
+SELECT 100 + /* `shouldn't fail */ 1 AS result;
+result
+101
+SELECT 100 + /* `shouldn't fail` */ 1 AS result;
+result
+101
+SELECT 100 + /*  + shouldn't fail */ 1 AS result;
+result
+101
+SELECT 100 + /*  ! shouldn't fail */ 1 AS result;
+result
+101
+SELECT 1 /*!,"\'" */;
+1	'
+1	'
+SELECT 100 + /***/ 1 AS result;
+result
+101
+SELECT 100 + /**'*/ 1 AS result;
+result
+101
+SELECT 100 + /*/*/ 1 AS result;
+result
+101
+SELECT 100 + /*/'*/ 1 AS result;
+result
+101
+SELECT 100 + /* should */ fail */ 1 AS result;
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '/ 1 AS result' at line 1
+SELECT 100 + /* shoul'd */ fail */ 1 AS result;
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '/ 1 AS result' at line 1
+CREATE TABLE t1(a INT PRIMARY KEY);
+INSERT INTO t1 values (1),(5),(10) /* doesn't throw error */;
+SELECT * FROM t1 /* shouldn't throw error */;
+a
+1
+5
+10
+DROP TABLE t1;
+SELECT COUNT(*) FROM INFORMATION_SCHEMA.INNODB_TEMP_TABLE_INFO;
+COUNT(*)
+0
+CREATE /*! TEMPORARY */ TABLE t1 /* shouldn't fail */ (a INT);
+SELECT COUNT(*) FROM INFORMATION_SCHEMA.INNODB_TEMP_TABLE_INFO;
+COUNT(*)
+1
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TEMPORARY TABLE `t1` (
+  `a` int(11) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=latin1
+DROP TEMPORARY TABLE t1;
+#
+# Bug#21048973 : SUPPORT "--ERROR CR_..." FOR COMMUNICATION RELATED ERRORS
+#
+SELECT 1 AS res;
+res
+1
+SELECT 1 AS res;
+ERROR HY000: MySQL server has gone away
+#
+# Bug#23743035: ADD A COPY_FILES_WILDCARD COMMAND
+#
+bug20683959loaddata.txt
+bug30435_10k_items.txt
+bug30435_5k.txt
+cat_file.txt
+charset_utf8.txt
+crl-certificate-readme.txt
+loaddata1.dat
+loaddata2.dat
+loaddata3.dat
+loaddata4.dat
+loaddata5.dat
+loaddata6.dat
+loaddata_dq.dat
+loaddata_pair.dat
+loaddata_utf8.dat
+loadxml.dat
+loadxml2.dat
+numbers.txt
+wl5766_data.txt
+words.dat
+words2.dat
+bug20683959loaddata.txt
+bug30435_10k_items.txt
+bug30435_5k.txt
+cat_file.txt
+charset_utf8.txt
+crl-certificate-readme.txt
+loaddata1.dat
+loaddata2.dat
+loaddata3.dat
+loaddata4.dat
+loaddata5.dat
+loaddata6.dat
+loaddata_dq.dat
+loaddata_pair.dat
+loaddata_utf8.dat
+loadxml.dat
+loadxml2.dat
+numbers.txt
+wl5766_data.txt
+words.dat
+words2.dat
+#
+# Bug#24316799: --RMDIR DOES NOT DELETE DIRECTORY RECURSIVELY
+#

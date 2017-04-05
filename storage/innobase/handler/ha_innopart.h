@@ -151,7 +151,7 @@ public:
 	all m_table_parts[]->vc_templ to it.
 	@param[in]      table           MySQL TABLE object
 	@param[in]      ib_table        InnoDB dict_table_t
-	@param[in]      table_name      Table name (db/table_name) */
+	@param[in]      name		Table name (db/table_name) */
 	void
 	set_v_templ(
 		TABLE*		table,
@@ -254,12 +254,15 @@ public:
 	@param[in]	altered_table	TABLE object for new version of table.
 	@param[in,out]	ha_alter_info	Structure describing changes to be done
 	by ALTER TABLE and holding data used during in-place alter.
+	@param[in,out]	new_dd_tab	dd::Table object for the new version of
+	the table. To be adjusted by this call.
 	@retval	true	Failure.
 	@retval	false	Success. */
 	bool
 	prepare_inplace_alter_table(
 		TABLE*			altered_table,
-		Alter_inplace_info*	ha_alter_info);
+		Alter_inplace_info*	ha_alter_info,
+		dd::Table		*new_dd_tab);
 
 	/** Alter the table structure in-place.
 	Alter the table structure in-place with operations
@@ -295,16 +298,6 @@ public:
 		TABLE*			altered_table,
 		Alter_inplace_info*	ha_alter_info,
 		bool			commit);
-
-	/** Notify the storage engine that the table structure (.frm) has
-	been updated.
-
-	ha_partition allows inplace operations that also upgrades the engine
-	if it supports partitioning natively. So if this is the case then
-	we will remove the .par file since it is not used with ha_innopart
-	(we use the internal data dictionary instead). */
-	void
-	notify_table_changed();
 	/** @} */
 
 	// TODO: should we implement init_table_handle_for_HANDLER() ?
@@ -417,7 +410,7 @@ public:
 	int
 	cmp_ref(
 		const uchar*	ref1,
-		const uchar*	ref2);
+		const uchar*	ref2) const;
 
 	int
 	read_range_first(
@@ -766,7 +759,7 @@ private:
 	/** Set the autoinc column max value.
 	This should only be called once from ha_innobase::open().
 	Therefore there's no need for a covering lock.
-	@param[in]	no_lock	If locking should be skipped. Not used!
+	@param[in]	-	If locking should be skipped. Not used!
 	@return 0 on success else error code. */
 	int
 	initialize_auto_increment(
@@ -831,12 +824,12 @@ private:
 	Stores a row in an InnoDB database, to the table specified in this
 	handle.
 	@param[in]	part_id	Partition to write to.
-	@param[in]	row	A row in MySQL format.
+	@param[in]	record	A row in MySQL format.
 	@return error code. */
 	int
 	write_row_in_part(
 		uint	part_id,
-		uchar*	row);
+		uchar*	record);
 
 	/** Update a row in partition.
 	Updates a row given as a parameter to a new value.
@@ -852,12 +845,12 @@ private:
 
 	/** Deletes a row in partition.
 	@param[in]	part_id	Partition to delete from.
-	@param[in]	row	Row to delete in MySQL format.
+	@param[in]	record	Row to delete in MySQL format.
 	@return error number or 0. */
 	int
 	delete_row_in_part(
 		uint		part_id,
-		const uchar*	row);
+		const uchar*	record);
 
 	/** Return first record in index from a partition.
 	@param[in]	part	Partition to read from.
@@ -990,38 +983,38 @@ private:
 
 	/** Initialize random read/scan of a specific partition.
 	@param[in]	part_id		Partition to initialize.
-	@param[in]	table_scan	True for scan else random access.
+	@param[in]	scan		True for scan else random access.
 	@return error number or 0. */
 	int
 	rnd_init_in_part(
 		uint	part_id,
-		bool	table_scan);
+		bool	scan);
 
 	/** Get next row during scan of a specific partition.
 	@param[in]	part_id	Partition to read from.
-	@param[out]	record	Next row.
+	@param[out]	buf	Next row.
 	@return error number or 0. */
 	int
 	rnd_next_in_part(
 		uint	part_id,
-		uchar*	record);
+		uchar*	buf);
 
 	/** End random read/scan of a specific partition.
 	@param[in]	part_id		Partition to end random read/scan.
-	@param[in]	table_scan	True for scan else random access.
+	@param[in]	scan		True for scan else random access.
 	@return error number or 0. */
 	int
 	rnd_end_in_part(
 		uint	part_id,
-		bool	table_scan);
+		bool	scan);
 
 	/** Get a reference to the current cursor position in the last used
 	partition.
-	@param[out]	ref	Reference (PK if exists else row_id).
+	@param[out]	ref_arg	Reference (PK if exists else row_id).
 	@param[in]	record	Record to position. */
 	void
 	position_in_last_part(
-		uchar*		ref,
+		uchar*		ref_arg,
 		const uchar*	record);
 
 	/** Read record by given record (by its PK) from the last used partition.
@@ -1038,17 +1031,23 @@ private:
 	}
 
 	/** Copy a cached MySQL record.
-	@param[out]	to_record	Where to copy the MySQL record.
-	@param[in]	from_record	Which record to copy. */
+	@param[out]	buf		Where to copy the MySQL record.
+	@param[in]	cached_row	Which record to copy. */
 	void
 	copy_cached_row(
-		uchar*		to_record,
-		const uchar*	from_record);
+		uchar*		buf,
+		const uchar*	cached_row);
 	/** @} */
 
 	/* Private handler:: functions specific for native InnoDB partitioning.
 	@see handler.h @{ */
 
+	/** Open an InnoDB table.
+	@param[in]	name		table name
+	@param[in]	mode		access mode
+	@param[in]	test_if_locked	test if the file to be opened is locked
+	@retval 1 if error
+	@retval 0 if success */
 	int
 	open(
 		const char*	name,
@@ -1166,6 +1165,11 @@ private:
 		ulonglong* const	copied,
 		ulonglong* const	deleted)
 	{
+		/* TODO: Refactor fast_alter_partition_table or verify that
+		this is correct design! */
+		if (!trx_is_registered_for_2pc(m_prebuilt->trx)) {
+			innobase_register_trx(ht, ha_thd(), m_prebuilt->trx);
+		}
 		return(Partition_helper::change_partitions(
 						create_info,
 						path,
@@ -1210,12 +1214,15 @@ private:
 
 	/** Fill in data_dir_path and tablespace name from internal data
 	dictionary.
-	@param	part_elem	Partition element to fill.
-	@param	ib_table	InnoDB table to copy from. */
+	@param[in,out]	part_elem		Partition element to fill.
+	@param[in]	ib_table		InnoDB table to copy from.
+	@param[in]	display_tablespace	Display tablespace name if
+						set. */
 	void
 	update_part_elem(
 		partition_element*	part_elem,
-		dict_table_t*		ib_table);
+		dict_table_t*		ib_table,
+		bool			display_tablespace);
 protected:
 	/* Protected handler:: functions specific for native InnoDB partitioning.
 	@see handler.h @{ */
@@ -1320,7 +1327,7 @@ protected:
 	Returns statistics information of the table to the MySQL interpreter,
 	in various fields of the handle object.
 	@param[in]	flag		Flags for what to update and return.
-	@param[in]	is_analyze	True if called from ::analyze().
+	@param[in]	is_analyze	True if called from "::analyze()".
 	@return	HA_ERR_* error code or 0. */
 	int
 	info_low(

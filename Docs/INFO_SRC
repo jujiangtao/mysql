@@ -1,7 +1,7 @@
-commit: a9df0fd70786abc86ad6a49e8450972efff1960a
-date: 2016-11-28 17:06:21 +0530
-build-date: 2016-11-28 14:33:27 +0100
-short: a9df0fd
-branch: mysql-5.7.17-release
+commit: f6b5010bafd3f8d25091258e606353bdded22ff4
+date: 2016-08-25 14:05:26 +0200
+build-date: 2016-08-25 14:32:40 +0200
+short: f6b5010
+branch: mysql-8.0.0-dmr-release
 
-MySQL source 5.7.17
+MySQL source 8.0.0

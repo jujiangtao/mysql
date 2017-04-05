@@ -18,9 +18,10 @@
 
 #include "sql_class.h"
 #include "my_global.h"
+#include "my_atomic.h"                 // my_atomic_load32
 #include "m_string.h"                  // llstr
+#include "mysql_com.h"                 // Item_result
 #include "binlog_event.h"              // enum_binlog_checksum_alg
-#include "mysqld.h"                    // opt_relay_logname
 #include "tc_log.h"                    // TC_LOG
 #include "atomic_class.h"
 #include "rpl_gtid.h"                  // Gtid_set, Sid_map
@@ -35,9 +36,20 @@ class Rows_query_log_event;
 class Incident_log_event;
 class Log_event;
 class Gtid_set;
+class user_var_entry;
 struct Gtid;
 
 typedef int64 query_id_t;
+
+struct Binlog_user_var_event
+{
+  user_var_entry *user_var_event;
+  char *value;
+  ulong length;
+  Item_result type;
+  uint charset_number;
+  bool unsigned_flag;
+};
 
 /**
   Logical timestamp generator for logical timestamping binlog transactions.
@@ -108,11 +120,7 @@ public:
       return m_first == NULL;
     }
 
-    /**
-      Append a linked list of threads to the queue.
-      @retval true The queue was empty before this operation.
-      @retval false The queue was non-empty before this operation.
-    */
+    /** Append a linked list of threads to the queue */
     bool append(THD *first);
 
     /**
@@ -152,7 +160,12 @@ public:
 
     /** Lock for protecting the queue. */
     mysql_mutex_t m_lock;
-  } MY_ATTRIBUTE((aligned(CPU_LEVEL1_DCACHE_LINESIZE)));
+
+    /*
+      This attribute did not have the desired effect, at least not according
+      to -fsanitize=undefined with gcc 5.2.1
+     */
+  }; // MY_ATTRIBUTE((aligned(CPU_LEVEL1_DCACHE_LINESIZE)));
 
 public:
   Stage_manager()
@@ -278,7 +291,7 @@ public:
                     session is waiting on
     @param stage    which stage queue size to compare count against.
    */
-  void wait_count_or_timeout(ulong count, ulong usec, StageID stage);
+  time_t wait_count_or_timeout(ulong count, time_t usec, StageID stage);
 
   void signal_done(THD *queue);
 
@@ -359,7 +372,7 @@ class MYSQL_BIN_LOG: public TC_LOG
   bool write_error, inited;
   IO_CACHE log_file;
   const enum cache_type io_cache_type;
-#ifdef HAVE_PSI_INTERFACE
+
   /** Instrumentation key to use for file io in @c log_file */
   PSI_file_key m_log_file_key;
   /** The instrumentation key to use for @ LOCK_log. */
@@ -393,7 +406,7 @@ class MYSQL_BIN_LOG: public TC_LOG
   PSI_file_key m_key_file_log_cache;
   /** The instrumentation key to use for opening a log index cache file. */
   PSI_file_key m_key_file_log_index_cache;
-#endif
+
   /* POSIX thread objects are inited by init_pthread_objects() */
   mysql_mutex_t LOCK_index;
   mysql_mutex_t LOCK_commit;
@@ -435,7 +448,6 @@ class MYSQL_BIN_LOG: public TC_LOG
   // current file sequence number for load data infile binary logging
   uint file_id;
   uint open_count;				// For replication
-  int readers_count;
 
   /* pointer to the sync period variable, for binlog this will be
      sync_binlog_period, for relay log this will be
@@ -469,7 +481,6 @@ class MYSQL_BIN_LOG: public TC_LOG
     return *sync_period_ptr;
   }
 
-  int write_to_file(IO_CACHE *cache);
   /*
     This is used to start writing to a new log file. The difference from
     new_file() is locking. new_file_without_locking() does not acquire
@@ -480,7 +491,6 @@ class MYSQL_BIN_LOG: public TC_LOG
 
   /** Manage the stages in ordered_commit. */
   Stage_manager stage_manager;
-  void do_flush(THD *thd);
 
   bool open(
 #ifdef HAVE_PSI_INTERFACE
@@ -596,11 +606,11 @@ public:
     Find the oldest binary log that contains any GTID that
     is not in the given gtid set.
 
-    @param[out] binlog_file_name, the file name of oldest binary log found
-    @param[in]  gtid_set, the given gtid set
-    @param[out] first_gtid, the first GTID information from the binary log
+    @param[out] binlog_file_name the file name of oldest binary log found
+    @param[in]  gtid_set the given gtid set
+    @param[out] first_gtid the first GTID information from the binary log
                 file returned at binlog_file_name
-    @param[out] errmsg, the error message outputted, which is left untouched
+    @param[out] errmsg the error message outputted, which is left untouched
                 if the function returns false
     @return false on success, true on error.
   */
@@ -624,7 +634,7 @@ public:
     @param need_lock If true, LOCK_log, LOCK_index, and
     global_sid_lock->wrlock are acquired; otherwise they are asserted
     to be taken already.
-    @param trx_parser [out] This will be used to return the actual
+    @param [out] trx_parser  This will be used to return the actual
     relaylog transaction parser state because of the possibility
     of partial transactions.
     @param [out] gtid_partial_trx If a transaction was left incomplete
@@ -709,7 +719,6 @@ public:
   int prepare(THD *thd, bool all);
   int recover(IO_CACHE *log, Format_description_log_event *fdle,
               my_off_t *valid_pos);
-  int recover(IO_CACHE *log, Format_description_log_event *fdle);
 #if !defined(MYSQL_CLIENT)
 
   void update_thd_next_event_pos(THD *thd);
@@ -783,8 +792,8 @@ public:
     @param log_name Name of binlog
     @param new_name Name of binlog, too. todo: what's the difference
     between new_name and log_name?
-    @param max_size The size at which this binlog will be rotated.
-    @param null_created If false, and a Format_description_log_event
+    @param max_size_arg The size at which this binlog will be rotated.
+    @param null_created_arg If false, and a Format_description_log_event
     is written, then the Format_description_log_event will have the
     timestamp 0. Otherwise, it the timestamp will be the time when the
     event was written to the log.
@@ -793,11 +802,14 @@ public:
     @param need_sid_lock If true, the read lock on global_sid_lock
     will be acquired.  Otherwise, the caller must hold the read lock
     on global_sid_lock.
+    @param extra_description_event The master's FDE to be written by the I/O
+    thread while creating a new relay log file. This should be NULL for
+    binary log files.
   */
   bool open_binlog(const char *log_name,
                    const char *new_name,
-                   ulong max_size,
-                   bool null_created,
+                   ulong max_size_arg,
+                   bool null_created_arg,
                    bool need_lock_index, bool need_sid_lock,
                    Format_description_log_event *extra_description_event);
   bool open_index_file(const char *index_file_name_arg,
@@ -806,16 +818,8 @@ public:
   int new_file(Format_description_log_event *extra_description_event);
 
   bool write_event(Log_event* event_info);
-  bool write_cache(THD *thd, class binlog_cache_data *binlog_cache_data,
+  bool write_cache(THD *thd, class binlog_cache_data *cache_data,
                    class Binlog_event_writer *writer);
-  /**
-    Assign automatic generated GTIDs for all commit group threads in the flush
-    stage having gtid_next.type == AUTOMATIC_GROUP.
-
-    @param first_seen The first thread seen entering the flush stage.
-    @return Returns false if succeeds, otherwise true is returned.
-  */
-  bool assign_automatic_gtids_to_flush_group(THD *first_seen);
   bool write_gtid(THD *thd, binlog_cache_data *cache_data,
                   class Binlog_event_writer *writer);
 
@@ -827,9 +831,9 @@ public:
      logged indirectly, like "DELETE FROM a_memory_table". So don't use it on any
      normal statement.
 
-     @param[IN] thd  the THD object of current thread.
-     @param[IN] stmt the DELETE statement.
-     @param[IN] stmt_len the length of DELETE statement.
+     @param[in] thd  the THD object of current thread.
+     @param[in] stmt the DELETE statement.
+     @param[in] stmt_len the length of DELETE statement.
 
      @return Returns false if succeeds, otherwise true is returned.
   */
@@ -870,7 +874,6 @@ public:
      variable 'sync_binlog'. If file is synchronized, @c synced will
      be set to 1, otherwise 0.
 
-     @param[out] synced if not NULL, set to 1 if file is synchronized, otherwise 0
      @param[in] force if TRUE, ignores the 'sync_binlog' and synchronizes the file.
 
      @retval 0 Success
@@ -892,7 +895,6 @@ public:
   int open_purge_index_file(bool destroy);
   bool is_inited_purge_index_file();
   int close_purge_index_file();
-  int clean_purge_index_file();
   int sync_purge_index_file();
   int register_purge_index_entry(const char* entry);
   int register_create_index_entry(const char* entry);
@@ -936,8 +938,7 @@ public:
   void unlock_binlog_end_pos() { mysql_mutex_unlock(&LOCK_binlog_end_pos); }
 
   /**
-    Deep copy global_sid_map to @param sid_map and
-    gtid_state->get_executed_gtids() to @param gtid_set
+    Deep copy global_sid_map and gtid_executed.
     Both operations are done under LOCK_commit and global_sid_lock
     protection.
 
@@ -957,7 +958,7 @@ typedef struct st_load_file_info
 {
   THD* thd;
   my_off_t last_pos_in_file;
-  bool wrote_create_file, log_delayed;
+  bool logged_data_file, log_delayed;
 } LOAD_FILE_INFO;
 
 extern MYSQL_PLUGIN_IMPORT MYSQL_BIN_LOG mysql_bin_log;
@@ -1007,66 +1008,6 @@ extern bool opt_binlog_order_commits;
   @returns true if a problem occurs, false otherwise.
  */
 
-inline bool normalize_binlog_name(char *to, const char *from, bool is_relay_log)
-{
-  DBUG_ENTER("normalize_binlog_name");
-  bool error= false;
-  char buff[FN_REFLEN];
-  char *ptr= (char*) from;
-  char *opt_name= is_relay_log ? opt_relay_logname : opt_bin_logname;
+bool normalize_binlog_name(char *to, const char *from, bool is_relay_log);
 
-  DBUG_ASSERT(from);
-
-  /* opt_name is not null and not empty and from is a relative path */
-  if (opt_name && opt_name[0] && from && !test_if_hard_path(from))
-  {
-    // take the path from opt_name
-    // take the filename from from 
-    char log_dirpart[FN_REFLEN], log_dirname[FN_REFLEN];
-    size_t log_dirpart_len, log_dirname_len;
-    dirname_part(log_dirpart, opt_name, &log_dirpart_len);
-    dirname_part(log_dirname, from, &log_dirname_len);
-
-    /* log may be empty => relay-log or log-bin did not 
-        hold paths, just filename pattern */
-    if (log_dirpart_len > 0)
-    {
-      /* create the new path name */
-      if(fn_format(buff, from+log_dirname_len, log_dirpart, "",
-                   MYF(MY_UNPACK_FILENAME | MY_SAFE_PATH)) == NULL)
-      {
-        error= true;
-        goto end;
-      }
-
-      ptr= buff;
-    }
-  }
-
-  DBUG_ASSERT(ptr);
-  if (ptr)
-  {
-    size_t length= strlen(ptr);
-
-    // Strips the CR+LF at the end of log name and \0-terminates it.
-    if (length && ptr[length-1] == '\n')
-    {
-      ptr[length-1]= 0;
-      length--;
-      if (length && ptr[length-1] == '\r')
-      {
-        ptr[length-1]= 0;
-        length--;
-      }
-    }
-    if (!length)
-    {
-      error= true;
-      goto end;
-    }
-    strmake(to, ptr, length);
-  }
-end:
-  DBUG_RETURN(error);
-}
 #endif /* BINLOG_H_INCLUDED */

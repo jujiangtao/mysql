@@ -80,8 +80,6 @@ Slave_worker *get_least_occupied_worker(Relay_log_info *rli,
 
 #define SLAVE_INIT_DBS_IN_GROUP 4     // initial allocation for CGEP dynarray
 
-#define NUMBER_OF_FIELDS_TO_IDENTIFY_WORKER 2
-
 typedef struct st_slave_job_group
 {
   char *group_master_log_name;   // (actually redundant)
@@ -265,23 +263,7 @@ public:
   /* the being assigned group index in GAQ */
   ulong assigned_group_index;
 
-  Slave_committed_queue (const char *log, ulong max, uint n)
-    : circular_buffer_queue<Slave_job_group>(max), inited(false),
-      last_done(key_memory_Slave_job_group_group_relay_log_name)
-  {
-    if (max >= (ulong) -1 || !inited_queue)
-      return;
-    else
-      inited= TRUE;
-
-    last_done.resize(n);
-
-    lwm.group_relay_log_name=
-      (char *) my_malloc(key_memory_Slave_job_group_group_relay_log_name,
-                         FN_REFLEN + 1, MYF(0));
-    lwm.group_relay_log_name[0]= 0;
-    lwm.sequence_number= SEQ_UNINIT;
-  }
+  Slave_committed_queue (const char *log, ulong max, uint n);
 
   ~Slave_committed_queue ()
   {
@@ -697,6 +679,8 @@ inline Slave_worker* get_thd_worker(THD *thd)
 {
   return static_cast<Slave_worker *>(thd->rli_slave);
 }
+
+int slave_worker_exec_job_group(Slave_worker *w, Relay_log_info *rli);
 
 #endif // HAVE_REPLICATION
 #endif

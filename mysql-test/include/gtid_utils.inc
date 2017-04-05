@@ -84,7 +84,6 @@ if (!$rpl_debug)
 {
   --disable_query_log
 }
---let $gtid_utils_included=1
 
 --delimiter |
 

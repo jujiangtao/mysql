@@ -32,6 +32,9 @@
 #include "mysql/service_srv_session.h" 
 #include "sql_class.h"
 #include "conn_handler/connection_handler_manager.h"
+#include "derror.h"  // ER_DEFAULT
+#include "mysqld.h"  // SERVER_OPERATING
+#include "current_thd.h" // current_thd
 
 extern "C"
 {

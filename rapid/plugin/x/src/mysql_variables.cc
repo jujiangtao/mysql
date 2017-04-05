@@ -30,7 +30,7 @@ namespace mysqld
 
 bool is_terminating()
 {
-  return abort_loop;
+  return connection_events_loop_aborted();
 }
 
 const char *get_my_localhost()
@@ -42,5 +42,6 @@ const CHARSET_INFO *get_charset_utf8mb4_general_ci()
 {
   return &my_charset_utf8mb4_general_ci;
 }
+
 
 } // namespace mysqld

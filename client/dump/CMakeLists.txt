@@ -37,19 +37,39 @@ IF(USING_LOCAL_BOOST)
     -DBOOST_SYSTEM_NO_DEPRECATED)
 ENDIF()
 
+IF(WIN32)
+  LIST(APPEND BOOST_THREAD_SOURCES
+    ${BOOST_SOURCES_DIR}/libs/thread/src/win32/thread.cpp
+    ${BOOST_SOURCES_DIR}/libs/thread/src/win32/tss_dll.cpp
+    ${BOOST_SOURCES_DIR}/libs/thread/src/win32/tss_pe.cpp
+  )
+ELSE()
+  LIST(APPEND BOOST_THREAD_SOURCES
+    ${BOOST_SOURCES_DIR}/libs/thread/src/pthread/once.cpp
+    ${BOOST_SOURCES_DIR}/libs/thread/src/pthread/thread.cpp
+  )
+ENDIF()
+
 SET(BOOST_LIB_SOURCES
+  ${BOOST_SOURCES_DIR}/libs/atomic/src/lockpool.cpp
   ${BOOST_SOURCES_DIR}/libs/chrono/src/chrono.cpp
+  ${BOOST_SOURCES_DIR}/libs/chrono/src/process_cpu_clocks.cpp
+  ${BOOST_SOURCES_DIR}/libs/chrono/src/thread_clock.cpp
   ${BOOST_SOURCES_DIR}/libs/system/src/error_code.cpp
+  ${BOOST_SOURCES_DIR}/libs/thread/src/future.cpp
 )
 
 IF(USING_LOCAL_BOOST)
-  ADD_CONVENIENCE_LIBRARY(boost_lib ${BOOST_LIB_SOURCES})
+  ADD_CONVENIENCE_LIBRARY(boost_lib ${BOOST_LIB_SOURCES} ${BOOST_THREAD_SOURCES})
 
+  SET_TARGET_PROPERTIES(boost_lib
+    PROPERTIES COMPILE_FLAGS "-DBOOST_THREAD_BUILD_LIB")
   # Do not build library unless it is needed by some other target.
   SET_PROPERTY(TARGET boost_lib PROPERTY EXCLUDE_FROM_ALL TRUE)
 
   ADD_COMPILE_FLAGS(
     ${BOOST_LIB_SOURCES}
+    ${BOOST_THREAD_SOURCES}
     COMPILE_FLAGS -I${BOOST_PATCHES_DIR} -I${BOOST_INCLUDE_DIR}
     )
 
@@ -150,6 +170,8 @@ ADD_COMPILE_FLAGS(
 
 # Files that use Boost sources that trigger compilation warnings
 SET(MYSQLPUMP_BOOST_SOURCES
+  ${BOOST_SOURCES_DIR}/libs/thread/src/pthread/once.cpp
+  ${BOOST_SOURCES_DIR}/libs/thread/src/pthread/thread.cpp
   abstract_crawler.cc
   abstract_mysql_chain_element_extension.cc
   abstract_progress_watcher.cc
@@ -165,11 +187,42 @@ SET(MYSQLPUMP_BOOST_SOURCES
   table.cc
 )
 
-# Boost source has unused local typedefs.
-MY_CHECK_CXX_COMPILER_FLAG("-Wunused-local-typedefs" HAVE_UNUSED_TYPEDEFS)
-IF(HAVE_UNUSED_TYPEDEFS)
+#
+# Disabling of various compiler warnings for GCC/Clang
+#
+
+IF(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  # Common for all versions of GCC/Clang
+
+  # Boost source use undefined symbols in #if checks
   ADD_COMPILE_FLAGS(${MYSQLPUMP_BOOST_SOURCES}
-    COMPILE_FLAGS "-Wno-unused-local-typedefs")
+                    COMPILE_FLAGS "-Wno-undef")
+  ADD_COMPILE_FLAGS(${BOOST_LIB_SOURCES}
+                    COMPILE_FLAGS "-Wno-undef")
+  # Boost source use auto_ptr, deprecated in C++11
+  ADD_COMPILE_FLAGS(${MYSQLPUMP_BOOST_SOURCES}
+                    COMPILE_FLAGS "-Wno-deprecated-declarations")
+  # Boost atomics triggers bogus warning in GCC, see
+  # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=61489
+  ADD_COMPILE_FLAGS(${MYSQLPUMP_BOOST_SOURCES}
+                    COMPILE_FLAGS "-Wno-missing-field-initializers")
+  
+  # Only for some versions of GCC/Clang
+
+  MY_CHECK_CXX_COMPILER_FLAG("-Wunused-local-typedefs" HAVE_UNUSED_TYPEDEFS)
+  IF(HAVE_UNUSED_TYPEDEFS)
+    # Boost source has unused local typedefs.
+    ADD_COMPILE_FLAGS(${MYSQLPUMP_BOOST_SOURCES}
+                      COMPILE_FLAGS "-Wno-unused-local-typedefs")
+  ENDIF()
+  
+  MY_CHECK_CXX_COMPILER_FLAG("-Wlogical-op" HAVE_LOGICAL_OP)
+  IF(HAVE_LOGICAL_OP)
+    # Boost source has logical && with non-zero constant
+    ADD_COMPILE_FLAGS(${MYSQLPUMP_BOOST_SOURCES}
+                      COMPILE_FLAGS "-Wno-logical-op")
+  ENDIF()
+
 ENDIF()
 
 ADD_COMPILE_FLAGS(

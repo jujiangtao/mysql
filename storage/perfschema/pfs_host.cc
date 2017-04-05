@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2016, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -28,9 +28,10 @@
 #include "pfs_global.h"
 #include "pfs_instr_class.h"
 #include "pfs_buffer_container.h"
+#include "mysqld.h"                             // global_status_var
 
 /**
-  @addtogroup Performance_schema_buffers
+  @addtogroup performance_schema_buffers
   @{
 */
 
@@ -56,9 +57,7 @@ void cleanup_host(void)
   global_host_container.cleanup();
 }
 
-C_MODE_START
-static uchar *host_hash_get_key(const uchar *entry, size_t *length,
-                                my_bool)
+static const uchar *host_hash_get_key(const uchar *entry, size_t *length)
 {
   const PFS_host * const *typed_entry;
   const PFS_host *host;
@@ -69,9 +68,8 @@ static uchar *host_hash_get_key(const uchar *entry, size_t *length,
   DBUG_ASSERT(host != NULL);
   *length= host->m_key.m_key_length;
   result= host->m_key.m_hash_key;
-  return const_cast<uchar*> (reinterpret_cast<const uchar*> (result));
+  return reinterpret_cast<const uchar*> (result);
 }
-C_MODE_END
 
 /**
   Initialize the host hash.
@@ -150,7 +148,7 @@ search:
   entry= reinterpret_cast<PFS_host**>
     (lf_hash_search(&host_hash, pins,
                     key.m_hash_key, key.m_key_length));
-  if (entry && (entry != MY_ERRPTR))
+  if (entry && (entry != MY_LF_ERRPTR))
   {
     PFS_host *pfs;
     pfs= *entry;
@@ -208,6 +206,7 @@ void PFS_host::aggregate(bool alive)
   aggregate_stages();
   aggregate_statements();
   aggregate_transactions();
+  aggregate_errors();
   aggregate_memory(alive);
   aggregate_status();
   aggregate_stats();
@@ -256,6 +255,19 @@ void PFS_host::aggregate_transactions()
   */
   aggregate_all_transactions(write_instr_class_transactions_stats(),
                              &global_transaction_stat);
+}
+
+void PFS_host::aggregate_errors()
+{
+  if (read_instr_class_errors_stats() == NULL)
+    return;
+
+  /*
+    Aggregate EVENTS_ERRORS_SUMMARY_BY_HOST_BY_ERROR to:
+    -  EVENTS_ERRORS_SUMMARY_GLOBAL_BY_ERROR
+  */
+  aggregate_all_errors(write_instr_class_errors_stats(),
+                       &global_error_stat);
 }
 
 void PFS_host::aggregate_memory(bool alive)
@@ -313,7 +325,7 @@ PFS_host *sanitize_host(PFS_host *unsafe)
   return global_host_container.sanitize(unsafe);
 }
 
-void purge_host(PFS_thread *thread, PFS_host *host)
+static void purge_host(PFS_thread *thread, PFS_host *host)
 {
   LF_PINS *pins= get_host_hash_pins(thread);
   if (unlikely(pins == NULL))
@@ -323,7 +335,7 @@ void purge_host(PFS_thread *thread, PFS_host *host)
   entry= reinterpret_cast<PFS_host**>
     (lf_hash_search(&host_hash, pins,
                     host->m_key.m_hash_key, host->m_key.m_key_length));
-  if (entry && (entry != MY_ERRPTR))
+  if (entry && (entry != MY_LF_ERRPTR))
   {
     DBUG_ASSERT(*entry == host);
     if (host->get_refcount() == 0)

@@ -1,4 +1,4 @@
-/* Copyright (c) 2013, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2013, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -18,8 +18,10 @@
 
 #include "item_func.h"      // Item etc.
 #include "set_var.h"        // enum_var_type
+#include "mem_root_array.h"
 
-typedef class st_select_lex SELECT_LEX;
+class SELECT_LEX;
+class Table_ident;
 
 /**
   Base class for parse-time Item objects
@@ -105,10 +107,33 @@ public:
 
 
 /**
-  Helper function to imitate dynamic_cast for Item_cond hierarchy
+  Contextualize a Mem_root_array of parse tree nodes of the type PTN
 
-  @param To     destination type (Item_cond_and etc.)
-  @param Tag    Functype tag to compare from->functype() with
+  @tparam PTN           Common type of parse tree nodes in the array.
+
+  @param[in,out] pc     Parse context.
+  @param[in,out] array  Array of nodes to contextualize.
+
+  @return false on success.
+*/
+template<class PTN>
+bool contextualize_array(Parse_context *pc, Mem_root_array_YY<PTN *> *array)
+{
+  for (auto it : *array)
+  {
+    if (it->contextualize(pc))
+      return true;
+  }
+  return false;
+}
+
+
+/**
+  Helper function to imitate dynamic_cast for Item_cond hierarchy.
+
+  Template parameter @p To is the destination type (@c Item_cond_and etc.)
+  Template parameter @p Tag is the Functype tag to compare from->functype() with
+
   @param from   source item
 
   @return typecasted item of the type To or NULL
@@ -128,8 +153,8 @@ To *item_cond_cast(Item * const from)
   This function flattens AND and OR operators at parse time if applicable,
   otherwise it creates new Item_cond_and or Item_cond_or respectively.
 
-  @param Class  Item_cond_and or Item_cond_or
-  @param Tag    COND_AND_FUNC (for Item_cond_and) or COND_OR_FUNC otherwise
+  Template parameter @p Class is @c Item_cond_and or @c Item_cond_or
+  Template parameter @p Tag is @c COND_AND_FUNC (for @c Item_cond_and) or @c COND_OR_FUNC otherwise
 
   @param mem_root       MEM_ROOT
   @param pos            parse location
@@ -182,10 +207,6 @@ Item_splocal* create_item_for_sp_var(THD *thd,
                                      const char *start,
                                      const char *end);
 
-bool setup_select_in_parentheses(SELECT_LEX *);
-void my_syntax_error(const char *s);
-
-
 bool find_sys_var_null_base(THD *thd, struct sys_var_with_base *tmp);
 bool set_system_variable(THD *thd, struct sys_var_with_base *tmp,
                          enum enum_var_type var_type, Item *val);
@@ -196,5 +217,10 @@ bool set_trigger_new_row(Parse_context *pc,
                          LEX_STRING expr_query);
 void sp_create_assignment_lex(THD *thd, const char *option_ptr);
 bool sp_create_assignment_instr(THD *thd, const char *expr_end_ptr);
+bool resolve_engine(THD *thd,
+                    const LEX_STRING &name,
+                    bool is_temp_table,
+                    bool strict,
+                    handlerton **ret);
 
 #endif /* PARSE_TREE_HELPERS_INCLUDED */

@@ -15,6 +15,7 @@
 
 #include <my_global.h>
 #include "keyring.h"
+#include "mysql/psi/mysql_memory.h"
 
 namespace keyring
 {

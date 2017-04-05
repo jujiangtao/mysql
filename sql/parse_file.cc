@@ -1,4 +1,4 @@
-/* Copyright (c) 2004, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2004, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -13,29 +13,20 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-/**
-  @file
-
-  @brief
-  Text .frm files management routines
-*/
 
 #include "parse_file.h"
-#include "sql_table.h"                        // build_table_filename
-#include <errno.h>
-#include <m_ctype.h>
-#include <my_sys.h>
-#include <my_dir.h>
-#include "mysqld.h"                           // reg_ext
-#include "mysqld_error.h"                     // ER_*
-#include "sql_const.h"                        // CREATE_MODE
-#include "sql_list.h"                         // List_iterator_fast
+
+#include "mysqld.h"        // key_file_fileparser
+#include "mysqld_error.h"  // ER_*
+#include "sql_const.h"     // CREATE_MODE
+#include "sql_list.h"      // List_iterator_fast
+#include "sql_string.h"    // String
 
 #include "pfs_file_provider.h"
 #include "mysql/psi/mysql_file.h"
 
-/* from sql_db.cc */
-extern long mysql_rm_arc_files(THD *thd, MY_DIR *dirp, const char *org_path);
+// Dummy unknown key hook.
+File_parser_dummy_hook file_parser_dummy_hook;
 
 
 /**
@@ -223,9 +214,9 @@ sql_create_definition_file(const LEX_STRING *dir, const LEX_STRING *file_name,
   size_t path_end;
   File_option *param;
   DBUG_ENTER("sql_create_definition_file");
-  DBUG_PRINT("enter", ("Dir: %s, file: %s, base 0x%lx",
+  DBUG_PRINT("enter", ("Dir: %s, file: %s, base %p",
 		       dir ? dir->str : "(null)",
-                       file_name->str, (ulong) base));
+                       file_name->str, base));
 
   if (dir)
   {
@@ -275,10 +266,8 @@ sql_create_definition_file(const LEX_STRING *dir, const LEX_STRING *file_name,
   if (end_io_cache(&file))
     goto err_w_file;
 
-  if (opt_sync_frm) {
-    if (mysql_file_sync(handler, MYF(MY_WME)))
-      goto err_w_file;
-  }
+  if (mysql_file_sync(handler, MYF(MY_WME)))
+    goto err_w_file;
 
   if (mysql_file_close(handler, MYF(MY_WME)))
   {
@@ -305,47 +294,6 @@ err_w_file:
   DBUG_RETURN(TRUE);
 }
 
-/**
-  Renames a frm file (including backups) in same schema.
-
-  @thd                     thread handler
-  @param schema            name of given schema
-  @param old_name          original file name
-  @param new_db            new schema
-  @param new_name          new file name
-
-  @retval
-    0   OK
-  @retval
-    1   Error (only if renaming of frm failed)
-*/
-my_bool rename_in_schema_file(THD *thd,
-                              const char *schema, const char *old_name, 
-                              const char *new_db, const char *new_name)
-{
-  char old_path[FN_REFLEN + 1], new_path[FN_REFLEN + 1], arc_path[FN_REFLEN + 1];
-
-  build_table_filename(old_path, sizeof(old_path) - 1,
-                       schema, old_name, reg_ext, 0);
-  build_table_filename(new_path, sizeof(new_path) - 1,
-                       new_db, new_name, reg_ext, 0);
-
-  if (mysql_file_rename(key_file_frm, old_path, new_path, MYF(MY_WME)))
-    return 1;
-
-  /* check if arc_dir exists: disabled unused feature (see bug #17823). */
-  build_table_filename(arc_path, sizeof(arc_path) - 1, schema, "arc", "", 0);
-  
-  { // remove obsolete 'arc' directory and files if any
-    MY_DIR *new_dirp;
-    if ((new_dirp = my_dir(arc_path, MYF(MY_DONT_SORT))))
-    {
-      DBUG_PRINT("my",("Archive subdir found: %s", arc_path));
-      (void) mysql_rm_arc_files(thd, new_dirp, arc_path);
-    }
-  }
-  return 0;
-}
 
 /**
   Prepare frm to parse (read to memory).
@@ -398,7 +346,7 @@ sql_parse_prepare(const LEX_STRING *file_name, MEM_ROOT *mem_root,
   }
 
   if ((file= mysql_file_open(key_file_fileparser, file_name->str,
-                             O_RDONLY | O_SHARE, MYF(MY_WME))) < 0)
+                             O_RDONLY, MYF(MY_WME))) < 0)
   {
     DBUG_RETURN(0);
   }
@@ -464,10 +412,8 @@ frm_error:
   @param mem_root	  MEM_ROOT for parameter allocation
   @param str		  pointer on string, where results should be stored
 
-  @retval
-    0	  error
-  @retval
-    \#	  pointer on symbol after string
+  @return Pointer on symbol after string
+  @retval 0	  error
 */
 
 
@@ -502,7 +448,7 @@ parse_string(const char *ptr, const char *end, MEM_ROOT *mem_root,
     TRUE    error
 */
 
-my_bool
+static my_bool
 read_escaped_string(const char *ptr, const char *eol, LEX_STRING *str)
 {
   char *write_pos= str->str;
@@ -548,7 +494,7 @@ read_escaped_string(const char *ptr, const char *eol, LEX_STRING *str)
 
 
 /**
-  parse \\n delimited escaped string.
+  parse @\n delimited escaped string.
 
   @param ptr		  pointer on string beginning
   @param end		  pointer on symbol after parsed string end (still owned
@@ -556,10 +502,9 @@ read_escaped_string(const char *ptr, const char *eol, LEX_STRING *str)
   @param mem_root	  MEM_ROOT for parameter allocation
   @param str		  pointer on string, where results should be stored
 
+  @return Pointer on symbol after string
   @retval
     0	  error
-  @retval
-    \#	  pointer on symbol after string
 */
 
 
@@ -587,10 +532,9 @@ parse_escaped_string(const char *ptr, const char *end, MEM_ROOT *mem_root,
   @param mem_root	  MEM_ROOT for parameter allocation
   @param str		  pointer on string, where results should be stored
 
+  @return Pointer on symbol after string
   @retval
     0	  error
-  @retval
-    \#	  pointer on symbol after string
 */
 
 static const char *
@@ -688,7 +632,6 @@ nlist_err:
                              then "required", non-existing parameters will
                              remain their values.
   @param hook                hook called for unknown keys
-  @param hook_data           some data specific for the hook
 
   @retval
     FALSE   OK
@@ -880,14 +823,13 @@ list_err:
   DBUG_RETURN(FALSE);
 }
 
-
 /**
   Dummy unknown key hook.
 
   @param[in,out] unknown_key       reference on the line with unknown
-    parameter and the parsing point
+                                   parameter and the parsing point
   @param[in] base                  base address for parameter writing
-    (structure like TABLE)
+                                   (structure like TABLE)
   @param[in] mem_root              MEM_ROOT for parameters allocation
   @param[in] end                   the end of the configuration
 

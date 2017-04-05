@@ -168,20 +168,16 @@ SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)", 0), 100, 2);
 ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)", 0), 100, 2)
 {"type": "Point", "coordinates": [10, 11]}
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)", -1), 100, 4);
-ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)", -1), 100, 4)
-{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:EPSG::4294967295"}}, "type": "Point", "coordinates": [10, 11]}
+ERROR 22003: SRID value is out of range in 'st_geomfromtext'
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)", -1000), 100, 6);
-ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)", -1000), 100, 6)
-{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:EPSG::4294966296"}}, "type": "Point", "coordinates": [10, 11]}
+ERROR 22003: SRID value is out of range in 'st_geomfromtext'
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)", 4294967295), 100, 6);
 ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)", 4294967295), 100, 6)
 {"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:EPSG::4294967295"}}, "type": "Point", "coordinates": [10, 11]}
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)", 4294967296), 100, 6);
-ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)", 4294967296), 100, 6)
-{"type": "Point", "coordinates": [10, 11]}
+ERROR 22003: SRID value is out of range in 'st_geomfromtext'
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)", 4294967295123), 100, 7);
-ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)", 4294967295123), 100, 7)
-{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:EPSG::4294966419"}}, "bbox": [10, 11, 10, 11], "type": "Point", "coordinates": [10, 11]}
+ERROR 22003: SRID value is out of range in 'st_geomfromtext'
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10.123456789 11.123456789)", 12), 0, 0);
 ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10.123456789 11.123456789)", 12), 0, 0)
 {"type": "Point", "coordinates": [10, 11]}
@@ -237,20 +233,16 @@ SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)", "0"), 100, 1);
 ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)", "0"), 100, 1)
 {"bbox": [10, 11, 10, 11], "type": "Point", "coordinates": [10, 11]}
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)", "-1"), 100, 2);
-ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)", "-1"), 100, 2)
-{"crs": {"type": "name", "properties": {"name": "EPSG:4294967295"}}, "type": "Point", "coordinates": [10, 11]}
+ERROR 22003: SRID value is out of range in 'st_geomfromtext'
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)", "-1000"), 100, 3);
-ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)", "-1000"), 100, 3)
-{"crs": {"type": "name", "properties": {"name": "EPSG:4294966296"}}, "bbox": [10, 11, 10, 11], "type": "Point", "coordinates": [10, 11]}
+ERROR 22003: SRID value is out of range in 'st_geomfromtext'
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)", "4294967295"), 100, 4);
 ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)", "4294967295"), 100, 4)
 {"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:EPSG::4294967295"}}, "type": "Point", "coordinates": [10, 11]}
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)", "4294967296"), 100, 5);
-ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)", "4294967296"), 100, 5)
-{"bbox": [10, 11, 10, 11], "type": "Point", "coordinates": [10, 11]}
+ERROR 22003: SRID value is out of range in 'st_geomfromtext'
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)", "4294967295123"), 100, 6);
-ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)", "4294967295123"), 100, 6)
-{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:EPSG::4294966419"}}, "type": "Point", "coordinates": [10, 11]}
+ERROR 22003: SRID value is out of range in 'st_geomfromtext'
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)", (CAST(10 AS CHAR))), 100, 7);
 ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)", (CAST(10 AS CHAR))), 100, 7)
 {"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:EPSG::10"}}, "bbox": [10, 11, 10, 11], "type": "Point", "coordinates": [10, 11]}
@@ -402,43 +394,43 @@ CHARSET(ST_ASGEOJSON(POINT(-1.42, 283.12)))
 utf8mb4
 # Invalid function calls
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("1"));
-ERROR 22023: Invalid GIS data provided to function st_geometryfromtext.
+ERROR 22023: Invalid GIS data provided to function st_geomfromtext.
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT"));
-ERROR 22023: Invalid GIS data provided to function st_geometryfromtext.
+ERROR 22023: Invalid GIS data provided to function st_geomfromtext.
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT()"));
-ERROR 22023: Invalid GIS data provided to function st_geometryfromtext.
+ERROR 22023: Invalid GIS data provided to function st_geomfromtext.
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10)"));
-ERROR 22023: Invalid GIS data provided to function st_geometryfromtext.
+ERROR 22023: Invalid GIS data provided to function st_geomfromtext.
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(a b)"));
-ERROR 22023: Invalid GIS data provided to function st_geometryfromtext.
+ERROR 22023: Invalid GIS data provided to function st_geomfromtext.
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 b)"));
-ERROR 22023: Invalid GIS data provided to function st_geometryfromtext.
+ERROR 22023: Invalid GIS data provided to function st_geomfromtext.
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(a 11)"));
-ERROR 22023: Invalid GIS data provided to function st_geometryfromtext.
+ERROR 22023: Invalid GIS data provided to function st_geomfromtext.
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10, 11)"));
-ERROR 22023: Invalid GIS data provided to function st_geometryfromtext.
+ERROR 22023: Invalid GIS data provided to function st_geomfromtext.
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POLYGON((40 40, 20 45, 45 30, 40 40)"), 10);
-ERROR 22023: Invalid GIS data provided to function st_geometryfromtext.
+ERROR 22023: Invalid GIS data provided to function st_geomfromtext.
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("MULTIPOLYGON(((40 40, 20 45, 45 30, 40 40)),"
                                     "((20 35, 10 30, 10 10, 30 5, 45 20, 20 35),"), 10, 2);
-ERROR 22023: Invalid GIS data provided to function st_geometryfromtext.
+ERROR 22023: Invalid GIS data provided to function st_geomfromtext.
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("GEOMETRYCOLLECTION( "
                                     "GEOMETRYCOLLECTION(POINT(10 20)),"
                                     "GEOMETRYCOLLECTION(LINESTRING(0 0, 100 100)),"
                                     "GEOMETRYCOLLECTION(POLYGON((0 0, 0 10, 10 10, 0 0))),"
                                     ")"
                                   ));
-ERROR 22023: Invalid GIS data provided to function st_geometryfromtext.
+ERROR 22023: Invalid GIS data provided to function st_geomfromtext.
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("MULTIPOINT()"), 10);
-ERROR 22023: Invalid GIS data provided to function st_geometryfromtext.
+ERROR 22023: Invalid GIS data provided to function st_geomfromtext.
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("MULTILINESTRING(())"), 10);
-ERROR 22023: Invalid GIS data provided to function st_geometryfromtext.
+ERROR 22023: Invalid GIS data provided to function st_geomfromtext.
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("MULTIPOLYGON((()))"), 10);
-ERROR 22023: Invalid GIS data provided to function st_geometryfromtext.
+ERROR 22023: Invalid GIS data provided to function st_geomfromtext.
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("LINESTRING(1)"), 10);
-ERROR 22023: Invalid GIS data provided to function st_geometryfromtext.
+ERROR 22023: Invalid GIS data provided to function st_geomfromtext.
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("MULTILINESTRING((0 0, 10 10),())"), 10);
-ERROR 22023: Invalid GIS data provided to function st_geometryfromtext.
+ERROR 22023: Invalid GIS data provided to function st_geomfromtext.
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 20)"), 2, -1);
 ERROR HY000: Incorrect options value: '-1' for function st_asgeojson
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 20)"), 2, -1000);
@@ -478,11 +470,11 @@ ERROR 42000: Incorrect parameter count in the call to native function 'ST_ASGEOJ
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 11)"), 10, 0, 0);
 ERROR 42000: Incorrect parameter count in the call to native function 'ST_ASGEOJSON'
 SELECT ST_ASGEOJSON(1);
-ERROR HY000: Incorrect type for argument geojson in function st_asgeojson.
+ERROR HY000: Incorrect type for argument geometry in function st_asgeojson.
 SELECT ST_ASGEOJSON(1, 2);
-ERROR HY000: Incorrect type for argument geojson in function st_asgeojson.
+ERROR HY000: Incorrect type for argument geometry in function st_asgeojson.
 SELECT ST_ASGEOJSON(1, 0, 1);
-ERROR HY000: Incorrect type for argument geojson in function st_asgeojson.
+ERROR HY000: Incorrect type for argument geometry in function st_asgeojson.
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 20)"), 2.1, 0);
 ERROR HY000: Incorrect type for argument max decimal digits in function st_asgeojson.
 SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT("POINT(10 20)"), 10, 0.1);
@@ -765,7 +757,7 @@ ST_ASTEXT(ST_GEOMFROMGEOJSON(
 "  { \"type\": \"GeometryCollection\", \"geometries\":    "
 "    [ ]                                                  "
 "  }"))
-GEOMETRYCOLLECTION()
+GEOMETRYCOLLECTION EMPTY
 SELECT ST_ASTEXT(ST_GEOMFROMGEOJSON(
 "  { \"type\": \"GeometryCollection\", \"geometries\":          "
 "    [                                                          "
@@ -783,7 +775,7 @@ ST_ASTEXT(ST_GEOMFROMGEOJSON(
 "    [                                                          "
 "      { \"type\": \"GeometryCollection\", \"geometries\":      "
 "        [                  
-GEOMETRYCOLLECTION(GEOMETRYCOLLECTION(GEOMETRYCOLLECTION()))
+GEOMETRYCOLLECTION(GEOMETRYCOLLECTION(GEOMETRYCOLLECTION EMPTY))
 SELECT ST_ASTEXT(ST_GEOMFROMGEOJSON(
 "  { \"type\": \"GeometryCollection\", \"geometries\":    "
 "    [                                                    "
@@ -2161,7 +2153,7 @@ SELECT ST_SRID(ST_GEOMFROMGEOJSON(
 "          { \"name\": { \"urn:ogc:def:crs:OGC:1.3:CRS84\" } }     "
 "        }                                                         "
 "  }", 1));
-ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "Missing a colon after a name of object member." at position 239.
+ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "Missing a colon after a name of object member." at position 238.
 SELECT ST_SRID(ST_GEOMFROMGEOJSON(
 "  { \"type\": \"Point\", \"coordinates\": [10, 20],               "
 "      \"crs\":                                                    "
@@ -2169,7 +2161,7 @@ SELECT ST_SRID(ST_GEOMFROMGEOJSON(
 "          { \"name\": \"urn:ogc:def:crs:OGC:1.3:CRS84\" }         "
 "        }                                                         "
 "  }", 1));
-ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "Missing a comma or '}' after an object member." at position 149.
+ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "Missing a comma or '}' after an object member." at position 148.
 SELECT ST_SRID(ST_GEOMFROMGEOJSON(
 "  { \"type\": \"Point\", \"coordinates\": [10, 20],               "
 "      \"crs\":                                                    "
@@ -2177,7 +2169,7 @@ SELECT ST_SRID(ST_GEOMFROMGEOJSON(
 "          { \"name\": \"urn:ogc:def:crs:OGC:1.3:CRS84\" }         "
 "        }                                                         "
 "  }", 1));
-ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "Missing a comma or '}' after an object member." at position 155.
+ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "Missing a comma or '}' after an object member." at position 154.
 SELECT ST_SRID(ST_GEOMFROMGEOJSON(
 "  { \"type\": \"Point\", \"coordinates\": [10, 20],               "
 "      \"crs\":                                                    "
@@ -2247,11 +2239,11 @@ ERROR HY000: Incorrect option value: '9223372036854775807' for function st_geomf
 SELECT ST_GEOMFROMGEOJSON("", 9223372036854775808);
 ERROR HY000: Incorrect option value: '9223372036854775808' for function st_geomfromgeojson
 SELECT ST_GEOMFROMGEOJSON("", 1, -9223372036854775808);
-ERROR HY000: Incorrect SRID value: '-9223372036854775808' for function st_geomfromgeojson
+ERROR 22003: SRID value is out of range in 'st_geomfromgeojson'
 SELECT ST_GEOMFROMGEOJSON("", 1, 9223372036854775807);
-ERROR HY000: Incorrect SRID value: '9223372036854775807' for function st_geomfromgeojson
+ERROR 22003: SRID value is out of range in 'st_geomfromgeojson'
 SELECT ST_GEOMFROMGEOJSON("", 1, 9223372036854775808);
-ERROR HY000: Incorrect SRID value: '9223372036854775808' for function st_geomfromgeojson
+ERROR 22003: SRID value is out of range in 'st_geomfromgeojson'
 # Checking invalid/incorrect option parameter input
 SELECT ST_ASTEXT(ST_GEOMFROMGEOJSON(
 "{ \"type\": \"Point\", \"coordinates\": [10, 15] }", 0));
@@ -2304,28 +2296,28 @@ ERROR 42S22: Unknown column 'a' in 'field list'
 # Checking invalid/incorrect ST_SRID parameter input
 SELECT ST_ASTEXT(ST_GEOMFROMGEOJSON(
 "{ \"type\": \"Point\", \"coordinates\": [10, 15] }", 1, -1));
-ERROR HY000: Incorrect SRID value: '-1' for function st_geomfromgeojson
+ERROR 22003: SRID value is out of range in 'st_geomfromgeojson'
 SELECT ST_ASTEXT(ST_GEOMFROMGEOJSON(
 "{ \"type\": \"Point\", \"coordinates\": [10, 15] }", 1, -1000));
-ERROR HY000: Incorrect SRID value: '-1000' for function st_geomfromgeojson
+ERROR 22003: SRID value is out of range in 'st_geomfromgeojson'
 SELECT ST_ASTEXT(ST_GEOMFROMGEOJSON(
 "{ \"type\": \"Point\", \"coordinates\": [10, 15] }", 1, 4294967296));
-ERROR HY000: Incorrect SRID value: '4294967296' for function st_geomfromgeojson
+ERROR 22003: SRID value is out of range in 'st_geomfromgeojson'
 SELECT ST_ASTEXT(ST_GEOMFROMGEOJSON(
 "{ \"type\": \"Point\", \"coordinates\": [10, 15] }", 1, 4294967295000));
-ERROR HY000: Incorrect SRID value: '4294967295000' for function st_geomfromgeojson
+ERROR 22003: SRID value is out of range in 'st_geomfromgeojson'
 SELECT ST_ASTEXT(ST_GEOMFROMGEOJSON(
 "{ \"type\": \"Point\", \"coordinates\": [10, 15] }", 1, "-1"));
-ERROR HY000: Incorrect SRID value: '-1' for function st_geomfromgeojson
+ERROR 22003: SRID value is out of range in 'st_geomfromgeojson'
 SELECT ST_ASTEXT(ST_GEOMFROMGEOJSON(
 "{ \"type\": \"Point\", \"coordinates\": [10, 15] }", 1, "-1000"));
-ERROR HY000: Incorrect SRID value: '-1000' for function st_geomfromgeojson
+ERROR 22003: SRID value is out of range in 'st_geomfromgeojson'
 SELECT ST_ASTEXT(ST_GEOMFROMGEOJSON(
 "{ \"type\": \"Point\", \"coordinates\": [10, 15] }", 1, "4294967296"));
-ERROR HY000: Incorrect SRID value: '4294967296' for function st_geomfromgeojson
+ERROR 22003: SRID value is out of range in 'st_geomfromgeojson'
 SELECT ST_ASTEXT(ST_GEOMFROMGEOJSON(
 "{ \"type\": \"Point\", \"coordinates\": [10, 15] }", 1, "4294967295000"));
-ERROR HY000: Incorrect SRID value: '4294967295000' for function st_geomfromgeojson
+ERROR 22003: SRID value is out of range in 'st_geomfromgeojson'
 SELECT ST_ASTEXT(ST_GEOMFROMGEOJSON(
 "{ \"type\": \"Point\", \"coordinates\": [10, 15] }", 1, 1.1));
 ERROR HY000: Incorrect type for argument SRID in function st_geomfromgeojson.
@@ -2360,7 +2352,7 @@ SELECT ST_ASTEXT(ST_GEOMFROMGEOJSON(
 ERROR HY000: Invalid GeoJSON data provided to function st_geomfromgeojson
 SELECT ST_ASTEXT(ST_GEOMFROMGEOJSON(
 "{ \"type\": { \"Point\" }, \"coordinates\": [10, 15] }", 1, 0));
-ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "Missing a colon after a name of object member." at position 21.
+ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "Missing a colon after a name of object member." at position 20.
 SELECT ST_ASTEXT(ST_GEOMFROMGEOJSON(
 "{ \"type\": \"LineString\", \"coordinates\": [[100.0, 0.0, 1.0, 2.0], [101.0, 0.0]] }"));
 ERROR HY000: Unsupported number of coordinate dimensions in function st_geomfromgeojson: Found 4, expected 2
@@ -2417,7 +2409,7 @@ SELECT ST_ASTEXT(ST_GEOMFROMGEOJSON(
 "      \"popupContent\": \"This is where the Rockies play!\"      "
 "    }                                                            "
 "  }"));
-ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "Missing a colon after a name of object member." at position 476.
+ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "Missing a colon after a name of object member." at position 475.
 SELECT ST_ASTEXT(ST_GEOMFROMGEOJSON(
 "  {                                                              "
 "  \"type\": \"Feature\", \"geometry\":                           "
@@ -2577,7 +2569,7 @@ SELECT ST_GEOMFROMGEOJSON(
 "  \"type\" : \"firstName\": \"John\"   "
 "}                                      "
 );
-ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "Missing a comma or '}' after an object member." at position 62.
+ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "Missing a comma or '}' after an object member." at position 61.
 PREPARE stmt FROM "SELECT ST_GEOMFROMGEOJSON(?, 0, 0)";
 PREPARE stmt FROM "SELECT ST_GEOMFROMGEOJSON('', ?, 0)";
 PREPARE stmt FROM "SELECT ST_GEOMFROMGEOJSON('', 0, ?)";
@@ -2588,7 +2580,7 @@ PREPARE stmt FROM "SELECT ST_GEOMFROMGEOJSON(?, ?, ?)";
 SELECT ST_GEOMFROMGEOJSON("{}foo");
 ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "The document root must not follow by other values." at position 2.
 SELECT ST_GEOMFROMGEOJSON("[12 foo 13]");
-ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "Missing a comma or ']' after an array element." at position 5.
+ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "Missing a comma or ']' after an array element." at position 4.
 SELECT ST_GEOMFROMGEOJSON("{ \"type\": nul123 } ");
 ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "Invalid value." at position 13.
 SELECT ST_GEOMFROMGEOJSON("{ \"true\": true, \"false\": false } ");
@@ -2598,21 +2590,21 @@ ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "In
 SELECT ST_GEOMFROMGEOJSON("{ \"false\": fals123 } ");
 ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "Invalid value." at position 15.
 SELECT ST_GEOMFROMGEOJSON("{ \"hex\": \"\\u0Aa\" } ");
-ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "Incorrect hex digit after \u escape in string." at position 15.
+ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "Incorrect hex digit after \u escape in string." at position 10.
 SELECT ST_GEOMFROMGEOJSON("{ \"hex\": \"\\\\0000b\" } ");
 ERROR HY000: Invalid GeoJSON data provided to function st_geomfromgeojson: Missing required member 'type'
 SELECT ST_GEOMFROMGEOJSON("{ \"hex\": \"\\uD811b\" } ");
-ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "The surrogate pair in string is invalid." at position 15.
+ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "The surrogate pair in string is invalid." at position 10.
 SELECT ST_GEOMFROMGEOJSON("{ \"hex\": \"\\uD811\\uDB99\" } ");
-ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "The surrogate pair in string is invalid." at position 20.
+ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "The surrogate pair in string is invalid." at position 10.
 SELECT ST_GEOMFROMGEOJSON("{ \"hex\": \"\\uD811\\uDC01\" } ");
 ERROR HY000: Invalid GeoJSON data provided to function st_geomfromgeojson: Missing required member 'type'
 SELECT ST_GEOMFROMGEOJSON("{ \"hex\": \"\\e000G\" } ");
-ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "Invalid escape character in string." at position 11.
+ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "Invalid escape character in string." at position 10.
 SELECT ST_GEOMFROMGEOJSON("{ \"test ");
-ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "Missing a closing quotation mark in string." at position 7.
+ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "Missing a closing quotation mark in string." at position 8.
 SELECT ST_GEOMFROMGEOJSON("{ \"\nabel\": 123 ");
-ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "Invalid escape character in string." at position 2.
+ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "Invalid escape character in string." at position 3.
 SELECT ST_GEOMFROMGEOJSON("[ -2147483651, 4294967395 ] ");
 ERROR HY000: Invalid GeoJSON data provided to function st_geomfromgeojson
 SELECT ST_GEOMFROMGEOJSON("[ -9223372036854775900, 184467440737095516700] ");
@@ -2623,11 +2615,11 @@ SELECT ST_GEOMFROMGEOJSON("["
   "000000000000000000000000000000000000000000000000000000000000000000000000000000"
   "000000000000000000000000000000000000000000000000000000000000000000000000000"
 "]");
-ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "Number too big to be stored in double." at position 309.
+ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "Number too big to be stored in double." at position 1.
 SELECT ST_GEOMFROMGEOJSON("[ 1. ] ");
 ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "Miss fraction part in number." at position 4.
 SELECT ST_GEOMFROMGEOJSON("[ 1e1000 ] ");
-ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "Number too big to be stored in double." at position 8.
+ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "Number too big to be stored in double." at position 2.
 SELECT ST_GEOMFROMGEOJSON("[ 1e ] ");
 ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "Miss exponent in number." at position 4.
 SELECT ST_GEOMFROMGEOJSON("[ -92233720368547759, 1844674407370955167] ");
@@ -2637,11 +2629,11 @@ ERROR HY000: Invalid GeoJSON data provided to function st_geomfromgeojson
 SELECT ST_GEOMFROMGEOJSON("[ -0 ]");
 ERROR HY000: Invalid GeoJSON data provided to function st_geomfromgeojson
 SELECT ST_GEOMFROMGEOJSON("{ \"\\u0000\" }");
-ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "Missing a colon after a name of object member." at position 12.
+ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "Missing a colon after a name of object member." at position 11.
 SELECT ST_GEOMFROMGEOJSON("{ \"\\u06FF\" }");
-ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "Missing a colon after a name of object member." at position 12.
+ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "Missing a colon after a name of object member." at position 11.
 SELECT ST_GEOMFROMGEOJSON("{ \"\\uFFFF\" }");
-ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "Missing a colon after a name of object member." at position 12.
+ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "Missing a colon after a name of object member." at position 11.
 SELECT ST_ASTEXT(ST_GEOMFROMGEOJSON("{ \"type\": \"Point\", \"coordinates\": [4294967295, 9223372036854775807] }"));
 ST_ASTEXT(ST_GEOMFROMGEOJSON("{ \"type\": \"Point\", \"coordinates\": [4294967295, 9223372036854775807] }"))
 POINT(4294967295 9.223372036854776e18)
@@ -3241,13 +3233,13 @@ ST_ASTEXT(ST_GEOMFROMGEOJSON(ST_ASGEOJSON(ST_GEOMFROMTEXT("MULTIPOLYGON(((40 40,
 MULTIPOLYGON(((40 40,20 45,45 30,40 40)),((20 35,10 30,10 10,30 5,45 20,20 35),(30 20,20 15,20 25,30 20)))
 SELECT ST_ASTEXT(ST_GEOMFROMGEOJSON(ST_ASGEOJSON(ST_GEOMFROMTEXT("GEOMETRYCOLLECTION()"))));
 ST_ASTEXT(ST_GEOMFROMGEOJSON(ST_ASGEOJSON(ST_GEOMFROMTEXT("GEOMETRYCOLLECTION()"))))
-GEOMETRYCOLLECTION()
+GEOMETRYCOLLECTION EMPTY
 SELECT ST_ASTEXT(ST_GEOMFROMGEOJSON(ST_ASGEOJSON(ST_GEOMFROMTEXT("GEOMETRYCOLLECTION(GEOMETRYCOLLECTION(POINT(10 20)))"))));
 ST_ASTEXT(ST_GEOMFROMGEOJSON(ST_ASGEOJSON(ST_GEOMFROMTEXT("GEOMETRYCOLLECTION(GEOMETRYCOLLECTION(POINT(10 20)))"))))
 GEOMETRYCOLLECTION(GEOMETRYCOLLECTION(POINT(10 20)))
 SELECT ST_ASTEXT(ST_GEOMFROMGEOJSON(ST_ASGEOJSON(ST_GEOMFROMTEXT("GEOMETRYCOLLECTION(GEOMETRYCOLLECTION(GEOMETRYCOLLECTION()))"))));
 ST_ASTEXT(ST_GEOMFROMGEOJSON(ST_ASGEOJSON(ST_GEOMFROMTEXT("GEOMETRYCOLLECTION(GEOMETRYCOLLECTION(GEOMETRYCOLLECTION()))"))))
-GEOMETRYCOLLECTION(GEOMETRYCOLLECTION(GEOMETRYCOLLECTION()))
+GEOMETRYCOLLECTION(GEOMETRYCOLLECTION(GEOMETRYCOLLECTION EMPTY))
 SELECT ST_ASTEXT(ST_GEOMFROMGEOJSON(ST_ASGEOJSON(ST_GEOMFROMTEXT("GEOMETRYCOLLECTION( "
                                     "GEOMETRYCOLLECTION(POINT(10 20)),"
                                     "GEOMETRYCOLLECTION(LINESTRING(0 0, 100 100)),"
@@ -4107,11 +4099,11 @@ ERROR HY000: Incorrect max decimal digits value: '18446744073709551615' for func
 SELECT ST_ASGEOJSON(POINT(1, 1), 10, 18446744073709551615);
 ERROR HY000: Incorrect options value: '18446744073709551615' for function st_asgeojson
 SELECT ST_GEOMFROMGEOJSON('{"type":"Point", "coordinates":[10, 20]}', 1, -9223372036854775808);
-ERROR HY000: Incorrect SRID value: '-9223372036854775808' for function st_geomfromgeojson
+ERROR 22003: SRID value is out of range in 'st_geomfromgeojson'
 SELECT ST_GEOMFROMGEOJSON('{"type":"Point", "coordinates":[10, 20]}', -9223372036854775808);
 ERROR HY000: Incorrect option value: '-9223372036854775808' for function st_geomfromgeojson
 SELECT ST_GEOMFROMGEOJSON('{"type":"Point", "coordinates":[10, 20]}', 1, 18446744073709551615);
-ERROR HY000: Incorrect SRID value: '18446744073709551615' for function st_geomfromgeojson
+ERROR 22003: SRID value is out of range in 'st_geomfromgeojson'
 SELECT ST_GEOMFROMGEOJSON('{"type":"Point", "coordinates":[10, 20]}', 18446744073709551615);
 ERROR HY000: Incorrect option value: '18446744073709551615' for function st_geomfromgeojson
 SELECT ST_ASGEOJSON(POINT(1, 1), -9223372036854775809);
@@ -4162,9 +4154,9 @@ ERROR HY000: Invalid GeoJSON data provided to function st_geomfromgeojson
 SELECT ST_GEOMFROMGEOJSON('-1E-36181012216111515851075235238');
 ERROR HY000: Invalid GeoJSON data provided to function st_geomfromgeojson
 SELECT ST_GEOMFROMGEOJSON('1E+36181012216111515851075235238');
-ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "Number too big to be stored in double." at position 6.
+ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "Number too big to be stored in double." at position 0.
 SELECT ST_GEOMFROMGEOJSON('-1E+36181012216111515851075235238');
-ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "Number too big to be stored in double." at position 7.
+ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "Number too big to be stored in double." at position 0.
 #
 # Bug#21389101 ST_GEOMFROMGEOJSON: STACK OVERFLOW IN
 #              RAPIDJSON::GENERICREADER
@@ -4187,6 +4179,21 @@ SELECT 1 FROM t GROUP BY ST_AsGeoJSON(NULL, 5, 0);
 1
 DROP TABLE t;
 #
+# Bug#22804853 ST_GEOMFROMGEOJSON: ASSERTION FAILED: 0, FILE FILESORT.CC
+#
+CREATE TABLE t (a INT) ENGINE=InnoDB;
+INSERT INTO t VALUES (1), (2);
+SELECT DISTINCT SQL_BIG_RESULT ST_GeomFromGeoJSON('1', 1, ST_SRID(a)) FROM t;
+ERROR 22023: Invalid GIS data provided to function st_srid.
+DROP TABLE t;
+#
+# Bug#22912800 ST_ASGEOJSON() DOESN'T WORK WITH SESSION VARIABLES
+#
+SET @geometry := ST_GeomFromText("POINT(4.9 52.366667)");
+SELECT ST_AsGeoJSON(@geometry);
+ST_AsGeoJSON(@geometry)
+{"type": "Point", "coordinates": [4.9, 52.366667]}
+#
 # Bug#22930020 INVALID DATA FOR ST_GEOMFROMGEOJSON() IS HARD TO DIAGNOSE
 #
 CREATE TABLE t1 (col1 JSON);
@@ -4206,3 +4213,95 @@ NULL
 SELECT ST_GeomFromGeoJSON('Null');
 ERROR 22032: Invalid JSON text in argument 1 to function st_geomfromgeojson: "Invalid value." at position 0.
 DROP TABLE t1;
+#
+# WL#8579 Spatial Reference Systems
+#
+# SRID 0 (should pass)
+SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT('POINT(0 0)', 0));
+ST_ASGEOJSON(ST_GEOMFROMTEXT('POINT(0 0)', 0))
+{"type": "Point", "coordinates": [0, 0]}
+SELECT ST_SRID(ST_GEOMFROMGEOJSON(
+"  { \"type\": \"Point\", \"coordinates\": [10, 20],               "
+"      \"crs\":                                                    "
+"        { \"type\": \"name\", \"properties\":                     "
+"          { \"name\": \"urn:ogc:def:crs:OGC:1.3:crs84\" }         "
+"        }                                                         "
+"  }", 1, 0));
+ST_SRID(ST_GEOMFROMGEOJSON(
+"  { \"type\": \"Point\", \"coordinates\": [10, 20],               "
+"      \"crs\":                                                    "
+"        { \"type\": \"name\", \"properties\":                     "
+"          { \"name\"
+0
+# Projected SRS (should pass)
+SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT('POINT(0 0)', 2000));
+ST_ASGEOJSON(ST_GEOMFROMTEXT('POINT(0 0)', 2000))
+{"type": "Point", "coordinates": [0, 0]}
+SELECT ST_SRID(ST_GEOMFROMGEOJSON(
+"  { \"type\": \"Point\", \"coordinates\": [10, 20],               "
+"      \"crs\":                                                    "
+"        { \"type\": \"name\", \"properties\":                     "
+"          { \"name\": \"urn:ogc:def:crs:OGC:1.3:crs84\" }         "
+"        }                                                         "
+"  }", 1, 2000));
+ST_SRID(ST_GEOMFROMGEOJSON(
+"  { \"type\": \"Point\", \"coordinates\": [10, 20],               "
+"      \"crs\":                                                    "
+"        { \"type\": \"name\", \"properties\":                     "
+"          { \"name\"
+2000
+# Geographic SRS (should pass)
+SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT('POINT(0 0)', 4326));
+ST_ASGEOJSON(ST_GEOMFROMTEXT('POINT(0 0)', 4326))
+{"type": "Point", "coordinates": [0, 0]}
+SELECT ST_SRID(ST_GEOMFROMGEOJSON(
+"  { \"type\": \"Point\", \"coordinates\": [10, 20],               "
+"      \"crs\":                                                    "
+"        { \"type\": \"name\", \"properties\":                     "
+"          { \"name\": \"urn:ogc:def:crs:OGC:1.3:crs84\" }         "
+"        }                                                         "
+"  }", 1, 4326));
+ST_SRID(ST_GEOMFROMGEOJSON(
+"  { \"type\": \"Point\", \"coordinates\": [10, 20],               "
+"      \"crs\":                                                    "
+"        { \"type\": \"name\", \"properties\":                     "
+"          { \"name\"
+4326
+# Undefined SRS (should pass)
+SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT('POINT(0 0)', 19000000));
+ST_ASGEOJSON(ST_GEOMFROMTEXT('POINT(0 0)', 19000000))
+{"type": "Point", "coordinates": [0, 0]}
+SELECT ST_SRID(ST_GEOMFROMGEOJSON(
+"  { \"type\": \"Point\", \"coordinates\": [10, 20],               "
+"      \"crs\":                                                    "
+"        { \"type\": \"name\", \"properties\":                     "
+"          { \"name\": \"urn:ogc:def:crs:OGC:1.3:crs84\" }         "
+"        }                                                         "
+"  }", 1, 19000000));
+ST_SRID(ST_GEOMFROMGEOJSON(
+"  { \"type\": \"Point\", \"coordinates\": [10, 20],               "
+"      \"crs\":                                                    "
+"        { \"type\": \"name\", \"properties\":                     "
+"          { \"name\"
+19000000
+# Unparseable SRS definition (should pass)
+INSERT INTO mysql.st_spatial_reference_systems(id, catalog_id, name,
+organization, organization_coordsys_id, definition, description)
+VALUES (22222222, 1, 'TEST22222222', 'Foo', 22222222, 'FOOBAR', '');
+SELECT ST_ASGEOJSON(ST_GEOMFROMTEXT('POINT(0 0)', 22222222));
+ST_ASGEOJSON(ST_GEOMFROMTEXT('POINT(0 0)', 22222222))
+{"type": "Point", "coordinates": [0, 0]}
+SELECT ST_SRID(ST_GEOMFROMGEOJSON(
+"  { \"type\": \"Point\", \"coordinates\": [10, 20],               "
+"      \"crs\":                                                    "
+"        { \"type\": \"name\", \"properties\":                     "
+"          { \"name\": \"urn:ogc:def:crs:OGC:1.3:crs84\" }         "
+"        }                                                         "
+"  }", 1, 22222222));
+ST_SRID(ST_GEOMFROMGEOJSON(
+"  { \"type\": \"Point\", \"coordinates\": [10, 20],               "
+"      \"crs\":                                                    "
+"        { \"type\": \"name\", \"properties\":                     "
+"          { \"name\"
+22222222
+DELETE FROM mysql.st_spatial_reference_systems WHERE id = 22222222;

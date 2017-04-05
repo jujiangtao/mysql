@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2016, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -25,9 +25,27 @@
 #include "pfs_digest.h"
 
 /**
-  @addtogroup Performance_schema_tables
+  @addtogroup performance_schema_tables
   @{
 */
+
+class PFS_index_esms_by_digest : public PFS_engine_index
+{
+public:
+  PFS_index_esms_by_digest()
+    : PFS_engine_index(&m_key_1, &m_key_2),
+    m_key_1("SCHEMA_NAME"), m_key_2("DIGEST")
+  {}
+
+  ~PFS_index_esms_by_digest()
+  {}
+
+  virtual bool match(PFS_statements_digest_stat *pfs);
+
+private:
+  PFS_key_schema m_key_1;
+  PFS_key_digest m_key_2;
+};
 
 /**
   A row of table
@@ -57,9 +75,13 @@ public:
   static int delete_all_rows();
   static ha_rows get_row_count();
 
+  virtual void reset_position(void);
+
   virtual int rnd_next();
   virtual int rnd_pos(const void *pos);
-  virtual void reset_position(void);
+
+  virtual int index_init(uint idx, bool sorted);
+  virtual int index_next();
 
 protected:
   virtual int read_row_values(TABLE *table,
@@ -90,6 +112,8 @@ private:
   PFS_simple_index m_pos;
   /** Next position. */
   PFS_simple_index m_next_pos;
+
+  PFS_index_esms_by_digest *m_opened_index;
 };
 
 /** @} */

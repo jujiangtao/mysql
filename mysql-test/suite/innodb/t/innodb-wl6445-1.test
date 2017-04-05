@@ -63,20 +63,19 @@ SELECT * FROM otherlocation ORDER BY id;
 
 #
 
-let $restart_parameters = restart: --innodb-read-only;
---source include/restart_mysqld.inc
+--source include/restart_innodb_read_only.inc
 
 SET GLOBAL innodb_file_per_table = 1;
-
-# Nothing to do with wl64645.non-InnoDB issue. But need to document in QA note.
-CREATE USER 'test3'@'localhost' IDENTIFIED BY '123';
-GRANT ALL ON testdb_wl6445.* TO 'test3'@'localhost';
 
 USE testdb_wl6445;
 SELECT i FROM t1 ORDER BY i;
 --ERROR ER_CANT_LOCK
 INSERT INTO t1 VALUES (11,repeat('a',200)),(12,repeat('b',200)),(13,repeat('c',200));
 SELECT i,LEFT(j,20) FROM t1 ORDER BY i;
+
+# User-manipulation statements are disallowed since ACL tables use InnoDB.
+--error ER_ACL_OPERATION_FAILED
+CREATE USER 'test3'@'localhost' IDENTIFIED BY '123';
 
 --echo # connection con_test1_user try to modify
 --connect (con_test1_user,'localhost','test1','123',)
@@ -85,7 +84,7 @@ USE testdb_wl6445;
 --ERROR ER_CANT_LOCK
 INSERT INTO t1 VALUES (11,repeat('a',200)),(12,repeat('b',200)),(13,repeat('c',200));
 SELECT i,LEFT(j,20) FROM t1 ORDER BY i;
---ERROR ER_INNODB_READ_ONLY
+--ERROR ER_OPEN_AS_READONLY
 CREATE TABLE t2 ( i int ,j blob) ENGINE = Innodb;
 --ERROR ER_CANT_LOCK
 UPDATE t1 SET i = i+1;
@@ -101,7 +100,7 @@ USE testdb_wl6445;
 --ERROR ER_CANT_LOCK
 INSERT INTO t1 VALUES (11,repeat('a',200)),(12,repeat('b',200)),(13,repeat('c',200));
 SELECT i,LEFT(j,20) FROM t1 ORDER BY i;
---ERROR ER_INNODB_READ_ONLY
+--ERROR ER_OPEN_AS_READONLY
 CREATE TABLE t2 ( i int , j blob) ENGINE = Innodb;
 --ERROR ER_CANT_LOCK
 UPDATE t1 SET i = i+1;
@@ -124,7 +123,7 @@ USE testdb_wl6445;
 --ERROR ER_CANT_LOCK
 INSERT INTO t1 VALUES (11,repeat('a',200)),(12,repeat('b',200)),(13,repeat('c',200));
 SELECT i,LEFT(j,20) FROM t1 ORDER BY i;
---ERROR ER_INNODB_READ_ONLY
+--ERROR ER_OPEN_AS_READONLY
 CREATE TABLE t2 ( i int , j blob) ENGINE = Innodb;
 --ERROR ER_CANT_LOCK
 UPDATE t1 SET i = i+1;
@@ -152,7 +151,6 @@ let $restart_parameters = restart;
 --source include/restart_mysqld.inc
 DROP USER 'test1'@'localhost';
 DROP USER 'test2'@'localhost';
-DROP USER 'test3'@'localhost';
 DROP DATABASE testdb_wl6445;
 
 
@@ -205,7 +203,7 @@ USE testdb_wl6445;
 --ERROR ER_CANT_LOCK
 INSERT INTO t1 VALUES (211,repeat('a',200)),(212,repeat('b',200)),(213,repeat('c',200));
 SELECT i,LEFT(j,20) FROM t1 WHERE i%10=0 ORDER BY i;
---ERROR ER_INNODB_READ_ONLY
+--ERROR ER_OPEN_AS_READONLY
 CREATE TABLE t2 ( i int , j blob) ENGINE = Innodb;
 --ERROR ER_CANT_LOCK
 UPDATE t1 SET i = i+1;
@@ -533,10 +531,12 @@ INSERT INTO t1 VALUES (11,repeat('a',200)),(12,repeat('b',200)),(13,repeat('c',2
 UPDATE t1 SET i = i + 20;
 --ERROR ER_CANT_LOCK
 DELETE FROM t1;
---ERROR ER_INNODB_READ_ONLY
+--ERROR ER_OPEN_AS_READONLY
 CREATE TABLE t2 ( i INT ) ENGINE = Innodb;
+
+# User-manipulation statements are disallowed since ACL tables use InnoDB.
+--error ER_ACL_OPERATION_FAILED
 CREATE USER 'test5'@'localhost' IDENTIFIED BY '123';
-GRANT ALL ON testdb_wl6445.* TO 'test5'@'localhost';
 
 let $restart_parameters = restart: --read-only;
 --source include/restart_mysqld.inc
@@ -561,7 +561,6 @@ GRANT ALL ON testdb_wl6445.* TO 'test5_2'@'localhost';
 let $restart_parameters = restart;
 --source include/restart_mysqld.inc
 DROP USER 'test5_2'@'localhost';
-DROP USER 'test5'@'localhost';
 DROP DATABASE testdb_wl6445;
 
 #------------------------------------------------------------------------------
@@ -621,6 +620,7 @@ call mtr.add_suppression("\\[ERROR\\] InnoDB: Cannot open datafile for read-only
 call mtr.add_suppression("\\[ERROR\\] InnoDB: Operating system error number 2 in a file operation.");
 call mtr.add_suppression("\\[ERROR\\] InnoDB: The error means the system cannot find the path specified.");
 call mtr.add_suppression("\\[ERROR\\] InnoDB: If you are installing InnoDB, remember that you must create directories yourself, InnoDB does not create them.");
+call mtr.add_suppression("\\[Warning\\] Skip re-populating collations and character sets tables in read-only mode.");
 --enable_query_log
 
 

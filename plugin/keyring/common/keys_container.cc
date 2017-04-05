@@ -20,8 +20,7 @@ namespace keyring {
 
 extern PSI_memory_key key_memory_KEYRING;
 
-static uchar *get_hash_key(const uchar *key, size_t *length,
-                           my_bool not_used MY_ATTRIBUTE((unused)))
+static uchar *get_hash_key(const uchar *key, size_t *length)
 {
   std::string *key_signature= reinterpret_cast<const IKey *>(key)->get_key_signature();
   *length= key_signature->length();
@@ -29,7 +28,7 @@ static uchar *get_hash_key(const uchar *key, size_t *length,
 }
 
 
-void free_hash_key(void* key)
+static void free_hash_key(void* key)
 {
   IKey *key_to_free= reinterpret_cast<IKey*>(key);
   delete key_to_free;
@@ -53,8 +52,8 @@ my_bool Keys_container::init(IKeyring_io* keyring_io, std::string keyring_storag
 {
   this->keyring_io= keyring_io;
   this->keyring_storage_url= keyring_storage_url;
-  if (my_hash_init(&keys_hash, system_charset_info, 0x100, 0, 0,
-                   (my_hash_get_key) get_hash_key, free_hash_key, HASH_UNIQUE,
+  if (my_hash_init(&keys_hash, system_charset_info, 0, 0,
+                   (hash_get_key_function) get_hash_key, free_hash_key, HASH_UNIQUE,
                    key_memory_KEYRING) ||
       keyring_io->init(&this->keyring_storage_url) ||
       load_keys_from_keyring_storage())
@@ -118,9 +117,9 @@ IKey*Keys_container::fetch_key(IKey *key)
 my_bool Keys_container::remove_key_from_hash(IKey *key)
 {
   my_bool retVal= TRUE;
-  keys_hash.free= NULL; //Prevent my_hash_delete from removing key from memory
+  keys_hash.free_element= NULL; //Prevent my_hash_delete from removing key from memory
   retVal= my_hash_delete(&keys_hash, reinterpret_cast<uchar*>(key));
-  keys_hash.free= free_hash_key;
+  keys_hash.free_element= free_hash_key;
   return retVal;
 }
 

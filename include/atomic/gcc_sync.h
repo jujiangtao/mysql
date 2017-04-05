@@ -16,6 +16,10 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
+/**
+  @file include/atomic/gcc_sync.h
+*/
+
 /* Old GCC __sync builtins introduced in GCC 4.1 */
 
 static inline int my_atomic_cas32(int32 volatile *a, int32 *cmp, int32 set)

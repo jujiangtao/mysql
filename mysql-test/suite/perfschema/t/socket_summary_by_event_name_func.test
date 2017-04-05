@@ -26,7 +26,12 @@
 # happens per SQL statement within our MTR tests. And there is a significant
 # difference between standard statement execution and execution via
 # prepared statement.
+# Test requires: sp-protocol/ps-protocol/view-protocol/cursor-protocol disabled
 --source include/no_protocol.inc
+
+--disconnect default
+--source include/wait_until_disconnected.inc
+--connect (default,localhost,root,,,,)
 
 --source include/turn_off_only_full_group_by.inc
 

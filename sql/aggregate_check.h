@@ -1,7 +1,7 @@
 #ifndef AGGREGATE_CHECK_INCLUDED
 #define AGGREGATE_CHECK_INCLUDED
 
-/* Copyright (c) 2014, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -26,7 +26,7 @@
 /**
   @defgroup AGGREGATE_CHECKS Aggregate checks of ONLY_FULL_GROUP_BY
 
-Checks for some semantic constraints on queries using GROUP BY, or aggregate functions, or DISTINCT.
+Checks for some semantic constraints on queries using GROUP BY, or aggregate functions, or DISTINCT (ONLY_FULL_GROUP_BY).
 
 We call "aggregation" the operation of taking a group of rows and replacing
 it with a single row. There are three types of aggregation: DISTINCT,
@@ -447,12 +447,16 @@ VE2 are NULL then VE3 must be NULL, which makes the dependency NULL-friendly.
 */
 
 #include "my_global.h"
-#include "mem_root_array.h"
-#include "opt_trace.h"
-#include "item_cmpfunc.h"
-#include "item_sum.h"
+
+#include "item_cmpfunc.h"        // Item_func_any_value
+#include "item_sum.h"            // Item_sum
+#include "mem_root_array.h"      // Mem_root_array
+#include "sql_alloc.h"           // Sql_alloc
+
 struct st_mem_root;
-class st_select_lex;
+class Opt_trace_context;
+class Opt_trace_object;
+class SELECT_LEX;
 struct TABLE_LIST;
 
 /**
@@ -530,7 +534,7 @@ class Distinct_check: public Item_tree_walker, public Sql_alloc
 {
 public:
 
-  Distinct_check(st_select_lex *select_arg)
+  Distinct_check(SELECT_LEX *select_arg)
     : select(select_arg), failed_ident(NULL)
   {}
 
@@ -539,7 +543,7 @@ public:
 private:
 
   /// Query block which we are validating
-  st_select_lex *const select;
+  SELECT_LEX *const select;
   /// Identifier which triggered an error
   Item_ident *failed_ident;
 
@@ -564,7 +568,7 @@ class Group_check: public Item_tree_walker, public Sql_alloc
 {
 public:
 
-  Group_check(st_select_lex *select_arg, st_mem_root *root)
+  Group_check(SELECT_LEX *select_arg, st_mem_root *root)
     : select(select_arg), search_in_underlying(false),
     non_null_in_source(false),
     table(NULL), group_in_fd(~0ULL), m_root(root), fd(root),
@@ -583,7 +587,7 @@ public:
 private:
 
   /// Query block which we are validating
-  st_select_lex *const select;
+  SELECT_LEX *const select;
 
   /**
      "Underlying" == expressions which are underlying in an identifier.
@@ -647,7 +651,7 @@ private:
   bool is_child() const { return table != NULL; }
 
   /// Private ctor, for a Group_check to build a child Group_check
-  Group_check(st_select_lex *select_arg, st_mem_root *root,
+  Group_check(SELECT_LEX *select_arg, st_mem_root *root,
               TABLE_LIST *table_arg)
     : select(select_arg), search_in_underlying(false),
     non_null_in_source(false), table(table_arg),

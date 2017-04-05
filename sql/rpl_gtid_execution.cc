@@ -20,6 +20,7 @@
 #include "rpl_rli.h"                          // Relay_log_info
 #include "sql_class.h"                        // THD
 #include "sql_parse.h"                        // stmt_causes_implicit_commit
+#include "mysqld.h"                           // connection_events_loop_aborted
 
 #include "pfs_transaction_provider.h"
 #include "mysql/psi/mysql_transaction.h"
@@ -135,7 +136,7 @@ bool set_gtid_next(THD *thd, const Gtid_specification &spec)
         lock_count= 0;
 
         // Check if thread was killed.
-        if (thd->killed || abort_loop)
+        if (thd->killed || connection_events_loop_aborted())
         {
           goto err;
         }
@@ -236,7 +237,7 @@ int gtid_acquire_ownership_multiple(THD *thd)
 
     // at this point, we don't hold any locks. re-acquire the global
     // read lock that was held when this function was invoked
-    if (thd->killed || abort_loop)
+    if (thd->killed || connection_events_loop_aborted())
       DBUG_RETURN(1);
 #ifdef HAVE_REPLICATION
     // If this thread is a slave SQL thread or slave SQL worker
@@ -432,12 +433,14 @@ static bool is_stmt_innocent(const THD *thd)
     (sql_command_flags[sql_command] & CF_STATUS_COMMAND) &&
     (sql_command != SQLCOM_BINLOG_BASE64_EVENT);
   bool is_set=
-    (sql_command == SQLCOM_SET_OPTION) && !lex->is_set_password_sql;
+    (sql_command == SQLCOM_SET_OPTION);
+  bool is_set_role=
+    sql_command == SQLCOM_SET_ROLE;
   bool is_select= (sql_command == SQLCOM_SELECT);
   bool is_do= (sql_command == SQLCOM_DO);
   bool is_empty= (sql_command == SQLCOM_EMPTY_QUERY);
   return
-    (is_set || is_select || is_do || is_show || is_empty) &&
+    (is_set || is_set_role || is_select || is_do || is_show || is_empty) &&
     !lex->uses_stored_routines();
 }
 

@@ -1,8 +1,8 @@
 /*
- * Copyright (c)  2000, 2014
+ * Copyright (c)  2000, 2016
  * SWsoft  company
  *
- * Modifications copyright (c) 2001, 2015. Oracle and/or its affiliates.
+ * Modifications copyright (c) 2001, 2016. Oracle and/or its affiliates.
  * All rights reserved.
  *
  * This material is provided "as is", with absolutely no warranty expressed
@@ -18,45 +18,43 @@
   This code was modified by the MySQL team
 */
 
-/*
-  The following is needed to not cause conflicts when we include mysqld.cc
-*/
-
-extern "C"
-{
-  extern unsigned long max_allowed_packet, net_buffer_length;
-}
-
-#include "../sql/mysqld.cc"
-
-extern "C" {
-
-#include <mysql.h>
-#undef ER
+#include "my_global.h"
+#include "mysql.h"
 #include "errmsg.h"
 #include "embedded_priv.h"
+#include "client_settings.h"
+#include "my_default.h"
 
-} // extern "C"
+#include "current_thd.h"
+#include "log.h"
+#include "mysqld.h"
+#include "mysqld_embedded.h"
+#include "mysqld_thd_manager.h"
+#include "persisted_variable.h"         // Persisted_variables_cache
+#include "rpl_filter.h"
+#include "sql_class.h"
+#include "sql_db.h"
+#include "sql_manager.h"
+#include "sql_parse.h"
+#include "sql_table.h"
+#include "sql_thd_internal_api.h"
+#include "tztime.h"
+#include "../storage/perfschema/pfs_server.h"
 
+#include "sql_db.h"     // mysql_change_db
 #include <algorithm>
 
 using std::min;
 using std::max;
 
-extern "C" {
 
 extern unsigned int mysql_server_last_errno;
 extern char mysql_server_last_error[MYSQL_ERRMSG_SIZE];
+
+extern "C" {
+
 static my_bool emb_read_query_result(MYSQL *mysql);
 
-
-void unireg_clear(int exit_code)
-{
-  DBUG_ENTER("unireg_clear");
-  clean_up(!opt_help && (exit_code || !opt_bootstrap)); /* purecov: inspected */
-  my_end(opt_endinfo ? MY_CHECK_ERROR | MY_GIVE_INFO : 0);
-  DBUG_VOID_RETURN;
-}
 
 /*
   Wrapper error handler for embedded server to call client/server error 
@@ -93,7 +91,7 @@ static void embedded_error_handler(uint error, const char *str, myf MyFlags)
     most of the data is stored in data->embedded_info structure
 */
 
-void embedded_get_error(MYSQL *mysql, MYSQL_DATA *data)
+static void embedded_get_error(MYSQL *mysql, MYSQL_DATA *data)
 {
   NET *net= &mysql->net;
   struct embedded_query_result *ei= data->embedded_info;
@@ -369,7 +367,7 @@ static int emb_stmt_execute(MYSQL_STMT *stmt)
   DBUG_RETURN(0);
 }
 
-int emb_read_binary_rows(MYSQL_STMT *stmt)
+static int emb_read_binary_rows(MYSQL_STMT *stmt)
 {
   MYSQL_DATA *data;
   if (!(data= emb_read_rows(stmt->mysql, 0, 0)))
@@ -383,7 +381,7 @@ int emb_read_binary_rows(MYSQL_STMT *stmt)
   return 0;
 }
 
-int emb_read_rows_from_cursor(MYSQL_STMT *stmt)
+static int emb_read_rows_from_cursor(MYSQL_STMT *stmt)
 {
   MYSQL *mysql= stmt->mysql;
   THD *thd= (THD*) mysql->thd;
@@ -405,7 +403,7 @@ int emb_read_rows_from_cursor(MYSQL_STMT *stmt)
   return emb_read_binary_rows(stmt);
 }
 
-int emb_unbuffered_fetch(MYSQL *mysql, char **row)
+static int emb_unbuffered_fetch(MYSQL *mysql, char **row)
 {
   THD *thd= (THD*) mysql->thd;
   MYSQL_DATA *data= thd->cur_data;
@@ -456,7 +454,7 @@ static MYSQL_RES * emb_store_result(MYSQL *mysql)
   return mysql_store_result(mysql);
 }
 
-int emb_read_change_user_result(MYSQL *mysql)
+static int emb_read_change_user_result(MYSQL *mysql)
 {
   mysql->net.read_pos= (uchar*)""; // fake an OK packet
   return mysql_errno(mysql) ? static_cast<int>packet_error :
@@ -484,34 +482,10 @@ MYSQL_METHODS embedded_methods=
   free_rows
 };
 
-/*
-  Make a copy of array and the strings array points to
-*/
-
-char **copy_arguments(int argc, char **argv)
-{
-  size_t length= 0;
-  char **from, **res, **end= argv+argc;
-
-  for (from=argv ; from != end ; from++)
-    length+= strlen(*from);
-
-  if ((res= (char**) my_malloc(PSI_NOT_INSTRUMENTED,
-                               sizeof(argv)*(argc+1)+length+argc,
-			       MYF(MY_WME))))
-  {
-    char **to= res, *to_str= (char*) (res+argc+1);
-    for (from=argv ; from != end ;)
-    {
-      *to++= to_str;
-      to_str= my_stpcpy(to_str, *from++)+1;
-    }
-    *to= 0;					// Last ptr should be null
-  }
-  return res;
-}
-
 char **		copy_arguments_ptr= 0;
+
+/* cache for persisted variables */
+static Persisted_variables_cache persisted_variables_cache;
 
 int init_embedded_server(int argc, char **argv, char **groups)
 {
@@ -529,6 +503,12 @@ int init_embedded_server(int argc, char **argv, char **groups)
   char *fake_groups[]= { fake_server, fake_embedded, NULL };
   char fake_name[]= "fake_name";
   my_bool acl_error;
+
+  /*
+    Pre-initialize PFS early, so background threads created by
+    InnoDB can safely use related thread specific variables.
+  */
+  pre_initialize_performance_schema();
 
   if (my_thread_init())
     return 1;
@@ -561,11 +541,16 @@ int init_embedded_server(int argc, char **argv, char **groups)
   orig_argv= *argvp;
   if (load_defaults("my", (const char **)groups, argcp, argvp))
     return 1;
+
+  /* Initialize variables cache for persisted variables */
+  persisted_variables_cache.init();
+
   defaults_argc= *argcp;
   defaults_argv= *argvp;
   remaining_argc= *argcp;
   remaining_argv= *argvp;
 
+  init_variable_default_paths();
   /* Must be initialized early for comparison of options name */
   system_charset_info= &my_charset_utf8_general_ci;
   sys_var_init();
@@ -610,7 +595,7 @@ int init_embedded_server(int argc, char **argv, char **groups)
     Each server should have one UUID. We will create it automatically, if it
     does not exist.
    */
-  if (!opt_bootstrap && init_server_auto_options())
+  if (!opt_initialize && init_server_auto_options())
   {
     mysql_server_end();
     return 1;
@@ -625,7 +610,7 @@ int init_embedded_server(int argc, char **argv, char **groups)
 #ifndef NO_EMBEDDED_ACCESS_CHECKS
   acl_error= acl_init(opt_noacl) || grant_init(opt_noacl);
 #endif
-  if (acl_error || my_tz_init((THD *)0, default_tz_name, opt_bootstrap))
+  if (acl_error || my_tz_init((THD *)0, default_tz_name, opt_initialize))
   {
     mysql_server_end();
     return 1;
@@ -634,8 +619,56 @@ int init_embedded_server(int argc, char **argv, char **groups)
   init_max_user_conn();
   init_update_queries();
 
-  if (!opt_bootstrap)
+  if (!opt_initialize)
     servers_init(0);
+
+  /*
+    PERFORMANCE_SCHEMA minimal initialization,
+    for the embedded library.
+    - all instrumentation is disabled
+    - no memory is allocated
+    The following tables are supported:
+    - performance_schema.session_status
+    - performance_schema.global_status
+    - performance_schema.session_variables
+    - performance_schema.global_variables
+    to support the following statements:
+    - SHOW SESSION STATUS
+    - SHOW GLOBAL STATUS
+    - SHOW SESSION VARIABLES
+    - SHOW GLOBAL VARIABLES
+  */
+  if (! opt_initialize)
+  {
+    set_embedded_performance_schema_param(& pfs_param);
+    (void) initialize_performance_schema(& pfs_param,
+                                         & psi_thread_hook,
+                                         & psi_mutex_hook,
+                                         & psi_rwlock_hook,
+                                         & psi_cond_hook,
+                                         & psi_file_hook,
+                                         & psi_socket_hook,
+                                         & psi_table_hook,
+                                         & psi_mdl_hook,
+                                         & psi_idle_hook,
+                                         & psi_stage_hook,
+                                         & psi_statement_hook,
+                                         & psi_transaction_hook,
+                                         & psi_memory_hook,
+                                         & psi_error_hook);
+  }
+  initialize_performance_schema_acl(opt_initialize);
+  if (! opt_initialize)
+  {
+    check_performance_schema();
+  }
+
+  /* set all persistent options */
+  if (persisted_variables_cache.set_persist_options())
+  {
+    sql_print_error("Setting persistent options failed.");
+    return 1;
+  }
 
   start_handle_manager();
 
@@ -655,7 +688,7 @@ int init_embedded_server(int argc, char **argv, char **groups)
 
   execute_ddl_log_recovery();
 
-  start_processing_signals();
+  server_components_initialized();
 
 #ifdef WITH_NDBCLUSTER_STORAGE_ENGINE
   /* engine specific hook, to be made generic */
@@ -718,7 +751,7 @@ void *create_embedded_thd(int client_flag)
   thd->proc_info=0;				// Remove 'login'
   thd->set_command(COM_SLEEP);
   thd->set_time();
-  thd->init_for_queries();
+  thd->init_query_mem_roots();
   thd->get_protocol_classic()->set_client_capabilities(client_flag);
   thd->real_id= my_thread_self();
 

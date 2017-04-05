@@ -1,5 +1,4 @@
-/*
-   Copyright (c) 2015, 2016, Oracle and/or its affiliates. All rights reserved.
+/*  Copyright (c) 2015, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -28,10 +27,12 @@
 #include "mysqld.h"              // current_thd
 #include "sql_parse.h"           // dispatch_command()
 #include "sql_thd_internal_api.h" // thd_set_thread_stack
+#include "rwlock_scoped_lock.h"
 #include "mutex_lock.h"
-#include "mysql/psi/psi.h"
 #include "conn_handler/connection_handler_manager.h"
 #include "sql_plugin.h"
+#include "current_thd.h"
+#include "derror.h"             // ER_DEFAULT
 
 #include <map>
 
@@ -47,58 +48,6 @@ extern void thd_clear_errors(THD *thd);
 static thread_local_key_t THR_stack_start_address;
 static thread_local_key_t THR_srv_session_thread;
 static bool srv_session_THRs_initialized= false;
-
-
-/**
-  A simple wrapper around a RW lock:
-  Grabs the lock in the CTOR, releases it in the DTOR.
-  The lock may be NULL, in which case this is a no-op.
-
-  Based on Mutex_lock from include/mutex_lock.h
-*/
-class Auto_rw_lock_read
-{
-public:
-  explicit Auto_rw_lock_read(mysql_rwlock_t *lock) : rw_lock(NULL)
-  {
-    if (lock && 0 == mysql_rwlock_rdlock(lock))
-      rw_lock = lock;
-  }
-
-  ~Auto_rw_lock_read()
-  {
-    if (rw_lock)
-      mysql_rwlock_unlock(rw_lock);
-  }
-private:
-  mysql_rwlock_t *rw_lock;
-
-  Auto_rw_lock_read(const Auto_rw_lock_read&);         /* Not copyable. */
-  void operator=(const Auto_rw_lock_read&);            /* Not assignable. */
-};
-
-
-class Auto_rw_lock_write
-{
-public:
-  explicit Auto_rw_lock_write(mysql_rwlock_t *lock) : rw_lock(NULL)
-  {
-    if (lock && 0 == mysql_rwlock_wrlock(lock))
-      rw_lock = lock;
-  }
-
-  ~Auto_rw_lock_write()
-  {
-    if (rw_lock)
-      mysql_rwlock_unlock(rw_lock);
-  }
-private:
-  mysql_rwlock_t *rw_lock;
-
-  Auto_rw_lock_write(const Auto_rw_lock_write&);        /* Non-copyable */
-  void operator=(const Auto_rw_lock_write&);            /* Non-assignable */
-};
-
 
 class Thread_to_plugin_map
 {
@@ -116,8 +65,6 @@ public:
   /**
     Initializes the map
 
-    @param null_val null value to be returned when element not found in the map
-
     @return
       false  success
       true   failure
@@ -127,7 +74,7 @@ public:
     const char* category= "session";
     PSI_mutex_info all_mutexes[]=
     {
-      { &key_LOCK_collection, "LOCK_srv_session_threads", PSI_FLAG_GLOBAL}
+      { &key_LOCK_collection, "LOCK_srv_session_threads", PSI_FLAG_GLOBAL, 0}
     };
 
     initted= true;
@@ -158,8 +105,6 @@ public:
 
   /**
     Adds a pthread to the list
-
-    @param key   plugin
 
     @return
       false  success
@@ -342,8 +287,6 @@ public:
   /**
     Initializes the map
 
-    @param null_val null value to be returned when element not found in the map
-
     @return
       false  success
       true   failure
@@ -393,7 +336,7 @@ public:
   */
   Srv_session* find(const THD* key)
   {
-    Auto_rw_lock_read lock(&LOCK_collection);
+    rwlock_scoped_lock lock(&LOCK_collection, false, __FILE__, __LINE__);
 
     std::map<const THD*, map_value_t>::iterator it= collection.find(key);
     return (it != collection.end())? it->second.second : NULL;
@@ -404,7 +347,7 @@ public:
 
     @param key     key
     @param plugin  secondary key
-    @param value   value
+    @param session
 
     @return
       false  success
@@ -412,7 +355,7 @@ public:
   */
   bool add(const THD* key, const void *plugin, Srv_session *session)
   {
-    Auto_rw_lock_write lock(&LOCK_collection);
+    rwlock_scoped_lock lock(&LOCK_collection, true, __FILE__, __LINE__);
     try
     {
       collection[key]= std::make_pair(plugin, session);
@@ -435,7 +378,7 @@ public:
   */
   bool remove(const THD* key)
   {
-    Auto_rw_lock_write lock(&LOCK_collection);
+    rwlock_scoped_lock lock(&LOCK_collection, true, __FILE__, __LINE__);
     /*
       If we use erase with the key directly an exception could be thrown. The
       find method never throws. erase() with iterator as parameter also never
@@ -459,7 +402,7 @@ public:
     removed= 0;
 
     {
-      Auto_rw_lock_write lock(&LOCK_collection);
+      rwlock_scoped_lock lock(&LOCK_collection, true, __FILE__, __LINE__);
 
       for (std::map<const THD*, map_value_t>::iterator it= collection.begin();
            it != collection.end();
@@ -495,7 +438,7 @@ public:
   */
   bool clear()
   {
-    Auto_rw_lock_write lock(&LOCK_collection);
+    rwlock_scoped_lock lock(&LOCK_collection, true, __FILE__, __LINE__);
     collection.clear();
     return false;
   }
@@ -505,7 +448,7 @@ public:
   */
   unsigned int size()
   {
-    Auto_rw_lock_read lock(&LOCK_collection);
+    rwlock_scoped_lock lock(&LOCK_collection, false, __FILE__, __LINE__);
     return collection.size();
   }
 };
@@ -912,7 +855,7 @@ bool Srv_session::is_valid(const Srv_session *session)
 /**
   Constructs a server session
 
-  @param error_cb       Default completion callback
+  @param err_cb         Default completion callback
   @param err_cb_ctx     Plugin's context, opaque pointer that would
                         be provided to callbacks. Might be NULL.
 */
@@ -935,6 +878,7 @@ Srv_session::Srv_session(srv_session_error_cb err_cb, void *err_cb_ctx) :
 */
 bool Srv_session::open()
 {
+  char stack_start;
   DBUG_ENTER("Srv_session::open");
 
   DBUG_PRINT("info",("Session=%p  THD=%p  DA=%p", this, &thd, &da));
@@ -966,9 +910,6 @@ bool Srv_session::open()
 
   DBUG_PRINT("info", ("thread_id=%d", thd.thread_id()));
 
-  thd.set_time();
-  thd.thr_create_utime= thd.start_utime= my_micro_time();
-
   /*
     Disable QC - plugins will most probably install their own protocol
     and it won't be compatible with the QC. In addition, Protocol_error
@@ -977,7 +918,16 @@ bool Srv_session::open()
   thd.variables.query_cache_type = 0;
 
   thd.set_command(COM_SLEEP);
-  thd.init_for_queries();
+  thd.init_query_mem_roots();
+
+  /*
+    Set current_thd so that it can be used during authentication,
+    before attach() is called. Note that this kind of breaks the
+    separation between open() and attach() so it is likely that
+    a conceptually better solution is required long-term.
+  */
+  thd_set_thread_stack(&thd, &stack_start);
+  thd.store_globals();
 
   Global_THD_manager::get_instance()->add_thd(&thd);
 
@@ -998,8 +948,6 @@ bool Srv_session::open()
 
 /**
   Attaches the session to the current physical thread
-
-  @param session  Session handle
 
   @returns
     false   success
@@ -1022,7 +970,9 @@ bool Srv_session::attach()
     DBUG_RETURN(false);
   }
 
-  if (&thd == current_thd)
+  // Since we now set current_thd during open(), we need to do complete
+  // attach the first time in any case.
+  if (!first_attach && &thd == current_thd)
     DBUG_RETURN(false);
 
   THD *old_thd= current_thd;
@@ -1171,7 +1121,8 @@ bool Srv_session::close()
   */
   query_logger.general_log_print(&thd, COM_QUIT, NullS);
   mysql_audit_notify(&thd, AUDIT_EVENT(MYSQL_AUDIT_CONNECTION_DISCONNECT), 0);
-
+  thd.security_context()->logout();
+  thd.m_view_ctx_list.empty();
   close_mysql_tables(&thd);
 
   thd.pop_diagnostics_area();
@@ -1269,12 +1220,6 @@ int Srv_session::execute_command(enum enum_server_command command,
   if (command != COM_QUERY)
     thd.reset_for_next_command();
 
-  DBUG_ASSERT(thd.m_statement_psi == NULL);
-  thd.m_statement_psi= MYSQL_START_STATEMENT(&thd.m_statement_state,
-                                             stmt_info_new_packet.m_key,
-                                             thd.db().str,
-                                             thd.db().length,
-                                             thd.charset(), NULL);
   int ret= dispatch_command(&thd, data, command);
 
   thd.set_protocol(&protocol_error);

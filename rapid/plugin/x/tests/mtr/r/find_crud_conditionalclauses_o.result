@@ -759,7 +759,7 @@ send Mysqlx.Crud.Find {
   }
 }
 
-Got expected error: Table 'noavailableschema.actor' doesn't exist (code 1146)
+Got expected error: Unknown database 'noavailableschema' (code 1049)
 Find using not available table name
 send Mysqlx.Crud.Find {
   collection {
@@ -1405,7 +1405,7 @@ send Mysqlx.Crud.Find {
   }
 }
 
-Got expected error: Table 'notavailableschema.maincoll' doesn't exist (code 1146)
+Got expected error: Unknown database 'notavailableschema' (code 1049)
 Find with not available table name
 send Mysqlx.Crud.Find {
   collection {

@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2008, 2016, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -18,6 +18,8 @@
 
 #include "my_global.h"
 #include "my_compiler.h"
+#include "sql_class.h"
+#include "current_thd.h"
 
 /**
   @file storage/perfschema/pfs_global.h
@@ -118,6 +120,13 @@ uint pfs_get_socket_address(char *host,
                             socklen_t src_len);
 
 /**
+  Helper to allocate an object from mem_root.
+  @param CLASS Class to instantiate
+*/
+#define PFS_NEW(CLASS) \
+  reinterpret_cast<CLASS *>(new(current_thd->alloc(sizeof(CLASS))) CLASS())
+
+/**
   Compute a random index value in an interval.
   @param ptr seed address
   @param max_size maximun size of the interval
@@ -171,7 +180,8 @@ inline uint randomized_index(const void *ptr, uint max_size)
   return result;
 }
 
-void pfs_print_error(const char *format, ...);
+void pfs_print_error(const char *format, ...)
+  MY_ATTRIBUTE((format(printf, 1, 2)));
 
 /**
   Given an array defined as T ARRAY[MAX],

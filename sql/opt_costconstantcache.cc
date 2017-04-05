@@ -14,25 +14,20 @@
    along with this program; if not, write to the Free Software Foundation,
    51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
 
-// First include (the generated) my_config.h, to get correct platform defines.
-#include "my_config.h"
-#include <stddef.h>
-#include "sql_const.h"                          // MAX_FIELD_WIDTH
-#include "field.h"                              // Field
-#include "log.h"                                // sql_print_warning
-#include "m_string.h"                           // LEX_CSTRING
-#include "my_dbug.h"                            // DBUG_ASSERT
-#include "opt_costconstants.h"
 #include "opt_costconstantcache.h"
-#include "template_utils.h"                     // pointer_cast
-#include "records.h"                            // READ_RECORD
-#include "sql_base.h"                           // open_and_lock_tables
-#include "sql_class.h"                          // THD
-#include "sql_string.h"                         // String
-#include "table.h"                              // TABLE
-#include "thr_lock.h"                           // TL_READ
-#include "transaction.h"
+
+#include "current_thd.h"                  // current_thd
+#include "field.h"                        // Field
+#include "mysqld.h"                       // key_LOCK_cost_const
+#include "log.h"                          // sql_print_warning
+#include "records.h"                      // READ_RECORD
+#include "sql_base.h"                     // open_and_lock_tables
+#include "sql_class.h"                    // THD
 #include "sql_tmp_table.h"                // init_cache_tmp_engine_properties
+#include "table.h"                        // TABLE
+#include "template_utils.h"               // pointer_cast
+#include "transaction.h"                  // trans_commit_stmt
+
 
 Cost_constant_cache *cost_constant_cache= NULL;
 
@@ -178,7 +173,7 @@ Cost_constant_cache::update_current_cost_constants(Cost_model_constants *new_cos
 
   @param cost_name  name of the cost constant
   @param value      value it was attempted set to
-  @param err        error status
+  @param error      error status
 */
 
 static void report_server_cost_warnings(const LEX_CSTRING &cost_name,
@@ -210,7 +205,7 @@ static void report_server_cost_warnings(const LEX_CSTRING &cost_name,
   @param storage_category device type
   @param cost_name        name of the cost constant
   @param value            value it was attempted set to
-  @param err              error status
+  @param error            error status
 */
 
 static void report_engine_cost_warnings(const LEX_CSTRING &se_name,
@@ -251,7 +246,7 @@ static void report_engine_cost_warnings(const LEX_CSTRING &se_name,
 
   @param thd                    the THD
   @param table                  the table to read from
-  @param cost_constants[in,out] cost constant object
+  @param [in,out] cost_constants cost constant object
 */
 
 static void read_server_cost_constants(THD *thd, TABLE *table,
@@ -326,7 +321,7 @@ static void read_server_cost_constants(THD *thd, TABLE *table,
 
   @param thd                    the THD
   @param table                  the table to read from
-  @param cost_constants[in,out] cost constant object
+  @param [in,out] cost_constants cost constant object
 */
 
 static void read_engine_cost_constants(THD *thd, TABLE *table,

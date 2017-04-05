@@ -46,9 +46,8 @@ row_undo_ins(
 /*=========*/
 	undo_node_t*	node,	/*!< in: row undo node */
 	que_thr_t*	thr)	/*!< in: query thread */
-	MY_ATTRIBUTE((nonnull, warn_unused_result));
-#ifndef UNIV_NONINL
+	MY_ATTRIBUTE((warn_unused_result));
+
 #include "row0uins.ic"
-#endif
 
 #endif

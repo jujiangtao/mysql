@@ -18,6 +18,8 @@
 #include "probes_mysql.h"
 #include "ha_blackhole.h"
 #include "sql_class.h"                          // THD, SYSTEM_THREAD_SLAVE_*
+#include "mysql/psi/mysql_memory.h"
+#include "template_utils.h"
 
 static PSI_memory_key bh_key_memory_blackhole_share;
 
@@ -55,15 +57,6 @@ ha_blackhole::ha_blackhole(handlerton *hton,
 {}
 
 
-static const char *ha_blackhole_exts[] = {
-  NullS
-};
-
-const char **ha_blackhole::bas_ext() const
-{
-  return ha_blackhole_exts;
-}
-
 int ha_blackhole::open(const char *name, int mode, uint test_if_locked)
 {
   DBUG_ENTER("ha_blackhole::open");
@@ -97,17 +90,6 @@ int ha_blackhole::truncate()
 {
   DBUG_ENTER("ha_blackhole::truncate");
   DBUG_RETURN(0);
-}
-
-const char *ha_blackhole::index_type(uint key_number)
-{
-  DBUG_ENTER("ha_blackhole::index_type");
-  DBUG_RETURN((table_share->key_info[key_number].flags & HA_FULLTEXT) ? 
-              "FULLTEXT" :
-              (table_share->key_info[key_number].flags & HA_SPATIAL) ?
-              "SPATIAL" :
-              (table_share->key_info[key_number].algorithm ==
-               HA_KEY_ALG_RTREE) ? "RTREE" : "BTREE");
 }
 
 int ha_blackhole::write_row(uchar * buf)
@@ -209,8 +191,7 @@ THR_LOCK_DATA **ha_blackhole::store_lock(THD *thd,
     */
 
     if ((lock_type >= TL_WRITE_CONCURRENT_INSERT &&
-         lock_type <= TL_WRITE) && !thd_in_lock_tables(thd)
-        && !thd_tablespace_op(thd))
+         lock_type <= TL_WRITE) && !thd_in_lock_tables(thd))
       lock_type = TL_WRITE_ALLOW_WRITE;
 
     /*
@@ -377,15 +358,16 @@ static void free_share(st_blackhole_share *share)
   mysql_mutex_unlock(&blackhole_mutex);
 }
 
-static void blackhole_free_key(st_blackhole_share *share)
+static void blackhole_free_key(void *arg)
 {
+  st_blackhole_share *share= pointer_cast<st_blackhole_share*>(arg);
   thr_lock_delete(&share->lock);
   my_free(share);
 }
 
-static uchar* blackhole_get_key(st_blackhole_share *share, size_t *length,
-                                my_bool not_used MY_ATTRIBUTE((unused)))
+static const uchar* blackhole_get_key(const uchar *arg, size_t *length)
 {
+  const st_blackhole_share *share= pointer_cast<const st_blackhole_share*>(arg);
   *length= share->table_name_length;
   return (uchar*) share->table_name;
 }
@@ -395,7 +377,7 @@ static PSI_mutex_key bh_key_mutex_blackhole;
 
 static PSI_mutex_info all_blackhole_mutexes[]=
 {
-  { &bh_key_mutex_blackhole, "blackhole", PSI_FLAG_GLOBAL}
+  { &bh_key_mutex_blackhole, "blackhole", PSI_FLAG_GLOBAL, 0}
 };
 
 static PSI_memory_info all_blackhole_memory[]=
@@ -403,7 +385,7 @@ static PSI_memory_info all_blackhole_memory[]=
   { &bh_key_memory_blackhole_share, "blackhole_share", 0}
 };
 
-void init_blackhole_psi_keys()
+static void init_blackhole_psi_keys()
 {
   const char* category= "blackhole";
   int count;
@@ -432,9 +414,9 @@ static int blackhole_init(void *p)
 
   mysql_mutex_init(bh_key_mutex_blackhole,
                    &blackhole_mutex, MY_MUTEX_INIT_FAST);
-  (void) my_hash_init(&blackhole_open_tables, system_charset_info,32,0,0,
-                      (my_hash_get_key) blackhole_get_key,
-                      (my_hash_free_key) blackhole_free_key, 0,
+  (void) my_hash_init(&blackhole_open_tables, system_charset_info,32,0,
+                      blackhole_get_key,
+                      blackhole_free_key, 0,
                       bh_key_memory_blackhole_share);
 
   return 0;

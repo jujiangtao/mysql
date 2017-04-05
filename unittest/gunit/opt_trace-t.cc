@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2013, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2011, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -27,6 +27,7 @@
 #include <opt_trace.h>
 #include <mysys_err.h>                          // for testing of OOM
 #include "mysqld.h"                             // system_charset_info
+#include "m_string.h"                           // llstr
 #ifdef HAVE_SYS_WAIT_H
 #include <sys/wait.h>                           // for WEXITSTATUS
 #endif
@@ -55,7 +56,7 @@ const ulonglong all_features= Opt_trace_context::default_features;
    @param  str     pointer to trace
    @param  length  trace's length
 */
-void do_check_json_compliance(const char *str, size_t length)
+static void do_check_json_compliance(const char *str, size_t length)
 {
   return;
   /*

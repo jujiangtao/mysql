@@ -23,8 +23,9 @@
 #include "my_config.h"
 #include <gtest/gtest.h>
 
-#include <my_global.h>
-#include <my_sys.h>
+#include "my_global.h"
+#include "my_byteorder.h"
+#include "my_sys.h"
 
 
 namespace mysys_lf_unittest {
@@ -77,6 +78,8 @@ typedef union {
   void *not_used;
 } TLA;
 
+// SUPPRESS_UBSAN: integer overflow when generating random data.
+extern "C" void *test_lf_alloc(void *arg) SUPPRESS_UBSAN;
 extern "C" void *test_lf_alloc(void *arg)
 {
   int    m= (*(int *)arg)/2;

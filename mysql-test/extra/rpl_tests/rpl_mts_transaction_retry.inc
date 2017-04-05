@@ -131,7 +131,7 @@ ROLLBACK;
 --echo # Case 3: Slave worker will not stop after retring a transaction
 --echo #         sucessfully.
 --echo #
---let $retried_trans= query_get_value(SHOW STATUS LIKE 'slave_retried_transactions', Value, 1)
+--let $retried_trans= query_get_value(select count_transactions_retries from performance_schema.replication_applier_status, count_transactions_retries, 1)
 SET GLOBAL slave_transaction_retries = 10;
 --source include/start_slave_sql.inc
 --source include/sync_slave_sql.inc
@@ -161,12 +161,12 @@ INSERT INTO db2.t1 VALUES(30, NULL);
 --source include/save_master_pos.inc
 
 --source include/rpl_connection_slave.inc
---let $status_var_comparsion= >=
---let $status_type= GLOBAL
---let $status_var= slave_retried_transactions
---let $status_var_value= $retried_trans+2
+--let $status_col_comparsion= >=
+--let $status_col= count_transactions_retries
+--let $table=replication_applier_status
+--let $status_col_value= $retried_trans+2
 --let $status_fail_query= SELECT GLOBAL.slave_retried_transactions
---source include/wait_for_status_var.inc
+--source include/wait_for_rpl_pfs_status.inc
 
 #
 # It is for verifying the fix of Bug#19282301
@@ -198,7 +198,7 @@ INSERT INTO db2.t1 VALUES(40, NULL);
 --echo #
 --echo # Case 4: Non-temporary error will stop slave workers without retrying
 --echo #
---let $retried_trans= query_get_value(SHOW STATUS LIKE 'slave_retried_transactions', Value, 1)
+--let $retried_trans= query_get_value(select count_transactions_retries from performance_schema.replication_applier_status, count_transactions_retries, 1)
 INSERT INTO db1.t1 VALUES(50, NULL);
 
 --source include/rpl_connection_master.inc
@@ -209,10 +209,10 @@ INSERT INTO db1.t1 VALUES(50, NULL);
 --let $slave_sql_errno= convert_error(ER_DUP_ENTRY)
 --source include/wait_for_slave_sql_error.inc
 
---let $assert_text= slave_retried_transactions should not increase
---let $assert_status_name= slave_retried_transactions
+--let $assert_text= count_transactions_retries should not increase
+--let $assert_status_name= count_transactions_retries
 --let $assert_status_value= $retried_trans
---source include/assert_status.inc
+--source include/rpl_pfs_assert_status.inc
 
 DELETE FROM db1.t1 WHERE c1 = 50;
 

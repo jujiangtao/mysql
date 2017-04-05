@@ -221,7 +221,7 @@ static int sql_end_row(void *ctx)
   DBUG_ENTER("sql_end_row");
   pctx->num_rows++;
   DBUG_RETURN(false);
-};
+}
 
 
 static void sql_abort_row(void *ctx)
@@ -324,7 +324,7 @@ static int sql_get_decimal(void * ctx, const decimal_t * value)
 }
 
 
-int sql_get_double(void * ctx, double value, uint32 decimals)
+static int sql_get_double(void * ctx, double value, uint32 decimals)
 {
   char buffer[1024];
   struct st_plugin_ctx *pctx= (struct st_plugin_ctx*) ctx;

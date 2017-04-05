@@ -19,6 +19,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 #include "auth_common.h"                /* check_global_access */
 #include "handler.h"                    /* ha_resolve_by_legacy_type */
 #include "sql_table.h"                  /* write_to_binlog */
+#include "derror.h"                     /* ER_THD */
 
 /*
   @brief
@@ -104,7 +105,7 @@ Rotate_innodb_master_key::execute()
 
     push_warning(m_thd, Sql_condition::SL_WARNING,
                  ER_MASTER_KEY_ROTATION_BINLOG_FAILED,
-                 ER(ER_MASTER_KEY_ROTATION_BINLOG_FAILED));
+                 ER_THD(m_thd, ER_MASTER_KEY_ROTATION_BINLOG_FAILED));
   }
 
   my_ok(m_thd);

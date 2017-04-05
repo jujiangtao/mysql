@@ -20,7 +20,6 @@
 #include "ngs/capabilities/configurator.h"
 #include "ngs/ngs_error.h"
 #include "ngs/log.h"
-#include <algorithm>
 
 
 namespace ngs
@@ -52,7 +51,7 @@ void Capabilities_configurator::add_handler(Capability_handler_ptr handler)
 
 Capabilities *Capabilities_configurator::get()
 {
-  Capabilities          *result = ngs::allocate_object<Capabilities>();
+  Capabilities          *result = new Capabilities();
   Handler_ptrs_iterator  i = m_capabilities.begin();
 
   while (i !=m_capabilities.end())

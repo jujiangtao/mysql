@@ -34,15 +34,18 @@ const size_t	alloc_max_retries = 60;
 Keep this list alphabetically sorted. */
 PSI_memory_key	mem_key_ahi;
 PSI_memory_key	mem_key_buf_buf_pool;
+PSI_memory_key	mem_key_buf_stat_per_index_t;
 PSI_memory_key	mem_key_dict_stats_bg_recalc_pool_t;
 PSI_memory_key	mem_key_dict_stats_index_map_t;
 PSI_memory_key	mem_key_dict_stats_n_diff_on_level;
 PSI_memory_key	mem_key_other;
+PSI_memory_key	mem_key_partitioning;
 PSI_memory_key	mem_key_row_log_buf;
 PSI_memory_key	mem_key_row_merge_sort;
 PSI_memory_key	mem_key_std;
 PSI_memory_key	mem_key_trx_sys_t_rw_trx_ids;
-PSI_memory_key	mem_key_partitioning;
+PSI_memory_key	mem_key_ut_lock_free_hash_t;
+/* Please obey alphabetical order in the definitions above. */
 
 #ifdef UNIV_PFS_MEMORY
 
@@ -61,15 +64,18 @@ Keep this list alphabetically sorted. */
 static PSI_memory_info	pfs_info[] = {
 	{&mem_key_ahi, "adaptive hash index", 0},
 	{&mem_key_buf_buf_pool, "buf_buf_pool", 0},
+	{&mem_key_buf_stat_per_index_t, "buf_stat_per_index_t", 0},
 	{&mem_key_dict_stats_bg_recalc_pool_t, "dict_stats_bg_recalc_pool_t", 0},
 	{&mem_key_dict_stats_index_map_t, "dict_stats_index_map_t", 0},
 	{&mem_key_dict_stats_n_diff_on_level, "dict_stats_n_diff_on_level", 0},
 	{&mem_key_other, "other", 0},
+	{&mem_key_partitioning, "partitioning", 0},
 	{&mem_key_row_log_buf, "row_log_buf", 0},
 	{&mem_key_row_merge_sort, "row_merge_sort", 0},
 	{&mem_key_std, "std", 0},
 	{&mem_key_trx_sys_t_rw_trx_ids, "trx_sys_t::rw_trx_ids", 0},
-	{&mem_key_partitioning, "partitioning", 0},
+	{&mem_key_ut_lock_free_hash_t, "ut_lock_free_hash_t", 0},
+	/* Please obey alphabetical order in the definitions above. */
 };
 
 /** Map used for default performance schema keys, based on file name of the
@@ -108,12 +114,16 @@ ut_new_boot()
 		"buf0dump",
 		"buf0flu",
 		"buf0lru",
+		"buf0stats",
+		"dict0boot",
 		"dict0dict",
+		"dict0load",
 		"dict0mem",
 		"dict0stats",
 		"dict0stats_bg",
 		"eval0eval",
 		"fil0fil",
+		"file",
 		"fsp0file",
 		"fsp0space",
 		"fsp0sysspace",
@@ -124,9 +134,12 @@ ut_new_boot()
 		"fts0pars",
 		"fts0que",
 		"fts0sql",
+		"fts0types",
 		"gis0sea",
+		"gis0type",
 		"ha0ha",
 		"ha_innodb",
+		"ha_innopart",
 		"handler0alter",
 		"hash0hash",
 		"i_s",
@@ -135,10 +148,13 @@ ut_new_boot()
 		"lock0lock",
 		"log0log",
 		"log0recv",
+		"mem",
 		"mem0mem",
+		"memory",
 		"os0event",
 		"os0file",
 		"page0cur",
+		"page0types",
 		"page0zip",
 		"pars0lex",
 		"read0read",
@@ -150,6 +166,7 @@ ut_new_boot()
 		"row0mysql",
 		"row0sel",
 		"row0trunc",
+		"sess0sess",
 		"srv0conc",
 		"srv0srv",
 		"srv0start",
@@ -163,13 +180,17 @@ ut_new_boot()
 		"trx0rseg",
 		"trx0sys",
 		"trx0trx",
+		"trx0types",
 		"trx0undo",
 		"usr0sess",
 		"ut0list",
+		"ut0lock_free_hash",
 		"ut0mem",
 		"ut0mutex",
+		"ut0new",
 		"ut0pool",
 		"ut0rbt",
+		"ut0vec",
 		"ut0wqueue",
 	};
 	static const size_t	n_auto = UT_ARR_SIZE(auto_event_names);

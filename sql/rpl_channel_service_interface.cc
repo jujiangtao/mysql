@@ -16,6 +16,9 @@
 #include "my_global.h"
 #include "log.h"
 #include "rpl_channel_service_interface.h"
+
+#include "current_thd.h"
+#include "mysqld.h"          // opt_mts_slave_parallel_workers
 #include "rpl_slave.h"
 #include "rpl_info_factory.h"
 #include "rpl_mi.h"
@@ -51,7 +54,7 @@ int initialize_channel_service_interface()
 
 #ifdef HAVE_REPLICATION
 
-void set_mi_settings(Master_info *mi, Channel_creation_info* channel_info)
+static void set_mi_settings(Master_info *mi, Channel_creation_info* channel_info)
 {
   mysql_mutex_lock(&mi->data_lock);
 
@@ -89,17 +92,17 @@ void set_mi_settings(Master_info *mi, Channel_creation_info* channel_info)
   mysql_mutex_unlock(&mi->data_lock);
 }
 
-bool init_thread_context()
+static bool init_thread_context()
 {
   return my_thread_init();
 }
 
-void clean_thread_context()
+static void clean_thread_context()
 {
   my_thread_end();
 }
 
-THD *create_surrogate_thread()
+static THD *create_surrogate_thread()
 {
   THD *thd= NULL;
   thd= new THD;
@@ -110,7 +113,7 @@ THD *create_surrogate_thread()
   return(thd);
 }
 
-void delete_surrogate_thread(THD *thd)
+static void delete_surrogate_thread(THD *thd)
 {
   thd->release_resources();
   delete thd;
@@ -160,7 +163,7 @@ initialize_channel_connection_info(Channel_connection_info* channel_info)
   channel_info->view_id= 0;
 }
 
-void set_mi_ssl_options(LEX_MASTER_INFO* lex_mi, Channel_ssl_info* channel_ssl_info)
+static void set_mi_ssl_options(LEX_MASTER_INFO* lex_mi, Channel_ssl_info* channel_ssl_info)
 {
 
   if (channel_ssl_info->use_ssl)
@@ -456,8 +459,6 @@ int channel_stop(const char* channel,
 
   int thread_mask= 0;
   int server_thd_mask= 0;
-  int error= 0;
-  bool thd_init= false;
   lock_slave_threads(mi);
 
   init_thread_mask(&server_thd_mask, mi, 0 /* not inverse*/);
@@ -475,15 +476,16 @@ int channel_stop(const char* channel,
 
   if (thread_mask == 0)
   {
-    goto end;
+    mi->channel_unlock();
+    channel_map.unlock();
+    DBUG_RETURN(0);
   }
 
-  thd_init= init_thread_context();
+  bool thd_init= init_thread_context();
 
-  error= terminate_slave_threads(mi, thread_mask, timeout, false);
-
-end:
+  int error= terminate_slave_threads(mi, thread_mask, timeout, false);
   unlock_slave_threads(mi);
+
   mi->channel_unlock();
   channel_map.unlock();
 
@@ -953,22 +955,5 @@ bool channel_is_stopping(const char* channel,
   channel_map.unlock();
 
   DBUG_RETURN(is_stopping);
-}
-
-bool is_partial_transaction_on_channel_relay_log(const char *channel)
-{
-  DBUG_ENTER("is_partial_transaction_on_channel_relay_log(channel)");
-  channel_map.rdlock();
-  Master_info *mi= channel_map.get_mi(channel);
-  if (mi == NULL)
-  {
-    channel_map.unlock();
-    DBUG_RETURN(false);
-  }
-  mi->channel_rdlock();
-  bool ret= mi->transaction_parser.is_inside_transaction();
-  mi->channel_unlock();
-  channel_map.unlock();
-  DBUG_RETURN(ret);
 }
 #endif /* HAVE_REPLICATION */

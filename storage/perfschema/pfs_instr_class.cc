@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2008, 2016, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -21,6 +21,7 @@
 #include "my_global.h"
 #include "my_sys.h"
 #include "table.h"
+#include "mysqld.h"                             // lower_case_table_names
 #include "pfs_instr_class.h"
 #include "pfs_builtin_memory.h"
 #include "pfs_instr.h"
@@ -30,6 +31,7 @@
 #include "pfs_setup_object.h"
 #include "pfs_atomic.h"
 #include "pfs_program.h"
+#include "pfs_column_values.h"
 #include "pfs_buffer_container.h"
 #include "mysql/psi/mysql_thread.h"
 #include "lf.h"
@@ -37,8 +39,8 @@
 #include <string.h>
 
 /**
-  @defgroup Performance_schema_buffers Performance Schema Buffers
-  @ingroup Performance_schema_implementation
+  @defgroup performance_schema_buffers Performance Schema Buffers
+  @ingroup performance_schema_implementation
   @{
 */
 
@@ -119,6 +121,13 @@ ulong memory_class_lost= 0;
 */
 ulong transaction_class_max= 0;
 
+/**
+  Number of error classes. Although there is only one error class,
+  this is kept for future use if there is more error classification required.
+  @sa global_error_class
+*/
+ulong error_class_max= 0;
+
 PFS_mutex_class *mutex_class_array= NULL;
 PFS_rwlock_class *rwlock_class_array= NULL;
 PFS_cond_class *cond_class_array= NULL;
@@ -139,10 +148,12 @@ PFS_ALIGNED PFS_table_io_stat global_table_io_stat;
 PFS_ALIGNED PFS_table_lock_stat global_table_lock_stat;
 PFS_ALIGNED PFS_single_stat global_metadata_stat;
 PFS_ALIGNED PFS_transaction_stat global_transaction_stat;
+PFS_ALIGNED PFS_error_stat global_error_stat;
 PFS_ALIGNED PFS_instr_class global_table_io_class;
 PFS_ALIGNED PFS_instr_class global_table_lock_class;
 PFS_ALIGNED PFS_instr_class global_idle_class;
 PFS_ALIGNED PFS_instr_class global_metadata_class;
+PFS_ALIGNED PFS_error_class global_error_class;
 PFS_ALIGNED PFS_transaction_class global_transaction_class;
 
 /** Class-timer map */
@@ -161,7 +172,8 @@ enum_timer_name *class_timers[] =
  &wait_timer,        /* PFS_CLASS_TABLE_LOCK */
  &idle_timer,        /* PFS_CLASS_IDLE */
  &wait_timer,        /* PFS_CLASS_METADATA */
- &wait_timer         /* PFS_CLASS_MEMORY */
+ &wait_timer,        /* PFS_CLASS_MEMORY */
+ &wait_timer         /* PFS_CLASS_ERROR */
 };
 
 /**
@@ -223,33 +235,50 @@ void init_event_name_sizing(const PFS_global_param *param)
 void register_global_classes()
 {
   /* Table IO class */
-  init_instr_class(&global_table_io_class, "wait/io/table/sql/handler", 25,
+  init_instr_class(&global_table_io_class,
+                   table_io_class_name.str, (uint)table_io_class_name.length,
                    0, PFS_CLASS_TABLE_IO);
   global_table_io_class.m_event_name_index= GLOBAL_TABLE_IO_EVENT_INDEX;
   configure_instr_class(&global_table_io_class);
 
   /* Table lock class */
-  init_instr_class(&global_table_lock_class, "wait/lock/table/sql/handler", 27,
+  init_instr_class(&global_table_lock_class,
+                   table_lock_class_name.str, (uint)table_lock_class_name.length,
                    0, PFS_CLASS_TABLE_LOCK);
   global_table_lock_class.m_event_name_index= GLOBAL_TABLE_LOCK_EVENT_INDEX;
   configure_instr_class(&global_table_lock_class);
 
   /* Idle class */
-  init_instr_class(&global_idle_class, "idle", 4,
+  init_instr_class(&global_idle_class,
+                   idle_class_name.str, (uint)idle_class_name.length,
                    0, PFS_CLASS_IDLE);
   global_idle_class.m_event_name_index= GLOBAL_IDLE_EVENT_INDEX;
   configure_instr_class(&global_idle_class);
 
   /* Metadata class */
-  init_instr_class(&global_metadata_class, "wait/lock/metadata/sql/mdl", 26,
+  init_instr_class(&global_metadata_class,
+                   metadata_lock_class_name.str, (uint)metadata_lock_class_name.length,
                    0, PFS_CLASS_METADATA);
   global_metadata_class.m_event_name_index= GLOBAL_METADATA_EVENT_INDEX;
   global_metadata_class.m_enabled= false; /* Disabled by default */
   global_metadata_class.m_timed= false;
   configure_instr_class(&global_metadata_class);
 
+  /* Error class */
+  init_instr_class(&global_error_class,
+                   error_class_name.str, (uint)error_class_name.length,
+                   0, PFS_CLASS_ERROR);
+  global_error_class.m_event_name_index= GLOBAL_ERROR_INDEX;
+  global_error_class.m_enabled= true; /* Enabled by default */
+  global_error_class.m_timer= NULL;
+  configure_instr_class(&global_error_class);
+  global_error_class.m_timed= false; /* Not applicable */
+  error_class_max= 1; /* only one error class as of now. */
+
   /* Transaction class */
-  init_instr_class(&global_transaction_class, "transaction", 11,
+  init_instr_class(&global_transaction_class,
+                   transaction_instrument_prefix.str,
+                   (uint)transaction_instrument_prefix.length,
                    0, PFS_CLASS_TRANSACTION);
   global_transaction_class.m_event_name_index= GLOBAL_TRANSACTION_INDEX;
   global_transaction_class.m_enabled= false; /* Disabled by default */
@@ -393,10 +422,8 @@ void cleanup_table_share(void)
   global_table_share_container.cleanup();
 }
 
-C_MODE_START
 /** get_key function for @c table_share_hash. */
-static uchar *table_share_hash_get_key(const uchar *entry, size_t *length,
-                                       my_bool)
+static const uchar *table_share_hash_get_key(const uchar *entry, size_t *length)
 {
   const PFS_table_share * const *typed_entry;
   const PFS_table_share *share;
@@ -407,9 +434,8 @@ static uchar *table_share_hash_get_key(const uchar *entry, size_t *length,
   DBUG_ASSERT(share != NULL);
   *length= share->m_key.m_key_length;
   result= &share->m_key.m_hash_key[0];
-  return const_cast<uchar*> (reinterpret_cast<const uchar*> (result));
+  return reinterpret_cast<const uchar*> (result);
 }
-C_MODE_END
 
 /** Initialize the table share hash table. */
 int init_table_share_hash(const PFS_global_param *param)
@@ -438,7 +464,7 @@ void cleanup_table_share_hash(void)
   @param thread The running thread.
   @returns The LF_HASH pins for the thread.
 */
-LF_PINS* get_table_share_hash_pins(PFS_thread *thread)
+static LF_PINS* get_table_share_hash_pins(PFS_thread *thread)
 {
   if (unlikely(thread->m_table_share_hash_pins == NULL))
   {
@@ -595,8 +621,8 @@ PFS_table_share::find_index_stat(uint index) const
 
 /**
   Find or create a table share index instrumentation.
-  @param server_share
-  @index index
+  @param server_share the server TABLE_SHARE structure
+  @param index the index
   @return a table share index, or NULL
 */
 PFS_table_share_index*
@@ -1053,7 +1079,7 @@ static void configure_instr_class(PFS_instr_class *entry)
     if ((entry->m_name_length == NAME_LENGTH) &&                       \
         (strncmp(entry->m_name, NAME, NAME_LENGTH) == 0))              \
     {                                                                  \
-      DBUG_ASSERT(entry->m_flags == flags);                            \
+      DBUG_ASSERT(entry->m_flags == info->m_flags);                    \
       return (INDEX + 1);                                              \
     }                                                                  \
   }
@@ -1062,11 +1088,11 @@ static void configure_instr_class(PFS_instr_class *entry)
   Register a mutex instrumentation metadata.
   @param name                         the instrumented name
   @param name_length                  length in bytes of name
-  @param flags                        the instrumentation flags
+  @param info                         the instrumentation properties
   @return a mutex instrumentation key
 */
 PFS_sync_key register_mutex_class(const char *name, uint name_length,
-                                  int flags)
+                                  PSI_mutex_info *info)
 {
   uint32 index;
   PFS_mutex_class *entry;
@@ -1107,12 +1133,26 @@ PFS_sync_key register_mutex_class(const char *name, uint name_length,
         in INSTALL PLUGIN.
     */
     entry= &mutex_class_array[index];
-    init_instr_class(entry, name, name_length, flags, PFS_CLASS_MUTEX);
+    init_instr_class(entry, name, name_length, info->m_flags, PFS_CLASS_MUTEX);
     entry->m_mutex_stat.reset();
     entry->m_event_name_index= mutex_class_start + index;
     entry->m_singleton= NULL;
     entry->m_enabled= false; /* disabled by default */
     entry->m_timed= false;
+
+    /*
+      There are 9 volatility defined in psi.h,
+      but since most are still unused,
+      mapping this to only 2 PFS_MUTEX_PARTITIONS.
+    */
+    if (info->m_volatility >= PSI_VOLATILITY_SESSION)
+    {
+      entry->m_volatility= 1;
+    }
+    else
+    {
+      entry->m_volatility= 0;
+    }
 
     /* Set user-defined configuration options for this instrument */
     configure_instr_class(entry);
@@ -1156,11 +1196,11 @@ PFS_sync_key register_mutex_class(const char *name, uint name_length,
   Register a rwlock instrumentation metadata.
   @param name                         the instrumented name
   @param name_length                  length in bytes of name
-  @param flags                        the instrumentation flags
+  @param info                         the instrumentation properties
   @return a rwlock instrumentation key
 */
 PFS_sync_key register_rwlock_class(const char *name, uint name_length,
-                                   int flags)
+                                   PSI_rwlock_info *info)
 {
   /* See comments in register_mutex_class */
   uint32 index;
@@ -1174,7 +1214,7 @@ PFS_sync_key register_rwlock_class(const char *name, uint name_length,
   if (index < rwlock_class_max)
   {
     entry= &rwlock_class_array[index];
-    init_instr_class(entry, name, name_length, flags, PFS_CLASS_RWLOCK);
+    init_instr_class(entry, name, name_length, info->m_flags, PFS_CLASS_RWLOCK);
     entry->m_rwlock_stat.reset();
     entry->m_event_name_index= rwlock_class_start + index;
     entry->m_singleton= NULL;
@@ -1195,11 +1235,11 @@ PFS_sync_key register_rwlock_class(const char *name, uint name_length,
   Register a condition instrumentation metadata.
   @param name                         the instrumented name
   @param name_length                  length in bytes of name
-  @param flags                        the instrumentation flags
+  @param info                         the instrumentation properties
   @return a condition instrumentation key
 */
 PFS_sync_key register_cond_class(const char *name, uint name_length,
-                                 int flags)
+                                 PSI_cond_info *info)
 {
   /* See comments in register_mutex_class */
   uint32 index;
@@ -1213,7 +1253,7 @@ PFS_sync_key register_cond_class(const char *name, uint name_length,
   if (index < cond_class_max)
   {
     entry= &cond_class_array[index];
-    init_instr_class(entry, name, name_length, flags, PFS_CLASS_COND);
+    init_instr_class(entry, name, name_length, info->m_flags, PFS_CLASS_COND);
     entry->m_event_name_index= cond_class_start + index;
     entry->m_singleton= NULL;
     entry->m_enabled= false; /* disabled by default */
@@ -1283,11 +1323,11 @@ PFS_cond_class *sanitize_cond_class(PFS_cond_class *unsafe)
   Register a thread instrumentation metadata.
   @param name                         the instrumented name
   @param name_length                  length in bytes of name
-  @param flags                        the instrumentation flags
+  @param info                         the instrumentation properties
   @return a thread instrumentation key
 */
 PFS_thread_key register_thread_class(const char *name, uint name_length,
-                                     int flags)
+                                     PSI_thread_info *info)
 {
   /* See comments in register_mutex_class */
   uint32 index;
@@ -1339,11 +1379,11 @@ PFS_thread_class *sanitize_thread_class(PFS_thread_class *unsafe)
   Register a file instrumentation metadata.
   @param name                         the instrumented name
   @param name_length                  length in bytes of name
-  @param flags                        the instrumentation flags
+  @param info                         the instrumentation properties
   @return a file instrumentation key
 */
 PFS_file_key register_file_class(const char *name, uint name_length,
-                                 int flags)
+                                 PSI_file_info *info)
 {
   /* See comments in register_mutex_class */
   uint32 index;
@@ -1357,7 +1397,7 @@ PFS_file_key register_file_class(const char *name, uint name_length,
   if (index < file_class_max)
   {
     entry= &file_class_array[index];
-    init_instr_class(entry, name, name_length, flags, PFS_CLASS_FILE);
+    init_instr_class(entry, name, name_length, info->m_flags, PFS_CLASS_FILE);
     entry->m_event_name_index= file_class_start + index;
     entry->m_singleton= NULL;
     entry->m_enabled= true; /* enabled by default */
@@ -1379,13 +1419,13 @@ PFS_file_key register_file_class(const char *name, uint name_length,
   @param name                         the instrumented name
   @param prefix_length                length in bytes of the name prefix
   @param name_length                  length in bytes of name
-  @param flags                        the instrumentation flags
+  @param info                         the instrumentation properties
   @return a stage instrumentation key
 */
 PFS_stage_key register_stage_class(const char *name,
                                    uint prefix_length,
                                    uint name_length,
-                                   int flags)
+                                   PSI_stage_info *info)
 {
   /* See comments in register_mutex_class */
   uint32 index;
@@ -1399,11 +1439,11 @@ PFS_stage_key register_stage_class(const char *name,
   if (index < stage_class_max)
   {
     entry= &stage_class_array[index];
-    init_instr_class(entry, name, name_length, flags, PFS_CLASS_STAGE);
+    init_instr_class(entry, name, name_length, info->m_flags, PFS_CLASS_STAGE);
     entry->m_prefix_length= prefix_length;
     entry->m_event_name_index= index;
 
-    if (flags & PSI_FLAG_STAGE_PROGRESS)
+    if (info->m_flags & PSI_FLAG_STAGE_PROGRESS)
     {
       /* Stages with progress information are enabled and timed by default */
       entry->m_enabled= true;
@@ -1432,11 +1472,11 @@ PFS_stage_key register_stage_class(const char *name,
   Register a statement instrumentation metadata.
   @param name                         the instrumented name
   @param name_length                  length in bytes of name
-  @param flags                        the instrumentation flags
+  @param info                         the instrumentation properties
   @return a statement instrumentation key
 */
 PFS_statement_key register_statement_class(const char *name, uint name_length,
-                                           int flags)
+                                           PSI_statement_info *info)
 {
   /* See comments in register_mutex_class */
   uint32 index;
@@ -1450,7 +1490,7 @@ PFS_statement_key register_statement_class(const char *name, uint name_length,
   if (index < statement_class_max)
   {
     entry= &statement_class_array[index];
-    init_instr_class(entry, name, name_length, flags, PFS_CLASS_STATEMENT);
+    init_instr_class(entry, name, name_length, info->m_flags, PFS_CLASS_STATEMENT);
     entry->m_event_name_index= index;
     entry->m_enabled= true; /* enabled by default */
     entry->m_timed= true;
@@ -1515,11 +1555,11 @@ PFS_statement_class *sanitize_statement_class(PFS_statement_class *unsafe)
   Register a socket instrumentation metadata.
   @param name                         the instrumented name
   @param name_length                  length in bytes of name
-  @param flags                        the instrumentation flags
+  @param info                         the instrumentation properties
   @return a socket instrumentation key
 */
 PFS_socket_key register_socket_class(const char *name, uint name_length,
-                                     int flags)
+                                     PSI_socket_info *info)
 {
   /* See comments in register_mutex_class */
   uint32 index;
@@ -1533,7 +1573,7 @@ PFS_socket_key register_socket_class(const char *name, uint name_length,
   if (index < socket_class_max)
   {
     entry= &socket_class_array[index];
-    init_instr_class(entry, name, name_length, flags, PFS_CLASS_SOCKET);
+    init_instr_class(entry, name, name_length, info->m_flags, PFS_CLASS_SOCKET);
     entry->m_event_name_index= socket_class_start + index;
     entry->m_singleton= NULL;
     entry->m_enabled= false; /* disabled by default */
@@ -1568,11 +1608,11 @@ PFS_socket_class *sanitize_socket_class(PFS_socket_class *unsafe)
   Register a memory instrumentation metadata.
   @param name                         the instrumented name
   @param name_length                  length in bytes of name
-  @param flags                        the instrumentation flags
+  @param info                         the instrumentation properties
   @return a memory instrumentation key
 */
 PFS_memory_key register_memory_class(const char *name, uint name_length,
-                                     int flags)
+                                     PSI_memory_info *info)
 {
   /* See comments in register_mutex_class */
   uint32 index;
@@ -1586,7 +1626,7 @@ PFS_memory_key register_memory_class(const char *name, uint name_length,
   if (index < memory_class_max)
   {
     entry= &memory_class_array[index];
-    init_instr_class(entry, name, name_length, flags, PFS_CLASS_MEMORY);
+    init_instr_class(entry, name, name_length, info->m_flags, PFS_CLASS_MEMORY);
     entry->m_event_name_index= index;
     entry->m_enabled= false; /* disabled by default */
     /* Set user-defined configuration options for this instrument */
@@ -1657,6 +1697,20 @@ PFS_instr_class *find_metadata_class(uint index)
 PFS_instr_class *sanitize_metadata_class(PFS_instr_class *unsafe)
 {
   if (likely(& global_metadata_class == unsafe))
+    return unsafe;
+  return NULL;
+}
+
+PFS_error_class *find_error_class(uint index)
+{
+  if (index == 1)
+    return & global_error_class;
+  return NULL;
+}
+
+PFS_error_class *sanitize_error_class(PFS_error_class *unsafe)
+{
+  if (likely(& global_error_class == unsafe))
     return unsafe;
   return NULL;
 }
@@ -1747,7 +1801,7 @@ search:
   entry= reinterpret_cast<PFS_table_share**>
     (lf_hash_search(&table_share_hash, pins,
                     key.m_hash_key, key.m_key_length));
-  if (entry && (entry != MY_ERRPTR))
+  if (entry && (entry != MY_LF_ERRPTR))
   {
     pfs= *entry;
     pfs->inc_refcount() ;
@@ -1950,7 +2004,7 @@ void drop_table_share(PFS_thread *thread,
   entry= reinterpret_cast<PFS_table_share**>
     (lf_hash_search(&table_share_hash, pins,
                     key.m_hash_key, key.m_key_length));
-  if (entry && (entry != MY_ERRPTR))
+  if (entry && (entry != MY_LF_ERRPTR))
   {
     PFS_table_share *pfs= *entry;
     lf_hash_delete(&table_share_hash, pins,
@@ -1958,7 +2012,7 @@ void drop_table_share(PFS_thread *thread,
     pfs->destroy_lock_stat();
     pfs->destroy_index_stats();
 
-    pfs->m_lock.allocated_to_free();
+    global_table_share_container.deallocate(pfs);
   }
 
   lf_hash_search_unpin(pins);
@@ -2051,5 +2105,5 @@ void update_program_share_derived_flags(PFS_thread *thread)
   global_program_container.apply(proc);
 }
 
-/** @} */
+/** @} (end of group performance_schema_buffers) */
 

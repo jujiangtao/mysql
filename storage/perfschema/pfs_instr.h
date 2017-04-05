@@ -60,7 +60,7 @@ extern PFS_single_stat *thread_instr_class_waits_array_end;
 extern my_bool show_compatibility_56;
 
 /**
-  @addtogroup Performance_schema_buffers
+  @addtogroup performance_schema_buffers
   @{
 */
 
@@ -703,6 +703,7 @@ extern ulong events_transactions_history_per_thread;
 extern ulong locker_lost;
 extern ulong statement_lost;
 extern ulong session_connect_attrs_lost;
+extern ulong session_connect_attrs_longest_seen;
 extern ulong session_connect_attrs_size_per_thread;
 
 /* Exposing the data directly, for iterators. */
@@ -737,6 +738,12 @@ void aggregate_all_transactions(PFS_transaction_stat *from_array,
                                 PFS_transaction_stat *to_array_1,
                                 PFS_transaction_stat *to_array_2);
 
+void aggregate_all_errors(PFS_error_stat *from_array,
+                          PFS_error_stat *to_array);
+void aggregate_all_errors(PFS_error_stat *from_array,
+                          PFS_error_stat *to_array_1,
+                          PFS_error_stat *to_array_2);
+
 void aggregate_all_memory(bool alive,
                           PFS_memory_stat *from_array,
                           PFS_memory_stat *to_array);
@@ -765,7 +772,10 @@ void aggregate_thread_transactions(PFS_thread *thread,
                                    PFS_account *safe_account,
                                    PFS_user *safe_user,
                                    PFS_host *safe_host);
-
+void aggregate_thread_errors(PFS_thread *thread,
+                             PFS_account *safe_account,
+                             PFS_user *safe_user,
+                             PFS_host *safe_host);
 void aggregate_thread_memory(bool alive, PFS_thread *thread,
                              PFS_account *safe_account,
                              PFS_user *safe_user,

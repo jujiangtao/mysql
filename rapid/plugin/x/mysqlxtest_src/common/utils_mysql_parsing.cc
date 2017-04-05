@@ -18,8 +18,7 @@
  */
 //--------------------------------------------------------------------------------------------------
 #include "utils_mysql_parsing.h"
-
-#include "utils_string_parsing.h"
+#include <boost/algorithm/string/trim.hpp>
 
 namespace shcore
 {
@@ -203,7 +202,7 @@ namespace shcore
                             run++;
 
                           delimiter = std::string((char *)tail, run - tail);
-                          aux::trim(delimiter);
+                          boost::trim(delimiter);
 
                           delimiter_head = (unsigned char*)delimiter.c_str();
 

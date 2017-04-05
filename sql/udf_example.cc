@@ -129,12 +129,12 @@
 #include <mysql.h>
 #include <ctype.h>
 
+#include "cpp11_lib_check.h"
+
 #ifdef _WIN32
 /* inet_aton needs winsock library */
 #pragma comment(lib, "ws2_32")
 #endif
-
-#ifdef HAVE_DLOPEN
 
 #if !defined(HAVE_GETHOSTBYADDR_R) || !defined(HAVE_SOLARIS_STYLE_GETHOST)
 static native_mutex_t LOCK_hostname;
@@ -142,7 +142,7 @@ static native_mutex_t LOCK_hostname;
 
 /* These must be right or mysqld will not find the symbol! */
 
-C_MODE_START;
+C_MODE_START
 my_bool metaphon_init(UDF_INIT *initid, UDF_ARGS *args, char *message);
 void metaphon_deinit(UDF_INIT *initid);
 char *metaphon(UDF_INIT *initid, UDF_ARGS *args, char *result,
@@ -166,7 +166,7 @@ double avgcost( UDF_INIT* initid, UDF_ARGS* args, char* is_null, char *error );
 my_bool is_const_init(UDF_INIT *initid, UDF_ARGS *args, char *message);
 char *is_const(UDF_INIT *initid, UDF_ARGS *args, char *result, unsigned long
                *length, char *is_null, char *error);
-C_MODE_END;
+C_MODE_END
 
 /*************************************************************************
 ** Example of init function
@@ -696,7 +696,7 @@ longlong sequence(UDF_INIT *initid MY_ATTRIBUTE((unused)), UDF_ARGS *args,
 #include <sys/socket.h>
 #endif
 
-C_MODE_START;
+C_MODE_START
 my_bool lookup_init(UDF_INIT *initid, UDF_ARGS *args, char *message);
 void lookup_deinit(UDF_INIT *initid);
 char *lookup(UDF_INIT *initid, UDF_ARGS *args, char *result,
@@ -705,7 +705,7 @@ my_bool reverse_lookup_init(UDF_INIT *initid, UDF_ARGS *args, char *message);
 void reverse_lookup_deinit(UDF_INIT *initid);
 char *reverse_lookup(UDF_INIT *initid, UDF_ARGS *args, char *result,
 		     unsigned long *length, char *null_value, char *error);
-C_MODE_END;
+C_MODE_END
 
 
 /****************************************************************************
@@ -1150,7 +1150,7 @@ char * check_const_len(UDF_INIT *initid, UDF_ARGS *args MY_ATTRIBUTE((unused)),
 }
 
 
-C_MODE_START;
+C_MODE_START
 my_bool  my_median_init  (UDF_INIT *initid, UDF_ARGS *args, char *message);
 void     my_median_deinit(UDF_INIT* initid);
 void     my_median_add   (UDF_INIT* initid, UDF_ARGS* args,
@@ -1159,7 +1159,7 @@ void     my_median_clear (UDF_INIT* initid, UDF_ARGS* args,
                           char* is_null, char *error);
 longlong my_median       (UDF_INIT* initid, UDF_ARGS* args,
                           char* is_null, char *error);
-C_MODE_END;
+C_MODE_END
 
 struct My_median_data
 {
@@ -1225,4 +1225,35 @@ longlong my_median(UDF_INIT* initid, UDF_ARGS* args,
   return data->vec[ix];
 }
 
-#endif /* HAVE_DLOPEN */
+C_MODE_START
+my_bool  my_cpp11_re_match_init  (UDF_INIT *initid, UDF_ARGS *args, char *message);
+void     my_cpp11_re_match_deinit(UDF_INIT* initid);
+
+long long my_cpp11_re_match      (UDF_INIT* initid, UDF_ARGS* args,
+                                  char* is_null, char *error);
+C_MODE_END
+
+
+my_bool my_cpp11_re_match_init (UDF_INIT *initid, UDF_ARGS *args,
+                                char *message)
+{
+  initid->maybe_null= TRUE;
+
+  args->arg_type[0]= STRING_RESULT;
+  args->arg_type[1]= STRING_RESULT;
+
+  return false;
+}
+
+void my_cpp11_re_match_deinit(UDF_INIT* initid)
+{
+}
+
+long long my_cpp11_re_match(UDF_INIT* initid, UDF_ARGS* args,
+                            char* is_null, char *error)
+{
+  char **av= args->args;
+  const unsigned long *lv= args->lengths;
+  std::string pat(av[0], lv[0]), val(av[1], lv[1]);
+  return cpp11_re_match(pat, val);
+}

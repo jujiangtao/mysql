@@ -44,6 +44,10 @@
 #include "sql_parse.h"
 #include "lock.h"                               // MYSQL_LOCK_IGNORE_TIMEOUT
 #include "transaction.h"      // trans_rollback_stmt, trans_commit_stmt
+#include "sql_class.h"
+#include "mysql/psi/mysql_memory.h"
+#include "template_utils.h"
+
 /*
   We only use 1 mutex to guard the data structures - THR_LOCK_servers.
   Read locked when only reading data and write-locked for all other access.
@@ -71,9 +75,9 @@ enum enum_servers_table_field
 
 static bool get_server_from_table_to_cache(TABLE *table);
 
-static uchar *servers_cache_get_key(FOREIGN_SERVER *server, size_t *length,
-                                    my_bool not_used MY_ATTRIBUTE((unused)))
+static const uchar *servers_cache_get_key(const uchar *arg, size_t *length)
 {
+  const FOREIGN_SERVER *server= pointer_cast<const FOREIGN_SERVER*>(arg);
   *length= (uint) server->server_name_length;
   return (uchar*) server->server_name;
 }
@@ -140,8 +144,8 @@ bool servers_init(bool dont_read_servers_table)
     DBUG_RETURN(TRUE);
 
   /* initialise our servers cache */
-  if (my_hash_init(&servers_cache, system_charset_info, 32, 0, 0,
-                   (my_hash_get_key) servers_cache_get_key, 0, 0,
+  if (my_hash_init(&servers_cache, system_charset_info, 32, 0,
+                   servers_cache_get_key, nullptr, 0,
                    key_memory_servers))
   {
     return_val= TRUE; /* we failed, out of memory? */
@@ -342,8 +346,8 @@ static bool get_server_from_table_to_cache(TABLE *table)
   DBUG_PRINT("info", ("server->socket %s", server->socket));
   if (my_hash_insert(&servers_cache, (uchar*) server))
   {
-    DBUG_PRINT("info", ("had a problem inserting server %s at %lx",
-                        server->server_name, (long unsigned int) server));
+    DBUG_PRINT("info", ("had a problem inserting server %s at %p",
+                        server->server_name, server));
     // error handling needed here
     DBUG_RETURN(TRUE);
   }
@@ -807,8 +811,8 @@ bool Sql_cmd_alter_server::execute(THD *thd)
   if (close_cached_connection_tables(thd, m_server_options->m_server_name.str,
                                      m_server_options->m_server_name.length))
   {
-    push_warning_printf(thd, Sql_condition::SL_WARNING,
-                        ER_UNKNOWN_ERROR, "Server connection in use");
+    push_warning(thd, Sql_condition::SL_WARNING,
+                 ER_UNKNOWN_ERROR, "Server connection in use");
   }
 
   if (error == 0 && !thd->killed)
@@ -881,8 +885,8 @@ bool Sql_cmd_drop_server::execute(THD *thd)
   if (close_cached_connection_tables(thd, m_server_name.str,
                                      m_server_name.length))
   {
-    push_warning_printf(thd, Sql_condition::SL_WARNING,
-                        ER_UNKNOWN_ERROR, "Server connection in use");
+    push_warning(thd, Sql_condition::SL_WARNING,
+                 ER_UNKNOWN_ERROR, "Server connection in use");
   }
 
   if (error == 0 && !thd->killed)

@@ -13,7 +13,10 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA */
 
-/* Defines to make different thread packages compatible */
+/**
+  @file include/my_thread.h
+  Defines to make different thread packages compatible.
+*/
 
 #ifndef MY_THREAD_INCLUDED
 #define MY_THREAD_INCLUDED
@@ -172,7 +175,7 @@ int my_thread_create(my_thread_handle *thread, const my_thread_attr_t *attr,
                      my_start_routine func, void *arg);
 int my_thread_join(my_thread_handle *thread, void **value_ptr);
 int my_thread_cancel(my_thread_handle *thread);
-void my_thread_exit(void *value_ptr);
+void my_thread_exit(void *value_ptr) MY_ATTRIBUTE((noreturn));
 
 
 extern my_bool my_thread_global_init();

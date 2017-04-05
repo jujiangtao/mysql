@@ -20,7 +20,6 @@
 #ifndef _NGS_CLIENT_LIST_H_
 #define _NGS_CLIENT_LIST_H_
 
-#include <algorithm>
 #include <vector>
 #include <list>
 #include <ngs/thread.h>
@@ -29,7 +28,7 @@
 namespace ngs
 {
 
-typedef ngs::shared_ptr<Client_interface> Client_ptr;
+typedef boost::shared_ptr<Client_interface> Client_ptr;
 
 class Client_list
 {

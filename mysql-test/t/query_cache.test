@@ -1,3 +1,7 @@
+
+#Bug21789221- Until this Bug is resolved, the test will be run with show_compatibility_56=ON
+select @@global.show_compatibility_56 into @show_compatibility_56_save;
+set @@global.show_compatibility_56=ON;
 # The include statement below is a temp one for tests that are yet to
 #be ported to run with InnoDB,
 #but needs to be kept for tests that would need MyISAM in future.
@@ -5,7 +9,6 @@
 
 #Want to skip this test from daily Valgrind execution
 --source include/no_valgrind_without_big.inc
--- source include/have_query_cache.inc
 
 #
 # Tests with query cache
@@ -177,16 +180,13 @@ reset query cache;
 #
 # Query bigger then query_cache_limit
 #
-insert into t2 select * from t1;
-insert into t1 select * from t2;
-insert into t2 select * from t1;
-insert into t1 select * from t2;
-insert into t2 select * from t1;
-insert into t1 select * from t2;
-insert into t2 select * from t1;
-insert into t1 select * from t2;
-insert into t2 select * from t1;
-insert into t1 select * from t2;
+insert into t2 select * from t1; #4181
+insert into t1 select * from t2; #8362
+insert into t2 select * from t1; #12543
+insert into t1 select * from t2; #20905
+insert into t2 select * from t1; #33448
+insert into t1 select * from t2; #54353
+# The above query results in the query cache getting filled.
 disable_result_log;
 select * from t1;
 enable_result_log;
@@ -1304,22 +1304,22 @@ SET GLOBAL query_cache_size= default;
 #
 CREATE TABLE t1( a INT );
 
---error ER_PARSE_ERROR
+--error ER_CANT_USE_OPTION_HERE
 SET @v = ( SELECT SQL_CACHE    1 );
---error ER_PARSE_ERROR
+--error ER_CANT_USE_OPTION_HERE
 SET @v = ( SELECT SQL_NO_CACHE 1 );
 
 #
 # Keywords 'SQL_CACHE' and 'SQL_NO_CACHE' are allowed as column names.
 # Hence the error messages are not intuitive.
 #
---error ER_BAD_FIELD_ERROR 
+--error ER_CANT_USE_OPTION_HERE
 SELECT a FROM t1 WHERE a IN ( SELECT SQL_CACHE    a FROM t1 );
---error ER_BAD_FIELD_ERROR 
+--error ER_CANT_USE_OPTION_HERE
 SELECT a FROM t1 WHERE a IN ( SELECT SQL_NO_CACHE a FROM t1 );
---error ER_BAD_FIELD_ERROR
+--error ER_CANT_USE_OPTION_HERE
 SELECT ( SELECT SQL_CACHE a FROM t1 );
---error ER_BAD_FIELD_ERROR
+--error ER_CANT_USE_OPTION_HERE
 SELECT ( SELECT SQL_NO_CACHE a FROM t1 );
 
 SELECT SQL_CACHE * FROM t1;
@@ -1330,16 +1330,16 @@ SELECT SQL_NO_CACHE * FROM t1;
 SELECT * FROM t1 UNION SELECT SQL_CACHE * FROM t1;
 --error ER_CANT_USE_OPTION_HERE
 SELECT * FROM t1 UNION SELECT SQL_NO_CACHE * FROM t1;
---error ER_BAD_FIELD_ERROR
+--error ER_CANT_USE_OPTION_HERE
 SELECT * FROM t1 WHERE a IN (SELECT SQL_CACHE a FROM t1);
---error ER_BAD_FIELD_ERROR
+--error ER_CANT_USE_OPTION_HERE
 SELECT * FROM t1 WHERE a IN (SELECT a FROM t1 UNION SELECT SQL_CACHE a FROM t1);
 
 --error ER_CANT_USE_OPTION_HERE
 SELECT * FROM t1 UNION SELECT SQL_NO_CACHE * FROM t1;
---error ER_BAD_FIELD_ERROR
+--error ER_CANT_USE_OPTION_HERE
 SELECT * FROM t1 WHERE a IN (SELECT SQL_NO_CACHE a FROM t1);
---error ER_BAD_FIELD_ERROR
+--error ER_CANT_USE_OPTION_HERE
 SELECT * FROM t1 WHERE a IN 
   (SELECT a FROM t1 UNION SELECT SQL_NO_CACHE a FROM t1);
 --error ER_WRONG_USAGE
@@ -1354,10 +1354,10 @@ SELECT SQL_CACHE * FROM t1 UNION SELECT SQL_NO_CACHE * FROM t1;
 SELECT SQL_NO_CACHE * FROM t1 UNION SELECT SQL_CACHE * FROM t1;
 --error ER_CANT_USE_OPTION_HERE
 SELECT SQL_NO_CACHE * FROM t1 UNION SELECT SQL_NO_CACHE * FROM t1;
---error ER_BAD_FIELD_ERROR
+--error ER_CANT_USE_OPTION_HERE
 SELECT SQL_CACHE * FROM t1 WHERE a IN 
   (SELECT SQL_NO_CACHE a FROM t1);
---error ER_BAD_FIELD_ERROR
+--error ER_CANT_USE_OPTION_HERE
 SELECT SQL_CACHE * FROM t1 WHERE a IN 
   (SELECT a FROM t1 UNION SELECT SQL_NO_CACHE a FROM t1);
 
@@ -1512,3 +1512,4 @@ DELETE FROM parent WHERE a>1;
 DROP DATABASE `tttttttttttttttttttttttttttttttttttttttttt`;
 
 SET GLOBAL query_cache_size = @query_cache_size.saved;
+set @@global.show_compatibility_56=@show_compatibility_56_save;

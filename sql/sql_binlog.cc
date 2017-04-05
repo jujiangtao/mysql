@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2005, 2015, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2005, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -20,6 +20,7 @@
 #include "base64.h"                             // base64_needed_decoded_length
 #include "auth_common.h"                        // check_global_access
 #include "log_event.h"                          // Format_description_log_event
+#include "psi_memory_key.h"
 #include "rpl_info_factory.h"                   // Rpl_info_factory
 #include "rpl_rli.h"                            // Relay_log_info
 
@@ -71,9 +72,6 @@ static int check_event_type(int type, Relay_log_info *rli)
   case binary_log::WRITE_ROWS_EVENT_V1:
   case binary_log::UPDATE_ROWS_EVENT_V1:
   case binary_log::DELETE_ROWS_EVENT_V1:
-  case binary_log::PRE_GA_WRITE_ROWS_EVENT:
-  case binary_log::PRE_GA_UPDATE_ROWS_EVENT:
-  case binary_log::PRE_GA_DELETE_ROWS_EVENT:
     /*
       Row events are only allowed if a Format_description_event has
       already been seen.
@@ -120,14 +118,14 @@ void mysql_client_binlog_statement(THD* thd)
 {
   DBUG_ENTER("mysql_client_binlog_statement");
   DBUG_PRINT("info",("binlog base64: '%*s'",
-                     (int) (thd->lex->comment.length < 2048 ?
-                            thd->lex->comment.length : 2048),
-                     thd->lex->comment.str));
+                     (int) (thd->lex->binlog_stmt_arg.length < 2048 ?
+                            thd->lex->binlog_stmt_arg.length : 2048),
+                     thd->lex->binlog_stmt_arg.str));
 
   if (check_global_access(thd, SUPER_ACL))
     DBUG_VOID_RETURN;
 
-  size_t coded_len= thd->lex->comment.length;
+  size_t coded_len= thd->lex->binlog_stmt_arg.length;
   if (!coded_len)
   {
     my_error(ER_SYNTAX_ERROR, MYF(0));
@@ -181,16 +179,17 @@ void mysql_client_binlog_statement(THD* thd)
 
   DBUG_ASSERT(rli->belongs_to_client());
 
-  for (char const *strptr= thd->lex->comment.str ;
-       strptr < thd->lex->comment.str + thd->lex->comment.length ; )
+  for (char const *strptr= thd->lex->binlog_stmt_arg.str ;
+       strptr < thd->lex->binlog_stmt_arg.str +
+                thd->lex->binlog_stmt_arg.length ; )
   {
     char const *endptr= 0;
     int64 bytes_decoded= base64_decode(strptr, coded_len, buf, &endptr,
                                      MY_BASE64_DECODE_ALLOW_MULTIPLE_CHUNKS);
 
     DBUG_PRINT("info",
-               ("bytes_decoded: %lld  strptr: 0x%lx  endptr: 0x%lx ('%c':%d)",
-                bytes_decoded, (long) strptr, (long) endptr, *endptr,
+               ("bytes_decoded: %lld  strptr: %p  endptr: %p ('%c':%d)",
+                bytes_decoded, strptr, endptr, *endptr,
                 *endptr));
 
     if (bytes_decoded < 0)

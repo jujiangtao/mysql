@@ -16,9 +16,10 @@
 #include "protocol_callback.h"
 #include "sql_class.h"
 #include <stdarg.h>
+#include "current_thd.h"
 
 /**
-@file
+  @file sql/protocol_callback.cc
   Implementation of the Protocol_callback class, which is used by the Command
   service as proxy protocol.
 */
@@ -39,10 +40,10 @@
 int Protocol_callback::read_packet()
 {
   return -1;
-};
+}
 
 /**
-  Practically does nothing. See the comment of ::read_packet().
+  Practically does nothing. See the comment of #read_packet().
   Always returns -1.
 
   @return
@@ -51,7 +52,7 @@ int Protocol_callback::read_packet()
 int Protocol_callback::get_command(COM_DATA *com_data, enum_server_command *cmd)
 {
   return read_packet();
-};
+}
 
 
 /**
@@ -65,14 +66,6 @@ enum enum_vio_type Protocol_callback::connection_type()
   return VIO_TYPE_PLUGIN;
 }
 
-
-/**
-  Sends null value
-
-  @return
-    false  success
-    true   failure
-*/
 bool Protocol_callback::store_null()
 {
   if (callbacks.get_null)
@@ -81,15 +74,6 @@ bool Protocol_callback::store_null()
   return false;
 }
 
-/**
-  Sends TINYINT value
-
-  @param from value
-
-  @return
-    false  success
-    true   failure
-*/
 bool Protocol_callback::store_tiny(longlong from)
 {
   if (callbacks.get_integer)
@@ -97,15 +81,6 @@ bool Protocol_callback::store_tiny(longlong from)
   return false;
 }
 
-/**
-  Sends SMALLINT value
-
-  @param from value
-
-  @return
-    false  success
-    true   failure
-*/
 bool Protocol_callback::store_short(longlong from)
 {
   if (callbacks.get_integer)
@@ -113,15 +88,6 @@ bool Protocol_callback::store_short(longlong from)
   return false;
 }
 
-/**
-  Sends INT/INTEGER value
-
-  @param from value
-
-  @return
-    false  success
-    true   failure
-*/
 bool Protocol_callback::store_long(longlong from)
 {
   if (callbacks.get_integer)
@@ -129,16 +95,6 @@ bool Protocol_callback::store_long(longlong from)
   return false;
 }
 
-/**
-  Sends BIGINT value
-
-  @param from         value
-  @param is_unsigned  from is unsigned
-
-  @return
-    false  success
-    true   failure
-*/
 bool Protocol_callback::store_longlong(longlong from, bool is_unsigned)
 {
   if (callbacks.get_integer)
@@ -164,15 +120,6 @@ bool Protocol_callback::store_decimal(const my_decimal * d, uint prec, uint dec)
   return false;
 }
 
-/**
-  Sends string (CHAR/VARCHAR/TEXT/BLOB) value
-
-  @param d value
-
-  @return
-    false  success
-    true   failure
-*/
 bool Protocol_callback::store(const char *from, size_t length,
                               const CHARSET_INFO *fromcs)
 {
@@ -181,17 +128,6 @@ bool Protocol_callback::store(const char *from, size_t length,
   return false;
 }
 
-/**
-  Sends FLOAT value
-
-  @param from      value
-  @param decimals
-  @param buffer    auxiliary buffer
-
-  @return
-    false  success
-    true   failure
-*/
 bool Protocol_callback::store(float from, uint32 decimals, String *buffer)
 {
   if (callbacks.get_double)
@@ -199,17 +135,6 @@ bool Protocol_callback::store(float from, uint32 decimals, String *buffer)
   return false;
 }
 
-/**
-  Sends DOUBLE value
-
-  @param from      value
-  @param decimals
-  @param buffer    auxiliary buffer
-
-  @return
-    false  success
-    true   failure
-*/
 bool Protocol_callback::store(double from, uint32 decimals, String *buffer)
 {
   if (callbacks.get_double)
@@ -218,16 +143,6 @@ bool Protocol_callback::store(double from, uint32 decimals, String *buffer)
 }
 
 
-/**
-  Sends DATETIME value
-
-  @param time      value
-  @param precision
-
-  @return
-    false  success
-    true   failure
-*/
 bool Protocol_callback::store(MYSQL_TIME *time, uint precision)
 {
   if (callbacks.get_datetime)
@@ -235,15 +150,6 @@ bool Protocol_callback::store(MYSQL_TIME *time, uint precision)
   return false;
 }
 
-/**
-  Sends DATE value
-
-  @param time      value
-
-  @return
-    false  success
-    true   failure
-*/
 bool Protocol_callback::store_date(MYSQL_TIME *time)
 {
   if (callbacks.get_datetime)
@@ -251,16 +157,6 @@ bool Protocol_callback::store_date(MYSQL_TIME *time)
   return false;
 }
 
-/**
-  Sends TIME value
-
-  @param time      value
-  @param precision
-
-  @return
-    false  success
-    true   failure
-*/
 bool Protocol_callback::store_time(MYSQL_TIME *time, uint precision)
 {
   if (callbacks.get_time)
@@ -268,15 +164,6 @@ bool Protocol_callback::store_time(MYSQL_TIME *time, uint precision)
   return false;
 }
 
-/**
-  Sends Field
-
-  @param field
-
-  @return
-    false  success
-    true   failure
-*/
 bool Protocol_callback::store(Proto_field *field)
 {
   switch (text_or_binary)
@@ -302,15 +189,6 @@ ulong Protocol_callback::get_client_capabilities()
   return client_capabilities;
 }
 
-/**
-  Checks if the protocol supports a capability
-
-  @param cap the capability
-
-  @return
-    true   supports
-    false  does not support
-*/
 bool Protocol_callback::has_client_capability(unsigned long capability)
 {
   if (!client_capabilities_set)

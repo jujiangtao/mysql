@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2016, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -17,8 +17,9 @@
 #define PFS_VISITOR_H
 
 #include "pfs_stat.h"
+#include "mysqld_error.h"
 
-typedef struct system_status_var STATUS_VAR;
+struct System_status_var;
 
 /**
   @file storage/perfschema/pfs_visitor.h
@@ -26,7 +27,7 @@ typedef struct system_status_var STATUS_VAR;
 */
 
 /**
-  @addtogroup Performance_schema_buffers
+  @addtogroup performance_schema_buffers
   @{
 */
 
@@ -50,6 +51,7 @@ struct PFS_table;
 struct PFS_stage_class;
 struct PFS_statement_class;
 struct PFS_transaction_class;
+struct PFS_error_class;
 struct PFS_socket;
 struct PFS_connection_slice;
 
@@ -427,8 +429,32 @@ public:
 
   /** EVENT_NAME instrument index. */
   uint m_index;
-  /** Statement statistic collected. */
+  /** Transaction statistic collected. */
   PFS_transaction_stat m_stat;
+};
+
+/**
+  A concrete connection visitor that aggregates
+  Error statistics for a given event_name.
+*/
+class PFS_connection_error_visitor : public PFS_connection_visitor
+{
+public:
+  /** Constructor. */
+  PFS_connection_error_visitor(PFS_error_class *klass, int index);
+  virtual ~PFS_connection_error_visitor();
+  virtual void visit_global();
+  virtual void visit_host(PFS_host *pfs);
+  virtual void visit_account(PFS_account *pfs);
+  virtual void visit_user(PFS_user *pfs);
+  virtual void visit_thread(PFS_thread *pfs);
+
+  /** EVENT_NAME instrument index. */
+  uint m_index;
+  /** index of a specific error. */
+  int m_error_index;
+  /** Error statistic collected. */
+  PFS_error_single_stat m_stat;
 };
 
 /** Disabled pending code review */
@@ -507,7 +533,7 @@ class PFS_connection_status_visitor : public PFS_connection_visitor
 {
 public:
   /** Constructor. */
-  PFS_connection_status_visitor(STATUS_VAR *status_vars);
+  PFS_connection_status_visitor(System_status_var *status_vars);
   virtual ~PFS_connection_status_visitor();
   virtual void visit_global();
   virtual void visit_host(PFS_host *pfs);
@@ -517,7 +543,7 @@ public:
   virtual void visit_THD(THD *thd);
 
 private:
-  STATUS_VAR *m_status_vars;
+  System_status_var *m_status_vars;
 };
 
 /**

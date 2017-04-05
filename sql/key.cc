@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -149,29 +149,6 @@ void key_copy(uchar *to_key, uchar *from_record, KEY *key_info,
 
 
 /**
-  Zero the null components of key tuple
-  SYNOPSIS
-    key_zero_nulls()
-      tuple
-      key_info
-
-  DESCRIPTION
-*/
-
-void key_zero_nulls(uchar *tuple, KEY *key_info)
-{
-  KEY_PART_INFO *key_part= key_info->key_part;
-  KEY_PART_INFO *key_part_end= key_part + key_info->user_defined_key_parts;
-  for (; key_part != key_part_end; key_part++)
-  {
-    if (key_part->null_bit && *tuple)
-      memset(tuple+1, 0, key_part->store_length-1);
-    tuple+= key_part->store_length;
-  }
-}
-
-
-/**
   Restore a key from some buffer to record.
 
     This function converts a key into record format. It can be used in cases
@@ -313,8 +290,7 @@ bool key_cmp_if_same(TABLE *table,const uchar *key,uint idx,uint key_length)
       continue;
     }
     length= min((uint) (key_end-key), store_length);
-    if (!(key_part->key_type & (FIELDFLAG_NUMBER+FIELDFLAG_BINARY+
-                                FIELDFLAG_PACK)))
+    if (!(key_part->bin_cmp))
     {
       const CHARSET_INFO *cs= key_part->field->charset();
       size_t char_length= key_part->length / cs->mbmaxlen;
@@ -326,7 +302,7 @@ bool key_cmp_if_same(TABLE *table,const uchar *key,uint idx,uint key_length)
       }
       if (cs->coll->strnncollsp(cs,
                                 key, length,
-                                pos, char_length, 0))
+                                pos, char_length))
         return 1;
       continue;
     }
@@ -340,7 +316,7 @@ bool key_cmp_if_same(TABLE *table,const uchar *key,uint idx,uint key_length)
 /**
   Unpack a field and append it.
 
-  @param[inout] to           String to append the field contents to.
+  @param[in,out] to          String to append the field contents to.
   @param        field        Field to unpack.
   @param        rec          Record which contains the field data.
   @param        max_length   Maximum length of field to unpack
@@ -556,8 +532,8 @@ int key_cmp(KEY_PART_INFO *key_part, const uchar *key, uint key_length)
   key1_length, key2_length are non zero value.
 */
 int key_cmp2(KEY_PART_INFO *key_part,
-                 const uchar *key1, uint key1_length,
-                 const uchar *key2, uint key2_length)
+             const uchar *key1, uint key1_length,
+             const uchar *key2, uint key2_length)
 {
   DBUG_ASSERT(key_part && key1 && key2);
   DBUG_ASSERT((key1_length == key2_length) && key1_length != 0 );

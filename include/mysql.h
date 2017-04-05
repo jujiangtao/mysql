@@ -13,7 +13,8 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-/*
+/**
+  @file include/mysql.h
   This file defines the client API to MySQL and also the ABI of the
   dynamically linked libmysqlclient.
 
@@ -26,15 +27,19 @@
 #ifndef _mysql_h
 #define _mysql_h
 
-#ifdef	__cplusplus
-extern "C" {
-#endif
-
 #ifndef MY_GLOBAL_INCLUDED                /* If not standard header */
 #ifndef MYSQL_ABI_CHECK
 #include <sys/types.h>
 #endif
+
 typedef char my_bool;
+
+#if defined (_WIN32)
+typedef unsigned __int64 my_ulonglong;
+#else
+typedef unsigned long long my_ulonglong;
+#endif /* _WIN32 */
+
 #if !defined(_WIN32)
 #define STDCALL
 #else
@@ -63,9 +68,18 @@ typedef int my_socket;
 /* Include declarations of plug-in API */
 #include "mysql/client_plugin.h"
 
+#include "typelib.h"
+
+#include "my_alloc.h"
+
+#ifdef	__cplusplus
+extern "C" {
+#endif
+
 extern unsigned int mysql_port;
 extern char *mysql_unix_port;
 
+#define CLIENT_NET_RETRY_COUNT          1               /* Retry count */
 #define CLIENT_NET_READ_TIMEOUT		365*24*3600	/* Timeout on read */
 #define CLIENT_NET_WRITE_TIMEOUT	365*24*3600	/* Timeout on write */
 
@@ -107,16 +121,6 @@ typedef struct st_mysql_field {
 typedef char **MYSQL_ROW;		/* return data as array of strings */
 typedef unsigned int MYSQL_FIELD_OFFSET; /* offset to current field */
 
-#ifndef MY_GLOBAL_INCLUDED
-#if defined (_WIN32)
-typedef unsigned __int64 my_ulonglong;
-#else
-typedef unsigned long long my_ulonglong;
-#endif
-#endif
-
-#include "typelib.h"
-
 #define MYSQL_COUNT_ERROR (~(my_ulonglong) 0)
 
 /* backward compatibility define - to be removed eventually */
@@ -129,8 +133,6 @@ typedef struct st_mysql_rows {
 } MYSQL_ROWS;
 
 typedef MYSQL_ROWS *MYSQL_ROW_OFFSET;	/* offset to current row */
-
-#include "my_alloc.h"
 
 typedef struct embedded_query_result EMBEDDED_QUERY_RESULT;
 typedef struct st_mysql_data {
@@ -153,7 +155,7 @@ enum mysql_option
   MYSQL_OPT_USE_REMOTE_CONNECTION, MYSQL_OPT_USE_EMBEDDED_CONNECTION,
   MYSQL_OPT_GUESS_CONNECTION, MYSQL_SET_CLIENT_IP, MYSQL_SECURE_AUTH,
   MYSQL_REPORT_DATA_TRUNCATION, MYSQL_OPT_RECONNECT,
-  MYSQL_OPT_SSL_VERIFY_SERVER_CERT, MYSQL_PLUGIN_DIR, MYSQL_DEFAULT_AUTH,
+  MYSQL_PLUGIN_DIR, MYSQL_DEFAULT_AUTH,
   MYSQL_OPT_BIND,
   MYSQL_OPT_SSL_KEY, MYSQL_OPT_SSL_CERT, 
   MYSQL_OPT_SSL_CA, MYSQL_OPT_SSL_CAPATH, MYSQL_OPT_SSL_CIPHER,
@@ -163,10 +165,10 @@ enum mysql_option
   MYSQL_SERVER_PUBLIC_KEY,
   MYSQL_ENABLE_CLEARTEXT_PLUGIN,
   MYSQL_OPT_CAN_HANDLE_EXPIRED_PASSWORDS,
-  MYSQL_OPT_SSL_ENFORCE,
   MYSQL_OPT_MAX_ALLOWED_PACKET, MYSQL_OPT_NET_BUFFER_LENGTH,
   MYSQL_OPT_TLS_VERSION,
-  MYSQL_OPT_SSL_MODE
+  MYSQL_OPT_SSL_MODE,
+  MYSQL_OPT_RETRY_COUNT
 };
 
 /**
@@ -180,7 +182,7 @@ struct st_mysql_options {
   unsigned int port, protocol;
   unsigned long client_flag;
   char *host,*user,*password,*unix_socket,*db;
-  struct st_dynamic_array *init_commands;
+  struct Init_commands_array *init_commands;
   char *my_cnf_file,*my_cnf_group, *charset_dir, *charset_name;
   char *ssl_key;				/* PEM key file */
   char *ssl_cert;				/* PEM cert file */
@@ -189,7 +191,7 @@ struct st_mysql_options {
   char *ssl_cipher;				/* cipher to use */
   char *shared_memory_base_name;
   unsigned long max_allowed_packet;
-  my_bool use_ssl;                              /* Deprecated ! Former use_ssl */
+  my_bool unused6;                              /* Deprecated ! Former use_ssl */
   my_bool compress,named_pipe;
   my_bool unused1;
   my_bool unused2;
@@ -432,9 +434,6 @@ mysql_set_local_infile_handler(MYSQL *mysql,
 void
 mysql_set_local_infile_default(MYSQL *mysql);
 
-int		STDCALL mysql_shutdown(MYSQL *mysql,
-                                       enum mysql_enum_shutdown_level
-                                       shutdown_level);
 int		STDCALL mysql_dump_debug_info(MYSQL *mysql);
 int		STDCALL mysql_refresh(MYSQL *mysql,
 				     unsigned int refresh_options);

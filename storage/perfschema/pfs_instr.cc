@@ -32,11 +32,12 @@
 #include "pfs_instr_class.h"
 #include "pfs_buffer_container.h"
 #include "pfs_builtin_memory.h"
+#include "mysqld.h" // get_thd_status_var
 
 ulong nested_statement_lost= 0;
 
 /**
-  @addtogroup Performance_schema_buffers
+  @addtogroup performance_schema_buffers
   @{
 */
 
@@ -64,6 +65,8 @@ ulong locker_lost= 0;
 ulong statement_lost= 0;
 /** Size of connection attribute storage per thread */
 ulong session_connect_attrs_size_per_thread;
+/** Longest connection attributes string seen so far, pre-truncation */
+ulong session_connect_attrs_longest_seen= 0;
 /** Number of connection attributes lost */
 ulong session_connect_attrs_lost= 0;
 
@@ -241,10 +244,8 @@ void cleanup_instruments(void)
   global_instr_class_memory_array= NULL;
 }
 
-C_MODE_START
 /** Get hash table key for instrumented files. */
-static uchar *filename_hash_get_key(const uchar *entry, size_t *length,
-                                    my_bool)
+static const uchar *filename_hash_get_key(const uchar *entry, size_t *length)
 {
   const PFS_file * const *typed_entry;
   const PFS_file *file;
@@ -255,9 +256,8 @@ static uchar *filename_hash_get_key(const uchar *entry, size_t *length,
   DBUG_ASSERT(file != NULL);
   *length= file->m_filename_length;
   result= file->m_filename;
-  return const_cast<uchar*> (reinterpret_cast<const uchar*> (result));
+  return reinterpret_cast<const uchar*> (result);
 }
-C_MODE_END
 
 /**
   Initialize the file name hash.
@@ -717,7 +717,7 @@ void destroy_thread(PFS_thread *pfs)
   @param thread The running thread.
   @returns The LF_HASH pins for the thread.
 */
-LF_PINS* get_filename_hash_pins(PFS_thread *thread)
+static LF_PINS* get_filename_hash_pins(PFS_thread *thread)
 {
   if (unlikely(thread->m_filename_hash_pins == NULL))
   {
@@ -842,7 +842,7 @@ search:
   entry= reinterpret_cast<PFS_file**>
     (lf_hash_search(&filename_hash, pins,
                     normalized_filename, normalized_length));
-  if (entry && (entry != MY_ERRPTR))
+  if (entry && (entry != MY_LF_ERRPTR))
   {
     pfs= *entry;
     pfs->m_file_stat.m_open_count++;
@@ -1502,6 +1502,36 @@ void aggregate_all_transactions(PFS_transaction_stat *from_array,
   }
 }
 
+void aggregate_all_errors(PFS_error_stat *from_array,
+                          PFS_error_stat *to_array)
+{
+  DBUG_ASSERT(from_array != NULL);
+  DBUG_ASSERT(to_array != NULL);
+
+  if (from_array->count() > 0)
+  {
+    to_array->aggregate(from_array);
+    from_array->reset();
+  }
+}
+
+
+void aggregate_all_errors(PFS_error_stat *from_array,
+                          PFS_error_stat *to_array_1,
+                          PFS_error_stat *to_array_2)
+{
+  DBUG_ASSERT(from_array != NULL);
+  DBUG_ASSERT(to_array_1 != NULL);
+  DBUG_ASSERT(to_array_2 != NULL);
+
+  if (from_array->count() > 0)
+  {
+    to_array_1->aggregate(from_array);
+    to_array_2->aggregate(from_array);
+    from_array->reset();
+  }
+}
+
 void aggregate_all_memory(bool alive,
                           PFS_memory_stat *from_array,
                           PFS_memory_stat *to_array)
@@ -1573,28 +1603,31 @@ void aggregate_thread_status(PFS_thread *thread,
   if (thd == NULL)
     return;
 
+  System_status_var *status_var= get_thd_status_var(thd);
+
   if (likely(safe_account != NULL))
   {
-    safe_account->aggregate_status_stats(&thd->status_var);
+    safe_account->aggregate_status_stats(status_var);
     return;
   }
 
   if (safe_user != NULL)
   {
-    safe_user->aggregate_status_stats(&thd->status_var);
+    safe_user->aggregate_status_stats(status_var);
   }
 
   if (safe_host != NULL)
   {
-    safe_host->aggregate_status_stats(&thd->status_var);
+    safe_host->aggregate_status_stats(status_var);
   }
+
   return;
 }
 
-void aggregate_thread_stats(PFS_thread *thread,
-                            PFS_account *safe_account,
-                            PFS_user *safe_user,
-                            PFS_host *safe_host)
+static void aggregate_thread_stats(PFS_thread *thread,
+                                   PFS_account *safe_account,
+                                   PFS_user *safe_user,
+                                   PFS_host *safe_host)
 {
   if (likely(safe_account != NULL))
   {
@@ -1633,6 +1666,10 @@ void aggregate_thread(PFS_thread *thread,
 
 #ifdef HAVE_PSI_TRANSACTION_INTERFACE
   aggregate_thread_transactions(thread, safe_account, safe_user, safe_host);
+#endif
+
+#ifdef HAVE_PSI_ERROR_INTERFACE
+  aggregate_thread_errors(thread, safe_account, safe_user, safe_host);
 #endif
 
 #ifdef HAVE_PSI_MEMORY_INTERFACE
@@ -1862,9 +1899,9 @@ void aggregate_thread_transactions(PFS_thread *thread,
   if ((safe_user != NULL) && (safe_host != NULL))
   {
     /*
-      Aggregate EVENTS_TRANSACTION_SUMMARY_BY_THREAD_BY_EVENT_NAME to:
-      -  EVENTS_TRANSACTION_SUMMARY_BY_USER_BY_EVENT_NAME
-      -  EVENTS_TRANSACTION_SUMMARY_BY_HOST_BY_EVENT_NAME
+      Aggregate EVENTS_TRANSACTIONS_SUMMARY_BY_THREAD_BY_EVENT_NAME to:
+      -  EVENTS_TRANSACTIONS_SUMMARY_BY_USER_BY_EVENT_NAME
+      -  EVENTS_TRANSACTIONS_SUMMARY_BY_HOST_BY_EVENT_NAME
       in parallel.
     */
     aggregate_all_transactions(thread->write_instr_class_transactions_stats(),
@@ -1906,6 +1943,72 @@ void aggregate_thread_transactions(PFS_thread *thread,
                              &global_transaction_stat);
 }
 
+void aggregate_thread_errors(PFS_thread *thread,
+                                   PFS_account *safe_account,
+                                   PFS_user *safe_user,
+                                   PFS_host *safe_host)
+{
+  if (thread->read_instr_class_errors_stats() == NULL)
+    return;
+
+  if (likely(safe_account != NULL))
+  {
+    /*
+      Aggregate EVENTS_ERRORS_SUMMARY_BY_THREAD_BY_ERROR
+      to EVENTS_ERRORS_SUMMARY_BY_ACCOUNT_BY_ERROR.
+    */
+    aggregate_all_errors(thread->write_instr_class_errors_stats(),
+                         safe_account->write_instr_class_errors_stats());
+
+    return;
+  }
+
+  if ((safe_user != NULL) && (safe_host != NULL))
+  {
+    /*
+      Aggregate EVENTS_ERRORS_SUMMARY_BY_THREAD_BY_ERROR to:
+      -  EVENTS_ERRORS_SUMMARY_BY_USER_BY_ERROR
+      -  EVENTS_ERRORS_SUMMARY_BY_HOST_BY_ERROR
+      in parallel.
+    */
+    aggregate_all_errors(thread->write_instr_class_errors_stats(),
+                         safe_user->write_instr_class_errors_stats(),
+                         safe_host->write_instr_class_errors_stats());
+    return;
+  }
+
+  if (safe_user != NULL)
+  {
+    /*
+      Aggregate EVENTS_ERRORS_SUMMARY_BY_THREAD_BY_ERROR to:
+      -  EVENTS_ERRORS_SUMMARY_BY_USER_BY_ERROR
+      -  EVENTS_ERRORS_SUMMARY_GLOBAL_BY_ERROR
+      in parallel.
+    */
+    aggregate_all_errors(thread->write_instr_class_errors_stats(),
+                         safe_user->write_instr_class_errors_stats(),
+                         &global_error_stat);
+    return;
+  }
+
+  if (safe_host != NULL)
+  {
+    /*
+      Aggregate EVENTS_ERRORS_SUMMARY_BY_THREAD_BY_ERROR
+      to EVENTS_ERRORS_SUMMARY_BY_HOST_BY_ERROR, directly.
+    */
+    aggregate_all_errors(thread->write_instr_class_errors_stats(),
+                         safe_host->write_instr_class_errors_stats());
+    return;
+  }
+
+  /*
+    Aggregate EVENTS_ERRORS_SUMMARY_BY_THREAD_BY_ERROR
+    to EVENTS_ERRORS_SUMMARY_GLOBAL_BY_ERROR.
+  */
+  aggregate_all_errors(thread->write_instr_class_errors_stats(),
+                       &global_error_stat);
+}
 void aggregate_thread_memory(bool alive, PFS_thread *thread,
                              PFS_account *safe_account,
                              PFS_user *safe_user,
@@ -2102,7 +2205,7 @@ void update_file_derived_flags()
   global_file_container.apply_all(fct_update_file_derived_flags);
 }
 
-void fct_update_table_derived_flags(PFS_table *pfs)
+static void fct_update_table_derived_flags(PFS_table *pfs)
 {
   PFS_table_share *share= sanitize_table_share(pfs->m_share);
   if (likely(share != NULL))

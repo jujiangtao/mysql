@@ -16,6 +16,7 @@
  */
 
 
+
 #include "insert_statement_builder.h"
 #include "query_string_builder.h"
 #include "mysqld_error.h"
@@ -32,14 +33,19 @@ namespace test
 class Insert_statement_builder_impl: public Insert_statement_builder
 {
 public:
-  Insert_statement_builder_impl(Expression_generator &gen) : Insert_statement_builder(gen) {}
+  Insert_statement_builder_impl(const Insert_statement_builder::Insert& msg,
+                                Query_string_builder &qb)
+  : Insert_statement_builder(msg, qb)
+  { m_is_relational = true;}
 
+  void set_document_model() { m_is_relational = false; }
   using Insert_statement_builder::Projection_list;
   using Insert_statement_builder::Row_list;
   using Insert_statement_builder::Field_list;
   using Insert_statement_builder::add_projection;
   using Insert_statement_builder::add_values;
   using Insert_statement_builder::add_row;
+  using Insert_statement_builder::add_statement;
 };
 
 
@@ -47,19 +53,15 @@ class Insert_statement_builder_test : public ::testing::Test
 {
 public:
   Insert_statement_builder_test()
-  : args(*msg.mutable_args()),
-    expr_gen(query, args, schema, true),
-    builder(expr_gen)
+  : builder(msg, query),
+    args(*msg.mutable_args())
   {}
   Insert_statement_builder::Insert msg;
-  Expression_generator::Args &args;
   Query_string_builder query;
-  std::string schema;
-  Expression_generator expr_gen;
   Insert_statement_builder_impl builder;
-
-  enum {DM_DOCUMENT = 0, DM_TABLE = 1};
+  Expression_generator::Args &args;
 };
+
 
 namespace
 {
@@ -130,7 +132,7 @@ TEST_F(Insert_statement_builder_test, add_row_full_row_full_projection)
 TEST_F(Insert_statement_builder_test, add_values_empty_list)
 {
   Insert_statement_builder_impl::Row_list values;
-  ASSERT_THROW(builder.add_values(values, 1), ngs::Error_code);
+  ASSERT_THROW(builder.add_values(values), ngs::Error_code);
   EXPECT_EQ("", query.get());
 }
 
@@ -139,7 +141,7 @@ TEST_F(Insert_statement_builder_test, add_values_one_row)
 {
   Insert_statement_builder_impl::Row_list values;
   *values.Add() << get_field("one") + " " + get_field("two");
-  ASSERT_NO_THROW(builder.add_values(values, 0));
+  ASSERT_NO_THROW(builder.add_values(values));
   EXPECT_EQ(" VALUES ('one','two')", query.get());
 }
 
@@ -150,7 +152,7 @@ TEST_F(Insert_statement_builder_test, add_values_one_row_with_arg)
 
   Insert_statement_builder_impl::Row_list values;
   *values.Add() << get_field("one") + " field {type: PLACEHOLDER position: 0}";
-  ASSERT_NO_THROW(builder.add_values(values, 0));
+  ASSERT_NO_THROW(builder.add_values(values));
   EXPECT_EQ(" VALUES ('one','two')", query.get());
 }
 
@@ -159,7 +161,7 @@ TEST_F(Insert_statement_builder_test, add_values_one_row_missing_arg)
 {
   Insert_statement_builder_impl::Row_list values;
   *values.Add() << get_field("one") + " field {type: PLACEHOLDER position: 0}";
-  EXPECT_THROW(builder.add_values(values, 0),
+  EXPECT_THROW(builder.add_values(values),
                Expression_generator::Error);
 }
 
@@ -169,7 +171,7 @@ TEST_F(Insert_statement_builder_test, add_values_two_rows)
   Insert_statement_builder_impl::Row_list values;
   *values.Add() << get_field("one") + " " + get_field("two");
   *values.Add() << get_field("three") + " " + get_field("four");
-  ASSERT_NO_THROW(builder.add_values(values, values.size()));
+  ASSERT_NO_THROW(builder.add_values(values));
   EXPECT_EQ(" VALUES ('one','two'),('three','four')", query.get());
 }
 
@@ -182,7 +184,7 @@ TEST_F(Insert_statement_builder_test, add_values_two_rows_with_args)
   Insert_statement_builder_impl::Row_list values;
   *values.Add() << get_field("one") + " field {type: PLACEHOLDER position: 0}";
   *values.Add() << get_field("three") + " field {type: PLACEHOLDER position: 1}";
-  ASSERT_NO_THROW(builder.add_values(values, values.size()));
+  ASSERT_NO_THROW(builder.add_values(values));
   EXPECT_EQ(" VALUES ('one','two'),('three','four')", query.get());
 }
 
@@ -190,7 +192,7 @@ TEST_F(Insert_statement_builder_test, add_values_two_rows_with_args)
 TEST_F(Insert_statement_builder_test, add_projection_tabel_empty)
 {
   Insert_statement_builder_impl::Projection_list projection;
-  ASSERT_NO_THROW(builder.add_projection(projection, DM_TABLE));
+  ASSERT_NO_THROW(builder.add_projection(projection));
   EXPECT_EQ("", query.get());
 }
 
@@ -199,7 +201,7 @@ TEST_F(Insert_statement_builder_test, add_projection_tabel_one_item)
 {
   Insert_statement_builder_impl::Projection_list projection;
   *projection.Add() << "name: 'first'";
-  ASSERT_NO_THROW(builder.add_projection(projection, DM_TABLE));
+  ASSERT_NO_THROW(builder.add_projection(projection));
   EXPECT_EQ(" (`first`)", query.get());
 }
 
@@ -209,7 +211,7 @@ TEST_F(Insert_statement_builder_test, add_projection_tabel_two_items)
   Insert_statement_builder_impl::Projection_list projection;
   *projection.Add() << "name: 'first'";
   *projection.Add() << "name: 'second'";
-  ASSERT_NO_THROW(builder.add_projection(projection, DM_TABLE));
+  ASSERT_NO_THROW(builder.add_projection(projection));
   EXPECT_EQ(" (`first`,`second`)", query.get());
 }
 
@@ -217,7 +219,8 @@ TEST_F(Insert_statement_builder_test, add_projection_tabel_two_items)
 TEST_F(Insert_statement_builder_test, add_projection_document_empty)
 {
   Insert_statement_builder_impl::Projection_list projection;
-  ASSERT_NO_THROW(builder.add_projection(projection, DM_DOCUMENT));
+  builder.set_document_model();
+  ASSERT_NO_THROW(builder.add_projection(projection));
   EXPECT_EQ(" (doc)", query.get());
 }
 
@@ -226,24 +229,26 @@ TEST_F(Insert_statement_builder_test, add_projection_document_one_item)
 {
   Insert_statement_builder_impl::Projection_list projection;
   *projection.Add() << "name: 'first'";
-  ASSERT_THROW(builder.add_projection(projection, DM_DOCUMENT), ngs::Error_code);
+  builder.set_document_model();
+  ASSERT_THROW(builder.add_projection(projection), ngs::Error_code);
   EXPECT_EQ("", query.get());
 }
 
 
-TEST_F(Insert_statement_builder_test, build_document)
+TEST_F(Insert_statement_builder_test, add_statement_document)
 {
   msg <<
       "collection { name: 'xcoll' schema: 'xtest' } "
       "data_model: DOCUMENT "
       "row {" + get_field("first") + "}"
       "row {" + get_field("second") + "}";
-  ASSERT_NO_THROW(builder.build(msg));
+  builder.set_document_model();
+  ASSERT_NO_THROW(builder.add_statement());
   EXPECT_EQ("INSERT INTO `xtest`.`xcoll` (doc) VALUES ('first'),('second')", query.get());
 }
 
 
-TEST_F(Insert_statement_builder_test, build_table)
+TEST_F(Insert_statement_builder_test, add_statement_table)
 {
   msg <<
       "collection { name: 'xtable' schema: 'xtest' } "
@@ -251,7 +256,7 @@ TEST_F(Insert_statement_builder_test, build_table)
       "projection { name: 'one' } "
       "projection { name: 'two' } "
       "row {" + get_field("first") + " " + get_field("second") + "}";
-  ASSERT_NO_THROW(builder.build(msg));
+  ASSERT_NO_THROW(builder.add_statement());
   EXPECT_EQ("INSERT INTO `xtest`.`xtable` (`one`,`two`) VALUES ('first','second')", query.get());
 }
 

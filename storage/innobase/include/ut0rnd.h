@@ -27,9 +27,6 @@ Created 1/20/1994 Heikki Tuuri
 #define ut0rnd_h
 
 #include "univ.i"
-
-#ifndef UNIV_INNOCHECKSUM
-
 #include "ut0byte.h"
 
 /** The 'character code' for end of field or string (used
@@ -61,27 +58,29 @@ UNIV_INLINE
 ulint
 ut_rnd_gen_ulint(void);
 /*==================*/
-/********************************************************//**
-Generates a random integer from a given interval.
+
+/** Generates a random integer from a given interval.
+@param[in]	low	low limit; can generate also this value
+@param[in]	high	high limit; can generate also this value
 @return the 'random' number */
 UNIV_INLINE
 ulint
 ut_rnd_interval(
-/*============*/
-	ulint	low,	/*!< in: low limit; can generate also this value */
-	ulint	high);	/*!< in: high limit; can generate also this value */
+	ulint	low,
+	ulint	high);
 
-/*******************************************************//**
-The following function generates a hash value for a ulint integer
-to a hash table of size table_size, which should be a prime or some
-random number to work reliably.
+/** The following function generates a hash value for a ulint integer to a
+hash table of size table_size, which should be a prime or some random number
+to work reliably.
+@param[in]	key		value to be hashed
+@param[in]	table_size	hash table size
 @return hash value */
 UNIV_INLINE
 ulint
 ut_hash_ulint(
-/*==========*/
-	ulint	 key,		/*!< in: value to be hashed */
-	ulint	 table_size);	/*!< in: hash table size */
+	ulint	 key,
+	ulint	 table_size);
+
 /*************************************************************//**
 Folds a 64-bit integer.
 @return folded value */
@@ -110,8 +109,6 @@ ut_find_prime(
 	ulint	n)	/*!< in: positive number > 100 */
 	MY_ATTRIBUTE((const));
 
-#endif /* !UNIV_INNOCHECKSUM */
-
 /*************************************************************//**
 Folds a pair of ulints.
 @return folded value */
@@ -133,9 +130,6 @@ ut_fold_binary(
 	ulint		len)	/*!< in: length */
 	MY_ATTRIBUTE((pure));
 
-
-#ifndef UNIV_NONINL
 #include "ut0rnd.ic"
-#endif
 
 #endif

@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved. 
+/* Copyright (c) 2010, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -15,15 +15,19 @@
 
 #include "filesort_utils.h"
 #include "opt_costmodel.h"
+#include "psi_memory_key.h"
 #include "sql_const.h"
 #include "sql_sort.h"
 #include "table.h"
 
 #include <algorithm>
+#include <cmath>
 #include <functional>
 #include <vector>
 
+extern "C" {
 PSI_memory_key key_memory_Filesort_buffer_sort_keys;
+}
 
 namespace {
 /**
@@ -35,8 +39,7 @@ double get_merge_cost(ha_rows num_elements, ha_rows num_buffers, uint elem_size,
   const double io_ops= static_cast<double>(num_elements * elem_size) / IO_SIZE;
   const double io_cost= cost_model->io_block_read_cost(io_ops);
   const double cpu_cost=
-    cost_model->key_compare_cost(num_elements * log((double) num_buffers) /
-                                 M_LN2);
+    cost_model->key_compare_cost(num_elements * std::log2(num_buffers));
   return 2 * io_cost + cpu_cost;
 }
 }

@@ -20,10 +20,14 @@
 #include "sql_lex.h"
 
 #include "mysql_version.h"             // MYSQL_VERSION_ID
+
+#include "current_thd.h"
+#include "mysqld.h"                    // table_alias_charset
 #include "sp_head.h"                   // sp_head
 #include "sql_class.h"                 // THD
 #include "sql_parse.h"                 // add_to_list
 #include "parse_tree_helpers.h"
+#include "prealloced_array.h"          // Prealloced_array
 #include "sql_hints.yy.h"
 #include "sql_lex_hints.h"
 #include "sql_yacc.h"
@@ -33,6 +37,8 @@
 #include "sql_table.h"                 // primary_key_name
 #include "sql_insert.h"                // Sql_cmd_insert_base
 #include "lex_token.h"
+
+#include <algorithm>                   // find_if, iter_swap, reverse
 
 
 extern int HINT_PARSER_parse(THD *thd,
@@ -88,10 +94,6 @@ Query_tables_list::binlog_stmt_unsafe_errcode[BINLOG_STMT_UNSAFE_COUNT] =
 };
 
 
-/* Longest standard keyword name */
-
-#define TOCK_NAME_LENGTH 24
-
 /* 
   Names of the index hints (for error messages). Keep in sync with 
   index_hint_type 
@@ -109,7 +111,8 @@ const char * index_hint_type_name[] =
   @note The order of the elements of this array must correspond to
   the order of elements in type_enum
 */
-const char *st_select_lex::type_str[SLT_total]=
+const char *
+SELECT_LEX::type_str[static_cast<int>(enum_explain_type::EXPLAIN_total)]=
 { "NONE",
   "PRIMARY",
   "SIMPLE",
@@ -119,6 +122,17 @@ const char *st_select_lex::type_str[SLT_total]=
   "UNION RESULT",
   "MATERIALIZED"
 };
+
+
+Table_ident::Table_ident(Protocol *protocol, const LEX_CSTRING &db_arg,
+                         const LEX_CSTRING &table_arg, bool force)
+  :table(table_arg), sel(NULL)
+{
+  if (!force && protocol->has_client_capability(CLIENT_NO_SCHEMA))
+    db= NULL_CSTR;
+  else
+    db= db_arg;
+}
 
 
 bool lex_init(void)
@@ -211,8 +225,9 @@ Lex_input_stream::reset(const char *buffer, size_t length)
   yylineno= 1;
   yytoklen= 0;
   yylval= NULL;
-  lookahead_token= -1;
-  lookahead_yylval= NULL;
+  lookahead_token= grammar_selector_token;
+  static YYSTYPE dummy_yylval;
+  lookahead_yylval= &dummy_yylval;
   skip_digest= false;
   /*
     Lex_input_stream modifies the query string in one special case (sic!).
@@ -392,6 +407,14 @@ void Lex_input_stream::reduce_digest_token(uint token_left, uint token_right)
 }
 
 
+void LEX::assert_ok_set_current_select()
+{
+  // (2) Only owning thread could change m_current_select
+  // (1) bypass for bootstrap and "new THD"
+  DBUG_ASSERT(!current_thd || !thd || //(1)
+              thd == current_thd);    //(2)
+}
+
 LEX::~LEX()
 {
   destroy_query_tables_list();
@@ -436,12 +459,10 @@ void LEX::reset()
   describe= DESCRIBE_NONE;
   subqueries= false;
   context_analysis_only= 0;
-  derived_tables= 0;
   safe_to_cache_query= true;
   insert_table= NULL;
   insert_table_leaf= NULL;
   parsing_options.reset();
-  length= 0;
   part_info= NULL;
   duplicates= DUP_ERROR;
   ignore= false;
@@ -464,6 +485,7 @@ void LEX::reset()
   select_number= 0;
   allow_sum_func= 0;
   in_sum_func= NULL;
+  create_info= NULL;
   server_options.reset();
   explain_format= NULL;
   is_lex_started= true;
@@ -474,10 +496,8 @@ void LEX::reset()
 
   wild= NULL;
   exchange= NULL;
-  is_set_password_sql= false;
   mark_broken(false);
   max_execution_time= 0;
-  parse_gcol_expr= false;
   opt_hints_global= NULL;
   binlog_need_explicit_defaults_ts= false;
 }
@@ -507,6 +527,8 @@ bool lex_start(THD *thd)
   DBUG_ASSERT(lex->current_select() == NULL);
   lex->m_current_select= lex->select_lex;
 
+  lex->m_IS_dyn_stat_cache.invalidate_cache();
+
   DBUG_RETURN(status);
 }
 
@@ -518,7 +540,7 @@ bool lex_start(THD *thd)
 void lex_end(LEX *lex)
 {
   DBUG_ENTER("lex_end");
-  DBUG_PRINT("enter", ("lex: 0x%lx", (long) lex));
+  DBUG_PRINT("enter", ("lex: %p", lex));
 
   /* release used plugins */
   if (!lex->plugins.empty()) /* No function call and no mutex if no plugins. */
@@ -527,7 +549,7 @@ void lex_end(LEX *lex)
   }
   lex->plugins.clear();
 
-  delete lex->sphead;
+  sp_head::destroy(lex->sphead);
   lex->sphead= NULL;
   lex->clear_values_map();
 
@@ -535,10 +557,10 @@ void lex_end(LEX *lex)
 }
 
 
-st_select_lex *LEX::new_empty_query_block()
+SELECT_LEX *LEX::new_empty_query_block()
 {
-  st_select_lex *select=
-    new (thd->mem_root) st_select_lex(NULL, NULL, NULL, NULL, NULL, NULL);
+  SELECT_LEX *select=
+    new (thd->mem_root) SELECT_LEX(NULL, NULL, NULL, NULL, NULL, NULL);
   if (select == NULL)
     return NULL;             /* purecov: inspected */
 
@@ -559,7 +581,7 @@ st_select_lex *LEX::new_empty_query_block()
 
   @return new query specification if successful, NULL if error
 */
-st_select_lex *LEX::new_query(st_select_lex *curr_select)
+SELECT_LEX *LEX::new_query(SELECT_LEX *curr_select)
 {
   DBUG_ENTER("LEX::new_query");
 
@@ -615,7 +637,7 @@ st_select_lex *LEX::new_query(st_select_lex *curr_select)
       1) outer_context is the context of the second SELECT of the UNION
       2) select_lex->outer_select() is the fake select_lex, which context
          is the one of the first SELECT of the UNION (see
-         st_select_lex_unit::add_fake_select_lex()).
+         SELECT_LEX_UNIT::add_fake_select_lex()).
       2) is the correct context, per the documentation. 1) is not, and using
       it leads to a resolving error for the query above.
       We should fix 1) and then use it unconditionally here.
@@ -649,10 +671,18 @@ st_select_lex *LEX::new_query(st_select_lex *curr_select)
   @param curr_select current query specification
   @param distinct True if part of UNION DISTINCT query
 
+  @param check_syntax This function is called from both new and legacy
+  code. New code uses the actual parse tree for checking syntax before
+  creating SELECT_LEX'es (good), while legacy code checks the SELECT_LEX
+  structures later on to see what syntax they seem to be generated from
+  (bad). When all parser rules have been converted, this parameter will always
+  be false, and can be removed.
+
   @return new query specification if successful, NULL if an error occurred.
 */
 
-st_select_lex *LEX::new_union_query(st_select_lex *curr_select, bool distinct)
+SELECT_LEX *LEX::new_union_query(SELECT_LEX *curr_select, bool distinct,
+                                 bool check_syntax)
 {
   DBUG_ENTER("LEX::new_union_query");
 
@@ -676,16 +706,19 @@ st_select_lex *LEX::new_union_query(st_select_lex *curr_select, bool distinct)
     DBUG_RETURN(NULL);
   }
 
-  if (curr_select->order_list.first && !curr_select->braces)
+  if (check_syntax)
   {
-    my_error(ER_WRONG_USAGE, MYF(0), "UNION", "ORDER BY");
-    DBUG_RETURN(NULL);
-  }
+    if (curr_select->order_list.first && !curr_select->braces)
+    {
+      my_error(ER_WRONG_USAGE, MYF(0), "UNION", "ORDER BY");
+      DBUG_RETURN(NULL);
+    }
 
-  if (curr_select->explicit_limit && !curr_select->braces)
-  {
-    my_error(ER_WRONG_USAGE, MYF(0), "UNION", "LIMIT");
-    DBUG_RETURN(NULL);
+    if (curr_select->explicit_limit && !curr_select->braces)
+    {
+      my_error(ER_WRONG_USAGE, MYF(0), "UNION", "LIMIT");
+      DBUG_RETURN(NULL);
+    }
   }
 
   SELECT_LEX *const select= new_empty_query_block();
@@ -1126,6 +1159,21 @@ uint Lex_input_stream::get_lineno(const char *raw_ptr)
 }
 
 
+Partition_expr_parser_state::Partition_expr_parser_state()
+: Parser_state(GRAMMAR_SELECTOR_PART), result(NULL)
+{}
+
+
+Gcol_expr_parser_state::Gcol_expr_parser_state()
+: Parser_state(GRAMMAR_SELECTOR_GCOL), result(NULL)
+{}
+
+
+Expression_parser_state::Expression_parser_state()
+: Parser_state(GRAMMAR_SELECTOR_EXPR), result(NULL)
+{}
+
+
 /*
 ** Calc type of integer; long integer, longlong integer or real.
 ** Returns smallest type that match the string.
@@ -1229,7 +1277,8 @@ static inline uint int_token(const char *str,uint length)
 
   @retval  Whether EOF reached before comment is closed.
 */
-bool consume_comment(Lex_input_stream *lip, int remaining_recursions_permitted)
+static bool consume_comment(Lex_input_stream *lip,
+                            int remaining_recursions_permitted)
 {
   uchar c;
   while (! lip->eof())
@@ -1263,11 +1312,11 @@ bool consume_comment(Lex_input_stream *lip, int remaining_recursions_permitted)
 }
 
 
-/*
+/**
   yylex() function implementation for the main parser
 
-  @param yylval         [out]  semantic value of the token being parsed (yylval)
-  @param yylloc         [out]  "location" of the token being parsed (yylloc)
+  @param [out] yylval   semantic value of the token being parsed (yylval)
+  @param [out] yylloc   "location" of the token being parsed (yylloc)
   @param thd            THD
 
   @return               token number
@@ -2129,10 +2178,10 @@ void trim_whitespace(const CHARSET_INFO *cs, LEX_STRING *str)
 
 
 /**
-  Construct and initialize st_select_lex_unit object.
+  Construct and initialize SELECT_LEX_UNIT object.
 */
 
-st_select_lex_unit::st_select_lex_unit(enum_parsing_context parsing_context) :
+SELECT_LEX_UNIT::SELECT_LEX_UNIT(enum_parsing_context parsing_context) :
   next(NULL),
   prev(NULL),
   master(NULL),
@@ -2185,10 +2234,10 @@ st_select_lex_unit::st_select_lex_unit(enum_parsing_context parsing_context) :
 
 
 /**
-  Construct and initialize st_select_lex object.
+  Construct and initialize SELECT_LEX object.
 */
 
-st_select_lex::st_select_lex
+SELECT_LEX::SELECT_LEX
                (TABLE_LIST *table_list,
                 List<Item> *item_list_arg,       // unused
                 Item *where, Item *having, Item *limit, Item *offset)
@@ -2243,7 +2292,6 @@ st_select_lex::st_select_lex
   order_list_ptrs(NULL),
   select_limit(NULL),
   offset_limit(NULL),
-  ref_pointer_array(),
   select_n_having_items(0),
   cond_count(0),
   between_count(0),
@@ -2268,7 +2316,6 @@ st_select_lex::st_select_lex
   sj_pullout_done(false),
   exclude_from_table_unique_test(false),
   allow_merge_derived(true),
-  prev_join_using(NULL),
   select_list_tables(0),
   outer_join(0),
   opt_hints_qb(NULL),
@@ -2285,7 +2332,7 @@ st_select_lex::st_select_lex
                        NULL if none or it will be set later.
 */
 
-bool st_select_lex::set_context(Name_resolution_context *outer_context)
+bool SELECT_LEX::set_context(Name_resolution_context *outer_context)
 {
   context.init();
   context.select_lex= this;
@@ -2298,6 +2345,41 @@ bool st_select_lex::set_context(Name_resolution_context *outer_context)
 }
 
 
+
+/**
+  Add tables from an array to a list of used tables.
+
+  @param thd            Current session.
+  @param tables         Tables to add.
+  @param table_options  A set of the following bits:
+                         - TL_OPTION_UPDATING : Table will be updated,
+                         - TL_OPTION_FORCE_INDEX : Force usage of index,
+                         - TL_OPTION_ALIAS : an alias in multi table DELETE.
+  @param lock_type      How table should be locked.
+  @param mdl_type       Type of metadata lock to acquire on the table.
+
+  @returns true if error (reported), otherwise false.
+*/
+
+bool SELECT_LEX::add_tables(THD *thd,
+                            const Trivial_array<Table_ident *> *tables,
+                            ulong table_options,
+                            thr_lock_type lock_type,
+                            enum_mdl_type mdl_type)
+{
+  if (tables == NULL)
+    return false;
+
+  for (auto *table : *tables)
+  {
+    if (!add_table_to_list(thd, table, NULL,
+                           table_options, lock_type, mdl_type))
+      return true;
+  }
+  return false;
+}
+
+
 /**
   Exclude this unit and its immediately contained select_lex objects
   from query expression / query block chain.
@@ -2306,7 +2388,7 @@ bool st_select_lex::set_context(Name_resolution_context *outer_context)
     Units that belong to the select_lex objects of the current unit will be
     brought up one level and will replace the current unit in the list of units.
 */
-void st_select_lex_unit::exclude_level()
+void SELECT_LEX_UNIT::exclude_level()
 {
   /*
     Changing unit tree should be done only when LOCK_query_plan mutex is
@@ -2382,7 +2464,7 @@ void st_select_lex_unit::exclude_level()
 /**
   Exclude subtree of current unit from tree of SELECTs
 */
-void st_select_lex_unit::exclude_tree()
+void SELECT_LEX_UNIT::exclude_tree()
 {
   SELECT_LEX *sl= first_select();
   while (sl)
@@ -2413,10 +2495,10 @@ void st_select_lex_unit::exclude_tree()
 
 
 /**
-  Invalidate by nulling out pointers to other st_select_lex_units and
-  st_select_lexes.
+  Invalidate by nulling out pointers to other SELECT_LEX_UNITs and
+  SELECT_LEXes.
 */
-void st_select_lex_unit::invalidate()
+void SELECT_LEX_UNIT::invalidate()
 {
   next= NULL;
   prev= NULL;
@@ -2432,7 +2514,7 @@ void st_select_lex_unit::invalidate()
   @param removed_options Options that are removed from the active options
 */
 
-void st_select_lex::make_active_options(ulonglong added_options,
+void SELECT_LEX::make_active_options(ulonglong added_options,
                                         ulonglong removed_options)
 {
   m_active_options= (m_base_options | added_options |
@@ -2443,15 +2525,18 @@ void st_select_lex::make_active_options(ulonglong added_options,
 /**
   Mark all query blocks from this to 'last' as dependent
 
-  @param last Pointer to last st_select_lex struct, before which all
-              st_select_lex are marked as as dependent.
+  @param last Pointer to last SELECT_LEX struct, before which all
+              SELECT_LEX are marked as as dependent.
 
   @note
-    last should be reachable from this st_select_lex
+    last should be reachable from this SELECT_LEX
 */
 
-void st_select_lex::mark_as_dependent(st_select_lex *last)
+void SELECT_LEX::mark_as_dependent(SELECT_LEX *last)
 {
+  // The top level query block cannot be dependent, so do not go above this:
+  DBUG_ASSERT(last != NULL);
+
   /*
     Mark all selects from resolved to 1 before select where was
     found table as depended (of select where was found table)
@@ -2482,7 +2567,7 @@ void st_select_lex::mark_as_dependent(st_select_lex *last)
 /*
   prohibit using LIMIT clause
 */
-bool st_select_lex::test_limit()
+bool SELECT_LEX::test_limit()
 {
   if (select_limit != 0)
   {
@@ -2494,14 +2579,14 @@ bool st_select_lex::test_limit()
 }
 
 
-enum_parsing_context st_select_lex_unit::get_explain_marker() const
+enum_parsing_context SELECT_LEX_UNIT::get_explain_marker() const
 {
   thd->query_plan.assert_plan_is_locked_if_other();
   return explain_marker;
 }
 
 
-void st_select_lex_unit::set_explain_marker(enum_parsing_context m)
+void SELECT_LEX_UNIT::set_explain_marker(enum_parsing_context m)
 {
   thd->lock_query_plan();
   explain_marker= m;
@@ -2509,8 +2594,8 @@ void st_select_lex_unit::set_explain_marker(enum_parsing_context m)
 }
 
 
-void st_select_lex_unit::
-set_explain_marker_from(const st_select_lex_unit *u)
+void SELECT_LEX_UNIT::
+set_explain_marker_from(const SELECT_LEX_UNIT *u)
 {
   thd->lock_query_plan();
   explain_marker= u->explain_marker;
@@ -2518,13 +2603,13 @@ set_explain_marker_from(const st_select_lex_unit *u)
 }
 
 
-ha_rows st_select_lex::get_offset()
+ha_rows SELECT_LEX::get_offset()
 {
   ulonglong val= 0;
 
   if (offset_limit)
   {
-    // see comment for st_select_lex::get_limit()
+    // see comment for SELECT_LEX::get_limit()
     bool fix_fields_successful= true;
     if (!offset_limit->fixed)
     {
@@ -2539,7 +2624,7 @@ ha_rows st_select_lex::get_offset()
 }
 
 
-ha_rows st_select_lex::get_limit()
+ha_rows SELECT_LEX::get_limit()
 {
   ulonglong val= HA_POS_ERROR;
 
@@ -2585,37 +2670,31 @@ ha_rows st_select_lex::get_limit()
 }
 
 
-void st_select_lex::add_order_to_list(ORDER *order)
+void SELECT_LEX::add_order_to_list(ORDER *order)
 {
   add_to_list(order_list, order);
 }
 
 
-bool st_select_lex::add_item_to_list(THD *thd, Item *item)
+bool SELECT_LEX::add_item_to_list(THD *thd, Item *item)
 {
-  DBUG_ENTER("st_select_lex::add_item_to_list");
-  DBUG_PRINT("info", ("Item: 0x%lx", (long) item));
+  DBUG_ENTER("SELECT_LEX::add_item_to_list");
+  DBUG_PRINT("info", ("Item: %p", item));
   DBUG_RETURN(item_list.push_back(item));
 }
 
 
-void st_select_lex::add_group_to_list(ORDER *order)
-{
-  add_to_list(group_list, order);
-}
-
-
-bool st_select_lex::add_ftfunc_to_list(Item_func_match *func)
+bool SELECT_LEX::add_ftfunc_to_list(Item_func_match *func)
 {
   return !func || ftfunc_list->push_back(func); // end of memory?
 }
 
 
 /**
-  Invalidate by nulling out pointers to other st_select_lex_units and
-  st_select_lexes.
+  Invalidate by nulling out pointers to other SELECT_LEX_UNITs and
+  SELECT_LEXes.
 */
-void st_select_lex::invalidate()
+void SELECT_LEX::invalidate()
 {
   next= NULL;
   prev= NULL;
@@ -2626,14 +2705,14 @@ void st_select_lex::invalidate()
 }
 
 
-bool st_select_lex::set_braces(bool value)
+bool SELECT_LEX::set_braces(bool value)
 {
   braces= value;
   return 0; 
 }
 
 
-bool st_select_lex::setup_ref_array(THD *thd)
+bool SELECT_LEX::setup_base_ref_items(THD *thd)
 {
   uint order_group_num= order_list.elements + group_list.elements;
 
@@ -2650,7 +2729,7 @@ bool st_select_lex::setup_ref_array(THD *thd)
     {
       /*
         Same test as in create_distinct_group, when it pushes new items to the
-        end of ref_pointer_array. An extra test for 'fixed' which, at this
+        end of base_ref_items. An extra test for 'fixed' which, at this
         stage, will be true only for columns inserted for a '*' wildcard.
       */
       if (item->fixed &&
@@ -2671,7 +2750,7 @@ bool st_select_lex::setup_ref_array(THD *thd)
                        item_list.elements +
                        select_n_having_items +
                        select_n_where_fields +
-                       order_group_num) * 5;
+                       order_group_num);
   DBUG_PRINT("info", ("setup_ref_array this %p %4u : %4u %4u %4u %4u %4u %4u",
                       this,
                       n_elems, // :
@@ -2681,7 +2760,7 @@ bool st_select_lex::setup_ref_array(THD *thd)
                       select_n_having_items,
                       select_n_where_fields,
                       order_group_num));
-  if (!ref_pointer_array.is_null())
+  if (!base_ref_items.is_null())
   {
     /*
       We need to take 'n_sum_items' into account when allocating the array,
@@ -2690,24 +2769,24 @@ bool st_select_lex::setup_ref_array(THD *thd)
       In the usual case we can reuse the array from the prepare phase.
       If we need a bigger array, we must allocate a new one.
      */
-    if (ref_pointer_array.size() >= n_elems)
+    if (base_ref_items.size() >= n_elems)
       return false;
   }
   /*
-    ref_pointer_array could become bigger when a subquery gets transformed
+    base_ref_items could become bigger when a subquery gets transformed
     into a MIN/MAX subquery. Reallocate array in this case.
   */
   Item **array= static_cast<Item**>(arena->alloc(sizeof(Item*) * n_elems));
-  if (array != NULL)
-  {
-    ref_pointer_array= Ref_ptr_array(array, n_elems);
-    ref_ptrs= ref_ptr_array_slice(0);
-  }
-  return array == NULL;
+  if (array == NULL)
+    return true;
+
+  base_ref_items= Ref_item_array(array, n_elems);
+
+  return false;
 }
 
 
-void st_select_lex_unit::print(String *str, enum_query_type query_type)
+void SELECT_LEX_UNIT::print(String *str, enum_query_type query_type)
 {
   bool union_all= !union_distinct;
   for (SELECT_LEX *sl= first_select(); sl; sl= sl->next_select())
@@ -2742,7 +2821,7 @@ void st_select_lex_unit::print(String *str, enum_query_type query_type)
 }
 
 
-void st_select_lex::print_order(String *str,
+void SELECT_LEX::print_order(String *str,
                                 ORDER *order,
                                 enum_query_type query_type)
 {
@@ -2757,9 +2836,9 @@ void st_select_lex::print_order(String *str,
 }
  
 
-void st_select_lex::print_limit(THD *thd,
-                                String *str,
-                                enum_query_type query_type)
+void SELECT_LEX::print_limit(THD *thd,
+                             String *str,
+                             enum_query_type query_type)
 {
   SELECT_LEX_UNIT *unit= master_unit();
   Item_subselect *item= unit->item;
@@ -2792,10 +2871,6 @@ void st_select_lex::print_limit(THD *thd,
 
   @param      thd         the current thread
   @param[out] str         appends the index hint here
-  @param      hint        what the hint is (as string : "USE INDEX"|
-                          "FORCE INDEX"|"IGNORE INDEX")
-  @param      hint_length the length of the string in 'hint'
-  @param      indexes     a list of index names for the hint
 */
 
 void 
@@ -2837,14 +2912,20 @@ Index_hint::print(THD *thd, String *str)
 }
 
 
-static void print_table_array(THD *thd, String *str, TABLE_LIST **table, 
-                              TABLE_LIST **end, enum_query_type query_type)
-{
-  (*table)->print(thd, str, query_type);
+typedef Prealloced_array<TABLE_LIST *, 8> Table_array;
 
-  for (TABLE_LIST **tbl= table + 1; tbl < end; tbl++)
+
+static void print_table_array(THD *thd, String *str, const Table_array &tables,
+                              enum_query_type query_type)
+{
+  DBUG_ASSERT(!tables.empty());
+
+  Table_array::const_iterator it= tables.begin();
+  (*it)->print(thd, str, query_type);
+
+  while (++it != tables.end())
   {
-    TABLE_LIST *curr= *tbl;
+    TABLE_LIST *curr= *it;
     // Print the join operator which relates this table to the previous one
     if (curr->outer_join)
     {
@@ -2879,7 +2960,7 @@ static void print_table_array(THD *thd, String *str, TABLE_LIST **table,
   @param thd     thread handler
   @param str     string where table should be printed
   @param tables  list of tables in join
-  @query_type    type of the query is being generated
+  @param query_type    type of the query is being generated
 */
 
 static void print_join(THD *thd,
@@ -2889,7 +2970,6 @@ static void print_join(THD *thd,
 {
   /* List is reversed => we should reverse it before using */
   List_iterator_fast<TABLE_LIST> ti(*tables);
-  TABLE_LIST **table;
 
   /*
     If the QT_NO_DATA_EXPANSION flag is specified, we print the
@@ -2910,51 +2990,32 @@ static void print_join(THD *thd,
     select `t`.`1` from (select 1 AS `1`) `t`
   */
   const bool print_const_tables= (query_type & QT_NO_DATA_EXPANSION);
-  size_t tables_to_print= 0;
+  Table_array tables_to_print(PSI_NOT_INSTRUMENTED);
 
   for (TABLE_LIST *t= ti++; t ; t= ti++)
     if (print_const_tables || !t->optimized_away)
-      tables_to_print++;
-  if (tables_to_print == 0)
+      if (tables_to_print.push_back(t))
+        return;                               /* purecov: inspected */
+
+  if (tables_to_print.empty())
   {
     str->append(STRING_WITH_LEN("dual"));
     return; // all tables were optimized away
   }
-  ti.rewind();
 
-  if (!(table= static_cast<TABLE_LIST **>(thd->alloc(sizeof(TABLE_LIST*) *
-                                                     tables_to_print))))
-    return;  // out of memory
-
-  TABLE_LIST *tmp, **t= table + (tables_to_print - 1);
-  while ((tmp= ti++))
-  {
-    if (tmp->optimized_away && !print_const_tables)
-      continue;
-    *t--= tmp;
-  }
+  std::reverse(tables_to_print.begin(), tables_to_print.end());
 
   /*
     If the first table is a semi-join nest, swap it with something that is
     not a semi-join nest. This is necessary because "A SEMIJOIN B" is not the
     same as "B SEMIJOIN A".
   */
-  if ((*table)->sj_cond())
-  {
-    TABLE_LIST **end= table + tables_to_print;
-    for (TABLE_LIST **t2= table; t2!=end; t2++)
-    {
-      if (!(*t2)->sj_cond())
-      {
-        TABLE_LIST *tmp= *t2;
-        *t2= *table;
-        *table= tmp;
-        break;
-      }
-    }
-  }
-  DBUG_ASSERT(tables_to_print >= 1);
-  print_table_array(thd, str, table, table + tables_to_print, query_type);
+  auto it= std::find_if(tables_to_print.begin(), tables_to_print.end(),
+                        [] (const TABLE_LIST *t) { return !t->sj_cond(); });
+  if (it != tables_to_print.end())
+    std::iter_swap(tables_to_print.begin(), it);
+
+  print_table_array(thd, str, tables_to_print, query_type);
 }
 
 
@@ -3028,17 +3089,7 @@ void TABLE_LIST::print(THD *thd, String *str, enum_query_type query_type) const
       }
       else
       {
-        /**
-         Fix for printing empty string when internal_table_name is
-         used. Actual length of internal_table_name cannot be reduced
-         as server expects a valid string of length atleast 1 for any
-         table. So while printing we use the correct length of the
-         table_name i.e 0 when internal_table_name is used.
-        */
-        if (table_name != internal_table_name)
-          append_identifier(thd, str, table_name, table_name_length);
-        else
-          append_identifier(thd, str, table_name, 0);
+        append_identifier(thd, str, table_name, table_name_length);
         cmp_name= table_name;
       }
       if (partition_names && partition_names->elements)
@@ -3090,7 +3141,7 @@ void TABLE_LIST::print(THD *thd, String *str, enum_query_type query_type) const
 }
 
 
-void st_select_lex::print(THD *thd, String *str, enum_query_type query_type)
+void SELECT_LEX::print(THD *thd, String *str, enum_query_type query_type)
 {
   /* QQ: thd may not be set for sub queries, but this should be fixed */
   if (!thd)
@@ -3280,7 +3331,7 @@ void st_select_lex::print(THD *thd, String *str, enum_query_type query_type)
 }
 
 
-Item::enum_walk get_walk_flags(const Select_lex_visitor *visitor)
+static Item::enum_walk get_walk_flags(const Select_lex_visitor *visitor)
 {
   if (visitor->visits_in_prefix_order())
     return Item::WALK_SUBQUERY_PREFIX;
@@ -3289,7 +3340,7 @@ Item::enum_walk get_walk_flags(const Select_lex_visitor *visitor)
 }
 
 
-bool walk_item(Item *item, Select_lex_visitor *visitor)
+static bool walk_item(Item *item, Select_lex_visitor *visitor)
 {
   if (item == NULL)
     return false;
@@ -3310,7 +3361,7 @@ static bool accept_for_order(SQL_I_List<ORDER> orders,
   return false;
 }
 
-bool st_select_lex_unit::accept(Select_lex_visitor *visitor)
+bool SELECT_LEX_UNIT::accept(Select_lex_visitor *visitor)
 {
   SELECT_LEX *end= NULL;
   for (SELECT_LEX *sl= first_select(); sl != end; sl= sl->next_select())
@@ -3343,7 +3394,7 @@ static bool accept_for_join(List<TABLE_LIST> *tables,
 }
 
 
-bool st_select_lex::accept(Select_lex_visitor *visitor)
+bool SELECT_LEX::accept(Select_lex_visitor *visitor)
 {
   // Select clause
   List_iterator<Item> it(item_list);
@@ -3406,7 +3457,7 @@ void LEX::cleanup_lex_after_parse_error(THD *thd)
     //  Do not delete sp_head if is invoked in the context of sp execution.
     if (thd->sp_runtime_ctx == NULL)
     {
-      delete sp;
+      sp_head::destroy(sp);
       thd->lex->sphead= NULL;
     }
   }
@@ -3508,12 +3559,11 @@ LEX::LEX()
    insert_update_values_map(NULL),
    option_type(OPT_DEFAULT),
    sphead(NULL),
-   is_set_password_sql(false),
    // Initialize here to avoid uninitialized variable warnings.
    contains_plaintext_password(false),
    keep_diagnostics(DA_KEEP_UNSPECIFIED),
    is_lex_started(0),
-  in_update_value_clause(false)
+   in_update_value_clause(false)
 {
   reset_query_tables_list(TRUE);
 }
@@ -3549,6 +3599,21 @@ bool LEX::can_use_merged()
   case SQLCOM_REPLACE:
   case SQLCOM_REPLACE_SELECT:
   case SQLCOM_LOAD:
+
+  /*
+    With WL#6599 following SHOW commands are implemented over the
+    INFORMATION_SCHEMA system views, and we do not create
+    temporary tables anymore now. So these queries should be
+    allowed to be mergeable, which makes the INFORMATION_SCHEMA
+    query execution faster.
+  */
+  case SQLCOM_SHOW_CHARSETS:
+  case SQLCOM_SHOW_COLLATIONS:
+  case SQLCOM_SHOW_DATABASES:
+  case SQLCOM_SHOW_TABLES:
+  case SQLCOM_SHOW_TABLE_STATUS:
+  case SQLCOM_SHOW_FIELDS:
+  case SQLCOM_SHOW_KEYS:
     return TRUE;
   default:
     return FALSE;
@@ -3571,12 +3636,6 @@ bool LEX::can_not_use_merged()
   {
   case SQLCOM_CREATE_VIEW:
   case SQLCOM_SHOW_CREATE:
-  /*
-    SQLCOM_SHOW_FIELDS is necessary to make 
-    information schema tables working correctly with views.
-    see get_schema_tables_result function
-  */
-  case SQLCOM_SHOW_FIELDS:
     return TRUE;
   default:
     return FALSE;
@@ -3584,34 +3643,8 @@ bool LEX::can_not_use_merged()
 }
 
 /*
-  Detect that we need only table structure of derived table/view
-
-  SYNOPSIS
-    only_view_structure()
-
-  RETURN
-    TRUE yes, we need only structure
-    FALSE no, we need data
-*/
-
-bool LEX::only_view_structure()
-{
-  switch (sql_command) {
-  case SQLCOM_SHOW_CREATE:
-  case SQLCOM_SHOW_TABLES:
-  case SQLCOM_SHOW_FIELDS:
-  case SQLCOM_REVOKE_ALL:
-  case SQLCOM_REVOKE:
-  case SQLCOM_GRANT:
-  case SQLCOM_CREATE_VIEW:
-    return TRUE;
-  default:
-    return FALSE;
-  }
-}
-
-
-/*
+  case SQLCOM_REVOKE_ROLE:
+  case SQLCOM_GRANT_ROLE:
   Should Items_ident be printed correctly
 
   SYNOPSIS
@@ -3680,7 +3713,7 @@ LEX::copy_db_to(char **p_db, size_t *p_db_length) const
 
   @param sl SELECT_LEX to get offset and limit from.
 */
-void st_select_lex_unit::set_limit(st_select_lex *sl)
+void SELECT_LEX_UNIT::set_limit(SELECT_LEX *sl)
 {
   DBUG_ASSERT(!thd->stmt_arena->is_stmt_prepare());
 
@@ -3699,7 +3732,7 @@ void st_select_lex_unit::set_limit(st_select_lex *sl)
   @retval true  A temporary table is needed.
   @retval false A temporary table is not needed.
  */
-bool st_select_lex_unit::union_needs_tmp_table()
+bool SELECT_LEX_UNIT::union_needs_tmp_table()
 {
   return union_distinct != NULL ||
     global_parameters()->order_list.elements != 0 ||
@@ -3714,7 +3747,7 @@ bool st_select_lex_unit::union_needs_tmp_table()
   @param lex:   Containing LEX object
   @param outer: The query block that this query expression is included below.
 */
-void st_select_lex_unit::include_down(LEX *lex, st_select_lex *outer)
+void SELECT_LEX_UNIT::include_down(LEX *lex, SELECT_LEX *outer)
 {
   if ((next= outer->slave))
     next->prev= &next;
@@ -3727,33 +3760,8 @@ void st_select_lex_unit::include_down(LEX *lex, st_select_lex *outer)
 
 
 /**
-  Include a complete chain of query expressions below a query block.
-
-  @param lex:   Containing LEX object
-  @param outer: The query block that the chain is included below.
-
-  @note
-    "this" is pointer to the first query expression in the chain.
-*/
-void st_select_lex_unit::include_chain(LEX *lex, st_select_lex *outer)
-{
-  st_select_lex_unit *last_unit= this; // Initialization needed for gcc
-  for (st_select_lex_unit *unit= this; unit != NULL; unit= unit->next)
-  {
-    unit->master= outer; // Link to the outer query block
-    unit->renumber_selects(lex);
-    last_unit= unit;
-  }
-
-  if ((last_unit->next= outer->slave))
-    last_unit->next->prev= &last_unit->next;
-  prev= &outer->slave;
-  outer->slave= this;
-}
-
-
-/**
-  Return true if query expression can be merged into an outer query.
+  Return true if query expression can be merged into an outer query, based on
+  technical constraints.
   Being mergeable also means that derived table/view is updatable.
 
   A view/derived table is not mergeable if it is one of the following:
@@ -3763,11 +3771,26 @@ void st_select_lex_unit::include_chain(LEX *lex, st_select_lex *outer)
    - A table-less query (unimportant special case).
    - A query with a LIMIT (limit applies to subquery, so the implementation
      strategy is to materialize this subquery, including row count constraint).
-   - A query that modifies variables (When variables are modified, try to
-     preserve the original structure of the query. This is less likely to cause
-     changes in variable assignment order).
+*/
 
-  A view/derived table will also not be merged if it contains subqueries
+bool SELECT_LEX_UNIT::is_mergeable() const
+{
+  if (is_union())
+    return false;
+
+  SELECT_LEX *const select= first_select();
+  return !select->is_grouped() &&
+         !select->having_cond() &&
+         !select->is_distinct() &&
+         select->table_list.elements > 0 &&
+         !select->has_limit();
+}
+
+
+/**
+  True if heuristics suggest to merge this query expression.
+
+  A view/derived table is not suggested for merging if it contains subqueries
   in the SELECT list that depend on columns from itself.
   Merging such objects is possible, but we assume they are made derived
   tables because the user wants them to be materialized, for performance
@@ -3780,12 +3803,13 @@ void st_select_lex_unit::include_chain(LEX *lex, st_select_lex *outer)
   The select list subqueries are evaluated the same number of times also with
   join buffering enabled, even though the table then only will be read once.
 
-  When materialization hints are implemented, this decision may be reconsidered.
+  Another case is, a query that modifies variables: then try to preserve the
+  original structure of the query. This is less likely to cause changes in
+  variable assignment order.
 */
-
-bool st_select_lex_unit::is_mergeable() const
+bool SELECT_LEX_UNIT::merge_heuristic() const
 {
-  if (is_union())
+  if (thd->lex->set_var_list.elements != 0)
     return false;
 
   SELECT_LEX *const select= first_select();
@@ -3796,13 +3820,9 @@ bool st_select_lex_unit::is_mergeable() const
     if (item->has_subquery() && item->used_tables())
       return false;
   }
-  return !select->is_grouped() &&
-         !select->having_cond() &&
-         !select->is_distinct() &&
-         select->table_list.elements > 0 &&
-         !select->has_limit() &&
-         thd->lex->set_var_list.elements == 0;
+  return true;
 }
+
 
 /**
   Renumber contained select_lex objects.
@@ -3810,7 +3830,7 @@ bool st_select_lex_unit::is_mergeable() const
   @param  lex   Containing LEX object
 */
 
-void st_select_lex_unit::renumber_selects(LEX *lex)
+void SELECT_LEX_UNIT::renumber_selects(LEX *lex)
 {
   for (SELECT_LEX *select= first_select(); select; select= select->next_select())
     select->renumber(lex);
@@ -4117,17 +4137,8 @@ void LEX::link_first_table_back(TABLE_LIST *first,
 
 void LEX::cleanup_after_one_table_open()
 {
-  /*
-    thd->lex->derived_tables & additional units may be set if we open
-    a view. It is necessary to clear thd->lex->derived_tables flag
-    to prevent processing of derived tables during next open_and_lock_tables
-    if next table is a real table and cleanup & remove underlying units
-    NOTE: all units will be connected to thd->lex->select_lex, because we
-    have not UNION on most upper level.
-    */
   if (all_selects_list != select_lex)
   {
-    derived_tables= 0;
     /* cleunup underlying units (units of VIEW) */
     for (SELECT_LEX_UNIT *un= select_lex->first_inner_unit();
          un;
@@ -4199,9 +4210,9 @@ bool LEX::table_or_sp_used()
 
 
 void
-st_select_lex::fix_prepare_information_for_order(THD *thd,
-                                                 SQL_I_List<ORDER> *list,
-                                                 Group_list_ptrs **list_ptrs)
+SELECT_LEX::fix_prepare_information_for_order(THD *thd,
+                                              SQL_I_List<ORDER> *list,
+                                              Group_list_ptrs **list_ptrs)
 {
   Group_list_ptrs *p= *list_ptrs;
   if (!p)
@@ -4222,7 +4233,7 @@ st_select_lex::fix_prepare_information_for_order(THD *thd,
   @param thd          thread handler
 */
 
-void st_select_lex::fix_prepare_information(THD *thd)
+void SELECT_LEX::fix_prepare_information(THD *thd)
 {
   if (!first_execution)
     return;
@@ -4237,39 +4248,39 @@ void st_select_lex::fix_prepare_information(THD *thd)
 
 
 /*
-  There are st_select_lex::add_table_to_list &
-  st_select_lex::set_lock_for_tables are in sql_parse.cc
+  There are SELECT_LEX::add_table_to_list &
+  SELECT_LEX::set_lock_for_tables are in sql_parse.cc
 
-  st_select_lex::print is in sql_select.cc
+  SELECT_LEX::print is in sql_select.cc
 
-  st_select_lex_unit::prepare, st_select_lex_unit::exec,
-  st_select_lex_unit::cleanup, st_select_lex_unit::reinit_exec_mechanism,
-  st_select_lex_unit::change_query_result
+  SELECT_LEX_UNIT::prepare, SELECT_LEX_UNIT::exec,
+  SELECT_LEX_UNIT::cleanup, SELECT_LEX_UNIT::reinit_exec_mechanism,
+  SELECT_LEX_UNIT::change_query_result
   are in sql_union.cc
 */
 
 
-st_select_lex::type_enum st_select_lex::type()
+enum_explain_type SELECT_LEX::type()
 {
   if (master_unit()->fake_select_lex == this)
-    return SLT_UNION_RESULT;
+    return enum_explain_type::EXPLAIN_UNION_RESULT;
   else if (!master_unit()->outer_select() &&
-           master_unit()->first_select() == this) 
+           master_unit()->first_select() == this)
   {
     if (first_inner_unit() || next_select())
-      return SLT_PRIMARY;
+      return enum_explain_type::EXPLAIN_PRIMARY;
     else
-      return SLT_SIMPLE;
+      return enum_explain_type::EXPLAIN_SIMPLE;
   }
   else if (this == master_unit()->first_select())
   {
-    if (linkage == DERIVED_TABLE_TYPE) 
-      return SLT_DERIVED;
+    if (linkage == DERIVED_TABLE_TYPE)
+      return enum_explain_type::EXPLAIN_DERIVED;
     else
-      return SLT_SUBQUERY;
+      return enum_explain_type::EXPLAIN_SUBQUERY;
   }
   else
-    return SLT_UNION;
+    return enum_explain_type::EXPLAIN_UNION;
 }
 
 
@@ -4282,9 +4293,9 @@ st_select_lex::type_enum st_select_lex::type()
 
   @note that this query block can never have any underlying query expressions,
         hence it is not necessary to e.g. renumber those, like e.g.
-        st_select_lex_unit::include_down() does.
+        SELECT_LEX_UNIT::include_down() does.
 */
-void st_select_lex::include_down(LEX *lex, st_select_lex_unit *outer)
+void SELECT_LEX::include_down(LEX *lex, SELECT_LEX_UNIT *outer)
 {
   DBUG_ASSERT(slave == NULL);
 
@@ -4306,7 +4317,7 @@ void st_select_lex::include_down(LEX *lex, st_select_lex_unit *outer)
   @param lex    Containing LEX object
   @param before Query block that this object is added after.
 */
-void st_select_lex::include_neighbour(LEX *lex, st_select_lex *before)
+void SELECT_LEX::include_neighbour(LEX *lex, SELECT_LEX *before)
 {
   if ((next= before->next))
     next->prev= &next;
@@ -4324,14 +4335,14 @@ void st_select_lex::include_neighbour(LEX *lex, st_select_lex *before)
 
   Do not link the query block into the global chain of query blocks.
 
-  This function is exclusive for st_select_lex_unit::add_fake_select_lex() -
+  This function is exclusive for SELECT_LEX_UNIT::add_fake_select_lex() -
   use it with caution.
 
-  @param  outer - Query expression this node is included below.
-  @param  ref - Handle to the caller's pointer to this node.
+  @param  outer Query expression this node is included below.
+  @param  ref Handle to the caller's pointer to this node.
 */
-void st_select_lex::include_standalone(st_select_lex_unit *outer,
-                                       st_select_lex **ref)
+void SELECT_LEX::include_standalone(SELECT_LEX_UNIT *outer,
+                                    SELECT_LEX **ref)
 {
   next= NULL;
   prev= ref;
@@ -4346,7 +4357,7 @@ void st_select_lex::include_standalone(st_select_lex_unit *outer,
 
   @param  lex   Containing LEX object
 */
-void st_select_lex::renumber(LEX *lex)
+void SELECT_LEX::renumber(LEX *lex)
 {
   select_number= ++lex->select_number;
 
@@ -4361,7 +4372,7 @@ void st_select_lex::renumber(LEX *lex)
 
   @param plink - Pointer to start of list
 */ 
-void st_select_lex::include_in_global(st_select_lex **plink)
+void SELECT_LEX::include_in_global(SELECT_LEX **plink)
 {
   if ((link_next= *plink))
     link_next->link_prev= &link_next;
@@ -4375,9 +4386,9 @@ void st_select_lex::include_in_global(st_select_lex **plink)
 
   @param start - Pointer to start of list
 */
-void st_select_lex::include_chain_in_global(st_select_lex **start)
+void SELECT_LEX::include_chain_in_global(SELECT_LEX **start)
 {
-  st_select_lex *last_select;
+  SELECT_LEX *last_select;
   for (last_select= this;
        last_select->link_next != NULL;
        last_select= last_select->link_next)
@@ -4389,7 +4400,7 @@ void st_select_lex::include_chain_in_global(st_select_lex **start)
 }
 
 
-void st_select_lex::set_join(JOIN *join_arg)
+void SELECT_LEX::set_join(JOIN *join_arg)
 {
   master_unit()->thd->lock_query_plan();
   join= join_arg;
@@ -4476,7 +4487,7 @@ bool SELECT_LEX::get_optimizable_conditions(THD *thd,
 }
 
 Item_exists_subselect::enum_exec_method
-st_select_lex::subquery_strategy(THD *thd) const
+SELECT_LEX::subquery_strategy(THD *thd) const
 {
   if (opt_hints_qb)
   {
@@ -4495,14 +4506,14 @@ st_select_lex::subquery_strategy(THD *thd) const
   return Item_exists_subselect::EXEC_EXISTS;
 }
 
-bool st_select_lex::semijoin_enabled(THD *thd) const
+bool SELECT_LEX::semijoin_enabled(THD *thd) const
 {
   return opt_hints_qb ?
     opt_hints_qb->semijoin_enabled(thd) :
     thd->optimizer_switch_flag(OPTIMIZER_SWITCH_SEMIJOIN);
 }
 
-void st_select_lex::update_semijoin_strategies(THD *thd)
+void SELECT_LEX::update_semijoin_strategies(THD *thd)
 {
   uint sj_strategy_mask= OPTIMIZER_SWITCH_FIRSTMATCH |
     OPTIMIZER_SWITCH_LOOSE_SCAN | OPTIMIZER_SWITCH_MATERIALIZATION |
@@ -4536,8 +4547,8 @@ void st_select_lex::update_semijoin_strategies(THD *thd)
   @returns      false if valid, true if invalid, error is sent to client
 */
 
-bool st_select_lex::validate_outermost_option(LEX *lex,
-                                              const char *option) const
+bool SELECT_LEX::validate_outermost_option(LEX *lex,
+                                           const char *option) const
 {
   if (this != lex->select_lex)
   {
@@ -4576,7 +4587,7 @@ bool st_select_lex::validate_outermost_option(LEX *lex,
   Note that validation is only performed for SELECT statements.
 */
 
-bool st_select_lex::validate_base_options(LEX *lex, ulonglong options_arg) const
+bool SELECT_LEX::validate_base_options(LEX *lex, ulonglong options_arg) const
 {
   DBUG_ASSERT(!(options_arg & ~(SELECT_STRAIGHT_JOIN |
                                 SELECT_HIGH_PRIORITY |
@@ -4781,8 +4792,8 @@ uint binlog_unsafe_map[256];
      . (BINLOG_DIRECT_ON & TRX_CACHE_NOT_EMPTY) is never overwritten by 
      . (BINLOG_DIRECT_ON | BINLOG_DIRECT_OFF).
 */
-void unsafe_mixed_statement(LEX::enum_stmt_accessed_table a,
-                            LEX::enum_stmt_accessed_table b, uint condition)
+static void unsafe_mixed_statement(LEX::enum_stmt_accessed_table a,
+                                   LEX::enum_stmt_accessed_table b, uint condition)
 {
   int type= 0;
   int index= (1U << a) | (1U << b);

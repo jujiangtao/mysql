@@ -14,7 +14,8 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "item_inetfunc.h"
-#include "derror.h"    //THD
+#include "derror.h"         //THD
+#include "current_thd.h"    //current_thd
 
 #ifdef HAVE_NETINET_IN_H
 #include <netinet/in.h>
@@ -246,7 +247,7 @@ err:
   This is a portable alternative to inet_pton(AF_INET).
 
   @param      str          String to convert.
-  @param      str_len      String length.
+  @param      str_length   String length.
   @param[out] ipv4_address Buffer to store IPv4-address.
 
   @return Completion status.
@@ -371,7 +372,7 @@ static bool str_to_ipv4(const char *str, int str_length, in_addr *ipv4_address)
   This is a portable alternative to inet_pton(AF_INET6).
 
   @param      str          String to convert.
-  @param      str_len      String length.
+  @param      str_length   String length.
   @param[out] ipv6_address Buffer to store IPv6-address.
 
   @return Completion status.

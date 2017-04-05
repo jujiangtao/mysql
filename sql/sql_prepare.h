@@ -1,6 +1,6 @@
 #ifndef SQL_PREPARE_H
 #define SQL_PREPARE_H
-/* Copyright (c) 2009, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2009, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -15,9 +15,12 @@
    along with this program; if not, write to the Free Software Foundation,
    51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
 
-#include "sql_class.h"  // Query_arena
+#include "my_global.h"
+#include "query_result.h" // Query_result_send
+#include "sql_class.h"    // Query_arena
 
 struct LEX;
+struct PSI_prepared_stmt;
 
 /**
   An interface that is used to take an action when
@@ -124,6 +127,9 @@ public:
   size_t get_field_count() const { return m_column_count; }
 
   static void operator delete(void *ptr, size_t size) throw ();
+  static void operator delete(void *ptr, MEM_ROOT *mem_root,
+                              const std::nothrow_t &arg) throw ()
+  { /* never called */ }
 private:
   Ed_result_set(const Ed_result_set &);        /* not implemented */
   Ed_result_set &operator=(Ed_result_set &);   /* not implemented */
@@ -209,57 +215,6 @@ public:
   bool execute_direct(Server_runnable *server_runnable);
 
   /**
-    Get the number of result set fields.
-
-    This method is valid only if we have a result:
-    execute_direct() has been called. Otherwise
-    the returned value is undefined.
-
-    @sa Documentation for C API function
-    mysql_field_count()
-  */
-  size_t get_field_count() const
-  {
-    return m_current_rset ? m_current_rset->get_field_count() : 0;
-  }
-
-  /**
-    Get the number of affected (deleted, updated)
-    rows for the current statement. Can be
-    used for statements with get_field_count() == 0.
-
-    @sa Documentation for C API function
-    mysql_affected_rows().
-  */
-  ulonglong get_affected_rows() const
-  {
-    return m_diagnostics_area.affected_rows();
-  }
-
-  /**
-    Get the last insert id, if any.
-
-    @sa Documentation for mysql_insert_id().
-  */
-  ulonglong get_last_insert_id() const
-  {
-    return m_diagnostics_area.last_insert_id();
-  }
-
-  /**
-    Get the total number of warnings for the last executed
-    statement. Note, that there is only one warning list even
-    if a statement returns multiple results.
-
-    @sa Documentation for C API function
-    mysql_num_warnings().
-  */
-  ulong get_warn_count() const
-  {
-    return m_diagnostics_area.warn_count(m_thd);
-  }
-
-  /**
     The following three members are only valid if execute_direct()
     or move_to_next_result() returned an error.
     They never fail, but if they are called when there is no
@@ -270,44 +225,6 @@ public:
 
   unsigned int get_last_errno() const
   { return m_diagnostics_area.mysql_errno(); }
-
-  const char *get_last_sqlstate() const
-  { return m_diagnostics_area.returned_sqlstate(); }
-
-  /**
-    Provided get_field_count() is not 0, this never fails. You don't
-    need to free the result set, this is done automatically when
-    you advance to the next result set or destroy the connection.
-    Not returning const because of List iterator not accepting
-    Should be used when you would like Ed_connection to manage
-    result set memory for you.
-  */
-  Ed_result_set *use_result_set() { return m_current_rset; }
-  /**
-    Provided get_field_count() is not 0, this never fails. You
-    must free the returned result set. This can be called only
-    once after execute_direct().
-    Should be used when you would like to get the results
-    and destroy the connection.
-  */
-  Ed_result_set *store_result_set();
-
-  /**
-    If the query returns multiple results, this method
-    can be checked if there is another result beyond the next
-    one.
-    Never fails.
-  */
-  bool has_next_result() const { return MY_TEST(m_current_rset->m_next_rset); }
-  /**
-    Only valid to call if has_next_result() returned true.
-    Otherwise the result is undefined.
-  */
-  bool move_to_next_result()
-  {
-    m_current_rset= m_current_rset->m_next_rset;
-    return MY_TEST(m_current_rset);
-  }
 
   ~Ed_connection() { free_old_result(); }
 private:
@@ -374,7 +291,9 @@ class Query_fetch_protocol_binary: public Query_result_send
 {
   Protocol_binary protocol;
 public:
-  Query_fetch_protocol_binary(THD *thd);
+  Query_fetch_protocol_binary(THD *thd)
+    : Query_result_send(thd), protocol(thd)
+  { }
   virtual bool send_result_set_metadata(List<Item> &list, uint flags);
   virtual bool send_data(List<Item> &items);
   virtual bool send_eof();
@@ -461,12 +380,14 @@ public:
   bool is_sql_prepare() const { return flags & (uint) IS_SQL_PREPARE; }
   void set_sql_prepare() { flags|= (uint) IS_SQL_PREPARE; }
   bool prepare(const char *packet, size_t packet_length);
-  bool execute_loop(String *expanded_query,
-                    bool open_cursor,
+  bool execute_loop(bool open_cursor,
                     uchar *packet_arg, uchar *packet_end_arg);
   bool execute_server_runnable(Server_runnable *server_runnable);
 #ifdef HAVE_PSI_PS_INTERFACE
-  PSI_prepared_stmt* get_PS_prepared_stmt();
+  PSI_prepared_stmt* get_PS_prepared_stmt()
+  {
+    return m_prepared_stmt;
+  }
 #endif
   /* Destroy this statement */
   void deallocate();

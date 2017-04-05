@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2008, 2016, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -21,13 +21,18 @@
 /* memcpy */
 #include "string.h"
 
+#include "pfs_error.h"
+#include "pfs_global.h"
+
+struct PFS_builtin_memory_class;
+
 /**
   @file storage/perfschema/pfs_stat.h
   Statistics (declarations).
 */
 
 /**
-  @addtogroup Performance_schema_buffers
+  @addtogroup performance_schema_buffers
   @{
 */
 
@@ -553,6 +558,159 @@ struct PFS_transaction_stat
   }
 };
 
+/** Statistics for a server error. */
+struct PFS_error_single_stat
+{
+  ulonglong m_count;
+  ulonglong m_handled_count;
+  /** First and last seen timestamps.*/
+  ulonglong m_first_seen;
+  ulonglong m_last_seen;
+
+
+  PFS_error_single_stat()
+  {
+    m_count= 0;
+    m_handled_count= 0;
+    m_first_seen= 0;
+    m_last_seen= 0;
+  }
+
+  ulonglong count(void)
+  {
+    return m_count;
+  }
+
+  inline void reset()
+  {
+    m_count= 0;
+    m_handled_count= 0;
+    m_first_seen= 0;
+    m_last_seen= 0;
+  }
+
+  inline void aggregate_count(int error_operation)
+  {
+    m_last_seen= my_micro_time();
+    if (m_first_seen == 0)
+      m_first_seen= m_last_seen;
+
+    switch(error_operation)
+    {
+      case PSI_ERROR_OPERATION_RAISED:
+        m_count++;
+        break;
+      case PSI_ERROR_OPERATION_HANDLED:
+        m_handled_count++;
+        m_count--;
+        break;
+      default:
+        /* It must not be reached. */
+        DBUG_ASSERT(0);
+        break;
+    }
+  }
+
+  inline void aggregate(const PFS_error_single_stat *stat)
+  {
+    if (stat->m_count == 0 && stat->m_handled_count == 0)
+      return;
+
+    m_count+= stat->m_count;
+    m_handled_count+= stat->m_handled_count;
+
+    if (m_first_seen == 0 || stat->m_first_seen < m_first_seen)
+      m_first_seen= stat->m_first_seen;
+    if (stat->m_last_seen > m_last_seen)
+      m_last_seen= stat->m_last_seen;
+  }
+};
+
+/* Statistics for all server errors. */
+struct PFS_error_stat
+{
+  PFS_error_single_stat *m_stat;
+
+  PFS_error_stat()
+  { m_stat= NULL;}
+
+  const PFS_error_single_stat *get_stat(uint error_index) const
+  {
+    return &m_stat[error_index];
+  }
+
+  ulonglong count(void)
+  {
+    ulonglong total= 0;
+    for (uint i= 0; i < max_server_errors+1; i++)
+      total+= m_stat[i].count();
+    return total;
+  }
+
+  ulonglong count(uint error_index)
+  {
+    return m_stat[error_index].count();
+  }
+
+  inline void init(PFS_builtin_memory_class *memory_class)
+  {
+    if (max_server_errors == 0)
+      return;
+
+    /* allocate memory for errors' stats. +1 is for NULL row */
+    m_stat= PFS_MALLOC_ARRAY(memory_class,
+                             max_server_errors+1, sizeof(PFS_error_single_stat),
+                             PFS_error_single_stat, MYF(MY_ZEROFILL));
+    reset();
+  }
+
+  inline void cleanup(PFS_builtin_memory_class *memory_class)
+  {
+    if (m_stat == NULL)
+      return;
+
+    PFS_FREE_ARRAY(memory_class, max_server_errors+1,
+                   sizeof(PFS_error_single_stat), m_stat);
+    m_stat= NULL;
+  }
+
+  inline void reset()
+  {
+    if (m_stat == NULL)
+      return;
+
+    for (uint i= 0; i < max_server_errors+1; i++)
+      m_stat[i].reset();
+  }
+
+  inline void aggregate_count(int error_index, int error_operation)
+  {
+    if (m_stat == NULL)
+      return;
+
+    PFS_error_single_stat *stat= &m_stat[error_index];
+    stat->aggregate_count(error_operation);
+  }
+
+  inline void aggregate(const PFS_error_single_stat *stat, uint error_index)
+  {
+    if (m_stat == NULL)
+      return;
+
+    DBUG_ASSERT(error_index <= max_server_errors);
+    m_stat[error_index].aggregate(stat);
+  }
+
+  inline void aggregate(const PFS_error_stat *stat)
+  {
+    if (m_stat == NULL)
+      return;
+
+    for (uint i= 0; i < max_server_errors+1; i++)
+      m_stat[i].aggregate(&stat->m_stat[i]);
+  }
+};
+
 /** Single table io statistic. */
 struct PFS_table_io_stat
 {
@@ -1058,6 +1216,10 @@ struct PFS_memory_stat
     {
       m_alloc_size_capacity-= size;
     }
+    else
+    {
+      m_alloc_size_capacity= 0;
+    }
 
     return;
   }
@@ -1079,6 +1241,10 @@ struct PFS_memory_stat
     if (m_free_size_capacity >= size)
     {
       m_free_size_capacity-= size;
+    }
+    else
+    {
+      m_free_size_capacity= 0;
     }
 
     return;

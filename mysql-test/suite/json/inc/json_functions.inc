@@ -3349,6 +3349,98 @@ DELETE FROM t WHERE j IN (SELECT CAST('not json' AS JSON) FROM DUAL WHERE 1);
 SELECT * FROM t;
 DROP TABLE t;
 
+--echo #
+--echo # Bug#22366102: EMPTY STRINGS AS KEYS PROBABLY NOT HANDLED CORRECTLY
+--echo #               BY JSON_EXTRACT()
+--echo #
+CREATE TABLE t(j JSON);
+INSERT INTO t VALUES ('{"":"a"}'), ('{"":{"":"a"}}'), ('{"a":{"":{"b":"a"}}}');
+SELECT JSON_UNQUOTE(JSON_SEARCH(j, 'one', 'a')) AS path FROM t;
+SELECT j->'$.""' AS c1, j->'$."".""' AS c2, j->'$.a."".b' AS c3 FROM t;
+DROP TABLE t;
+--error ER_INVALID_JSON_PATH
+SELECT JSON_EXTRACT('[1]', '$.');
+--error ER_INVALID_JSON_PATH
+SELECT JSON_EXTRACT('[1]', '$..');
+--error ER_INVALID_JSON_PATH
+SELECT JSON_EXTRACT('[1]', '$.a..b');
+
+--echo #
+--echo # Bug#22477046: HANDLE_FATAL_SIGNAL (SIG=6) IN ITEM_FUNC_SP::VAL_JSON
+--echo #
+CREATE TABLE t1(j JSON);
+CREATE TABLE t2(vc VARCHAR(10));
+CREATE FUNCTION f1(i INT) RETURNS INT RETURN i;
+--error ER_INVALID_JSON_TEXT
+INSERT INTO t1 SELECT f1(3);
+INSERT INTO t2 SELECT f1(3);
+CREATE FUNCTION f2(vc VARCHAR(10)) RETURNS VARCHAR(10) RETURN vc;
+INSERT INTO t1 SELECT f2('[1,2,3]');
+INSERT INTO t2 SELECT f2('[1,2,3]');
+CREATE FUNCTION f3(j JSON) RETURNS JSON RETURN j;
+INSERT INTO t1 SELECT f3('[4,5,6]');
+INSERT INTO t2 SELECT f3('[4,5,6]');
+SELECT * FROM t1;
+SELECT * FROM t2;
+DROP TABLE t1, t2;
+DROP FUNCTION f1;
+DROP FUNCTION f2;
+DROP FUNCTION f3;
+
+--echo # Bug#22522073: Assertion failed: !thd->is_error() in optimize_cond()
+
+CREATE TABLE s(a INTEGER, b CHAR(1));
+INSERT INTO s VALUES (1,0), (1,0), (1,0);
+
+CREATE TABLE t(c JSON);
+INSERT INTO t VALUES (), (), ();
+
+--error ER_SUBQUERY_NO_1_ROW
+SELECT 1
+FROM s WHERE a NOT IN (SELECT 1
+                       FROM s WHERE (SELECT c FROM t) = b);
+
+DROP TABLE s, t;
+
+--echo #
+--echo # Bug#22546013: REMOVE DEPENDENCY ON BOOST IN ITEM_JSON_FUNC.CC
+--echo #
+# This test case does not show a bug, it just exercises a code path that was
+# changed by the fix. The point of the test case is to verify that memory is
+# freed when a Json_scalar_holder is reused over multiple rows. The test case
+# must use a scalar type that actually allocates some memory on the heap.
+# Json_string does that, in its std::string member. Additionally, the string
+# must be relatively long, so that std::string cannot avoid heap allocation with
+# Small String Optimization. And the test must run under Valgrind or a similar
+# tool to detect memory leaks.
+CREATE TABLE t(j JSON, vc VARCHAR(99));
+INSERT INTO t VALUES ('"abc"', REPEAT('abc', 33)), ('"abc"', 'abc');
+INSERT INTO t SELECT * FROM t;
+SELECT * FROM t WHERE j = vc;
+DROP TABLE t;
+
+--echo #
+--echo # Bug#22816576: ASSERTION FAILED: !THD->IS_ERROR() IN OPTIMIZE_COND()
+--echo #
+CREATE TABLE t(a DATE);
+--error ER_INVALID_JSON_PATH
+SELECT 1 FROM t WHERE 1 <>
+(
+ SELECT 1 FROM
+ (
+  SELECT 1 FROM t e
+  JOIN t ON t.a <=> JSON_REPLACE(JSON_OBJECT('', ''), '', '')
+  WHERE e.a
+ ) w
+);
+DROP TABLE t;
+
+--echo #
+--echo # Bug#23209914: ASSERTION FAILED: THIS_TYPE != ENUM_JSON_TYPE::J_ERROR
+--echo #
+CREATE PROCEDURE p(a JSON) SELECT 1 WHERE a = 1;
+CALL p(NULL);
+DROP PROCEDURE p;
 
 # Local Variables:
 # mode: sql

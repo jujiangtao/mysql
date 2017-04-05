@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2016, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -21,9 +21,11 @@
 #include "m_ctype.h"
 #include "sql_class.h"
 #include "sql_show.h"
+#include "mysqld.h"
 
 my_bool show_compatibility_56= FALSE;
-struct system_status_var global_status_var;
+struct System_status_var global_status_var;
+
 struct sql_digest_storage;
 volatile bool ready_to_exit= false;
 
@@ -39,3 +41,12 @@ void reset_status_vars()
 {
 }
 
+struct System_status_var* get_thd_status_var(THD *thd)
+{
+  return NULL;
+}
+
+unsigned int mysql_errno_to_sqlstate_index(unsigned int err)
+{
+  return 0;
+}

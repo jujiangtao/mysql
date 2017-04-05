@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2008, 2016, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -13,8 +13,14 @@
   along with this program; if not, write to the Free Software Foundation,
   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
 
+/**
+  @file storage/perfschema/table_session_connect.cc
+  TABLE SESSION_CONNECT (abstract).
+*/
+
 #include "table_session_connect.h"
 #include "field.h"
+#include "pfs_buffer_container.h"
 
 static const TABLE_FIELD_TYPE field_types[]=
 {
@@ -43,6 +49,28 @@ static const TABLE_FIELD_TYPE field_types[]=
 TABLE_FIELD_DEF table_session_connect::m_field_def=
 { 4, field_types };
 
+bool PFS_index_session_connect::match(PFS_thread *pfs)
+{
+  if (m_fields >= 1)
+  {
+    if (!m_key_1.match(pfs))
+      return false;
+  }
+
+  return true;
+}
+
+bool PFS_index_session_connect::match(row_session_connect_attrs *row)
+{
+  if (m_fields >= 2)
+  {
+    if (!m_key_2.match(row->m_attr_name, row->m_attr_name_length))
+      return false;
+  }
+
+  return true;
+}
+
 table_session_connect::table_session_connect(const PFS_engine_table_share *share)
  : cursor_by_thread_connect_attr(share)
 {
@@ -64,6 +92,54 @@ table_session_connect::~table_session_connect()
   my_free(m_copy_session_connect_attrs);
 }
 
+int table_session_connect::index_init(uint idx, bool sorted)
+{
+  DBUG_ASSERT(idx == 0);
+  m_opened_index= PFS_NEW(PFS_index_session_connect);
+  m_index= m_opened_index;
+  return 0;
+}
+
+int table_session_connect::index_next(void)
+{
+  PFS_thread *thread;
+  bool has_more_thread= true;
+
+  for (m_pos.set_at(&m_next_pos);
+       has_more_thread;
+       m_pos.next_thread())
+  {
+    thread= global_thread_container.get(m_pos.m_index_1, &has_more_thread);
+    if (thread != NULL)
+    {
+      if (m_opened_index->match(thread))
+      {
+        do
+        {
+          /*
+            Here we materialize the row first,
+            and then evaluate if it matches the index.
+            This is simpler, as parsing the session attributes encoded string
+            is done only once.
+          */
+          make_row(thread, m_pos.m_index_2);
+          if (m_row_exists)
+          {
+            if (m_opened_index->match(&m_row))
+            {
+              m_next_pos.set_after(&m_pos);
+              return 0;
+            }
+            m_pos.m_index_2++;
+          }
+        } while (m_row_exists);
+      }
+    }
+  }
+
+  return HA_ERR_END_OF_FILE;
+}
+
 /**
   Take a length encoded string
 
@@ -80,7 +156,7 @@ table_session_connect::~table_session_connect()
     @retval true    parsing failed
     @retval false   parsing succeeded
 */
-bool parse_length_encoded_string(const char **ptr,
+static bool parse_length_encoded_string(const char **ptr,
                  char *dest, uint dest_size,
                  uint *copied_len,
                  const char *start_ptr, uint input_length,
@@ -122,16 +198,16 @@ bool parse_length_encoded_string(const char **ptr,
   If parsing fails or no more attributes are found the function stops
   and returns an error code.
 
-  @arg connect_attrs            pointer to the connect attributes blob
-  @arg connect_attrs_length     length of @c connect_attrs
-  @arg connect_attrs_cs         character set used to encode @c connect_attrs
-  @arg ordinal                  index of the attribute we need
-  @arg attr_name [out]          buffer to receive the attribute name
-  @arg max_attr_name            max size of @c attr_name in bytes
-  @arg attr_name_length [out]   number of bytes written in @attr_name
-  @arg attr_value [out]         buffer to receive the attribute name
-  @arg max_attr_value           max size of @c attr_value in bytes
-  @arg attr_value_length [out]  number of bytes written in @attr_value
+  @param connect_attrs            pointer to the connect attributes blob
+  @param connect_attrs_length     length of @c connect_attrs
+  @param connect_attrs_cs         character set used to encode @c connect_attrs
+  @param ordinal                  index of the attribute we need
+  @param [out] attr_name          buffer to receive the attribute name
+  @param max_attr_name            max size of @c attr_name in bytes
+  @param [out] attr_name_length   number of bytes written in @c attr_name
+  @param [out] attr_value         buffer to receive the attribute name
+  @param max_attr_value           max size of @c attr_value in bytes
+  @param [out] attr_value_length  number of bytes written in @c attr_value
   @return status
     @retval true    requested attribute pair is found and copied
     @retval false   error. Either because of parsing or too few attributes.
@@ -253,7 +329,7 @@ void table_session_connect::make_row(PFS_thread *pfs, uint ordinal)
   {
     /* we don't expect internal threads to have connection attributes */
     if (pfs->m_processlist_id == 0)
-	return;
+      return;
 
     m_row.m_ordinal_position= ordinal;
     m_row.m_process_id= pfs->m_processlist_id;

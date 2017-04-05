@@ -17,7 +17,6 @@
  * 02110-1301  USA
  */
 
-#include <iterator>
 #include "ngs/client_list.h"
 
 using namespace ngs;

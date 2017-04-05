@@ -19,14 +19,14 @@
 
 #include "buffering_command_delegate.h"
 #include "xpl_log.h"
-#include "ngs_common/bind.h"
+#include <boost/bind.hpp>
 
 using namespace xpl;
 
 
 Buffering_command_delegate::Buffering_command_delegate()
-: Callback_command_delegate(ngs::bind(&Buffering_command_delegate::begin_row_cb, this),
-                            ngs::bind(&Buffering_command_delegate::end_row_cb, this, ngs::placeholders::_1))
+: Callback_command_delegate(boost::bind(&Buffering_command_delegate::begin_row_cb, this),
+                            boost::bind(&Buffering_command_delegate::end_row_cb, this, _1))
 {
 }
 

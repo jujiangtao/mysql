@@ -13,37 +13,27 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
-# We want release-1.8.0.zip in order to build these unit tests.
+# We want gmock-1.7.0.zip in order to build these unit tests.
 # If you have already downloaded it,
-# invoke cmake with -DWITH_GMOCK=/path/to/release-1.8.0.zip
+# invoke cmake with -DWITH_GMOCK=/path/to/gmock-1.7.0.zip
 #                or -DWITH_GMOCK=/path/to
 #
 # Alternatively, set an environment variable
-# export WITH_GMOCK=/path/to/release-1.8.0.zip
+# export WITH_GMOCK=/path/to/gmock-1.7.0.zip
 #
 # You can also do cmake -DENABLE_DOWNLOADS=1 
-# and we will download it from https://github.com/google/googletest/archive/
+# and we will download it from http://googlemock.googlecode.com
 #
 # Either way: we will unpack the zip, compile gmock-all.cc and gtest-all.cc
 # and link them into the executables.
-
-# Disable googletest for Solaris Studio < 12.4 since it doesn't compile.
-IF(CMAKE_C_COMPILER_ID MATCHES "SunPro")
-  IF(${CC_MINOR_VERSION} LESS 13)
-    MESSAGE(WARNING "Googletest requires Solaris Studio 12.4 or newer.")
-    UNSET(GMOCK_FOUND)
-    UNSET(GMOCK_FOUND CACHE)
-    RETURN()
-  ENDIF()
-ENDIF()
 
 # Default location for where to download and build gmock/gtest.
 IF(NOT DOWNLOAD_ROOT)
   SET(DOWNLOAD_ROOT ${CMAKE_SOURCE_DIR}/source_downloads)
 ENDIF()
 
-# We want googletest version 1.8, which also contains googlemock.
-SET(GMOCK_PACKAGE_NAME "release-1.8.0")
+# We want googlemock version 1.7, which also contains googletest.
+SET(GMOCK_PACKAGE_NAME "gmock-1.7.0")
 
 IF (DEFINED ENV{WITH_GMOCK} AND NOT DEFINED WITH_GMOCK)
   FILE(TO_CMAKE_PATH "$ENV{WITH_GMOCK}" WITH_GMOCK)
@@ -66,9 +56,8 @@ IF (WITH_GMOCK)
              )
   ELSE()
     ## Did we get a path name to the directory of the .zip file?
-    ## Check for both release-x.y.z.zip and googletest-release-x.y.z.zip
     FIND_FILE(LOCAL_GMOCK_ZIP
-              NAMES "${GMOCK_PACKAGE_NAME}.zip" "googletest-${GMOCK_PACKAGE_NAME}.zip"
+              NAMES "${GMOCK_PACKAGE_NAME}.zip"
               PATHS ${WITH_GMOCK}
               NO_DEFAULT_PATH
               )
@@ -81,8 +70,8 @@ ENDIF()
 IF(NOT EXISTS DOWNLOAD_ROOT)
   MAKE_DIRECTORY(${DOWNLOAD_ROOT})
 ENDIF()
-SET(GMOCK_SOURCE_DIR ${DOWNLOAD_ROOT}/googletest-${GMOCK_PACKAGE_NAME}/googlemock)
-SET(GTEST_SOURCE_DIR ${DOWNLOAD_ROOT}/googletest-${GMOCK_PACKAGE_NAME}/googletest)
+SET(GMOCK_SOURCE_DIR ${DOWNLOAD_ROOT}/${GMOCK_PACKAGE_NAME})
+SET(GTEST_SOURCE_DIR ${DOWNLOAD_ROOT}/${GMOCK_PACKAGE_NAME}/gtest)
 
 # We may have downloaded gmock/gtest already, building in a different directory.
 IF(EXISTS ${GMOCK_SOURCE_DIR} OR EXISTS ${LOCAL_GMOCK_ZIP})
@@ -112,34 +101,37 @@ ENDIF()
 
 
 OPTION(ENABLE_DOWNLOADS
-  "Download and build 3rd party source code components, e.g. googletest"
+  "Download and build 3rd party source code components, e.g. google mock"
   OFF)
 
 # While experimenting, use local URL rather than google.
-SET(GMOCK_TARBALL "googletest-${GMOCK_PACKAGE_NAME}.zip")
+SET(GMOCK_TARBALL "${GMOCK_PACKAGE_NAME}.zip")
 SET(GMOCK_DOWNLOAD_URL 
-  "https://github.com/google/googletest/archive/${GMOCK_PACKAGE_NAME}.zip"
+  "http://googlemock.googlecode.com/files/${GMOCK_TARBALL}"
   )
   
 MACRO(HTTP_PROXY_HINT)
   MESSAGE(STATUS
-    "If you are inside a firewall, you may need to use an https proxy: "
-    "export https_proxy=http://example.com:80")
+    "If you are inside a firewall, you may need to use an http proxy: "
+    "export http_proxy=http://example.com:80")
 ENDMACRO()
 
 
 IF(NOT GMOCK_FOUND)
   IF(NOT ENABLE_DOWNLOADS)
-    # Give warning
-    MESSAGE(STATUS
-      "Googletest was not found. gtest-based unit tests will be disabled. "
-      "You can run cmake . -DENABLE_DOWNLOADS=1 to automatically download "
-      "and build required components from source.")
-    HTTP_PROXY_HINT()
+    # Give one-time warning
+    IF(NOT ONETIME_GTEST_WARNING)
+      MESSAGE(STATUS 
+        "Googlemock was not found. gtest-based unit tests will be disabled. "
+        "You can run cmake . -DENABLE_DOWNLOADS=1 to automatically download "
+        "and build required components from source.")
+      HTTP_PROXY_HINT()
+      SET(ONETIME_GTEST_WARNING 1 CACHE INTERNAL "")
+    ENDIF()
     RETURN()
   ENDIF()
   
-  # Download googletest source
+  # Download gmock source
   IF(NOT EXISTS ${GMOCK_SOURCE_DIR})
     IF(NOT EXISTS ${DOWNLOAD_ROOT}/${GMOCK_TARBALL})
       # Download the tarball
@@ -159,7 +151,7 @@ IF(NOT GMOCK_FOUND)
           "Successfully downloaded ${GMOCK_DOWNLOAD_URL} to ${DOWNLOAD_ROOT}")
       ELSE()
         MESSAGE(STATUS 
-          "To enable googletest, please download ${GMOCK_DOWNLOAD_URL} "
+          "To enable google test, please download ${GMOCK_DOWNLOAD_URL} "
           "to the directory ${DOWNLOAD_ROOT}")
         HTTP_PROXY_HINT()
         RETURN()
@@ -199,18 +191,18 @@ INCLUDE_DIRECTORIES(
 )
 
 # Turn off some warning flags when compiling GUnit
-MY_CHECK_CXX_COMPILER_FLAG("-Wno-unused-local-typedefs" HAVE_NO_UNUSED_TYPEDEFS)
-IF(HAVE_NO_UNUSED_TYPEDEFS)
-  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unused-local-typedefs")
-ENDIF()
-MY_CHECK_CXX_COMPILER_FLAG("-Wno-missing-field-initializers"
-                           HAVE_NO_MISSING_FIELD_INITIALIZERS)
-IF(HAVE_NO_MISSING_FIELD_INITIALIZERS)
+IF(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-undef")
   SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-missing-field-initializers")
+  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-missing-format-attribute")
+
+  MY_CHECK_CXX_COMPILER_FLAG("-Wunused-local-typedefs" HAVE_UNUSED_TYPEDEFS)
+  IF(HAVE_UNUSED_TYPEDEFS)
+    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unused-local-typedefs")
+  ENDIF()
 ENDIF()
 
 MY_CHECK_CXX_COMPILER_FLAG("-fno-builtin-memcmp" HAVE_NO_BUILTIN_MEMCMP)
-MY_CHECK_CXX_COMPILER_FLAG("-Wempty-body" HAVE_EMPTY_BODY)
 
 ADD_LIBRARY(gmock STATIC ${GMOCK_SOURCE_DIR}/src/gmock-all.cc)
 ADD_LIBRARY(gtest STATIC ${GTEST_SOURCE_DIR}/src/gtest-all.cc)
@@ -254,6 +246,12 @@ TARGET_LINK_LIBRARIES(gunit_large
   mysys mysys_ssl mytap dbug strings ${GTEST_LIBRARIES})
 MESSAGE(STATUS "GTEST_LIBRARIES:${GTEST_LIBRARIES}")
 
+IF(WIN32)
+  ## Create an object library of nt_servc.cc, so we don't have to
+  ## compile it again for each target
+  ADD_LIBRARY(my_nt_servc OBJECT ../../sql/nt_servc.cc)
+ENDIF()
+
 # Add some defines.
 ADD_DEFINITIONS(-DMYSQL_SERVER -DHAVE_REPLICATION -DEXTRA_CODE_FOR_UNIT_TESTING)
 ADD_DEFINITIONS(-DERRMSG_DIR="${PROJECT_BINARY_DIR}/sql/share")
@@ -265,7 +263,7 @@ INCLUDE(${MYSQL_CMAKE_SCRIPT_DIR}/compile_flags.cmake)
 SET(TESTS
   alignment
   bounded_queue
-  bounds_checked_array
+#  bounds_checked_array
   bitmap
   byteorder
   calloc
@@ -275,6 +273,7 @@ SET(TESTS
   dynarray
   filesort_buffer
   filesort_compare
+  float_compare
   inplace_vector
   key
   like_range
@@ -301,9 +300,11 @@ SET(TESTS
   partitioned_rwlock
   prealloced_array
   priority_queue
+  record_buffer
   sql_list
   sql_plist
   sql_string
+  stdcxx
   stl_alloc
   strings_skip_trailing
   strings_strnxfrm
@@ -313,12 +314,9 @@ SET(TESTS
   timespec
   my_alloc
   pump_object_filter
+  val_int_compare
   )
  
-IF (UNIX)
-  LIST(APPEND TESTS path auth_utils)
-ENDIF()
-
 IF(WIN32)
   LIST(APPEND TESTS win_tests)
 ENDIF()
@@ -327,19 +325,28 @@ ENDIF()
 SET(SERVER_TESTS
   copy_info
   create_field
+  dd_properties
+  dd_sdi
+  dd_schema
+  dd_table
+  dd_cache
   debug_sync
   explain_filename
   field
   get_diagnostics
   gis_algos
   handler
+  histograms
+  initialize_password
   insert_delayed
+  into_syntax
   item
   item_filter
   item_func_case
   item_func_now_local
-  item_timefunc
   item_like
+  item_timefunc
+  join_syntax
   join_tab_sort
   json_binary
   json_dom
@@ -349,23 +356,40 @@ SET(SERVER_TESTS
   make_sortkey
   mdl_sync
   my_decimal
-  opt_costmodel
   opt_costconstants
+  opt_costmodel
   opt_guessrecperkey
   opt_range
   opt_ref
   opt_trace
-  select_lex_visitor
+  security_context
   segfault
+  select_lex_visitor
   sql_table
   strings_utf8
+  subquery_syntax
   table_cache
+  table_factor_syntax
   tc_log_mmap
   thd_manager
+  union_syntax
   unique
-  security_context
-  initialize_password
+  wild_case_compare
 )
+
+SET(SQL_GUNIT_LIB_SOURCE 
+  ${CMAKE_SOURCE_DIR}/sql/filesort_utils.cc 
+  ${CMAKE_SOURCE_DIR}/sql/mdl.cc 
+  ${CMAKE_SOURCE_DIR}/sql/sql_list.cc 
+  ${CMAKE_SOURCE_DIR}/sql-common/sql_string.cc
+  ${CMAKE_SOURCE_DIR}/sql/thr_malloc.cc
+  )
+
+IF(WIN32)
+  LIST(APPEND SQL_GUNIT_LIB_SOURCE ${CMAKE_SOURCE_DIR}/sql/named_pipe.cc)
+ENDIF()
+ADD_CONVENIENCE_LIBRARY(sqlgunitlib ${SQL_GUNIT_LIB_SOURCE})
+ADD_DEPENDENCIES(sqlgunitlib GenError)
 
 ## Merging tests into fewer executables saves *a lot* of
 ## link time and disk space ...
@@ -377,7 +401,7 @@ IF (MERGE_UNITTESTS)
     PROPERTIES GENERATED 1)
 
   ## BOOST_HEAP_ASSERT generates if () ; else ;
-  IF(HAVE_EMPTY_BODY)
+  IF(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     ADD_COMPILE_FLAGS(
       ${MERGE_SMALL_TESTS}
       COMPILE_FLAGS "-Wno-empty-body"
@@ -387,6 +411,16 @@ IF (MERGE_UNITTESTS)
     ${MERGE_SMALL_TESTS}
     COMPILE_FLAGS -I${BOOST_PATCHES_DIR} -I${BOOST_INCLUDE_DIR}
   )
+  ADD_COMPILE_FLAGS(
+    ${MERGE_LARGE_TESTS}
+    COMPILE_FLAGS -I${BOOST_PATCHES_DIR} -I${BOOST_INCLUDE_DIR}
+  )
+  ## Merging unit tests on Windows gives so many sections in the object file
+  ## that /bigobj is required
+  IF(WIN32)
+    ADD_COMPILE_FLAGS(${MERGE_SMALL_TESTS} COMPILE_FLAGS "/bigobj")
+    ADD_COMPILE_FLAGS(${MERGE_LARGE_TESTS} COMPILE_FLAGS "/bigobj")
+  ENDIF()
   INCLUDE_DIRECTORIES(${CMAKE_CURRENT_SOURCE_DIR})
 
   FILE(WRITE ${MERGE_LARGE_TESTS} "// Merging large unit tests\n")
@@ -401,7 +435,7 @@ IF (MERGE_UNITTESTS)
   ADD_EXECUTABLE(merge_small_tests-t ${MERGE_SMALL_TESTS})
   SET(SRC_FILES ${MERGE_LARGE_TESTS})
   IF(WIN32)
-    LIST(APPEND SRC_FILES ../../sql/nt_servc.cc)
+    LIST(APPEND SRC_FILES $<TARGET_OBJECTS:my_nt_servc>)
   ENDIF()
   LIST(APPEND SRC_FILES ../../storage/example/ha_example.cc)
   ADD_COMPILE_FLAGS(
@@ -452,7 +486,7 @@ ENDIF(MERGE_UNITTESTS)
   ENDIF()
 
   ## BOOST_HEAP_ASSERT generates if () ; else ;
-  IF(HAVE_EMPTY_BODY)
+  IF(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     ADD_COMPILE_FLAGS(
       bounded_queue-t.cc
       COMPILE_FLAGS "-Wno-empty-body"
@@ -467,10 +501,15 @@ ENDIF(MERGE_UNITTESTS)
     COMPILE_FLAGS -I${BOOST_PATCHES_DIR} -I${BOOST_INCLUDE_DIR}
   )
 
+  ADD_COMPILE_FLAGS(
+    dd_sdi-t.cc
+    COMPILE_FLAGS -I${BOOST_PATCHES_DIR} -I${BOOST_INCLUDE_DIR}
+  )
+
   FOREACH(test ${SERVER_TESTS})
     SET(SRC_FILES ${test}-t.cc)
     IF(WIN32)
-      LIST(APPEND SRC_FILES ../../sql/nt_servc.cc)
+      LIST(APPEND SRC_FILES $<TARGET_OBJECTS:my_nt_servc>)
     ENDIF()
     IF(test MATCHES "table_cache")
       LIST(APPEND SRC_FILES ../../storage/example/ha_example.cc)
@@ -503,3 +542,11 @@ COPY_OPENSSL_DLLS(copy_openssl_gunit)
 
 ADD_SUBDIRECTORY(innodb)
 ADD_SUBDIRECTORY(keyring)
+
+## Add tests for all components.
+FILE(GLOB dirs_components ${CMAKE_CURRENT_SOURCE_DIR}/components/*)
+FOREACH(dir ${dirs_components})
+  IF (EXISTS ${dir}/CMakeLists.txt)
+    ADD_SUBDIRECTORY(${dir})
+  ENDIF()
+ENDFOREACH()

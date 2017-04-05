@@ -14,14 +14,14 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 /**
-  @addtogroup Replication
-  @{
-
-  @file
+  @file sql/log_event.h
   
   @brief Binary log event definitions.  This includes generic code
   common to all types of log events, as well as specific code for each
   type of log event.
+
+  @addtogroup Replication
+  @{
 */
 
 
@@ -29,9 +29,15 @@
 #define _log_event_h
 
 #include "my_global.h"
+#include "m_string.h"                // native_strncasecmp
 #include "my_bitmap.h"               // MY_BITMAP
 #include "binary_log.h"              // binary_log
 #include "rpl_utility.h"             // Hash_slave_rows
+#include "query_options.h"           // OPTION_AUTO_IS_NULL
+#include "mysql_com.h"               // SERVER_VERSION_LENGTH
+#include "atomic_class.h"            // Atomic_int32
+#include "typelib.h"                 // TYPELIB
+#include "rpl_gtid.h"                // enum_group_type
 
 #ifdef MYSQL_SERVER
 #include "rpl_filter.h"              // rpl_filter
@@ -50,6 +56,10 @@
 #include <set>
 #include <string>
 
+#ifdef HAVE_PSI_STAGE_INTERFACE
+#include <mysql/psi/mysql_stage.h>
+#endif
+
 #ifdef MYSQL_CLIENT
 class Format_description_log_event;
 typedef bool (*read_log_event_filter_function)(char** buf,
@@ -57,8 +67,12 @@ typedef bool (*read_log_event_filter_function)(char** buf,
                                                const Format_description_log_event*);
 #endif
 
+extern "C" {
 extern PSI_memory_key key_memory_Incident_log_event_message;
 extern PSI_memory_key key_memory_Rows_query_log_event_rows_query;
+}
+extern "C" MYSQL_PLUGIN_IMPORT ulong server_id;
+
 /* Forward declarations */
 using binary_log::enum_binlog_checksum_alg;
 using binary_log::checksum_crc32;
@@ -118,24 +132,6 @@ int ignored_error_code(int err_code);
 #define LOG_EVENT_OFFSET 4
 
 #define NUM_LOAD_DELIM_STRS 5
-
-/*****************************************************************************
-  sql_ex_info struct
-  The strcture contains a refernce to another structure sql_ex_data_info,
-  which is defined in binlogevent, and contains the characters specified in
-  the sub clause of a LOAD_DATA_INFILE.
-  //TODO(WL#7546): Remove this struct and only retain binary_log::sql_ex_data_info
-          when the encoder is moved to bapi
-
- ****************************************************************************/
-struct sql_ex_info
-{
-  sql_ex_info() {}                            /* Remove gcc warning */
-  binary_log::sql_ex_data_info data_info;
-
-  bool write_data(IO_CACHE* file);
-  const char* init(const char* buf, const char* buf_end, bool use_new_format);
-};
 
 /*****************************************************************************
 
@@ -675,11 +671,12 @@ public:
                                    *description_event,
                                    my_bool crc_check);
 
-  /*
-   This function will read the common header into the buffer.
+  /**
+   This function will read the common header into the buffer and
+   rewind the IO_CACHE back to the beginning of the event.
 
    @param[in]         log_cache The IO_CACHE to read from.
-   @param[in/out]     header The buffer where to read the common header. This
+   @param[in,out]     header The buffer where to read the common header. This
                       buffer must be at least LOG_EVENT_MINIMAL_HEADER_LEN long.
 
    @returns           false on success, true otherwise.
@@ -687,12 +684,14 @@ public:
   inline static bool peek_event_header(char *header, IO_CACHE *log_cache)
   {
     DBUG_ENTER("Log_event::peek_event_header");
+    my_off_t old_pos= my_b_safe_tell(log_cache);
     if (my_b_read(log_cache, (uchar*) header, LOG_EVENT_MINIMAL_HEADER_LEN))
       DBUG_RETURN(true);
+    my_b_seek(log_cache, old_pos); // rewind
     DBUG_RETURN(false);
   }
 
-  /*
+  /**
    This static function will read the event length from the common
    header that is on the IO_CACHE. Note that the IO_CACHE read position
    will not be updated.
@@ -700,18 +699,14 @@ public:
    @param[in]         log_cache The IO_CACHE to read from.
    @param[out]        length A pointer to the memory position where to store
                       the length value.
-   @param[out]        header_buffer An optional pointer to a buffer to store
-                      the event header.
 
    @returns           false on success, true otherwise.
   */
 
-  inline static bool peek_event_length(uint32* length, IO_CACHE *log_cache,
-                                       char *header_buffer)
+  inline static bool peek_event_length(uint32* length, IO_CACHE *log_cache)
   {
     DBUG_ENTER("Log_event::peek_event_length");
-    char local_header_buffer[LOG_EVENT_MINIMAL_HEADER_LEN];
-    char *header= header_buffer != NULL ? header_buffer : local_header_buffer;
+    char header[LOG_EVENT_MINIMAL_HEADER_LEN];
     if (peek_event_header(header, log_cache))
       DBUG_RETURN(true);
     *length= uint4korr(header + EVENT_LEN_OFFSET);
@@ -722,20 +717,17 @@ public:
     Reads an event from a binlog or relay log. Used by the dump thread
     this method reads the event into a raw buffer without parsing it.
 
-    @Note If mutex is 0, the read will proceed without mutex.
+    @note If mutex is 0, the read will proceed without mutex.
 
-    @Note If a log name is given than the method will check if the
+    @note If a log name is given than the method will check if the
     given binlog is still active.
 
     @param[in]  file                log file to be read
     @param[out] packet              packet to hold the event
-    @param[in]  lock                the lock to be used upon read
+    @param[in]  log_lock            the lock to be used upon read
     @param[in]  checksum_alg_arg    the checksum algorithm
     @param[in]  log_file_name_arg   the log's file name
     @param[out] is_binlog_active    is the current log still active
-    @param[in]  event_header        the actual event header. Passing this
-                                    parameter will make the function to skip
-                                    reading the event header.
 
     @retval 0                   success
     @retval LOG_READ_EOF        end of file, nothing was read
@@ -747,11 +739,9 @@ public:
    */
   static int read_log_event(IO_CACHE* file, String* packet,
                             mysql_mutex_t* log_lock,
-                            binary_log::enum_binlog_checksum_alg checksum_alg_arg,
+                            enum_binlog_checksum_alg checksum_alg_arg,
                             const char *log_file_name_arg= NULL,
-                            bool* is_binlog_active= NULL,
-                            char *event_header= NULL);
-
+                            bool* is_binlog_active= NULL);
   /*
     init_show_field_list() prepares the column names and types for the
     output of SHOW BINLOG EVENTS; it is used only by SHOW BINLOG
@@ -834,21 +824,11 @@ public:
   { return 0; }
   virtual bool write_data_body(IO_CACHE* file MY_ATTRIBUTE((unused)))
   { return 0; }
-  inline time_t get_time()
-  {
-    /* Not previously initialized */
-    if (!common_header->when.tv_sec && !common_header->when.tv_usec)
-    {
-      THD *tmp_thd= thd ? thd : current_thd;
-      if (tmp_thd)
-        common_header->when= tmp_thd->start_time;
-      else
-        my_micro_time_to_timeval(my_micro_time(), &(common_header->when));
-    }
-    return (time_t) common_header->when.tv_sec;
-  }
+
+  time_t get_time();
+
 #endif
-  Log_event_type get_type_code()
+  Log_event_type get_type_code() const
   {
     return common_header->type_code;
   }
@@ -952,18 +932,18 @@ public:
   */
   bool is_mts_sequential_exec(bool is_scheduler_dbname)
   {
-    return
-      ((get_type_code() == binary_log::LOAD_EVENT         ||
-        get_type_code() == binary_log::CREATE_FILE_EVENT  ||
-        get_type_code() == binary_log::NEW_LOAD_EVENT     ||
-        get_type_code() == binary_log::EXEC_LOAD_EVENT)    &&
-       is_scheduler_dbname)                                  ||
-      get_type_code() == binary_log::START_EVENT_V3          ||
-      get_type_code() == binary_log::STOP_EVENT              ||
-      get_type_code() == binary_log::ROTATE_EVENT            ||
-      get_type_code() == binary_log::SLAVE_EVENT             ||
-      get_type_code() == binary_log::FORMAT_DESCRIPTION_EVENT||
-      get_type_code() == binary_log::INCIDENT_EVENT;
+    switch(get_type_code())
+    {
+    case binary_log::START_EVENT_V3:
+    case binary_log::STOP_EVENT:
+    case binary_log::ROTATE_EVENT:
+    case binary_log::SLAVE_EVENT:
+    case binary_log::FORMAT_DESCRIPTION_EVENT:
+    case binary_log::INCIDENT_EVENT:
+      return true;
+    default:
+      return false;
+    }
   }
 
 private:
@@ -1004,8 +984,7 @@ private:
      @param slave_server_id   id of the server, extracted from event
      @param mts_in_group      the being group parsing status, true
                               means inside the group
-     @param  is_scheduler_dbname
-                              true when the current submode (scheduler)
+     @param is_dbname_type    true when the current submode (scheduler)
                               is of DB_NAME type.
 
      @retval EVENT_EXEC_PARALLEL  if event is executed by a Worker
@@ -1073,7 +1052,7 @@ private:
   }
 
   /**
-     @return index  in \in [0, M] range to indicate
+     @return index  in [0, M] range to indicate
              to be assigned worker;
              M is the max index of the worker pool.
   */
@@ -1091,7 +1070,6 @@ private:
   {
     DBUG_ASSERT(ends_group() ||
                 get_type_code() == binary_log::QUERY_EVENT ||
-                get_type_code() == binary_log::EXEC_LOAD_EVENT ||
                 get_type_code() == binary_log::EXECUTE_LOAD_QUERY_EVENT);
     common_header->flags |= LOG_EVENT_MTS_ISOLATE_F;
   }
@@ -1147,13 +1125,13 @@ public:
      @return TRUE  if the event starts a group (transaction)
              FASE  otherwise
   */
-  virtual bool starts_group() { return false; }
+  virtual bool starts_group() const { return false; }
 
   /**
      @return TRUE  if the event ends a group (transaction)
              FASE  otherwise
   */
-  virtual bool ends_group()   { return false; }
+  virtual bool ends_group() const { return false; }
 
   /**
      Apply the event to the database.
@@ -1311,15 +1289,15 @@ protected:
 */
 
 /**
-  A @Query event is written to the binary log whenever the database is
+  A Query event is written to the binary log whenever the database is
   modified on the master, unless row based logging is used.
 
   Query_log_event is created for logging, and is called after an update to the
   database is done. It is used when the server acts as the master.
 
   Virtual inheritance is required here to handle the diamond problem in
-  the class Execute_load_query_log_event.
-  The diamond structure is explained in @Excecute_load_query_log_event
+  the class @c Execute_load_query_log_event.
+  The diamond structure is explained in @c Excecute_load_query_log_event
 
   @internal
   The inheritance structure is as follows:
@@ -1470,14 +1448,14 @@ public:        /* !!! Public in this patch to allow old usage */
      occures within logics of @c get_slave_worker().
   */
 
-  bool starts_group()
+  bool starts_group() const
   {
     return
       !strncmp(query, "BEGIN", q_len) ||
       !strncmp(query, STRING_WITH_LEN("XA START"));
   }
 
-  virtual bool ends_group()
+  virtual bool ends_group() const
   {
     return
       !strncmp(query, "COMMIT", q_len) ||
@@ -1494,121 +1472,6 @@ public:        /* !!! Public in this patch to allow old usage */
     return !strncmp(query, pattern, p_len);
   }
 };
-
-
-/**
-  @class Load_log_event
-
-  This log event corresponds to a "LOAD DATA INFILE" SQL query.
-  it is a subclass of Rotate_event, defined in binlogevent, and is used
-  by the slave to execute the LOAD DATA INFILE query, as a series of events.
-
-  This event type is understood by current versions, but only
-  generated by MySQL 3.23 and earlier.
-
-  Virtual inheritance is required here to handle the diamond problem in
-  the class Create_file_log_event.
-  The diamond structure is explained in @Create_file_log_event
-  @internal
-  The inheritance structure in the current design for the classes is
-  as follows:
-
-                Binary_log_event
-                   ^
-                   |
-                   |
-             Load_event  Log_event
-                   \       /
-         <<virtual>>\     /
-                     \   /
-                 Load_log_event
-  @endinternal
-*/
-class Load_log_event: public virtual binary_log::Load_event, public Log_event
-{
-private:
-protected:
-  int copy_log_event(const char *buf, ulong event_len,
-                     int body_offset,
-                     const Format_description_event* description_event);
-public:
-  uint get_query_buffer_length();
-  void print_query(bool need_db, const char *cs, char *buf, char **end,
-                   char **fn_start, char **fn_end);
-  my_thread_id thread_id;
-  sql_ex_info sql_ex;
-
-  /* fname doesn't point to memory inside Log_event::temp_buf  */
-  void set_fname_outside_temp_buf(const char *afname, size_t alen)
-  {
-    fname= afname;
-    fname_len= alen;
-    local_fname= TRUE;
-  }
-  /* fname doesn't point to memory inside Log_event::temp_buf  */
-  int  check_fname_outside_temp_buf()
-  {
-    return local_fname;
-  }
-
-#ifdef MYSQL_SERVER
-  String field_lens_buf;
-  String fields_buf;
-
-  Load_log_event(THD* thd, sql_exchange* ex, const char* db_arg,
-		 const char* table_name_arg,
-		 List<Item>& fields_arg,
-                 bool is_concurrent_arg,
-                 enum enum_duplicates handle_dup, bool ignore,
-		 bool using_trans);
-  void set_fields(const char* db, List<Item> &fields_arg,
-                  Name_resolution_context *context);
-  const char* get_db() { return db; }
-#ifdef HAVE_REPLICATION
-  int pack_info(Protocol* protocol);
-#endif /* HAVE_REPLICATION */
-#else
-  void print(FILE* file, PRINT_EVENT_INFO* print_event_info);
-  void print(FILE* file, PRINT_EVENT_INFO* print_event_info, bool commented);
-#endif
-
-  /*
-    Note that for all the events related to LOAD DATA (Load_log_event,
-    Create_file/Append/Exec/Delete, we pass description_event; however as
-    logging of LOAD DATA is going to be changed in 4.1 or 5.0, this is only used
-    for the common_header_len (post_header_len will not be changed).
-  */
-  Load_log_event(const char* buf, uint event_len,
-                 const Format_description_event* description_event);
-  ~Load_log_event()
-  {}
-  Log_event_type get_type_code()
-  {
-    return sql_ex.data_info.new_format() ? binary_log::NEW_LOAD_EVENT: binary_log::LOAD_EVENT;
-  }
-#ifdef MYSQL_SERVER
-  bool write_data_header(IO_CACHE* file);
-  bool write_data_body(IO_CACHE* file);
-#endif
-  size_t get_data_size()
-  {
-    return (table_name_len + db_len + 2 + fname_len
-	    + Binary_log_event::LOAD_HEADER_LEN
-            + sql_ex.data_info.data_size() + field_block_len + num_fields);
-  }
-
-public:        /* !!! Public in this patch to allow old usage */
-#if defined(MYSQL_SERVER) && defined(HAVE_REPLICATION)
-  virtual int do_apply_event(Relay_log_info const* rli)
-  {
-    return do_apply_event(thd->slave_net,rli,0);
-  }
-
-  int do_apply_event(NET *net, Relay_log_info const *rli,
-                     bool use_rli_only_for_errors);
-#endif
-};
-
 
 /**
   @class Start_log_event_v3
@@ -1944,7 +1807,7 @@ protected:
                       Log_event_footer *footer_arg)
   : Log_event(header_arg, footer_arg) {}
   ~Xid_apply_log_event() {}
-  virtual bool ends_group() { return true; }
+  virtual bool ends_group() const { return true; }
 #if defined(HAVE_REPLICATION) && !defined(MYSQL_CLIENT)
   virtual enum_skip_reason do_shall_skip(Relay_log_info *rli);
   virtual int do_apply_event(Relay_log_info const *rli);
@@ -2210,91 +2073,6 @@ private:
 #endif
 };
 
-
-/* the classes below are for the new LOAD DATA INFILE logging */
-
-/**
-  @class Create_file_log_event
-
-  The Create_file_event contains the options to LOAD DATA INFILE.
-  This was a design flaw since the file cannot be loaded until the
-  Exec_load_event is seen. The use of this event was deprecated from
-  MySQL server version 5.0.3 and above.
-  To work around this, the slave, when executing the Create_file_log_event,
-  writes the Create_file_log_event to a temporary file.
-
-  @internal
-  The inheritance structure is as follows
-
-                         Binary_log_event
-                                 ^
-                                 |
-                                 |
-                                 |
-                Log_event   B_l:Load_event
-                     ^            /\
-                     |           /  \
-                     |   <<vir>>/    \ <<vir>>
-                     |         /      \
-                     |        /        \
-                     |       /          \
-                Load_log_event     B_l:C_F_E
-                             \          /
-                              \        /
-                               \      /
-                                \    /
-                                 \  /
-                       Create_file_log_event
-
-  B_l: Namespace Binary_log
-  C_F_E: class Create_file_event
-  @endinternal
-
-  @section Create_file_log_event_binary_format Binary Format
-*/
-class Create_file_log_event: public Load_log_event, public binary_log::Create_file_event
-{
-public:
-
-#ifdef MYSQL_SERVER
-#ifdef HAVE_REPLICATION
-  int pack_info(Protocol* protocol);
-#endif /* HAVE_REPLICATION */
-#else
-  void print(FILE* file, PRINT_EVENT_INFO* print_event_info);
-  void print(FILE* file, PRINT_EVENT_INFO* print_event_info,
-             bool enable_local);
-#endif
-
-  Create_file_log_event(const char* buf, uint event_len,
-                        const Format_description_event* description_event);
-  ~Create_file_log_event()
-  {
-  }
-
-  size_t get_data_size()
-  {
-    return (fake_base ? Load_log_event::get_data_size() :
-	    Load_log_event::get_data_size() +
-	    4 + 1 + block_len);
-  }
-#ifdef MYSQL_SERVER
-  bool write_data_header(IO_CACHE* file);
-  bool write_data_body(IO_CACHE* file);
-  /*
-    Cut out Create_file extentions and
-    write it as Load event - used on the slave
-  */
-  bool write_base(IO_CACHE* file);
-#endif
-
-private:
-#if defined(MYSQL_SERVER) && defined(HAVE_REPLICATION)
-  virtual int do_apply_event(Relay_log_info const *rli);
-#endif
-};
-
-
 /**
   @class Append_block_log_event
 
@@ -2411,80 +2189,6 @@ private:
   virtual int do_apply_event(Relay_log_info const *rli);
 #endif
 };
-
-
-/**
-  @class Execute_load_log_event
-
-  Execute_load_log_event is created when the LOAD_DATA query succeeds on
-  the master, The slave should be notified to load the temporary file into
-  the table. For server versions > 5.0.3, the temporary files that stores
-  the parameters to LOAD DATA INFILE is not needed anymore, since they are
-  stored in this event. There is still a temp file containing all the data
-  to be loaded.
-
-  @internal
-  The inheritance structure is as follows
-
-        Binary_log_event
-               ^
-               |
-               |
-           B_l:E_L_E  Log_event
-                \         /
-                 \       /
-                  \     /
-                   \   /
-            Execute_load_log_event
-
-  B_l: Namespace Binary_log
-  E_L_E: class Execute_load_event
-  @endinternal
-
-*/
-class Execute_load_log_event: public binary_log::Execute_load_event,
-                              public Log_event
-{
-public:
-#ifdef MYSQL_SERVER
-  Execute_load_log_event(THD* thd, const char* db_arg, bool using_trans);
-#ifdef HAVE_REPLICATION
-  int pack_info(Protocol* protocol);
-#endif /* HAVE_REPLICATION */
-#else
-  void print(FILE* file, PRINT_EVENT_INFO* print_event_info);
-#endif
-
-  Execute_load_log_event(const char* buf, uint event_len,
-                         const Format_description_event
-                         *description_event);
-  ~Execute_load_log_event() {}
-  size_t get_data_size() { return  Binary_log_event::EXEC_LOAD_HEADER_LEN ;}
-#ifdef MYSQL_SERVER
-  bool write(IO_CACHE* file);
-  const char* get_db() { return db; }
-#endif
-#if defined(MYSQL_SERVER) && defined(HAVE_REPLICATION)
-  virtual uint8 mts_number_dbs() { return OVER_MAX_DBS_IN_EVENT_MTS; }
-  /**
-     @param[out] arg pointer to a struct containing char* array
-                     pointers be filled in and the number of
-                     filled instances.
-
-     @return     number of databases in the array (must be one).
-  */
-  virtual uint8 get_mts_dbs(Mts_db_names *arg)
-  {
-    return arg->num= mts_number_dbs();
-  }
-#endif
-
-private:
-#if defined(MYSQL_SERVER) && defined(HAVE_REPLICATION)
-  virtual int do_apply_event(Relay_log_info const *rli);
-#endif
-};
-
 
 /**
   @class Begin_load_query_log_event
@@ -2620,7 +2324,31 @@ private:
 #endif
 };
 
+#if  defined MYSQL_SERVER && !defined EMBEDDED_LIBRARY
+class Load_query_generator
+{
+public:
+  Load_query_generator(THD *thd_arg, const sql_exchange *ex, const char *db_arg,
+                       const char *table_name_arg, bool is_concurrent_arg,
+                       bool replace, bool ignore);
 
+  const String *generate(size_t *fn_start, size_t *fn_end);
+private:
+  const size_t BUF_SIZE = 2048;
+  String str;
+  char *buf[2048];
+
+  THD* thd;
+  const sql_exchange *sql_ex;
+  const char* db;
+  const char* table_name;
+  const char* fname;
+
+  bool is_concurrent;
+  bool has_replace;
+  bool has_ignore;
+};
+#endif
 #ifdef MYSQL_CLIENT
 /**
   @class Unknown_log_event
@@ -2798,6 +2526,112 @@ private:
 #endif
 };
 
+#ifdef HAVE_PSI_STAGE_INTERFACE
+/*
+ Helper class for PSI context while applying a Rows_log_event.
+ */
+class Rows_applier_psi_stage
+{
+private:
+  Rows_applier_psi_stage(const Rows_applier_psi_stage& rhs);
+  Rows_applier_psi_stage& operator=(const Rows_applier_psi_stage& rhs);
+
+  /**
+   A cached pointer to this stage PSI_stage_progress.
+   */
+  PSI_stage_progress* m_progress;
+
+  /**
+   Counter that is unconditionally incremented on each row that is processed.
+   This is helpful in case estimation is needed after started processing
+   a Rows_log_event.
+   */
+  ulonglong m_n_rows_applied;
+
+
+public:
+  Rows_applier_psi_stage() :
+    m_progress(NULL), m_n_rows_applied(0)
+  { }
+
+  void set_progress(PSI_stage_progress *progress)
+  {
+    m_progress= progress;
+  }
+
+  /**
+   If instrumentation is enabled this member function SHALL return true.
+   @return true if instrumentation is enabled for the given stage, false otherwise.
+   */
+  bool is_enabled()
+  {
+
+    return m_progress != NULL;
+  }
+
+  /**
+   This member function shall update the progress and reestimate the remaining
+   work needed. This MUST be called after setting n_rows_applied correctly
+   by calling inc_n_rows_applied beforehand.
+
+   Cursor, begin and end are used in case estimation is needed.
+
+   @param cursor Pointer to where we are in the buffer of rows to be processed.
+   @param begin Pointer to the beginning of the rows buffer.
+   @param end Pointer to the end of the rows buffer.
+   */
+  void update_work_estimated_and_completed(const uchar* cursor,
+                                           const uchar* begin,
+                                           const uchar* end)
+  {
+    if (!is_enabled())
+      return;
+
+    ulonglong estimated= mysql_stage_get_work_estimated(m_progress);
+
+    /* Estimate if need be. */
+    if (estimated == 0)
+    {
+      DBUG_ASSERT(cursor > begin);
+      ulonglong avg_row_change_size= (cursor - begin) / m_n_rows_applied;
+      estimated= (end - begin) / avg_row_change_size;
+      mysql_stage_set_work_estimated(m_progress, estimated);
+    }
+
+    /* reset estimated if done more work than estimated */
+    if (m_n_rows_applied > estimated)
+      mysql_stage_set_work_estimated(m_progress, m_n_rows_applied);
+    mysql_stage_set_work_completed(m_progress, m_n_rows_applied);
+  }
+
+  /**
+   Resets this object.
+   */
+  void end_work()
+  {
+    m_progress= NULL;
+    m_n_rows_applied= 0;
+  }
+
+  /**
+   Updates the counter of processed rows.
+   @param delta the amount of increment to be done.
+   */
+  void inc_n_rows_applied(ulonglong delta)
+  {
+    m_n_rows_applied+= delta;
+  }
+
+  /**
+   Gets the value of the counter of rows that have been processed.
+   @return the value of the counter of rows processed so far.
+   */
+  ulonglong get_n_rows_applied()
+  {
+    return m_n_rows_applied;
+  }
+};
+#endif
 
 /**
   @class Rows_log_event
@@ -2812,9 +2646,9 @@ private:
   Virtual inheritance is required here to handle the diamond problem in
   the class Write_rows_log_event, Update_rows_log_event and
   Delete_rows_log_event.
-  The diamond structure is explained in @Write_rows_log_event,
-                                        @Update_rows_log_event,
-                                        @Delete_rows_log_event
+  The diamond structure is explained in @c Write_rows_log_event,
+                                        @c Update_rows_log_event,
+                                        @c Delete_rows_log_event
 
   @internal
   The inheritance structure in the current design for the classes is
@@ -2834,6 +2668,11 @@ private:
 */
 class Rows_log_event : public virtual binary_log::Rows_event, public Log_event
 {
+#ifdef HAVE_PSI_STAGE_INTERFACE
+protected:
+    Rows_applier_psi_stage m_psi_progress;
+#endif
+
 public:
   typedef uint16 flag_set;
 
@@ -3172,7 +3011,8 @@ private:
   /**
     Private member function called while handling idempotent errors.
 
-    @param err[IN/OUT] the error to handle. If it is listed as
+    @param rli Pointer to relay log info structure.
+    @param [in,out] err the error to handle. If it is listed as
                        idempotent/ignored related error, then it is cleared.
     @returns true if the slave should stop executing rows.
    */
@@ -3184,7 +3024,8 @@ private:
      m_curr_row so that the next row is processed during the row
      execution main loop (@c Rows_log_event::do_apply_event()).
 
-     @param err[IN] the current error code.
+     @param rli Pointer to relay log info structure.
+     @param err the current error code.
    */
   void do_post_row_operations(Relay_log_info const *rli, int err);
 
@@ -3238,10 +3079,10 @@ private:
     the indexes are in non-contigous ranges it fetches record corresponding
     to the key value in the next range.
 
-    @parms: bool first_read : signifying if this is the first time we are reading a row
+    @param first_read  signifying if this is the first time we are reading a row
             over an index.
-    @return_value: -  error code when there are no more reeords to be fetched or some other
-                      error occured,
+    @return  error code when there are no more records to be fetched or some other
+                      error occurred,
                    -  0 otherwise.
   */
   int next_record_scan(bool first_read);
@@ -3249,8 +3090,7 @@ private:
   /**
     Populates the m_distinct_keys with unique keys to be modified
     during HASH_SCAN over keys.
-    @return_value -0 success
-                  -Err_code
+    @returns 0 success, or the error code.
   */
   int add_key_to_distinct_keyset();
 
@@ -3563,8 +3403,6 @@ protected:
 #endif
 };
 
-
-#include "log_event_old.h"
 
 /**
   @class Incident_log_event
@@ -4277,7 +4115,7 @@ public:
   /**
     Return the id of the committing thread.
    */
-  my_thread_id get_thread_id() { return thread_id; }
+  my_thread_id get_thread_id() { return static_cast<my_thread_id>(thread_id); }
 
   /**
    Return true if transaction has GTID_NEXT specified, false otherwise.
@@ -4358,8 +4196,6 @@ public:
 
   /**
     Sets the certification info
-
-    @param db the database
   */
   void set_certification_info(std::map<std::string, std::string> *info);
 

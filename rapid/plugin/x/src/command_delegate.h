@@ -28,7 +28,7 @@
 
 namespace xpl
 {
-  class Command_delegate
+  class Command_delegate : private boost::noncopyable
   {
   public:
     struct Field_type
@@ -73,7 +73,6 @@ namespace xpl
       m_streaming_metadata = false;
       m_field_types.clear();
       m_got_eof = false;
-      m_message = "";
     }
 
     const st_command_service_cbs *callbacks() const
@@ -408,9 +407,6 @@ namespace xpl
     }
 
   private:
-    Command_delegate(const Command_delegate &);
-    Command_delegate &operator=(const Command_delegate &);
-
     static int call_start_result_metadata(void *ctx, uint num_cols, uint flags,
                                           const CHARSET_INFO *resultcs)
     {

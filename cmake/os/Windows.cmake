@@ -35,9 +35,9 @@ INCLUDE(${CMAKE_BINARY_DIR}/win/configure.data OPTIONAL)
 GET_FILENAME_COMPONENT(_SCRIPT_DIR ${CMAKE_CURRENT_LIST_FILE} PATH)
 INCLUDE(${_SCRIPT_DIR}/WindowsCache.cmake)
 
-# We require at least Visual Studio 2013 (aka 12.0) which has version nr 1800.
-IF(NOT FORCE_UNSUPPORTED_COMPILER AND MSVC_VERSION LESS 1800)
-  MESSAGE(FATAL_ERROR "Visual Studio 2013 or newer is required!")
+# We require at least Visual Studio 2015 (aka 14.0) which has version nr 1900.
+IF(NOT FORCE_UNSUPPORTED_COMPILER AND MSVC_VERSION LESS 1900)
+  MESSAGE(FATAL_ERROR "Visual Studio 2015 or newer is required!")
 ENDIF()
 
 # OS display name (version_compile_os etc).
@@ -113,10 +113,11 @@ IF(MSVC)
     ENDFOREACH()
   ENDIF()
   
-  # Fix CMake's predefined huge stack size
   FOREACH(type EXE SHARED MODULE)
-   STRING(REGEX REPLACE "/STACK:([^ ]+)" "" CMAKE_${type}_LINKER_FLAGS "${CMAKE_${type}_LINKER_FLAGS}")
-   STRING(REGEX REPLACE "/INCREMENTAL:([^ ]+)" "" CMAKE_${type}_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_${type}_LINKER_FLAGS_RELWITHDEBINFO}")
+    SET(CMAKE_${type}_LINKER_FLAGS_DEBUG
+	    "${CMAKE_${type}_LINKER_FLAGS_DEBUG} /INCREMENTAL:NO")
+    SET(CMAKE_${type}_LINKER_FLAGS_RELWITHDEBINFO
+	    "${CMAKE_${type}_LINKER_FLAGS_RELWITHDEBINFO} /INCREMENTAL:NO")
   ENDFOREACH()
   
   # Mark 32 bit executables large address aware so they can 
@@ -138,16 +139,5 @@ ENDIF()
 LINK_LIBRARIES(ws2_32)
 # ..also for tests
 SET(CMAKE_REQUIRED_LIBRARIES ws2_32)
-
-# IPv6 constants appeared in Vista SDK first. We need to define them in any case if they are 
-# not in headers, to handle dual mode sockets correctly.
-CHECK_SYMBOL_EXISTS(IPPROTO_IPV6 "winsock2.h" HAVE_IPPROTO_IPV6)
-IF(NOT HAVE_IPPROTO_IPV6)
-  SET(HAVE_IPPROTO_IPV6 41)
-ENDIF()
-CHECK_SYMBOL_EXISTS(IPV6_V6ONLY  "winsock2.h;ws2ipdef.h" HAVE_IPV6_V6ONLY)
-IF(NOT HAVE_IPV6_V6ONLY)
-  SET(IPV6_V6ONLY 27)
-ENDIF()
 
 SET(FN_NO_CASE_SENSE 1)

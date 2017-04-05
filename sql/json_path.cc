@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -24,17 +24,18 @@
 #include "json_path.h"
 
 #include "json_dom.h"
-#include "mysqld.h"                             // key_memory_JSON
-#include "rapidjson/rapidjson.h"                // rapidjson::UTF8<char>::Decode
-#include "rapidjson/memorystream.h"             // rapidjson::MemoryStream
-#include "sql_const.h"                          // STRING_BUFFER_USUAL_SIZE
-#include "sql_string.h"                         // String
-#include "template_utils.h"                     // down_cast
+#include "psi_memory_key.h"           // key_memory_JSON
+#include "rapidjson/rapidjson.h"      // rapidjson::UTF8<char>::Decode
+#include "rapidjson/memorystream.h"   // rapidjson::MemoryStream
+#include "sql_const.h"                // STRING_BUFFER_USUAL_SIZE
+#include "sql_string.h"               // String
+#include "template_utils.h"           // down_cast
 
 #include <m_ctype.h>
 
+#include <algorithm>                            // any_of
 #include <cwctype>
-#include <memory>                               // auto_ptr
+#include <memory>                               // unique_ptr
 #include <string>
 
 // For use in Json_path::parse_path
@@ -166,20 +167,6 @@ void Json_path_clone::clear()
 }
 
 
-bool Json_path_clone::contains_ellipsis() const
-{
-  for (Path_leg_pointers::const_iterator iter= m_path_legs.begin();
-       iter != m_path_legs.end(); ++iter)
-  {
-    const Json_path_leg *path_leg= *iter;
-    if (path_leg->get_type() == jpl_ellipsis)
-      return true;
-  }
-
-  return false;
-}
-
-
 // Json_path
 
 Json_path::Json_path()
@@ -268,21 +255,8 @@ static inline bool is_wildcard_or_ellipsis(const Json_path_leg &leg)
 
 bool Json_path::contains_wildcard_or_ellipsis() const
 {
-  return std::find_if(m_path_legs.begin(), m_path_legs.end(),
-                      is_wildcard_or_ellipsis) != m_path_legs.end();
-}
-
-
-static inline bool is_ellipsis(const Json_path_leg &leg)
-{
-  return leg.get_type() == jpl_ellipsis;
-}
-
-
-bool Json_path::contains_ellipsis() const
-{
-  return std::find_if(m_path_legs.begin(), m_path_legs.end(),
-                      is_ellipsis) != m_path_legs.end();
+  return std::any_of(m_path_legs.begin(), m_path_legs.end(),
+                     is_wildcard_or_ellipsis);
 }
 
 
@@ -374,7 +348,7 @@ const char *Json_path::parse_path(const bool begins_with_column_id,
   }
 
   // a path may not end with an ellipsis
-  if (m_path_legs.size() > 0 && is_ellipsis(m_path_legs.back()))
+  if (m_path_legs.size() > 0 && m_path_legs.back().get_type() == jpl_ellipsis)
   {
     *status= false;
   }
@@ -576,7 +550,7 @@ static const Json_string *parse_name_with_rapidjson(const char *str, size_t len)
 {
   const Json_dom *dom= Json_dom::parse(str, len, NULL, NULL);
 
-  if (dom != NULL && dom->json_type() == Json_dom::J_STRING)
+  if (dom != NULL && dom->json_type() == enum_json_type::J_STRING)
     return down_cast<const Json_string *>(dom);
 
   delete dom;
@@ -610,7 +584,7 @@ const char *Json_path::parse_member_leg(const char *charptr,
 
     charptr= key_end;
 
-    std::auto_ptr<const Json_string> jstr;
+    std::unique_ptr<const Json_string> jstr;
 
     if (was_quoted)
     {
@@ -640,10 +614,6 @@ const char *Json_path::parse_member_leg(const char *charptr,
     if (jstr.get() == NULL)
       PARSER_RETURN(false);
 
-    // empty key names are illegal
-    if (jstr->size() == 0)
-      PARSER_RETURN(false);
-
     // unquoted names must be valid ECMAScript identifiers
     if (!was_quoted &&
         !is_ecmascript_identifier(jstr->value().data(), jstr->size()))
@@ -661,7 +631,7 @@ const char *Json_path::parse_member_leg(const char *charptr,
 /**
    Return true if the character is a unicode combining mark.
 
-   @param codepoint [in] A unicode codepoint.
+   @param codepoint A unicode codepoint.
 
    @return True if the codepoint is a unicode combining mark.
 */
@@ -680,7 +650,7 @@ inline bool unicode_combining_mark(unsigned codepoint)
 
    FIXME
 */
-bool is_letter(unsigned codepoint)
+static bool is_letter(unsigned codepoint)
 {
   /*
     The Unicode combining mark \u036F passes the my_isalpha() test.
@@ -710,7 +680,7 @@ bool is_digit(unsigned codepoint)
 /**
    Return true if the codepoint is Unicode connector punctuation.
 */
-bool is_connector_punctuation(unsigned codepoint)
+static bool is_connector_punctuation(unsigned codepoint)
 {
   switch(codepoint)
   {
@@ -749,6 +719,10 @@ bool is_connector_punctuation(unsigned codepoint)
 */
 bool is_ecmascript_identifier(const char *name, size_t name_length)
 {
+  // An empty string is not a valid identifier.
+  if (name_length == 0)
+    return false;
+
   /*
     At this point, The unicode escape sequences have already
     been replaced with the corresponding UTF-8 bytes. Now we apply

@@ -1,7 +1,7 @@
 #ifndef PROTOCOL_INCLUDED
 #define PROTOCOL_INCLUDED
 
-/* Copyright (c) 2002, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2002, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -16,8 +16,12 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "sql_error.h"
-#include "my_decimal.h"                         /* my_decimal */
+#include "my_global.h"
+#include "mysql_com.h"                 // mysql_enum_shutdown_level
+#include "mysql/mysql_lex_string.h"    // LEX_STRING
+#include "sql_string.h"                // String
+#include "mysql_time.h"                // MYSQL_TIME
+#include "my_decimal.h"                // my_decimal
 
 #include "violite.h"                            /* SSL && enum_vio_type */
 #ifdef HAVE_OPENSSL
@@ -41,6 +45,8 @@ class Proto_field;
 
 class Protocol {
 public:
+  virtual ~Protocol() { }
+
   /**
     Read packet from client
 
@@ -56,8 +62,6 @@ public:
 
     @param com_data  out parameter
     @param cmd       out parameter
-    @param pkt       packet to be parsed
-    @param length    size of the packet
 
     @returns
       -1  fatal protcol error
@@ -124,7 +128,8 @@ public:
   /**
     Send \\0 end terminated string.
 
-    @param from	NullS or \\0 terminated string
+    @param from   NullS or \\0 terminated string.
+    @param fromcs Character set of the from string.
 
     @note In most cases one should use store(from, length, cs) instead of
     this function
@@ -248,7 +253,6 @@ public:
     Sends field metadata.
 
     @param field                   Field metadata to be send to the client
-    @param field                   Field to be send to the client
     @param charset                 Field's charset: in case it is different
                                    than the one used by the connection it will
                                    be used to convert the value to
@@ -303,8 +307,8 @@ public:
     Send error message to the client.
 
     @param sql_errno    The error code to send
-    @param err          A pointer to the error message
-    @param sqlstate     SQL state
+    @param err_msg      A pointer to the error message
+    @param sql_state    SQL state
 
     @return
       @retval false The message was successfully sent

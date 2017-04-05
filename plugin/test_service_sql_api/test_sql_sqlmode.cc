@@ -211,7 +211,7 @@ static int sql_start_result_metadata(void *ctx, uint num_cols, uint flags,
   pctx->current_col= 0;
 
   DBUG_RETURN(false);
-};
+}
 
 
 static int sql_field_metadata(void *ctx, struct st_send_field *field,
@@ -245,7 +245,7 @@ static int sql_field_metadata(void *ctx, struct st_send_field *field,
 
   pctx->current_col++;
   DBUG_RETURN(false);
-};
+}
 
 
 static int sql_end_result_metadata(void *ctx, uint server_status,
@@ -258,7 +258,7 @@ static int sql_end_result_metadata(void *ctx, uint server_status,
   pctx->meta_warn_count= warn_count;
   pctx->num_rows= 0;
   DBUG_RETURN(false);
-};
+}
 
 
 static int sql_start_row(void *ctx)
@@ -268,7 +268,7 @@ static int sql_start_row(void *ctx)
   DBUG_ENTER("sql_start_row");
   pctx->current_col= 0;
   DBUG_RETURN(false);
-};
+}
 
 
 static int sql_end_row(void *ctx)
@@ -278,21 +278,21 @@ static int sql_end_row(void *ctx)
   DBUG_ENTER("sql_end_row");
   pctx->num_rows++;
   DBUG_RETURN(false);
-};
+}
 
 
 static void sql_abort_row(void *ctx)
 {
   DBUG_ENTER("sql_abort_row");
   DBUG_VOID_RETURN;
-};
+}
 
 
 static ulong sql_get_client_capabilities(void *ctx)
 {
   DBUG_ENTER("sql_get_client_capabilities");
   DBUG_RETURN(0);
-};
+}
 
 
 static int sql_get_null(void *ctx)
@@ -308,7 +308,7 @@ static int sql_get_null(void *ctx)
   pctx->sql_str_len[row][col]=  sizeof("[NULL]")-1;
 
   DBUG_RETURN(false);
-};
+}
 
 
 static int sql_get_integer(void * ctx, longlong value)
@@ -327,7 +327,7 @@ static int sql_get_integer(void * ctx, longlong value)
   pctx->sql_str_len[row][col]= len;
 
   DBUG_RETURN(false);
-};
+}
 
 
 static int sql_get_longlong(void * ctx, longlong value, uint is_unsigned)
@@ -347,7 +347,7 @@ static int sql_get_longlong(void * ctx, longlong value, uint is_unsigned)
   pctx->sql_str_len[row][col]= len;
 
   DBUG_RETURN(false);
-};
+}
 
 
 static const char *test_decimal_as_string(char *buff, const decimal_t *val, int *length)
@@ -373,7 +373,7 @@ static int sql_get_decimal(void * ctx, const decimal_t * value)
   pctx->sql_str_len[row][col]= len;
 
   DBUG_RETURN(false);
-};
+}
 
 
 static int sql_get_double(void * ctx, double value, uint32 decimals)
@@ -392,7 +392,7 @@ static int sql_get_double(void * ctx, double value, uint32 decimals)
   pctx->sql_str_len[row][col]= len;
 
   DBUG_RETURN(false);
-};
+}
 
 
 static int sql_get_date(void * ctx, const MYSQL_TIME * value)
@@ -414,7 +414,7 @@ static int sql_get_date(void * ctx, const MYSQL_TIME * value)
   pctx->sql_str_len[row][col]= len;
 
   DBUG_RETURN(false);
-};
+}
 
 
 static int sql_get_time(void * ctx, const MYSQL_TIME * value, uint decimals)
@@ -436,7 +436,7 @@ static int sql_get_time(void * ctx, const MYSQL_TIME * value, uint decimals)
   strncpy(pctx->sql_str_value[row][col], buffer, len);
   pctx->sql_str_len[row][col]= len;
   DBUG_RETURN(false);
-};
+}
 
 
 static int sql_get_datetime(void * ctx, const MYSQL_TIME * value, uint decimals)
@@ -460,7 +460,7 @@ static int sql_get_datetime(void * ctx, const MYSQL_TIME * value, uint decimals)
 
 
   DBUG_RETURN(false);
-};
+}
 
 
 static int sql_get_string(void * ctx, const char * const value, size_t length,
@@ -477,7 +477,7 @@ static int sql_get_string(void * ctx, const char * const value, size_t length,
   pctx->sql_str_len[row][col]= length;
 
   DBUG_RETURN(false);
-};
+}
 
 
 static void sql_handle_ok(void * ctx,
@@ -499,7 +499,7 @@ static void sql_handle_ok(void * ctx,
     strncpy(pctx->message, message, sizeof(pctx->message));
 
   DBUG_VOID_RETURN;
-};
+}
 
 
 static void sql_handle_error(void * ctx, uint sql_errno,
@@ -514,14 +514,14 @@ static void sql_handle_error(void * ctx, uint sql_errno,
   WRITE_VAL("[%s]\n", err_msg);
   pctx->num_rows= 0;
   DBUG_VOID_RETURN;
-};
+}
 
 
 static void sql_shutdown(void *ctx, int shutdown_server)
 {
   DBUG_ENTER("sql_shutdown");
   DBUG_VOID_RETURN;
-};
+}
 
 
 const struct st_command_service_cbs protocol_callbacks=
@@ -826,7 +826,7 @@ void static change_current_db(MYSQL_SESSION session, const char * db,
 }
 
 
-void test_selects(MYSQL_SESSION session, void *p)
+static void test_selects(MYSQL_SESSION session, void *p)
 {
   DBUG_ENTER("test_selects");
   char buffer[STRING_BUFFER_SIZE];

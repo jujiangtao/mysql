@@ -62,11 +62,11 @@ cmp_data_data(
 	ulint		len1,
 	const byte*	data2,
 	ulint		len2)
-	MY_ATTRIBUTE((nonnull, warn_unused_result));
+	MY_ATTRIBUTE((warn_unused_result));
 
 /** Compare two data fields.
-@param[in] dfield1 data field; must have type field set
-@param[in] dfield2 data field
+@param[in]	dfield1	data field; must have type field set
+@param[in]	dfield2	data field
 @return the comparison result of dfield1 and dfield2
 @retval 0 if dfield1 is equal to dfield2
 @retval negative if dfield1 is less than dfield2
@@ -74,10 +74,8 @@ cmp_data_data(
 UNIV_INLINE
 int
 cmp_dfield_dfield(
-/*==============*/
-	const dfield_t*	dfield1,/*!< in: data field; must have type field set */
-	const dfield_t*	dfield2);/*!< in: data field */
-
+	const dfield_t*	dfield1,
+	const dfield_t*	dfield2);
 
 /** Compare a GIS data tuple to a physical record.
 @param[in] dtuple data tuple
@@ -91,8 +89,7 @@ cmp_dtuple_rec_with_gis(
 	const dtuple_t*	dtuple,
 	const rec_t*	rec,
 	const ulint*	offsets,
-	page_cur_mode_t	mode)
-	MY_ATTRIBUTE((nonnull));
+	page_cur_mode_t	mode);
 
 /** Compare a GIS data tuple to a physical record in rtree non-leaf node.
 We need to check the page number field, since we don't store pk field in
@@ -100,7 +97,6 @@ rtree non-leaf node.
 @param[in] dtuple data tuple
 @param[in] rec R-tree record
 @param[in] offsets rec_get_offsets(rec)
-@param[in] mode compare mode
 @retval negative if dtuple is less than rec */
 int
 cmp_dtuple_rec_with_gis_internal(
@@ -124,8 +120,7 @@ cmp_dtuple_rec_with_match_low(
 	const rec_t*	rec,
 	const ulint*	offsets,
 	ulint		n_cmp,
-	ulint*		matched_fields)
-	MY_ATTRIBUTE((nonnull));
+	ulint*		matched_fields);
 #define cmp_dtuple_rec_with_match(tuple,rec,offsets,fields)		\
 	cmp_dtuple_rec_with_match_low(					\
 		tuple,rec,offsets,dtuple_get_n_fields_cmp(tuple),fields)
@@ -190,7 +185,7 @@ cmp_rec_rec_simple(
 	struct TABLE*		table)	/*!< in: MySQL table, for reporting
 					duplicate key value if applicable,
 					or NULL */
-	MY_ATTRIBUTE((nonnull(1,2,3,4), warn_unused_result));
+	MY_ATTRIBUTE((warn_unused_result));
 /** Compare two B-tree records.
 @param[in] rec1 B-tree record
 @param[in] rec2 B-tree record
@@ -223,6 +218,7 @@ are treated as equal.
 @param[in]	rec2		B-tree record
 @param[in]	offsets1	rec_get_offsets(rec1, index)
 @param[in]	offsets2	rec_get_offsets(rec2, index)
+@param[in]	index		B-tree index
 @param[out]	matched_fields	number of completely matched fields
 				within the first field not completely matched
 @return positive, 0, negative if rec1 is greater, equal, less, than rec2,
@@ -250,8 +246,6 @@ cmp_dfield_dfield_like_prefix(
 	const dfield_t*	dfield1,
 	const dfield_t*	dfield2);
 
-#ifndef UNIV_NONINL
 #include "rem0cmp.ic"
-#endif
 
 #endif

@@ -55,7 +55,7 @@ SELECT COUNT(@@GLOBAL.innodb_buffer_pool_instances);
 
 --disable_warnings
 SELECT @@GLOBAL.innodb_buffer_pool_instances = VARIABLE_VALUE
-FROM INFORMATION_SCHEMA.GLOBAL_VARIABLES
+FROM performance_schema.global_variables
 WHERE VARIABLE_NAME='innodb_buffer_pool_instances';
 --enable_warnings
 --echo 1 Expected
@@ -65,7 +65,7 @@ SELECT COUNT(@@GLOBAL.innodb_buffer_pool_instances);
 
 --disable_warnings
 SELECT COUNT(VARIABLE_VALUE)
-FROM INFORMATION_SCHEMA.GLOBAL_VARIABLES 
+FROM performance_schema.global_variables 
 WHERE VARIABLE_NAME='innodb_buffer_pool_instances';
 --enable_warnings
 --echo 1 Expected

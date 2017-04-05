@@ -24,12 +24,10 @@
 
 #include "ngs/server_acceptors.h"
 #include "ngs_common/connection_vio.h"
-#include "ngs_common/bind.h"
-#include "ngs_common/string_formatter.h"
 #include "ngs/log.h"
+#include <boost/bind.hpp>
 #include <iterator>
 #include <stdlib.h>
-#include <algorithm>
 
 
 using namespace ngs;
@@ -70,7 +68,7 @@ private:
 class Server_acceptors::Server_task_time_and_event: public Server_task_interface
 {
 public:
-  Server_task_time_and_event(Socket_events &event, Listener_interface::Sync_variable_state &state)
+  Server_task_time_and_event(Time_and_socket_events &event, Listener_interface::Sync_variable_state &state)
   : m_event(event), m_state(state)
   {
   }
@@ -113,7 +111,7 @@ private:
     listener->get_state().set(state);
   }
 
-  Socket_events &m_event;
+  Time_and_socket_events &m_event;
   Listener_interface::Sync_variable_state &m_state;
   Server_acceptors::Listener_interfaces m_listeners;
 };
@@ -121,28 +119,23 @@ private:
 
 Server_acceptors::Server_acceptors(
     Listener_factory_interface &listener_factory,
-    const std::string &tcp_bind_address,
-    const uint16 tcp_port,
-    const uint32 tcp_port_open_timeout,
-    const std::string &unix_socket_file,
-    const uint32 backlog)
-: m_bind_address(tcp_bind_address),
-  m_tcp_socket(listener_factory.create_tcp_socket_listener(m_bind_address, tcp_port, tcp_port_open_timeout, m_event, backlog)),
+    const unsigned short tcp_port,
+    const std::string &unix_socket_file_or_named_pipe, const uint32 backlog)
+: m_tcp_socket(listener_factory.create_tcp_socket_listener(tcp_port, m_event, backlog)),
 #if defined(HAVE_SYS_UN_H)
-  m_unix_socket(listener_factory.create_unix_socket_listener(unix_socket_file, m_event, backlog)),
+  m_unix_socket(listener_factory.create_unix_socket_listener(unix_socket_file_or_named_pipe, m_event, backlog)),
 #endif
   m_time_and_event_state(State_listener_initializing),
-  m_time_and_event_task(ngs::allocate_shared<Server_task_time_and_event>(ngs::ref(m_event), ngs::ref(m_time_and_event_state))),
-  m_prepared(false)
+  m_time_and_event_task(new Server_task_time_and_event(m_event, m_time_and_event_state))
 {
 }
 
-bool Server_acceptors::prepare_impl(On_connection on_connection, const bool skip_networking, const bool use_unix_sockets)
+bool Server_acceptors::prepare_impl(On_connection on_connection, const bool skip_networking, const bool use_unix_sockets_or_named_pipes)
 {
   if (skip_networking)
     m_tcp_socket.reset();
 
-  if (!use_unix_sockets)
+  if (!use_unix_sockets_or_named_pipes)
     m_unix_socket.reset();
 
   Listener_interfaces listeners = get_array_of_listeners();
@@ -157,7 +150,7 @@ bool Server_acceptors::prepare_impl(On_connection on_connection, const bool skip
   const size_t number_of_prepared_listeners = std::count_if(
       listeners.begin(),
       listeners.end(),
-      ngs::bind(&Listener_interface::setup_listener, ngs::placeholders::_1, on_connection));
+      boost::bind(&Listener_interface::setup_listener, _1, on_connection));
 
   if (0 == number_of_prepared_listeners)
   {
@@ -171,9 +164,9 @@ bool Server_acceptors::prepare_impl(On_connection on_connection, const bool skip
   return true;
 }
 
-bool Server_acceptors::prepare(On_connection on_connection, const bool skip_networking, const bool use_unix_sockets)
+bool Server_acceptors::prepare(On_connection on_connection, const bool skip_networking, const bool use_unix_sockets_or_named_pipes)
 {
-  const bool result = prepare_impl(on_connection, skip_networking, use_unix_sockets);
+  const bool result = prepare_impl(on_connection, skip_networking, use_unix_sockets_or_named_pipes);
 
   Listener_interfaces listeners = get_array_of_listeners();
 
@@ -181,8 +174,6 @@ bool Server_acceptors::prepare(On_connection on_connection, const bool skip_netw
       listeners.begin(),
       listeners.end(),
       Server_acceptors::report_listener_status);
-
-  m_prepared = true;
 
   return result;
 }
@@ -224,8 +215,10 @@ void Server_acceptors::stop(const bool is_called_from_timeout_handler)
       &Server_acceptors::wait_until_stopped);
 }
 
-bool Server_acceptors::is_listener_configured(Listener_interface *listener)
+bool Server_acceptors::was_unix_socket_or_named_pipe_configured()
 {
+  Listener_interface *listener = m_unix_socket.get();
+
   if (NULL == listener)
     return false;
 
@@ -234,28 +227,7 @@ bool Server_acceptors::is_listener_configured(Listener_interface *listener)
   return listener->get_state().is(allowed_states);
 }
 
-bool Server_acceptors::was_unix_socket_configured()
-{
-  return is_listener_configured(m_unix_socket.get());
-}
-
-bool Server_acceptors::was_tcp_server_configured(std::string &bind_address)
-{
-  if (is_listener_configured(m_tcp_socket.get()))
-  {
-    bind_address = m_bind_address;
-    return true;
-  }
-
-  return false;
-}
-
-bool Server_acceptors::was_prepared() const
-{
-  return m_prepared;
-}
-
-void Server_acceptors::add_timer(const std::size_t delay_ms, ngs::function<bool ()> callback)
+void Server_acceptors::add_timer(const std::size_t delay_ms, boost::function<bool ()> callback)
 {
   m_event.add_timer(delay_ms, callback);
 }
@@ -282,7 +254,7 @@ Server_tasks_interfaces Server_acceptors::create_server_tasks_for_listeners()
       continue;
     }
 
-    ngs::shared_ptr<Server_task_interface> handler(ngs::allocate_shared<details::Server_task_listener>(ngs::ref(*listener)));
+    boost::shared_ptr<Server_task_interface> handler(new details::Server_task_listener(*listener));
     handlers.push_back(handler);
   }
 
@@ -324,15 +296,14 @@ void Server_acceptors::report_listener_status(Listener_interface *listener)
 {
   if (!listener->get_state().is(State_listener_prepared))
   {
-    log_error("Setup of %s failed, %s",
-              listener->get_name_and_configuration().c_str(),
-              listener->get_last_error().c_str());
+    log_error("X Plugin failed to setup %s, with:", listener->get_name_and_configuration().c_str());
+    log_error("%s", listener->get_last_error().c_str());
 
-    std::string listener_configuration_variable = ngs::join(listener->get_configuration_variables(),"','");
+    const std::string listener_configuration_variable = listener->get_configuration_variable();
 
     if (!listener_configuration_variable.empty())
     {
-      log_info("Please see the MySQL documentation for '%s' system variables to fix the error", listener_configuration_variable.c_str());
+      log_info("Please see the MySQL documentation for '%s' system variable to fix the error", listener_configuration_variable.c_str());
     }
 
     return;

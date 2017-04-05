@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2014, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -15,14 +15,18 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 
-/* class for the the myisam merge handler */
+/**
+  @file storage/myisammrg/ha_myisammrg.h
+  MyISAM merge storage engine.
+*/
 
 #include <myisammrg.h>
+#include "table.h"
 
 /** 
   Represents one name of a MERGE child.
 
-  @todo: Add MYRG_SHARE and store chlidren names in the
+  @todo Add MYRG_SHARE and store children names in the
   share.
 */
 
@@ -79,8 +83,10 @@ public:
   ha_myisammrg(handlerton *hton, TABLE_SHARE *table_arg);
   ~ha_myisammrg();
   const char *table_type() const { return "MRG_MyISAM"; }
-  const char **bas_ext() const;
-  const char *index_type(uint key_number);
+  virtual enum ha_key_alg get_default_index_algorithm() const
+  { return HA_KEY_ALG_BTREE; }
+  virtual bool is_index_algorithm_supported(enum ha_key_alg key_alg) const
+  { return key_alg == HA_KEY_ALG_BTREE || key_alg == HA_KEY_ALG_RTREE; }
   ulonglong table_flags() const
   {
     return (HA_REC_NOT_IN_SEQ | HA_AUTO_PART_KEY | HA_NO_TRANSACTIONS |
@@ -103,7 +109,7 @@ public:
   double scan_time()
   { return ulonglong2double(stats.data_file_length) / IO_SIZE + file->tables; }
 
-  int open(const char *name, int mode, uint test_if_locked);
+  int open(const char *name, int mode, uint test_if_locked_arg);
   int add_children_list(void);
   int attach_children(void);
   int detach_children(void);

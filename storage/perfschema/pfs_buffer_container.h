@@ -16,8 +16,11 @@
 #ifndef PFS_BUFFER_CONTAINER_H
 #define PFS_BUFFER_CONTAINER_H
 
+/**
+  @file storage/perfschema/pfs_buffer_container.h
+  Generic buffer container.
+*/
 #include "my_global.h"
-#include "pfs.h" // PSI_COUNT_VOLATILITY
 #include "pfs_lock.h"
 #include "pfs_instr.h"
 #include "pfs_setup_actor.h"
@@ -72,9 +75,9 @@ public:
 
   value_type *allocate(pfs_dirty_state *dirty_state)
   {
-    uint index;
-    uint monotonic;
-    uint monotonic_max;
+    size_t index;
+    size_t monotonic;
+    size_t monotonic_max;
     value_type *pfs;
 
     if (m_full)
@@ -972,7 +975,7 @@ private:
 
       if (page == NULL)
       {
-        index= m_max;
+        index= static_cast<uint>(m_max);
         return NULL;
       }
 
@@ -984,7 +987,7 @@ private:
       {
         if (pfs->m_lock.is_populated())
         {
-          uint found= index_1 * PFS_PAGE_SIZE + (pfs - pfs_first);
+          uint found= index_1 * PFS_PAGE_SIZE + static_cast<uint>(pfs - pfs_first);
           *found_index= found;
           index= found + 1;
           return pfs;
@@ -996,7 +999,7 @@ private:
       index_2= 0;
     }
 
-    index= m_max;
+    index= static_cast<uint>(m_max);
     return NULL;
   }
 
@@ -1367,7 +1370,7 @@ private:
 
 #ifdef USE_SCALABLE
 typedef PFS_buffer_scalable_container<PFS_mutex, 1024, 1024> PFS_mutex_basic_container;
-typedef PFS_partitioned_buffer_scalable_container<PFS_mutex_basic_container, PSI_COUNT_VOLATILITY> PFS_mutex_container;
+typedef PFS_partitioned_buffer_scalable_container<PFS_mutex_basic_container, PFS_MUTEX_PARTITIONS> PFS_mutex_container;
 #else
 typedef PFS_buffer_container<PFS_mutex> PFS_mutex_container;
 #endif
@@ -1485,6 +1488,7 @@ public:
   PFS_stage_stat *m_instr_class_stages_array;
   PFS_statement_stat *m_instr_class_statements_array;
   PFS_transaction_stat *m_instr_class_transactions_array;
+  PFS_error_stat *m_instr_class_errors_array;
   PFS_memory_stat *m_instr_class_memory_array;
 };
 
@@ -1516,6 +1520,7 @@ public:
   PFS_stage_stat *m_instr_class_stages_array;
   PFS_statement_stat *m_instr_class_statements_array;
   PFS_transaction_stat *m_instr_class_transactions_array;
+  PFS_error_stat *m_instr_class_errors_array;
   PFS_memory_stat *m_instr_class_memory_array;
 };
 
@@ -1547,6 +1552,7 @@ public:
   PFS_stage_stat *m_instr_class_stages_array;
   PFS_statement_stat *m_instr_class_statements_array;
   PFS_transaction_stat *m_instr_class_transactions_array;
+  PFS_error_stat *m_instr_class_errors_array;
   PFS_memory_stat *m_instr_class_memory_array;
 
   PFS_events_waits *m_waits_history_array;
@@ -1590,6 +1596,7 @@ public:
   PFS_stage_stat *m_instr_class_stages_array;
   PFS_statement_stat *m_instr_class_statements_array;
   PFS_transaction_stat *m_instr_class_transactions_array;
+  PFS_error_stat *m_instr_class_errors_array;
   PFS_memory_stat *m_instr_class_memory_array;
 };
 

@@ -26,11 +26,6 @@ Created 1/8/1997 Heikki Tuuri
 #include "ha_prototypes.h"
 
 #include "row0undo.h"
-
-#ifdef UNIV_NONINL
-#include "row0undo.ic"
-#endif
-
 #include "fsp0fsp.h"
 #include "mach0data.h"
 #include "trx0rseg.h"
@@ -176,10 +171,12 @@ row_undo_search_clust_to_pcur(
 	ulint*		offsets		= offsets_;
 	rec_offs_init(offsets_);
 
+	ut_ad(!node->table->skip_alter_undo);
+
 	mtr_start(&mtr);
 	dict_disable_redo_if_temporary(node->table, &mtr);
 
-	clust_index = dict_table_get_first_index(node->table);
+	clust_index = node->table->first_index();
 
 	found = row_search_on_row_ref(&node->pcur, BTR_MODIFY_LEAF,
 				      node->table, node->ref, &mtr);
@@ -200,11 +197,10 @@ row_undo_search_clust_to_pcur(
 		ut_ad(row_get_rec_trx_id(rec, clust_index, offsets)
 		      == node->trx->id);
 
-		if (dict_table_get_format(node->table) >= UNIV_FORMAT_B) {
-			/* In DYNAMIC or COMPRESSED format, there is
-			no prefix of externally stored columns in the
-			clustered index record. Build a cache of
-			column prefixes. */
+		if (dict_table_has_atomic_blobs(node->table)) {
+			/* There is no prefix of externally stored
+			columns in the clustered index record. Build a
+			cache of column prefixes. */
 			ext = &node->ext;
 		} else {
 			/* REDUNDANT and COMPACT formats store a local

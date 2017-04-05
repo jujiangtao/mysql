@@ -107,8 +107,6 @@ id	raw_message	sender	receiver	subject	received	body
 4	{"body": "Yes indeed.", "sender": "alice", "subject": "re: tea at 4:00?", "received": "2015-05-11 14:45:05", "receiver": "fred"}	alice	fred	"re: tea at 4:00?"	2015-05-11 14:45:05	"Yes indeed."
 5	{"body": "Chinese for lunch?", "sender": "fred", "subject": "lunch today?", "received": "2015-05-18 09:30:05", "receiver": "alice"}	fred	alice	"lunch today?"	2015-05-18 09:30:05	"Chinese for lunch?"
 6	{"body": "Sorry. I have a tight deadline I have to meet.", "sender": "alice", "subject": "re: lunch today?", "received": "2015-05-18 09:45:05", "receiver": "fred"}	alice	fred	"re: lunch today?"	2015-05-18 09:45:05	"Sorry. I have a tight deadline I have to meet."
-alter table messages add fulltext index (raw_message) ;
-ERROR HY000: Column 'raw_message' cannot be part of FULLTEXT index
 select id from messages
 where match( body ) against ( 'thai' )
 and match( subject ) against( 'lunch' )

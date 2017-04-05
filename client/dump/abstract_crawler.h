@@ -37,7 +37,18 @@ public:
    */
   virtual void register_chain_maker(I_chain_maker* new_chain_maker);
 
+
+  // Fix "inherits ... via dominance" warnings
+  void register_progress_watcher(I_progress_watcher* new_progress_watcher)
+  { Abstract_chain_element::register_progress_watcher(new_progress_watcher); }
+
+  // Fix "inherits ... via dominance" warnings
+  uint64 get_id() const
+  { return Abstract_chain_element::get_id(); }
+
+
   ~Abstract_crawler();
+
 protected:
   Abstract_crawler(
     Mysql::I_callable<bool, const Mysql::Tools::Base::Message_data&>*
@@ -52,7 +63,12 @@ protected:
 
   bool need_callbacks_in_child();
 
+  // Fix "inherits ... via dominance" warnings
+  void item_completion_in_child_callback(Item_processing_data* item_processed)
+  { Abstract_chain_element::item_completion_in_child_callback(item_processed); }
+
   Mysql::Tools::Base::Abstract_program* get_program();
+
 private:
   std::vector<I_chain_maker*> m_chain_makers;
   std::vector<I_dump_task*> m_dump_tasks_created;

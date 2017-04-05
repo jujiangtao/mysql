@@ -18,6 +18,7 @@
 #include "admin_cmd_handler.h"
 #include "mysqlx_pb_wrapper.h"
 #include "xpl_error.h"
+#include <boost/scoped_ptr.hpp>
 #include <gtest/gtest.h>
 
 
@@ -55,7 +56,7 @@ public:
   }
 
   Admin_command_arguments_object::List args;
-  ngs::unique_ptr<Admin_command_arguments_object> extractor;
+  boost::scoped_ptr<Admin_command_arguments_object> extractor;
 };
 
 

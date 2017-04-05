@@ -1,7 +1,4 @@
-#ifndef SQL_AUTHENTICATION_INCLUDED
-#define SQL_AUTHENTICATION_INCLUDED
-
-/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -16,14 +13,20 @@
    along with this program; if not, write to the Free Software Foundation,
    51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
 
-#include "my_global.h"                  // NO_EMBEDDED_ACCESS_CHECKS
+#ifndef SQL_AUTHENTICATION_INCLUDED
+#define SQL_AUTHENTICATION_INCLUDED
+
+#include "my_global.h"
+#include "m_string.h"                   // LEX_CSTRING
 #include "my_thread_local.h"            // my_thread_id
-#include <mysql/plugin_auth.h>          // MYSQL_SERVER_AUTH_INFO
+#include "mysql/plugin_auth.h"          // MYSQL_SERVER_AUTH_INFO
 #include "sql_plugin_ref.h"             // plugin_ref
 
 /* Forward declarations */
+class String;
 class THD;
 typedef struct charset_info_st CHARSET_INFO;
+typedef struct st_mysql_show_var SHOW_VAR;
 class ACL_USER;
 class Protocol_classic;
 typedef struct st_net NET;
@@ -83,6 +86,10 @@ struct MPVIO_EXT : public MYSQL_PLUGIN_VIO
 
 #if defined(HAVE_OPENSSL)
 #ifndef HAVE_YASSL
+bool init_rsa_keys(void);
+void deinit_rsa_keys(void);
+int show_rsa_public_key(THD *thd, SHOW_VAR *var, char *buff);
+
 typedef struct rsa_st RSA;
 class Rsa_authentication_keys
 {

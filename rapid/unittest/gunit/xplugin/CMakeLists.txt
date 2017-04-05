@@ -26,6 +26,7 @@ INCLUDE(CTest)
 INCLUDE(${PROJECT_SOURCE_DIR}/rapid/plugin/x/mysqlx_protobuf.cmake)
 
 INCLUDE(${PROJECT_SOURCE_DIR}/rapid/plugin/x/source_files.cmake)
+LIST(REMOVE_ITEM xplugin_SRC "${MYSQLX_PROJECT_DIR}/src/mysql_variables.cc")
 
 MYSQLX_PROTOBUF_GENERATE_CPP_NAMES(protobuf_SRC ${PROTOBUF_MYSQLX_FILES})
 
@@ -34,30 +35,8 @@ IF(MSVC)
 ENDIF(MSVC)
 
 # Turn off some warning flags when compiling GUnit and proto files.
-MY_CHECK_CXX_COMPILER_FLAG("-Wno-unused-local-typedefs" HAVE_NO_UNUSED_TYPEDEFS)
-IF(HAVE_NO_UNUSED_TYPEDEFS)
-  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unused-local-typedefs")
-ENDIF()
-MY_CHECK_CXX_COMPILER_FLAG("-Wunused-variable" HAVE_UNUSED_VARIABLE)
-IF(HAVE_UNUSED_VARIABLE)
-  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unused-variable")
-ENDIF()
-MY_CHECK_CXX_COMPILER_FLAG("-Wmissing-field-initializers"
-  HAVE_MISSING_FIELD_INITIALIZERS)
-IF(HAVE_MISSING_FIELD_INITIALIZERS)
+IF(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-missing-field-initializers")
-ENDIF()
-MY_CHECK_CXX_COMPILER_FLAG("-Wno-sign-compare" HAVE_NO_SIGN_COMPARE)
-IF(HAVE_NO_SIGN_COMPARE)
-  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-sign-compare")
-ENDIF()
-MY_CHECK_CXX_COMPILER_FLAG("-Wunused-but-set-parameter" HAVE_UNUSED_BUT_SET)
-IF(HAVE_UNUSED_BUT_SET)
-  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unused-but-set-parameter")
-ENDIF()
-MY_CHECK_CXX_COMPILER_FLAG("-Wignored-qualifiers" HAVE_NO_IGNORED_QUALIFIERS)
-IF(HAVE_NO_IGNORED_QUALIFIERS)
-  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-ignored-qualifiers")
 ENDIF()
 
 
@@ -82,8 +61,10 @@ INCLUDE_DIRECTORIES(
   ${PROJECT_SOURCE_DIR}/rapid/plugin/x
   ${CMAKE_SOURCE_DIR}/include
   ${CMAKE_SOURCE_DIR}/regex
+  ${CMAKE_SOURCE_DIR}/libbinlogevents/include
   ${PROJECT_SOURCE_DIR}/sql
   ${PROJECT_SOURCE_DIR}/include/mysql
+  ${ZLIB_INCLUDE_DIR}
   ${CMAKE_BINARY_DIR}/rapid/plugin/x/generated/
 )
 
@@ -124,21 +105,15 @@ IF(WIN32)
   SET_TARGET_PROPERTIES(xplugin_unit_tests PROPERTIES COMPILE_FLAGS "/wd4373")
 ENDIF(WIN32)
 
-# Segfault in the unit test with -xO3, so lower optimization level
-IF(CMAKE_CXX_COMPILER_ID MATCHES "SunPro")
-  ADD_COMPILE_FLAGS(
-    ${CMAKE_CURRENT_SOURCE_DIR}/callback_command_delegate_t.cc
-    COMPILE_FLAGS "-xO2")
-ENDIF()
-
 TARGET_LINK_LIBRARIES(
   xplugin_unit_tests
+  xplugin
   gtest
   regex
   gmock
   mysqlservices
   mysqlclient
-  ${LIBEVENT_LIBRARY} ${LIBEVENT_LIBRARIES}
+  ${LIBEVENT_LIBRARY}
   ${CMAKE_THREAD_LIBS_INIT}
   ${PROTOBUF_LIBRARY}
   ${GCOV_LDFLAGS}

@@ -16,7 +16,11 @@
 #ifndef PRIORITY_QUEUE_INCLUDED
 #define PRIORITY_QUEUE_INCLUDED
 
-#include "my_dbug.h"
+/**
+  @file include/priority_queue.h
+*/
+
+#include "my_global.h"
 
 #include <functional>
 #include <utility>
@@ -28,7 +32,7 @@
 #include <sstream>
 #endif
 
-namespace priority_queue_unittest { class PriorityQueueTest; };
+namespace priority_queue_unittest { class PriorityQueueTest; }
 
 
 /**

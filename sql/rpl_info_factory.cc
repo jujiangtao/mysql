@@ -15,6 +15,7 @@
 
 #include "rpl_info_factory.h"
 
+#include "current_thd.h"
 #include "log.h"                    // sql_print_error
 #include "mysqld.h"                 // key_master_info_run_lock
 #include "rpl_info_dummy.h"         // Rpl_info_dummy
@@ -300,8 +301,8 @@ err:
 /**
   Allows to change the relay log info repository after startup.
 
-  @param[in]  mi        Pointer to Relay_log_info.
-  @param[in]  mi_option Type of the repository, e.g. FILE TABLE.
+  @param[in]  rli       Pointer to Relay_log_info.
+  @param[in]  rli_option Type of the repository, e.g. FILE TABLE.
   @param[out] msg       Error message if something goes wrong.
 
   @retval FALSE No error
@@ -385,7 +386,9 @@ err:
   Creates a Slave worker repository whose type is defined as a parameter.
   
   @param[in]  rli_option Type of the repository, e.g. FILE TABLE.
+  @param[in]  worker_id  ID of the worker to be created.
   @param[in]  rli        Pointer to Relay_log_info.
+  @param[in]  is_gaps_collecting_phase See Slave_worker::rli_init_info
 
   The execution fails if a user requests a type but a different type
   already exists in the system. This is done to avoid that a user
@@ -1277,7 +1280,7 @@ end:
    @param[in]    to_decide_repo   For this channel, check if repositories
                                   are allowed to convert from one type to other.
    @param[in]    pchannel_map     a pointer to channel_map
-   @param[in]    channel type     If the given channel is a slave channel.
+   @param[in]    channel_type     If the given channel is a slave channel.
                                   Default is true.
 
    @return      Pointer         pointer to the created Master_info

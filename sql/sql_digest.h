@@ -16,9 +16,13 @@
 #ifndef SQL_DIGEST_H
 #define SQL_DIGEST_H
 
+#include "my_global.h"
+#include "my_md5_size.h"       // MD5_HASH_SIZE
+
 #include <string.h>
-#include "sql_string.h"
-#include "my_md5.h"
+
+class String;
+
 
 #define MAX_DIGEST_STORAGE_SIZE (1024*1024)
 
@@ -120,9 +124,7 @@ void compute_digest_md5(const sql_digest_storage *digest_storage, unsigned char 
   - literal values are replaced with a special '?' marker,
   - lists of values are collapsed using a shorter notation
   @param digest_storage The digest
-  @param [out] digest_text
-  @param digest_text_length Size of @c digest_text.
-  @param [out] truncated true if the text representation was truncated
+  @param [out] digest_text The digest text
 */
 void compute_digest_text(const sql_digest_storage *digest_storage,
                          String *digest_text);

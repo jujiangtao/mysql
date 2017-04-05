@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -16,12 +16,17 @@
 
 /* This file is included by all internal myisam files */
 
+/**
+  @file storage/myisam/myisamdef.h
+*/
+
 #include "myisam.h"			/* Structs & some defines */
 #include "myisampack.h"			/* packing of keys */
 #include <my_tree.h>
 #include <my_thread.h>
 #include "my_thread_local.h"
 #include <thr_lock.h>
+#include <mysql/psi/mysql_rwlock.h>
 #include <mysql/psi/mysql_file.h>
 #include <mysql/plugin_ftparser.h>
 
@@ -351,10 +356,9 @@ typedef struct st_mi_sort_param
   MEM_ROOT wordroot;
   uchar *record;
   MY_TMPDIR *tmpdir;
-  int (*key_cmp)(struct st_mi_sort_param *, const void *, const void *);
+  int (*key_cmp)(const void *, const void *, const void *);
   int (*key_read)(struct st_mi_sort_param *,void *);
   int (*key_write)(struct st_mi_sort_param *, const void *);
-  void (*lock_in_memory)(MI_CHECK *);
   int (*write_keys)(struct st_mi_sort_param *, uchar **,
                     uint , struct st_buffpek *, IO_CACHE *);
   uint (*read_to_buffer)(IO_CACHE *,struct st_buffpek *, uint);
@@ -571,8 +575,6 @@ extern void _mi_kpointer(MI_INFO *info,uchar *buff,my_off_t pos);
 extern my_off_t _mi_dpos(MI_INFO *info, uint nod_flag,uchar *after_key);
 extern my_off_t _mi_rec_pos(MYISAM_SHARE *info, uchar *ptr);
 extern void _mi_dpointer(MI_INFO *info, uchar *buff,my_off_t pos);
-extern int ha_key_cmp(HA_KEYSEG *keyseg, uchar *a,uchar *b,
-		       uint key_length,uint nextflag,uint *diff_length);
 extern uint _mi_get_static_key(MI_KEYDEF *keyinfo,uint nod_flag,uchar * *page,
 			       uchar *key);
 extern uint _mi_get_pack_key(MI_KEYDEF *keyinfo,uint nod_flag,uchar * *page,
@@ -662,6 +664,7 @@ typedef struct st_mi_block_info {	/* Parameter to _mi_get_block_info */
 #define NEED_MEM	((uint) 10*4*(IO_SIZE+32)+32) /* Nead for recursion */
 #define MAXERR			20
 #define BUFFERS_WHEN_SORTING	16		/* Alloc for sort-key-tree */
+#define MY_HOW_OFTEN_TO_WRITE	1000	/* How often we want info on screen */
 #define WRITE_COUNT		MY_HOW_OFTEN_TO_WRITE
 #define INDEX_TMP_EXT		".TMM"
 #define DATA_TMP_EXT		".TMD"
@@ -754,7 +757,6 @@ void mi_update_status(void* param);
 void mi_restore_status(void* param);
 void mi_copy_status(void* to,void *from);
 my_bool mi_check_status(void* param);
-void mi_disable_non_unique_index(MI_INFO *info, ha_rows rows);
 
 extern MI_INFO *test_if_reopen(char *filename);
 my_bool check_table_is_closed(const char *name, const char *where);
@@ -773,9 +775,12 @@ int mi_check_index_cond(MI_INFO *info, uint keynr, uchar *record);
 
     /* Functions needed by mi_check */
 volatile int *killed_ptr(MI_CHECK *param);
-void mi_check_print_error(MI_CHECK *param, const char *fmt,...);
-void mi_check_print_warning(MI_CHECK *param, const char *fmt,...);
-void mi_check_print_info(MI_CHECK *param, const char *fmt,...);
+void mi_check_print_error(MI_CHECK *param, const char *fmt,...)
+  MY_ATTRIBUTE((format(printf, 2, 3)));
+void mi_check_print_warning(MI_CHECK *param, const char *fmt,...)
+  MY_ATTRIBUTE((format(printf, 2, 3)));
+void mi_check_print_info(MI_CHECK *param, const char *fmt,...)
+  MY_ATTRIBUTE((format(printf, 2, 3)));
 int flush_pending_blocks(MI_SORT_PARAM *param);
 int sort_ft_buf_flush(MI_SORT_PARAM *sort_param);
 int thr_write_keys(MI_SORT_PARAM *sort_param);

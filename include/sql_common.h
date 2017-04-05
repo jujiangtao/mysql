@@ -18,12 +18,15 @@
 
 #define SQL_COMMON_INCLUDED
 
+/**
+  @file include/sql_common.h
+*/
+
+#include <mysql.h>
+
 #ifdef	__cplusplus
 extern "C" {
 #endif
-
-#include <mysql.h>
-#include <hash.h>
 
 extern const char	*unknown_sqlstate;
 extern const char	*cant_connect_sqlstate;
@@ -99,7 +102,7 @@ struct st_mysql_options_extention {
   char *default_auth;
   char *ssl_crl;				/* PEM CRL file */
   char *ssl_crlpath;				/* PEM directory of CRL-s? */
-  HASH connection_attributes;
+  struct My_hash *connection_attributes;
   char *server_public_key_path;
   size_t connection_attributes_length;
   my_bool enable_cleartext_plugin;
@@ -107,6 +110,7 @@ struct st_mysql_options_extention {
   char *tls_version; /* TLS version option */
   long ssl_ctx_flags; /* SSL ctx options flag */
   unsigned int ssl_mode;
+  unsigned int retry_count;
 };
 
 typedef struct st_mysql_methods
@@ -152,7 +156,7 @@ typedef struct st_mysql_methods
                                            0, arg, length, 1, stmt) \
     : (set_mysql_error(mysql, CR_COMMANDS_OUT_OF_SYNC, unknown_sqlstate), 1))
 
-extern CHARSET_INFO *default_client_charset_info;
+extern struct charset_info_st *default_client_charset_info;
 MYSQL_FIELD *unpack_fields(MYSQL *mysql, MYSQL_ROWS *data,MEM_ROOT *alloc,
                            uint fields, my_bool default_value,
                            uint server_capabilities);
@@ -185,7 +189,7 @@ void set_mysql_extended_error(MYSQL *mysql, int errcode, const char *sqlstate,
 
 /* client side of the pluggable authentication */
 struct st_plugin_vio_info;
-void mpvio_info(Vio *vio, struct st_plugin_vio_info *info);
+void mpvio_info(MYSQL_VIO vio, struct st_plugin_vio_info *info);
 int run_plugin_auth(MYSQL *mysql, char *data, uint data_len,
                     const char *data_plugin, const char *db);
 int mysql_client_plugin_init();

@@ -56,35 +56,23 @@ in the index record. */
 #define BTR_EXTERN_LOCAL_STORED_MAX_SIZE	\
 	(BTR_EXTERN_FIELD_REF_SIZE * 2)
 
-/** The information is used for creating a new index tree when
-applying TRUNCATE log record during recovery */
-struct btr_create_t {
+/** The structure of a BLOB part header */
 
-	explicit btr_create_t(const byte* const ptr)
-		:
-		format_flags(),
-		n_fields(),
-		field_len(),
-		fields(ptr),
-		trx_id_pos(ULINT_UNDEFINED)
-	{
-		/* Do nothing */
-	}
+/** BLOB part len on this page */
+#define BTR_BLOB_HDR_PART_LEN		0
+/** next BLOB part page no, FIL_NULL if none */
+#define BTR_BLOB_HDR_NEXT_PAGE_NO	4
+/** Size of a BLOB part header, in bytes */
+#define BTR_BLOB_HDR_SIZE		8
 
-	/** Page format */
-	ulint			format_flags;
-
-	/** Numbr of index fields */
-	ulint			n_fields;
-
-	/** The length of the encoded meta-data */
-	ulint			field_len;
-
-	/** Field meta-data, encoded. */
-	const byte* const	fields;
-
-	/** Position of trx-id column. */
-	ulint			trx_id_pos;
-};
-
+/** The structure of a BLOB part header */
+/* @{ */
+/*--------------------------------------*/
+#define BTR_BLOB_HDR_PART_LEN		0	/*!< BLOB part len on this
+						page */
+#define BTR_BLOB_HDR_NEXT_PAGE_NO	4	/*!< next BLOB part page no,
+						FIL_NULL if none */
+/*--------------------------------------*/
+#define BTR_BLOB_HDR_SIZE		8	/*!< Size of a BLOB
+						part header, in bytes */
 #endif

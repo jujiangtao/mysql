@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2015, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1995, 2016, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -50,64 +50,24 @@ read-ahead is not done: this is to prevent flooding the buffer pool with
 i/o-fixed buffer blocks */
 #define BUF_READ_AHEAD_PEND_LIMIT	2
 
-/********************************************************************//**
-Unfixes the pages, unlatches the page,
-removes it from page_hash and removes it from LRU. */
-static
-void
-buf_read_page_handle_error(
-/*=======================*/
-	buf_page_t*	bpage)	/*!< in: pointer to the block */
-{
-	buf_pool_t*	buf_pool = buf_pool_from_bpage(bpage);
-	const bool	uncompressed = (buf_page_get_state(bpage)
-					== BUF_BLOCK_FILE_PAGE);
-
-	/* First unfix and release lock on the bpage */
-	buf_pool_mutex_enter(buf_pool);
-	mutex_enter(buf_page_get_mutex(bpage));
-	ut_ad(buf_page_get_io_fix(bpage) == BUF_IO_READ);
-	ut_ad(bpage->buf_fix_count == 0);
-
-	/* Set BUF_IO_NONE before we remove the block from LRU list */
-	buf_page_set_io_fix(bpage, BUF_IO_NONE);
-
-	if (uncompressed) {
-		rw_lock_x_unlock_gen(
-			&((buf_block_t*) bpage)->lock,
-			BUF_IO_READ);
-	}
-
-	mutex_exit(buf_page_get_mutex(bpage));
-
-	/* remove the block from LRU list */
-	buf_LRU_free_one_page(bpage);
-
-	ut_ad(buf_pool->n_pend_reads > 0);
-	buf_pool->n_pend_reads--;
-
-	buf_pool_mutex_exit(buf_pool);
-}
-
 /** Low-level function which reads a page asynchronously from a file to the
 buffer buf_pool if it is not already there, in which case does nothing.
 Sets the io_fix flag and sets an exclusive lock on the buffer frame. The
 flag is cleared and the x-lock released by an i/o-handler thread.
-
-@param[out] err		DB_SUCCESS, DB_TABLESPACE_DELETED or
-			DB_TABLESPACE_TRUNCATED if we are trying
-			to read from a non-existent tablespace, a
-			tablespace which is just now being dropped,
-			or a tablespace which is truncated
-@param[in] sync		true if synchronous aio is desired
-@param[in] type		IO type, SIMULATED, IGNORE_MISSING
-@param[in] mode		BUF_READ_IBUF_PAGES_ONLY, ...,
-@param[in] page_id	page id
-@param[in] unzip	true=request uncompressed page
-@return 1 if a read request was queued, 0 if the page already resided
-in buf_pool, or if the page is in the doublewrite buffer blocks in
-which case it is never read into the pool, or if the tablespace does
-not exist or is being dropped */
+@param[out]	err		DB_SUCCESS or DB_TABLESPACE_DELETED
+				if we are trying to read from a non-existent
+				tablespace or a tablespace which is just now
+				being dropped
+@param[in]	sync		whether synchronous aio is desired
+@param[in]	type		Request type
+@param[in]	mode		BUF_READ_IBUF_PAGES_ONLY, ...
+@param[in]	page_id		page id
+@param[in]	page_size	page size
+@param[in]	unzip		true=request uncompressed page
+@return 1 if a read request was queued, 0 if the page already resided in
+buf_pool, or if the page is in the doublewrite buffer blocks in which case it
+is never read into the pool, or if the tablespace does not exist or is being
+dropped */
 static
 ulint
 buf_read_page_low(
@@ -161,6 +121,7 @@ buf_read_page_low(
 			      sync ? "sync" : "async"));
 
 	ut_ad(buf_page_in_file(bpage));
+	ut_ad(!mutex_own(&buf_pool_from_bpage(bpage)->LRU_list_mutex));
 
 	if (sync) {
 		thd_wait_begin(NULL, THD_WAIT_DISKIO);
@@ -187,20 +148,8 @@ buf_read_page_low(
 	}
 
 	if (*err != DB_SUCCESS) {
-		if (*err == DB_TABLESPACE_TRUNCATED) {
-			/* Remove the page which is outside the
-			truncated tablespace bounds when recovering
-			from a crash happened during a truncation */
-			buf_read_page_handle_error(bpage);
-			if (recv_recovery_on) {
-				mutex_enter(&recv_sys->mutex);
-				ut_ad(recv_sys->n_addrs > 0);
-				recv_sys->n_addrs--;
-				mutex_exit(&recv_sys->mutex);
-			}
-			return(0);
-		} else if (IORequest::ignore_missing(type)
-			   || *err == DB_TABLESPACE_DELETED) {
+		if (IORequest::ignore_missing(type)
+		    || *err == DB_TABLESPACE_DELETED) {
 			buf_read_page_handle_error(bpage);
 			return(0);
 		}
@@ -245,10 +194,10 @@ buf_read_ahead_random(
 	ulint		recent_blocks	= 0;
 	ulint		ibuf_mode;
 	ulint		count;
-	ulint		low, high;
+	page_no_t	low, high;
 	dberr_t		err;
-	ulint		i;
-	const ulint	buf_read_ahead_random_area
+	page_no_t	i;
+	const page_no_t	buf_read_ahead_random_area
 				= BUF_READ_AHEAD_AREA(buf_pool);
 
 	if (!srv_random_read_ahead) {
@@ -288,11 +237,9 @@ buf_read_ahead_random(
 		return(0);
 	}
 
-	buf_pool_mutex_enter(buf_pool);
-
+	os_rmb;
 	if (buf_pool->n_pend_reads
 	    > buf_pool->curr_size / BUF_READ_AHEAD_PEND_LIMIT) {
-		buf_pool_mutex_exit(buf_pool);
 
 		return(0);
 	}
@@ -301,8 +248,12 @@ buf_read_ahead_random(
 	that is, reside near the start of the LRU list. */
 
 	for (i = low; i < high; i++) {
-		const buf_page_t*	bpage = buf_page_hash_get(
-			buf_pool, page_id_t(page_id.space(), i));
+
+		rw_lock_t*		hash_lock;
+		const buf_page_t*	bpage;
+
+		bpage = buf_page_hash_get_s_locked(
+			buf_pool, page_id_t(page_id.space(), i), &hash_lock);
 
 		if (bpage != NULL
 		    && buf_page_is_accessed(bpage)
@@ -313,13 +264,16 @@ buf_read_ahead_random(
 			if (recent_blocks
 			    >= BUF_READ_AHEAD_RANDOM_THRESHOLD(buf_pool)) {
 
-				buf_pool_mutex_exit(buf_pool);
+				rw_lock_s_unlock(hash_lock);
 				goto read_ahead;
 			}
 		}
+
+		if (bpage != NULL) {
+			rw_lock_s_unlock(hash_lock);
+		}
 	}
 
-	buf_pool_mutex_exit(buf_pool);
 	/* Do nothing */
 	return(0);
 
@@ -394,12 +348,6 @@ buf_read_page(
 {
 	ulint		count;
 	dberr_t		err;
-
-	/* We do synchronous IO because our AIO completion code
-	is sub-optimal. See buf_page_io_complete(), we have to
-	acquire the buffer pool mutex before acquiring the block
-	mutex, required for updating the page state. The acquire
-	of the buffer pool mutex becomes an expensive bottleneck. */
 
 	count = buf_read_page_low(
 		&err, true,
@@ -489,17 +437,18 @@ buf_read_ahead_linear(
 	buf_page_t*	bpage;
 	buf_frame_t*	frame;
 	buf_page_t*	pred_bpage	= NULL;
-	ulint		pred_offset;
-	ulint		succ_offset;
+	unsigned	pred_bpage_is_accessed = 0;
+	page_no_t	pred_offset;
+	page_no_t	succ_offset;
 	int		asc_or_desc;
-	ulint		new_offset;
+	page_no_t	new_offset;
 	ulint		fail_count;
-	ulint		low, high;
+	page_no_t	low, high;
 	dberr_t		err;
-	ulint		i;
-	const ulint	buf_read_ahead_linear_area
+	page_no_t	i;
+	const page_no_t	buf_read_ahead_linear_area
 		= BUF_READ_AHEAD_AREA(buf_pool);
-	ulint		threshold;
+	page_no_t	threshold;
 
 	/* check if readahead is disabled */
 	if (!srv_read_ahead_threshold) {
@@ -537,7 +486,9 @@ buf_read_ahead_linear(
 	ulint	space_size;
 
 	if (fil_space_t* space = fil_space_acquire(page_id.space())) {
+
 		space_size = space->size;
+
 		fil_space_release(space);
 
 		if (high > space_size) {
@@ -548,11 +499,12 @@ buf_read_ahead_linear(
 		return(0);
 	}
 
-	buf_pool_mutex_enter(buf_pool);
+	/* Read memory barrier */
+
+	os_rmb;
 
 	if (buf_pool->n_pend_reads
 	    > buf_pool->curr_size / BUF_READ_AHEAD_PEND_LIMIT) {
-		buf_pool_mutex_exit(buf_pool);
 
 		return(0);
 	}
@@ -569,14 +521,19 @@ buf_read_ahead_linear(
 
 	/* How many out of order accessed pages can we ignore
 	when working out the access pattern for linear readahead */
-	threshold = ut_min(static_cast<ulint>(64 - srv_read_ahead_threshold),
-			   BUF_READ_AHEAD_AREA(buf_pool));
+	threshold = std::min(static_cast<page_no_t>(
+				     64 - srv_read_ahead_threshold),
+			     BUF_READ_AHEAD_AREA(buf_pool));
 
 	fail_count = 0;
 
+	rw_lock_t*	hash_lock;
+
 	for (i = low; i < high; i++) {
-		bpage = buf_page_hash_get(buf_pool,
-					  page_id_t(page_id.space(), i));
+
+		bpage = buf_page_hash_get_s_locked(buf_pool,
+						   page_id_t(page_id.space(),
+							     i), &hash_lock);
 
 		if (bpage == NULL || !buf_page_is_accessed(bpage)) {
 			/* Not accessed */
@@ -593,7 +550,7 @@ buf_read_ahead_linear(
 			a little against this. */
 			int res = ut_ulint_cmp(
 				buf_page_is_accessed(bpage),
-				buf_page_is_accessed(pred_bpage));
+				pred_bpage_is_accessed);
 			/* Accesses not in the right order */
 			if (res != 0 && res != asc_or_desc) {
 				fail_count++;
@@ -602,22 +559,29 @@ buf_read_ahead_linear(
 
 		if (fail_count > threshold) {
 			/* Too many failures: return */
-			buf_pool_mutex_exit(buf_pool);
+			if (bpage) {
+				rw_lock_s_unlock(hash_lock);
+			}
 			return(0);
 		}
 
-		if (bpage && buf_page_is_accessed(bpage)) {
-			pred_bpage = bpage;
+		if (bpage) {
+			if (buf_page_is_accessed(bpage)) {
+				pred_bpage = bpage;
+				pred_bpage_is_accessed
+					= buf_page_is_accessed(bpage);
+			}
+
+			rw_lock_s_unlock(hash_lock);
 		}
 	}
 
 	/* If we got this far, we know that enough pages in the area have
 	been accessed in the right order: linear read-ahead can be sensible */
 
-	bpage = buf_page_hash_get(buf_pool, page_id);
+	bpage = buf_page_hash_get_s_locked(buf_pool, page_id, &hash_lock);
 
 	if (bpage == NULL) {
-		buf_pool_mutex_exit(buf_pool);
 
 		return(0);
 	}
@@ -643,7 +607,7 @@ buf_read_ahead_linear(
 	pred_offset = fil_page_get_prev(frame);
 	succ_offset = fil_page_get_next(frame);
 
-	buf_pool_mutex_exit(buf_pool);
+	rw_lock_s_unlock(hash_lock);
 
 	if ((page_id.page_no() == low)
 	    && (succ_offset == page_id.page_no() + 1)) {
@@ -750,8 +714,8 @@ buf_read_ibuf_merge_pages(
 					for the highest address page
 					to get read in, before this
 					function returns */
-	const ulint*	space_ids,	/*!< in: array of space ids */
-	const ulint*	page_nos,	/*!< in: array of page numbers
+	const space_id_t*	space_ids,	/*!< in: array of space ids */
+	const page_no_t*	page_nos,	/*!< in: array of page numbers
 					to read, with the highest page
 					number the last in the
 					array */
@@ -779,6 +743,7 @@ buf_read_ibuf_merge_pages(
 			continue;
 		}
 
+		os_rmb;
 		while (buf_pool->n_pend_reads
 		       > buf_pool->curr_size / BUF_READ_AHEAD_PEND_LIMIT) {
 			os_thread_sleep(500000);
@@ -788,7 +753,7 @@ buf_read_ibuf_merge_pages(
 
 		buf_read_page_low(&err,
 				  sync && (i + 1 == n_stored),
-				  0,
+				  IORequest::IGNORE_MISSING,
 				  BUF_READ_ANY_PAGE, page_id, page_size,
 				  true);
 
@@ -818,10 +783,10 @@ highest page number the last in the array
 @param[in]	n_stored	number of page numbers in the array */
 void
 buf_read_recv_pages(
-	bool		sync,
-	ulint		space_id,
-	const ulint*	page_nos,
-	ulint		n_stored)
+	bool			sync,
+	space_id_t		space_id,
+	const page_no_t*	page_nos,
+	ulint			n_stored)
 {
 	ulint			count;
 	dberr_t			err;
@@ -844,6 +809,7 @@ buf_read_recv_pages(
 		count = 0;
 
 		buf_pool = buf_pool_get(cur_page_id);
+		os_rmb;
 		while (buf_pool->n_pend_reads >= recv_n_pool_free_frames / 2) {
 
 			os_aio_simulated_wake_handler_threads();

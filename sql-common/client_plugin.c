@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -32,10 +32,13 @@
 #include <my_sys.h>
 #include <m_string.h>
 #include <my_thread.h>
+#include "sql_common.h"
 
 #include <sql_common.h>
 #include "errmsg.h"
 #include <mysql/client_plugin.h>
+#include "mysql/psi/mysql_memory.h"
+#include "mysql/service_mysql_alloc.h"
 
 #ifdef HAVE_DLFCN_H
 #include <dlfcn.h>
@@ -53,7 +56,7 @@ PSI_mutex_key key_mutex_LOCK_load_client_plugin;
 
 static PSI_mutex_info all_client_plugin_mutexes[]=
 {
-  {&key_mutex_LOCK_load_client_plugin, "LOCK_load_client_plugin", PSI_FLAG_GLOBAL}
+  {&key_mutex_LOCK_load_client_plugin, "LOCK_load_client_plugin", PSI_FLAG_GLOBAL, 0}
 };
 
 static PSI_memory_info all_client_plugin_memory[]=
@@ -110,7 +113,8 @@ static int is_not_initialized(MYSQL *mysql, const char *name)
     return 0;
 
   set_mysql_extended_error(mysql, CR_AUTH_PLUGIN_CANNOT_LOAD,
-                           unknown_sqlstate, ER(CR_AUTH_PLUGIN_CANNOT_LOAD),
+                           unknown_sqlstate,
+                           ER_CLIENT(CR_AUTH_PLUGIN_CANNOT_LOAD),
                            name, "not initialized");
   return 1;
 }
@@ -239,7 +243,7 @@ err2:
     plugin->deinit();
 err1:
   set_mysql_extended_error(mysql, CR_AUTH_PLUGIN_CANNOT_LOAD, unknown_sqlstate,
-                           ER(CR_AUTH_PLUGIN_CANNOT_LOAD), plugin->name,
+                           ER_CLIENT(CR_AUTH_PLUGIN_CANNOT_LOAD), plugin->name,
                            errmsg);
   if (dlhandle)
     dlclose(dlhandle);
@@ -404,7 +408,7 @@ mysql_client_register_plugin(MYSQL *mysql,
   if (find_plugin(plugin->name, plugin->type))
   {
     set_mysql_extended_error(mysql, CR_AUTH_PLUGIN_CANNOT_LOAD,
-                             unknown_sqlstate, ER(CR_AUTH_PLUGIN_CANNOT_LOAD),
+                             unknown_sqlstate, ER_CLIENT(CR_AUTH_PLUGIN_CANNOT_LOAD),
                              plugin->name, "it is already loaded");
     plugin= NULL;
   }
@@ -532,7 +536,7 @@ err:
   mysql_mutex_unlock(&LOCK_load_client_plugin);
   DBUG_PRINT ("leave", ("plugin load error : %s", errmsg));
   set_mysql_extended_error(mysql, CR_AUTH_PLUGIN_CANNOT_LOAD, unknown_sqlstate,
-                           ER(CR_AUTH_PLUGIN_CANNOT_LOAD), name, errmsg);
+                           ER_CLIENT(CR_AUTH_PLUGIN_CANNOT_LOAD), name, errmsg);
   DBUG_RETURN (NULL);
 }
 
@@ -562,7 +566,7 @@ mysql_client_find_plugin(MYSQL *mysql, const char *name, int type)
   if (type < 0 || type >= MYSQL_CLIENT_MAX_PLUGINS)
   {
     set_mysql_extended_error(mysql, CR_AUTH_PLUGIN_CANNOT_LOAD, unknown_sqlstate,
-                             ER(CR_AUTH_PLUGIN_CANNOT_LOAD), name,
+                             ER_CLIENT(CR_AUTH_PLUGIN_CANNOT_LOAD), name,
                              "invalid type");
   }
 

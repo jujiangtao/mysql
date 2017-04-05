@@ -20,6 +20,7 @@
 #include "sql_string.h"                        /* String */
 #include "sql_plist.h" /* I_P_List */
 #include "mysql_com.h" /* MYSQL_ERRMSG_SIZE */
+#include "mysql/service_my_snprintf.h"
 
 class THD;
 class my_decimal;
@@ -113,7 +114,7 @@ private:
     @param mysql_errno       MYSQL_ERRNO
     @param returned_sqlstate RETURNED_SQLSTATE
     @param severity          Severity level - error, warning or note.
-    @param message_Text      MESSAGE_TEXT
+    @param message_text      MESSAGE_TEXT
   */
   Sql_condition(MEM_ROOT *mem_root,
                 uint mysql_errno,
@@ -327,9 +328,10 @@ public:
     report fatal errors (such as out-of-memory errors) when no further
     processing is possible.
 
+    @param thd              Thread handle
     @param mysql_errno      SQL-condition error number
   */
-  void set_error_status(uint mysql_errno);
+  void set_error_status(THD *thd, uint mysql_errno);
 
   /**
     Set ERROR status in the Diagnostics Area.
@@ -724,8 +726,8 @@ void push_warning_printf(THD *thd, Sql_condition::enum_severity_level severity,
   @param thd         Thread context. If NULL, warning is written
                      to the error log, otherwise the warning is
                      sent to the client.
-  @param old_syntax
-  @param new_syntax
+  @param old_syntax  Deprecated syntax.
+  @param new_syntax  Replacement syntax.
 */
 void push_deprecated_warn(THD *thd, const char *old_syntax,
                           const char *new_syntax);
@@ -742,7 +744,7 @@ void push_deprecated_warn(THD *thd, const char *old_syntax,
   @param thd         Thread context. If NULL, warning is written
                      to the error log, otherwise the warning is
                      sent to the client.
-  @param old_syntax
+  @param old_syntax  Deprecated syntax.
 */
 void push_deprecated_warn_no_replacement(THD *thd, const char *old_syntax);
 

@@ -17,16 +17,24 @@
 
 #include "rpl_gtid.h"
 
-#include "my_stacktrace.h"       // my_safe_printf_stderr
-#include "mysqld_error.h"        // ER_*
+#include "my_stacktrace.h"             // my_safe_printf_stderr
+#include "mysql/service_my_snprintf.h" // my_snprintf
+#include "mysqld_error.h"              // ER_*
 #include "sql_const.h"
+#include "m_string.h"                  // my_strtoll
+
+#ifdef MYSQL_CLIENT
+#include "mysqlbinlog.h"
+#endif
 
 #ifndef MYSQL_CLIENT
 #include "log.h"                 // sql_print_warning
 #endif
 
+extern "C" {
 PSI_memory_key key_memory_Gtid_set_to_string;
 PSI_memory_key key_memory_Gtid_set_Interval_chunk;
+}
 
 using std::min;
 using std::max;
@@ -66,7 +74,7 @@ Gtid_set::Gtid_set(Sid_map *_sid_map, Checkable_rwlock *_sid_lock)
 Gtid_set::Gtid_set(Sid_map *_sid_map, const char *text,
                    enum_return_status *status, Checkable_rwlock *_sid_lock)
   : sid_lock(_sid_lock), sid_map(_sid_map),
-    m_intervals(key_memory_Gtid_set_Interval_chunk)
+    m_intervals(key_memory_Gtid_set_Interval_chunk), m_appendable(false)
 {
   DBUG_ASSERT(_sid_map != NULL);
   init();
@@ -472,6 +480,12 @@ enum_return_status Gtid_set::add_gtid_text(const char *text, bool *anonymous)
     *anonymous= false;
 
   SKIP_WHITESPACE();
+  if (*s == '+')
+  {
+    m_appendable= true;
+    s++;
+  }
+  SKIP_WHITESPACE();
   if (*s == 0)
   {
     DBUG_PRINT("info", ("'%s' is empty", text));
@@ -523,7 +537,7 @@ enum_return_status Gtid_set::add_gtid_text(const char *text, bool *anonymous)
     else
     {
       rpl_sid sid;
-      if (sid.parse(s) != 0)
+      if (sid.parse(s, binary_log::Uuid::TEXT_LENGTH) != 0)
       {
         DBUG_PRINT("info", ("expected UUID; found garbage '%.80s' at char %d in '%s'", s, (int)(s - text), text));
         goto parse_error;
@@ -610,6 +624,9 @@ bool Gtid_set::is_valid(const char *text)
   const char *s= text;
 
   SKIP_WHITESPACE();
+  if (*s == '+')
+    s++;
+  SKIP_WHITESPACE();
   do
   {
     // Skip commas (we allow empty SID:GNO specifications).
@@ -622,7 +639,7 @@ bool Gtid_set::is_valid(const char *text)
       DBUG_RETURN(true);
 
     // Parse SID.
-    if (!rpl_sid::is_valid(s))
+    if (!rpl_sid::is_valid(s, binary_log::Uuid::TEXT_LENGTH))
       DBUG_RETURN(false);
     s += binary_log::Uuid::TEXT_LENGTH;
     SKIP_WHITESPACE();

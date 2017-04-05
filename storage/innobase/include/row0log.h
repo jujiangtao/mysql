@@ -55,15 +55,14 @@ row_log_allocate(
 	const ulint*	col_map,/*!< in: mapping of old column
 				numbers to new ones, or NULL if !table */
 	const char*	path)	/*!< in: where to create temporary file */
-	MY_ATTRIBUTE((nonnull(1), warn_unused_result));
+	MY_ATTRIBUTE((warn_unused_result));
 
 /******************************************************//**
 Free the row log for an index that was being created online. */
 void
 row_log_free(
 /*=========*/
-	row_log_t*&	log)	/*!< in,own: row log */
-	MY_ATTRIBUTE((nonnull));
+	row_log_t*&	log);	/*!< in,own: row log */
 
 /******************************************************//**
 Free the row log for an index on which online creation was aborted. */
@@ -71,8 +70,7 @@ UNIV_INLINE
 void
 row_log_abort_sec(
 /*==============*/
-	dict_index_t*	index)	/*!< in/out: index (x-latched) */
-	MY_ATTRIBUTE((nonnull));
+	dict_index_t*	index);	/*!< in/out: index (x-latched) */
 
 /******************************************************//**
 Try to log an operation to a secondary index that is
@@ -87,7 +85,7 @@ row_log_online_op_try(
 	const dtuple_t* tuple,	/*!< in: index tuple */
 	trx_id_t	trx_id)	/*!< in: transaction ID for insert,
 				or 0 for delete */
-	MY_ATTRIBUTE((nonnull, warn_unused_result));
+	MY_ATTRIBUTE((warn_unused_result));
 /******************************************************//**
 Logs an operation to a secondary index that is (or was) being created. */
 void
@@ -97,7 +95,7 @@ row_log_online_op(
 	const dtuple_t*	tuple,	/*!< in: index tuple */
 	trx_id_t	trx_id)	/*!< in: transaction ID for insert,
 				or 0 for delete */
-	UNIV_COLD MY_ATTRIBUTE((nonnull));
+	UNIV_COLD;
 
 /******************************************************//**
 Gets the error status of the online index rebuild log.
@@ -107,7 +105,7 @@ row_log_table_get_error(
 /*====================*/
 	const dict_index_t*	index)	/*!< in: clustered index of a table
 					that is being rebuilt online */
-	MY_ATTRIBUTE((nonnull, warn_unused_result));
+	MY_ATTRIBUTE((warn_unused_result));
 
 /** Check whether a virtual column is indexed in the new table being
 created during alter table
@@ -133,7 +131,7 @@ row_log_table_delete(
 	const ulint*	offsets,/*!< in: rec_get_offsets(rec,index) */
 	const byte*	sys)	/*!< in: DB_TRX_ID,DB_ROLL_PTR that should
 				be logged, or NULL to use those in rec */
-	UNIV_COLD MY_ATTRIBUTE((nonnull(1,2,3)));
+	UNIV_COLD;
 
 /******************************************************//**
 Logs an update operation to a table that is being rebuilt.
@@ -150,8 +148,9 @@ row_log_table_update(
 				before the update */
 	const dtuple_t*	new_v_row,/*!< in: dtuple contains the new virtual
 				columns */
-	const dtuple_t*	old_v_row);/*!< in: dtuple contains the old virtual
+	const dtuple_t*	old_v_row)/*!< in: dtuple contains the old virtual
 				columns */
+	UNIV_COLD;
 
 /******************************************************//**
 Constructs the old PRIMARY KEY and DB_TRX_ID,DB_ROLL_PTR
@@ -170,7 +169,7 @@ row_log_table_get_pk(
 	byte*		sys,	/*!< out: DB_TRX_ID,DB_ROLL_PTR for
 				row_log_table_delete(), or NULL */
 	mem_heap_t**	heap)	/*!< in/out: memory heap where allocated */
-	UNIV_COLD MY_ATTRIBUTE((nonnull(1,2,5), warn_unused_result));
+	UNIV_COLD MY_ATTRIBUTE((warn_unused_result));
 
 /******************************************************//**
 Logs an insert to a table that is being rebuilt.
@@ -183,23 +182,24 @@ row_log_table_insert(
 	const dtuple_t*	ventry,	/*!< in: dtuple holding virtual column info */
 	dict_index_t*	index,	/*!< in/out: clustered index, S-latched
 				or X-latched */
-	const ulint*	offsets);/*!< in: rec_get_offsets(rec,index) */
+	const ulint*	offsets)/*!< in: rec_get_offsets(rec,index) */
+	UNIV_COLD;
 /******************************************************//**
 Notes that a BLOB is being freed during online ALTER TABLE. */
 void
 row_log_table_blob_free(
 /*====================*/
 	dict_index_t*	index,	/*!< in/out: clustered index, X-latched */
-	ulint		page_no)/*!< in: starting page number of the BLOB */
-	UNIV_COLD MY_ATTRIBUTE((nonnull));
+	page_no_t	page_no)/*!< in: starting page number of the BLOB */
+	UNIV_COLD;
 /******************************************************//**
 Notes that a BLOB is being allocated during online ALTER TABLE. */
 void
 row_log_table_blob_alloc(
 /*=====================*/
 	dict_index_t*	index,	/*!< in/out: clustered index, X-latched */
-	ulint		page_no)/*!< in: starting page number of the BLOB */
-	UNIV_COLD MY_ATTRIBUTE((nonnull));
+	page_no_t	page_no)/*!< in: starting page number of the BLOB */
+	UNIV_COLD;
 
 /** Apply the row_log_table log to a table upon completing rebuild.
 @param[in]	thr		query graph
@@ -225,7 +225,7 @@ trx_id_t
 row_log_get_max_trx(
 /*================*/
 	dict_index_t*	index)	/*!< in: index, must be locked */
-	MY_ATTRIBUTE((nonnull, warn_unused_result));
+	MY_ATTRIBUTE((warn_unused_result));
 
 /** Apply the row log to the index upon completing index creation.
 @param[in]	trx	transaction (for checking if the operation was
@@ -255,8 +255,6 @@ row_log_estimate_work(
 	const dict_index_t*	index);
 #endif /* HAVE_PSI_STAGE_INTERFACE */
 
-#ifndef UNIV_NONINL
 #include "row0log.ic"
-#endif
 
 #endif /* row0log.h */

@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2016, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -17,7 +17,7 @@
 #define TABLE_EVENTS_TRANSACTIONS_H
 
 /**
-  @file storage/perfschema/table_events_HA_ERR_WRONG_COMMAND.h
+  @file storage/perfschema/table_events_transactions.h
   Table EVENTS_TRANSACTIONS_xxx (declarations).
 */
 
@@ -30,9 +30,28 @@
 struct PFS_thread;
 
 /**
-  @addtogroup Performance_schema_tables
+  @addtogroup performance_schema_tables
   @{
 */
+
+class PFS_index_events_transactions : public PFS_engine_index
+{
+public:
+  PFS_index_events_transactions()
+    : PFS_engine_index(&m_key_1, &m_key_2),
+    m_key_1("THREAD_ID"), m_key_2("EVENT_ID")
+  {}
+
+  ~PFS_index_events_transactions()
+  {}
+
+  bool match(PFS_thread *pfs);
+  bool match(PFS_events *pfs);
+
+private:
+  PFS_key_thread_id m_key_1;
+  PFS_key_event_id m_key_2;
+};
 
 /** A row of table_events_transactions_common. */
 struct row_events_transactions
@@ -148,10 +167,14 @@ public:
   static int delete_all_rows();
   static ha_rows get_row_count();
 
+  virtual void reset_position(void);
+
   virtual int rnd_init(bool scan);
   virtual int rnd_next();
   virtual int rnd_pos(const void *pos);
-  virtual void reset_position(void);
+
+  virtual int index_init(uint idx, bool sorted);
+  virtual int index_next();
 
 protected:
   table_events_transactions_current();
@@ -177,6 +200,8 @@ private:
   PFS_simple_index m_pos;
   /** Next position. */
   PFS_simple_index m_next_pos;
+
+  PFS_index_events_transactions *m_opened_index;
 };
 
 /** Table PERFORMANCE_SCHEMA.EVENTS_TRANSACTIONS_HISTORY. */
@@ -189,10 +214,14 @@ public:
   static int delete_all_rows();
   static ha_rows get_row_count();
 
+  virtual void reset_position(void);
+
   virtual int rnd_init(bool scan);
   virtual int rnd_next();
   virtual int rnd_pos(const void *pos);
-  virtual void reset_position(void);
+
+  virtual int index_init(uint idx, bool sorted);
+  virtual int index_next();
 
 protected:
   table_events_transactions_history();
@@ -209,6 +238,8 @@ private:
   pos_events_transactions_history m_pos;
   /** Next position. */
   pos_events_transactions_history m_next_pos;
+
+  PFS_index_events_transactions *m_opened_index;
 };
 
 /** Table PERFORMANCE_SCHEMA.EVENTS_TRANSACTIONS_HISTORY_LONG. */

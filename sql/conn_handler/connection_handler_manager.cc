@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2013, 2015, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2013, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -26,6 +26,7 @@
 #include "plugin_connection_handler.h" // Plugin_connection_handler
 #include "sql_callback.h"              // MYSQL_CALLBACK
 #include "sql_class.h"                 // THD
+#include "current_thd.h"
 
 
 // Initialize static members
@@ -123,7 +124,7 @@ static PSI_mutex_key key_LOCK_connection_count;
 
 static PSI_mutex_info all_conn_manager_mutexes[]=
 {
-  { &key_LOCK_connection_count, "LOCK_connection_count", PSI_FLAG_GLOBAL}
+  { &key_LOCK_connection_count, "LOCK_connection_count", PSI_FLAG_GLOBAL, 0}
 };
 
 static PSI_cond_key key_COND_connection_count;
@@ -185,6 +186,7 @@ bool Connection_handler_manager::init()
                    &LOCK_connection_count, MY_MUTEX_INIT_FAST);
 
   mysql_cond_init(key_COND_connection_count, &COND_connection_count);
+
   max_threads= connection_handler->get_max_threads();
 
   // Init common callback functions.
@@ -258,7 +260,7 @@ bool Connection_handler_manager::unload_connection_handler()
 void
 Connection_handler_manager::process_new_connection(Channel_info* channel_info)
 {
-  if (abort_loop || !check_and_incr_conn_count())
+  if (connection_events_loop_aborted() || !check_and_incr_conn_count())
   {
     channel_info->send_error_and_close_channel(ER_CON_COUNT_ERROR, 0, true);
     delete channel_info;
@@ -332,4 +334,4 @@ int my_connection_handler_reset()
   return 0;
 #endif
 }
-};
+}

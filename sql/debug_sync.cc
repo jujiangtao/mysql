@@ -1,4 +1,4 @@
-/* Copyright (c) 2009, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2009, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -344,8 +344,11 @@
 
 #if defined(ENABLED_DEBUG_SYNC)
 
-#include "sql_parse.h"
 #include "log.h"
+#include "current_thd.h"
+#include "sql_class.h"
+#include "derror.h"
+#include "mysql/psi/mysql_memory.h"
 
 #include <set>
 #include <string>
@@ -474,7 +477,7 @@ static PSI_mutex_key key_debug_sync_globals_ds_mutex;
 
 static PSI_mutex_info all_debug_sync_mutexes[]=
 {
-  { &key_debug_sync_globals_ds_mutex, "DEBUG_SYNC::mutex", PSI_FLAG_GLOBAL}
+  { &key_debug_sync_globals_ds_mutex, "DEBUG_SYNC::mutex", PSI_FLAG_GLOBAL, 0}
 };
 
 static PSI_cond_key key_debug_sync_globals_ds_cond;
@@ -1113,8 +1116,8 @@ static st_debug_sync_action *debug_sync_get_action(THD *thd,
   }
   DBUG_ASSERT(action >= ds_control->ds_action);
   DBUG_ASSERT(action < ds_control->ds_action + ds_control->ds_active);
-  DBUG_PRINT("debug_sync", ("action: 0x%lx  array: 0x%lx  count: %u",
-                            (long) action, (long) ds_control->ds_action,
+  DBUG_PRINT("debug_sync", ("action: %p  array: %p  count: %u",
+                            action, ds_control->ds_action,
                             ds_control->ds_active));
 
   DBUG_RETURN(action);
@@ -1722,7 +1725,7 @@ static bool debug_sync_eval_action(THD *thd, char *action_str)
   Set the system variable 'debug_sync'.
 
   @param[in]    thd             thread handle
-  @param[in]    var             set variable request
+  @param[in]    val_str         set variable request
 
   @return       status
     @retval     FALSE           ok, variable is set
@@ -1814,14 +1817,14 @@ uchar *debug_sync_value_ptr(THD *thd)
 /**
   Return true if the signal is found in global signal list.
 
-  @param signal Signal name identifying the signal.
+  @param signal_name Signal name identifying the signal.
 
   @note
     If signal is found in the global signal set, it means that the
     signal thread has signalled to the waiting thread. This method
     must be called with the debug_sync_global.ds_mutex held.
 
-  @eretval true  if signal is found in the global signal list.
+  @retval true  if signal is found in the global signal list.
   @retval false otherwise.
 */
 
@@ -1835,7 +1838,7 @@ static inline bool is_signalled(const std::string *signal_name)
 /**
   Return false if signal has been added to global signal list.
 
-  @param signal signal name that is to be added to the global signal
+  @param signal_name signal name that is to be added to the global signal
          list.
 
   @note
@@ -1853,7 +1856,7 @@ static inline void add_signal_event(const std::string *signal_name)
 /**
   Remove the signal from the global signal list.
 
-  @param signal signal name to be removed from the global signal list.
+  @param signal_name signal name to be removed from the global signal list.
 
   @note
     This method erases the signal from the signal list.  This happens
@@ -1992,7 +1995,8 @@ static void debug_sync_execute(THD *thd, st_debug_sync_action *action)
         {
           // We should not make the statement fail, even if in strict mode.
           push_warning(thd, Sql_condition::SL_WARNING,
-                       ER_DEBUG_SYNC_TIMEOUT, ER(ER_DEBUG_SYNC_TIMEOUT));
+                       ER_DEBUG_SYNC_TIMEOUT,
+                       ER_THD(thd, ER_DEBUG_SYNC_TIMEOUT));
           DBUG_EXECUTE_IF("debug_sync_abort_on_timeout", DBUG_ABORT(););
           break;
         }

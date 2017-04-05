@@ -7,8 +7,12 @@
 # force lower-case-table-names=1 (linux/macosx have different defaults)
 # force symbolic-links=0 (valgrind build has a different default)
 #
+--let $MYDIR= $MYSQL_TMP_DIR/temp
+--mkdir $MYDIR
+--let $TMP_DATADIR= $MYDIR/data
+--mkdir $TMP_DATADIR
 
-exec $MYSQLD_BOOTSTRAP_CMD --symbolic-links=0 --lower-case-table-names=1 --help --verbose > $MYSQL_TMP_DIR/mysqld--help.txt 2>/dev/null;
+exec $MYSQLD_BOOTSTRAP_CMD --datadir=$TMP_DATADIR --symbolic-links=0 --lower-case-table-names=1 --help --verbose > $MYSQL_TMP_DIR/mysqld--help.txt 2>/dev/null;
 
 # The inline perl code below will copy $MYSQL_TMP_DIR/mysqld--help.txt
 # to output, but filter away some variable stuff (e.g. paths).
@@ -56,6 +60,8 @@ perl;
     s/\b196608\b/262144/;
     # Replacing port number with string
     s/^port \d+/port ####/;
+    # log-tc-size varies by platform
+    s/^log-tc-size \d+/log-tc-size #####/;
     foreach $var (@env) { s/$ENV{$var}/$var/ }
     next if /use --skip-(use-)?symbolic-links to disable/; # for valgrind, again
     next if $skip;
@@ -64,3 +70,5 @@ perl;
   close F;
 EOF
 
+--rmdir $TMP_DATADIR
+--rmdir $MYDIR

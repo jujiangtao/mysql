@@ -13,7 +13,10 @@
    along with this program; if not, write to the Free Software Foundation,
    51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
 
-/** @file Temporary tables implementation */
+/**
+  @file sql/sql_tmp_table.cc
+  Temporary tables implementation.
+*/
 
 #include "sql_tmp_table.h"
 
@@ -26,10 +29,13 @@
 #include "opt_range.h"            // QUICK_SELECT_I
 #include "opt_trace.h"            // Opt_trace_object
 #include "opt_trace_context.h"    // Opt_trace_context
+#include "psi_memory_key.h"
 #include "sql_base.h"             // free_io_cache
 #include "sql_class.h"            // THD
 #include "sql_executor.h"         // SJ_TMP_TABLE
 #include "sql_plugin.h"           // plugin_unlock
+#include "current_thd.h"
+#include "mysqld.h"               // heap_hton use_temp_pool
 
 #include <algorithm>
 
@@ -247,6 +253,8 @@ static Field *create_tmp_field_for_schema(THD *thd, Item *item, TABLE *table)
                        the record in the original table.
                        If modify_item is 0 then fill_record() will update
                        the temporary table
+  @param table_cant_handle_bit_fields
+  @param make_copy_field
 
   @retval NULL On error.
 
@@ -254,7 +262,7 @@ static Field *create_tmp_field_for_schema(THD *thd, Item *item, TABLE *table)
 */
 
 Field *create_tmp_field(THD *thd, TABLE *table,Item *item, Item::Type type,
-                        Func_ptr_array *copy_func, Field **from_field,
+                        Mem_root_array<Item *> *copy_func, Field **from_field,
                         Field **default_field,
                         bool group, bool modify_item,
                         bool table_cant_handle_bit_fields,
@@ -368,6 +376,7 @@ Field *create_tmp_field(THD *thd, TABLE *table,Item *item, Item::Type type,
     /* Fall through */
   case Item::COND_ITEM:
   case Item::FIELD_AVG_ITEM:
+  case Item::FIELD_BIT_ITEM:
   case Item::FIELD_STD_ITEM:
   case Item::FIELD_VARIANCE_ITEM:
   case Item::SUBSELECT_ITEM:
@@ -479,7 +488,7 @@ void Cache_temp_engine_properties::init(THD *thd)
   INNODB_MAX_KEY_LENGTH= handler->max_key_length();
   /*
     For ha_innobase::max_supported_key_part_length(), the returned value
-    relies on innodb_large_prefix. However, in innodb itself, the limitation
+    is constant. However, in innodb itself, the limitation
     on key_part length is up to the ROW_FORMAT. In current trunk, internal
     temp table's ROW_FORMAT is DYNAMIC. In order to keep the consistence
     between server and innodb, here we hard-coded 3072 as the maximum of
@@ -607,6 +616,22 @@ static void register_hidden_field(TABLE *table,
   field->table= field->orig_table= table;
   field->field_index= 0;
 }
+
+
+/**
+  Helper function which evaluates correct TABLE_SHARE::real_row_type
+  for the temporary table.
+*/
+static void set_real_row_type(TABLE *table)
+{
+  HA_CREATE_INFO create_info;
+  create_info.row_type= table->s->row_type;
+  create_info.options|= HA_LEX_CREATE_TMP_TABLE |
+                        HA_LEX_CREATE_INTERNAL_TMP_TABLE;
+  create_info.table_options= table->s->db_create_options;
+  table->s->real_row_type= table->file->get_real_row_type(&create_info);
+}
+
 
 /**
   Create a temp table according to a field list.
@@ -1068,7 +1093,7 @@ update_hidden:
       share->db_plugin= ha_lock_engine(0, innodb_hton);
       break;
     default:
-      DBUG_ASSERT(0);
+      DBUG_ASSERT(0); /* purecov: deadcode */
       share->db_plugin= ha_lock_engine(0, innodb_hton);
     }
 
@@ -1101,6 +1126,7 @@ update_hidden:
     using_unique_constraint= true;
   keyinfo= param->keyinfo;
   keyinfo->table= table;
+  keyinfo->is_visible= true;
 
   if (group)
   {
@@ -1120,7 +1146,7 @@ update_hidden:
         param->group_parts;
       keyinfo->actual_key_parts= keyinfo->user_defined_key_parts;
       keyinfo->rec_per_key= 0;
-      keyinfo->algorithm= HA_KEY_ALG_UNDEF;
+      keyinfo->algorithm= table->file->get_default_index_algorithm();
       keyinfo->set_rec_per_key_array(NULL, NULL);
       keyinfo->set_in_memory_estimate(IN_MEMORY_ESTIMATE_UNKNOWN);
       keyinfo->name= (char*) "<group_key>";
@@ -1171,7 +1197,7 @@ update_hidden:
       keyinfo->actual_flags= keyinfo->flags= HA_NOSAME | HA_NULL_ARE_EQUAL;
       // TODO rename to <distinct_key>
       keyinfo->name= (char*) "<auto_key>";
-      keyinfo->algorithm= HA_KEY_ALG_UNDEF;
+      keyinfo->algorithm= table->file->get_default_index_algorithm();
       keyinfo->set_rec_per_key_array(NULL, NULL);
       keyinfo->set_in_memory_estimate(IN_MEMORY_ESTIMATE_UNKNOWN);
       /* Create a distinct key over the columns we are going to return */
@@ -1205,8 +1231,10 @@ update_hidden:
           Field_longlong(sizeof(ulonglong), false, "<hash_field>", true);
     if (!field)
     {
+      /* purecov: begin inspected */
       DBUG_ASSERT(thd->is_fatal_error);
       goto err;   // Got OOM
+      /* purecov: end */
     }
 
     // Mark hash_field as NOT NULL
@@ -1494,8 +1522,8 @@ update_hidden:
     hash_key->actual_key_parts= hash_key->usable_key_parts= 1;
     hash_key->user_defined_key_parts= 1;
     hash_key->set_rec_per_key_array(NULL, NULL);
+    hash_key->algorithm= table->file->get_default_index_algorithm();
     keyinfo->set_in_memory_estimate(IN_MEMORY_ESTIMATE_UNKNOWN);
-    hash_key->algorithm= HA_KEY_ALG_UNDEF;
     if (distinct)
       hash_key->name= (char*) "<hash_distinct_key>";
     else
@@ -1508,6 +1536,9 @@ update_hidden:
   if (thd->is_fatal_error)				// If end of memory
     goto err;					 /* purecov: inspected */
   share->db_record_offset= 1;
+
+  set_real_row_type(table);
+
   if (!param->skip_create_table)
   {
     if (instantiate_tmp_table(table, param->keyinfo, param->start_recinfo,
@@ -1696,7 +1727,7 @@ TABLE *create_duplicate_weedout_tmp_table(THD *thd,
     if (!field)
       DBUG_RETURN(0);
     field->table= table;
-    field->unireg_check= Field::NONE;
+    field->auto_flags= Field::NONE;
     field->flags= (NOT_NULL_FLAG | BINARY_FLAG | NO_DEFAULT_VALUE_FLAG);
     field->reset_fields();
     field->init(table);
@@ -1723,7 +1754,7 @@ TABLE *create_duplicate_weedout_tmp_table(THD *thd,
       share->db_plugin= ha_lock_engine(0, innodb_hton);
       break;
     default:
-      DBUG_ASSERT(0);
+      DBUG_ASSERT(0); /* purecov: deadcode */
       share->db_plugin= ha_lock_engine(0, innodb_hton);
     }
     table->file= get_new_handler(share, &table->mem_root,
@@ -1870,7 +1901,7 @@ TABLE *create_duplicate_weedout_tmp_table(THD *thd,
     keyinfo->key_length=0;
     {
       key_part_info->init_from_field(field);
-      DBUG_ASSERT(key_part_info->key_type == FIELDFLAG_BINARY);
+      key_part_info->bin_cmp= true;
 
       key_field= field->new_key_field(thd->mem_root, table, group_buff);
       if (!key_field)
@@ -1884,14 +1915,17 @@ TABLE *create_duplicate_weedout_tmp_table(THD *thd,
     table->key_info->usable_key_parts= 1;
     table->key_info->actual_key_parts= table->key_info->user_defined_key_parts;
     table->key_info->set_rec_per_key_array(NULL, NULL);
+    table->key_info->algorithm= table->file->get_default_index_algorithm();
     table->key_info->set_in_memory_estimate(IN_MEMORY_ESTIMATE_UNKNOWN);
-    table->key_info->algorithm= HA_KEY_ALG_UNDEF;
     table->key_info->name= (char*) "weedout_key";
   }
 
   if (thd->is_fatal_error)				// If end of memory
     goto err;
   share->db_record_offset= 1;
+
+  set_real_row_type(table);
+
   if (instantiate_tmp_table(table, table->key_info, start_recinfo, &recinfo,
                             0, 0, &thd->opt_trace))
     goto err;
@@ -1969,11 +2003,15 @@ TABLE *create_virtual_tmp_table(THD *thd, List<Create_field> &field_list)
   while ((cdef= it++))
   {
     *field= make_field(share, 0, cdef->length,
-                       (uchar*) (f_maybe_null(cdef->pack_flag) ? "" : 0),
-                       f_maybe_null(cdef->pack_flag) ? 1 : 0,
-                       cdef->pack_flag, cdef->sql_type, cdef->charset,
-                       cdef->geom_type, cdef->unireg_check,
-                       cdef->interval, cdef->field_name);
+                       (uchar*) (cdef->maybe_null ? "" : 0),
+                       cdef->maybe_null ? 1 : 0,
+                       cdef->sql_type, cdef->charset,
+                       cdef->geom_type, cdef->auto_flags,
+                       cdef->interval, cdef->field_name,
+                       cdef->maybe_null, cdef->is_zerofill,
+                       cdef->is_unsigned, cdef->decimals,
+                       cdef->treat_bit_as_char,
+                       cdef->pack_length_override);
     if (!*field)
       goto error;
     (*field)->init(table);
@@ -2051,7 +2089,7 @@ error:
 }
 
 
-bool open_tmp_table(TABLE *table)
+static bool open_tmp_table(TABLE *table)
 {
   int error;
   if ((error=table->file->ha_open(table, table->s->table_name.str,O_RDWR,
@@ -2099,10 +2137,10 @@ bool open_tmp_table(TABLE *table)
      TRUE  - Error
 */
 
-bool create_myisam_tmp_table(TABLE *table, KEY *keyinfo, 
-                             MI_COLUMNDEF *start_recinfo,
-                             MI_COLUMNDEF **recinfo, 
-                             ulonglong options, my_bool big_tables)
+static bool create_myisam_tmp_table(TABLE *table, KEY *keyinfo,
+                                    MI_COLUMNDEF *start_recinfo,
+                                    MI_COLUMNDEF **recinfo,
+                                    ulonglong options, my_bool big_tables)
 {
   int error;
   MI_KEYDEF keydef;
@@ -2141,7 +2179,7 @@ bool create_myisam_tmp_table(TABLE *table, KEY *keyinfo,
       if (field->flags & BLOB_FLAG)
       {
 	seg->type=
-	((keyinfo->key_part[i].key_type & FIELDFLAG_BINARY) ?
+	((keyinfo->key_part[i].bin_cmp) ?
 	 HA_KEYTYPE_VARBINARY2 : HA_KEYTYPE_VARTEXT2);
 	seg->bit_start= (uint8)(field->pack_length() -
                                 portable_sizeof_char_ptr);
@@ -2227,15 +2265,13 @@ bool create_myisam_tmp_table(TABLE *table, KEY *keyinfo,
      FALSE - OK
      TRUE  - Error
 */
-bool create_innodb_tmp_table(TABLE *table, KEY *keyinfo)
+static bool create_innodb_tmp_table(TABLE *table, KEY *keyinfo)
 {
   TABLE_SHARE *share= table->s;
 
   DBUG_ENTER("create_innodb_tmp_table");
 
   HA_CREATE_INFO create_info;
-
-  memset(&create_info, 0, sizeof(create_info));
 
   create_info.db_type= table->s->db_type();
   create_info.row_type= table->s->row_type;
@@ -2318,8 +2354,9 @@ static void trace_tmp_table(Opt_trace_context *trace, const TABLE *table)
                           instantiated
   @param  keyinfo         Description of the index (there is always one index)
   @param  start_recinfo   Column descriptions
-  @param  recinfo INOUT   End of column descriptions
+  @param[in,out]  recinfo End of column descriptions
   @param  options         Option bits
+  @param  big_tables
   @param  trace           Optimizer trace to write info to
 
   @details
@@ -2422,15 +2459,15 @@ free_tmp_table(THD *thd, TABLE *entry)
   @param thd             THD reference
   @param table           Table reference
   @param start_recinfo   Engine's column descriptions
-  @param recinfo[in,out] End of engine's column descriptions
+  @param [in,out] recinfo End of engine's column descriptions
   @param error           Reason why inserting into MEMORY table failed. 
   @param ignore_last_dup If true, ignore duplicate key error for last
                          inserted key (see detailed description below).
-  @param is_duplicate[out] if non-NULL and ignore_last_dup is TRUE,
+  @param [out] is_duplicate if non-NULL and ignore_last_dup is TRUE,
                          return TRUE if last key was a duplicate,
                          and FALSE otherwise.
 
-  @detail
+  @details
     Function can be called with any error code, but only HA_ERR_RECORD_FILE_FULL
     will be handled, all other errors cause a fatal error to be thrown.
     The function creates a disk-based temporary table, copies all records
@@ -2489,7 +2526,7 @@ bool create_ondisk_from_heap(THD *thd, TABLE *table,
     new_table.s->db_plugin= ha_lock_engine(thd, innodb_hton);
     break;
   default:
-    DBUG_ASSERT(0);
+    DBUG_ASSERT(0); /* purecov: deadcode */
     new_table.s->db_plugin= ha_lock_engine(thd, innodb_hton);
   }
 
@@ -2501,6 +2538,10 @@ bool create_ondisk_from_heap(THD *thd, TABLE *table,
     delete new_table.file;
     DBUG_RETURN(1);
   }
+
+  /* Fix row type which might have changed with SE change. */
+  set_real_row_type(&new_table);
+
   save_proc_info=thd->proc_info;
   THD_STAGE_INFO(thd, stage_converting_heap_to_ondisk);
 

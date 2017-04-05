@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2011, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -17,14 +17,16 @@
 
 /* class for the the heap handler */
 
-#include <heap.h>
-#include "sql_class.h"                          /* THD */
+#include "my_global.h"
+#include "heap.h"
+#include "handler.h"
+#include "table.h"
 
 class ha_heap: public handler
 {
   HP_INFO *file;
   HP_SHARE *internal_share;
-  key_map btree_keys;
+  Key_map btree_keys;
   /* number of records changed since last statistics update */
   uint    records_changed;
   uint    key_stat_version;
@@ -33,19 +35,14 @@ public:
   ha_heap(handlerton *hton, TABLE_SHARE *table);
   ~ha_heap() {}
   handler *clone(const char *name, MEM_ROOT *mem_root);
-  const char *table_type() const
-  {
-    return (table->in_use->variables.sql_mode & MODE_MYSQL323) ?
-           "HEAP" : "MEMORY";
-  }
-  const char *index_type(uint inx)
-  {
-    return ((table_share->key_info[inx].algorithm == HA_KEY_ALG_BTREE) ?
-            "BTREE" : "HASH");
-  }
+  const char *table_type() const;
+  virtual enum ha_key_alg get_default_index_algorithm() const
+  { return HA_KEY_ALG_HASH; }
+  virtual bool is_index_algorithm_supported(enum ha_key_alg key_alg) const
+  { return key_alg == HA_KEY_ALG_BTREE || key_alg == HA_KEY_ALG_HASH; }
   /* Rows also use a fixed-size format */
-  enum row_type get_row_type() const { return ROW_TYPE_FIXED; }
-  const char **bas_ext() const;
+  enum row_type get_real_row_type(const HA_CREATE_INFO *create_info) const
+  { return ROW_TYPE_FIXED; }
   ulonglong table_flags() const
   {
     return (HA_FAST_KEY_READ | HA_NO_BLOBS | HA_NULL_IN_KEY |
@@ -59,7 +56,7 @@ public:
             HA_READ_NEXT | HA_READ_PREV | HA_READ_ORDER | HA_READ_RANGE :
             HA_ONLY_WHOLE_INDEX | HA_KEY_SCAN_NOT_ROR);
   }
-  const key_map *keys_to_use_for_scanning() { return &btree_keys; }
+  const Key_map *keys_to_use_for_scanning() { return &btree_keys; }
   uint max_supported_keys()          const { return MAX_KEY; }
   uint max_supported_key_part_length() const { return MAX_KEY_LENGTH; }
   double scan_time()
@@ -110,7 +107,7 @@ public:
 
   THR_LOCK_DATA **store_lock(THD *thd, THR_LOCK_DATA **to,
 			     enum thr_lock_type lock_type);
-  int cmp_ref(const uchar *ref1, const uchar *ref2)
+  int cmp_ref(const uchar *ref1, const uchar *ref2) const
   {
     return memcmp(ref1, ref2, sizeof(HEAP_PTR));
   }

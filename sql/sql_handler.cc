@@ -57,17 +57,30 @@
 #include "sql_base.h"                           // close_thread_tables
 #include "lock.h"                               // mysql_unlock_tables
 #include "key.h"                                // key_copy
+#include "psi_memory_key.h"
 #include "sql_base.h"                           // insert_fields
 #include "sql_select.h"
-#include "sql_resolver.h"                       // Column_privilege_tracker
 #include "sql_audit.h"                          // mysql_audit_table_access_notify
 #include "transaction.h"
 #include "log.h"
+#include "template_utils.h"
+#include "error_handler.h"
+
+#include "dd/types/abstract_table.h"            // dd::enum_table_type
 
 #define HANDLER_TABLES_HASH_SIZE 120
 
-static enum enum_ha_read_modes rkey_to_rnext[]=
-{ RNEXT_SAME, RNEXT, RPREV, RNEXT, RPREV, RNEXT, RPREV, RPREV };
+static enum_ha_read_modes rkey_to_rnext[]=
+{
+  enum_ha_read_modes::RNEXT_SAME,
+  enum_ha_read_modes::RNEXT,
+  enum_ha_read_modes::RPREV,
+  enum_ha_read_modes::RNEXT,
+  enum_ha_read_modes::RPREV,
+  enum_ha_read_modes::RNEXT,
+  enum_ha_read_modes::RPREV,
+  enum_ha_read_modes::RPREV
+};
 
 static bool mysql_ha_open_table(THD *thd, TABLE_LIST *table);
 
@@ -90,12 +103,12 @@ static bool mysql_ha_open_table(THD *thd, TABLE_LIST *table);
     Pointer to the TABLE_LIST struct.
 */
 
-static const char *mysql_ha_hash_get_key(TABLE_LIST *tables,
-                                         size_t *key_len_p,
-                                         my_bool first MY_ATTRIBUTE((unused)))
+static const uchar *mysql_ha_hash_get_key(const uchar *arg,
+                                          size_t *key_len_p)
 {
+  const TABLE_LIST *tables= pointer_cast<const TABLE_LIST*>(arg);
   *key_len_p= strlen(tables->alias) + 1 ; /* include '\0' in comparisons */
-  return tables->alias;
+  return pointer_cast<const uchar*>(tables->alias);
 }
 
 
@@ -113,8 +126,9 @@ static const char *mysql_ha_hash_get_key(TABLE_LIST *tables,
     Nothing
 */
 
-static void mysql_ha_hash_free(TABLE_LIST *tables)
+static void mysql_ha_hash_free(void *arg)
 {
+  TABLE_LIST *tables= pointer_cast<TABLE_LIST*>(arg);
   my_free(tables);
 }
 
@@ -195,9 +209,9 @@ bool Sql_cmd_handler_open::execute(THD *thd)
       HASH entries are of type TABLE_LIST.
     */
     if (my_hash_init(&thd->handler_tables_hash, &my_charset_latin1,
-                     HANDLER_TABLES_HASH_SIZE, 0, 0,
-                     (my_hash_get_key) mysql_ha_hash_get_key,
-                     (my_hash_free_key) mysql_ha_hash_free, 0,
+                     HANDLER_TABLES_HASH_SIZE, 0,
+                     mysql_ha_hash_get_key,
+                     mysql_ha_hash_free, 0,
                      key_memory_THD_handler_tables_hash))
     {
       DBUG_PRINT("exit",("ERROR"));
@@ -257,7 +271,7 @@ bool Sql_cmd_handler_open::execute(THD *thd)
                    MDL_key::TABLE, db, name, MDL_SHARED,
                    MDL_TRANSACTION);
   /* for now HANDLER can be used only for real TABLES */
-  hash_tables->required_type= FRMTYPE_TABLE;
+  hash_tables->required_type= dd::enum_table_type::BASE_TABLE;
   /* add to hash */
   if (my_hash_insert(&thd->handler_tables_hash, (uchar*) hash_tables))
   {
@@ -467,10 +481,11 @@ bool Sql_cmd_handler_read::execute(THD *thd)
   SELECT_LEX    *select_lex= lex->select_lex;
   SELECT_LEX_UNIT *unit= lex->unit;
   TABLE_LIST    *tables= select_lex->get_table_list();
-  enum enum_ha_read_modes mode= m_read_mode;
+  enum_ha_read_modes mode= m_read_mode;
   Item          *cond= select_lex->where_cond();
   ha_rows select_limit_cnt, offset_limit_cnt;
   MDL_savepoint mdl_savepoint;
+  bool res;
   DBUG_ENTER("Sql_cmd_handler_read::execute");
   DBUG_PRINT("enter",("'%s'.'%s' as '%s'",
                       tables->db, tables->table_name, tables->alias));
@@ -508,9 +523,9 @@ retry:
                                                  strlen(tables->alias) + 1)))
   {
     table= hash_tables->table;
-    DBUG_PRINT("info-in-hash",("'%s'.'%s' as '%s' table: 0x%lx",
+    DBUG_PRINT("info-in-hash",("'%s'.'%s' as '%s' table: %p",
                                hash_tables->db, hash_tables->table_name,
-                               hash_tables->alias, (long) table));
+                               hash_tables->alias, table));
     if (!table)
     {
       /*
@@ -653,10 +668,10 @@ retry:
     /* Check if the same index involved. */
     if ((uint) keyno != table->file->get_index())
     {
-      if (mode == RNEXT)
-        mode= RFIRST;
-      else if (mode == RPREV)
-        mode= RLAST;
+      if (mode == enum_ha_read_modes::RNEXT)
+        mode= enum_ha_read_modes::RFIRST;
+      else if (mode == enum_ha_read_modes::RPREV)
+        mode= enum_ha_read_modes::RLAST;
     }
   }
 
@@ -664,8 +679,15 @@ retry:
                     tables->db, tables->alias, &it, 0))
     goto err;
 
-  thd->send_result_metadata(&list,
-                            Protocol::SEND_NUM_ROWS | Protocol::SEND_EOF);
+  DBUG_EXECUTE_IF("simulate_handler_read_failure",
+                  DBUG_SET("+d,simulate_net_write_failure"););
+  res= thd->send_result_metadata(&list,
+                                      Protocol::SEND_NUM_ROWS | Protocol::SEND_EOF);
+  DBUG_EXECUTE_IF("simulate_handler_read_failure",
+                  DBUG_SET("-d,simulate_net_write_failure"););
+  if (res)
+    goto err;
+
 #ifndef EMBEDDED_LIBRARY
   if (mysql_audit_table_access_notify(thd, hash_tables))
     goto err;
@@ -682,7 +704,7 @@ retry:
   for (num_rows=0; num_rows < select_limit_cnt; )
   {
     switch (mode) {
-    case RNEXT:
+    case enum_ha_read_modes::RNEXT:
       if (m_key_name)
       {
         if (table->file->inited == handler::INDEX)
@@ -704,7 +726,7 @@ retry:
         natural order, or, vice versa, trying to read next row in natural
         order after reading previous rows in index order.
       */
-    case RFIRST:
+    case enum_ha_read_modes::RFIRST:
       if (m_key_name)
       {
         if (!(error= table->file->ha_index_or_rnd_end()) &&
@@ -717,9 +739,9 @@ retry:
             !(error= table->file->ha_rnd_init(1)))
           error= table->file->ha_rnd_next(table->record[0]);
       }
-      mode=RNEXT;
+      mode= enum_ha_read_modes::RNEXT;
       break;
-    case RPREV:
+    case enum_ha_read_modes::RPREV:
       DBUG_ASSERT(m_key_name != 0);
       /* Check if we read from the same index. */
       DBUG_ASSERT((uint) keyno == table->file->get_index());
@@ -729,19 +751,19 @@ retry:
         break;
       }
       /* else fall through, for more info, see comment before 'case RFIRST'. */
-    case RLAST:
+    case enum_ha_read_modes::RLAST:
       DBUG_ASSERT(m_key_name != 0);
       if (!(error= table->file->ha_index_or_rnd_end()) &&
           !(error= table->file->ha_index_init(keyno, 1)))
         error= table->file->ha_index_last(table->record[0]);
-      mode=RPREV;
+      mode= enum_ha_read_modes::RPREV;
       break;
-    case RNEXT_SAME:
+    case enum_ha_read_modes::RNEXT_SAME:
       /* Continue scan on "(keypart1,keypart2,...)=(c1, c2, ...)  */
       DBUG_ASSERT(table->file->inited == handler::INDEX);
       error= table->file->ha_index_next_same(table->record[0], key, key_len);
       break;
-    case RKEY:
+    case enum_ha_read_modes::RKEY:
     {
       DBUG_ASSERT(m_key_name != 0);
       KEY *keyinfo=table->key_info+keyno;
@@ -775,13 +797,19 @@ retry:
           item->save_in_field(key_part->field, true);
         dbug_tmp_restore_column_map(table->write_set, old_map);
         /*
-          If conversion status is TYPE_ERR_BAD_VALUE, the target index value
+          If conversion status is TYPE_ERR_BAD_VALUE or
+          TYPE_ERR_NULL_CONSTRAINT_VIOLATION, the target index value
           is not stored into record buffer, so we can't proceed with the
           index search.
         */
         if (conv_status == TYPE_ERR_BAD_VALUE)
         {
           my_error(ER_WRONG_ARGUMENTS, MYF(0), "HANDLER ... READ");
+          goto err;
+        }
+        if (conv_status == TYPE_ERR_NULL_CONSTRAINT_VIOLATION)
+        {
+          my_error(ER_BAD_NULL_ERROR, MYF(0), m_key_name);
           goto err;
         }
 
@@ -801,7 +829,7 @@ retry:
       break;
     }
     default:
-      my_message(ER_ILLEGAL_HA, ER(ER_ILLEGAL_HA), MYF(0));
+      my_error(ER_ILLEGAL_HA, MYF(0));
       goto err;
     }
 
@@ -830,7 +858,9 @@ retry:
       protocol->start_row();
       if (thd->send_result_set_row(&list))
         goto err;
-      protocol->end_row();
+
+      if (protocol->end_row())
+	goto err;
     }
     num_rows++;
     thd->inc_sent_row_count(1);
@@ -944,7 +974,7 @@ void mysql_ha_rm_tables(THD *thd, TABLE_LIST *tables)
   Close cursors of matching tables from the HANDLER's hash table.
 
   @param thd Thread identifier.
-  @param tables The list of tables to flush.
+  @param all_tables The list of tables to flush.
 */
 
 void mysql_ha_flush_tables(THD *thd, TABLE_LIST *all_tables)
@@ -1018,7 +1048,7 @@ void mysql_ha_flush(THD *thd)
   close_temporary_tables) to obtain a TABLE_LIST containing the
   temporary tables.
 
-  @See close_temporary_tables
+  @sa close_temporary_tables
   @param thd Thread identifier.
 */
 void mysql_ha_rm_temporary_tables(THD *thd)

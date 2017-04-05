@@ -1,4 +1,4 @@
-/* Copyright (c) 2006, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2006, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -22,6 +22,8 @@
 
 #include "my_global.h"
 #include "prealloced_array.h"   // Prealloced_array
+#include "binary_log_types.h"   // enum_field_types
+
 #ifdef MYSQL_SERVER
 #include "table.h"              // TABLE_LIST
 #endif
@@ -204,13 +206,13 @@ private:
   HASH m_hash;
 
   /**
-     Auxiliar and internal method used to create an hash key, based on
+     Auxiliary and internal method used to create an hash key, based on
      the data in table->record[0] buffer and signaled as used in cols.
 
      @param table  The table that is being scanned
      @param cols   The read_set bitmap signaling which columns are used.
 
-     @retuns the hash key created.
+     @returns the hash key created.
    */
   my_hash_value_type make_hash_key(TABLE *table, MY_BITMAP* cols);
 };
@@ -237,6 +239,7 @@ public:
     @param field_metadata Array of extra information about fields
     @param metadata_size Size of the field_metadata array
     @param null_bitmap The bitmap of fields that can be null
+    @param flags Table flags
    */
   table_def(unsigned char *types, ulong size, uchar *field_metadata,
             int metadata_size, uchar *null_bitmap, uint16 flags);
@@ -346,6 +349,7 @@ public:
   */
   uint32 calc_field_size(uint col, uchar *master_data) const;
 
+#ifndef MYSQL_CLIENT
   /**
     Decide if the table definition is compatible with a table.
 
@@ -362,17 +366,16 @@ public:
         converted according to the current settings of @c
         SLAVE_TYPE_CONVERSIONS.
 
-    @param thd
+    @param thd   Current thread
     @param rli   Pointer to relay log info
     @param table Pointer to table to compare with.
 
-    @param[out] tmp_table_var Pointer to temporary table for holding
+    @param[out] conv_table_var Pointer to temporary table for holding
     conversion table.
 
     @retval 1  if the table definition is not compatible with @c table
     @retval 0  if the table definition is compatible with @c table
   */
-#ifndef MYSQL_CLIENT
   bool compatible_with(THD *thd, Relay_log_info *rli, TABLE *table,
                       TABLE **conv_table_var) const;
 

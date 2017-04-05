@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2001, 2015, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2001, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -17,10 +17,16 @@
 #ifndef _my_bitmap_h_
 #define _my_bitmap_h_
 
+/**
+  @file include/my_bitmap.h
+*/
+
 #define MY_BIT_NONE (~(uint) 0)
 
-#include <m_string.h>
-#include "mysql/psi/mysql_thread.h"   /* mysql_mutex_t */
+#include "my_global.h"
+#include "mysql/psi/mysql_mutex.h"   /* mysql_mutex_t */
+
+#include <string.h>
 
 typedef uint32 my_bitmap_map;
 

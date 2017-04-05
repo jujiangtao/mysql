@@ -1,5 +1,4 @@
-/* -*- C++ -*- */
-/* Copyright (c) 2004, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2004, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -19,7 +18,7 @@
 
 #include "my_global.h"                  // uchar
 #include "mysql/mysql_lex_string.h"     // LEX_STRING
-#include "sql_alloc.h"
+#include "sql_alloc.h"                  // Sql_alloc
 
 class THD;
 
@@ -63,8 +62,9 @@ public:
 };
 
 
-/** Dummy hook for parsers which do not need hook for unknown keys. */
-
+/**
+  Dummy hook for parsers which do not need hook for unknown keys.
+*/
 class File_parser_dummy_hook: public Unknown_key_hook
 {
 public:
@@ -74,6 +74,7 @@ public:
 };
 
 extern File_parser_dummy_hook file_parser_dummy_hook;
+
 
 bool get_file_options_ulllist(const char *&ptr, const char *end,
                               const char *line, uchar* base,
@@ -92,9 +93,6 @@ my_bool
 sql_create_definition_file(const LEX_STRING *dir, const  LEX_STRING *file_name,
 			   const LEX_STRING *type,
 			   uchar* base, File_option *parameters);
-my_bool rename_in_schema_file(THD *thd,
-                              const char *schema, const char *old_name,
-                              const char *new_db, const char *new_name);
 
 class File_parser: public Sql_alloc
 {
