@@ -1,4 +1,4 @@
-mysql-5.7 (5.7.17-0ubuntu0.16.04.1) xenial-security; urgency=medium
+mysql-5.7 (5.7.17-0ubuntu0.16.10.1) yakkety-security; urgency=medium
 
   * SECURITY UPDATE: Update to 5.7.17 to fix security issues
     - CVE-2016-8318
@@ -20,21 +20,42 @@ mysql-5.7 (5.7.17-0ubuntu0.16.04.1) xenial-security; urgency=medium
   * debian/patches/fix_failing_test.patch: fix test failure that uses env
     from rapid plugins.
   * debian/patches/fix_test_events_2.patch: fix date in test.
-  * debian/control: replace python with libjson-perl in mysql-testsuite-5.7
-    Depends.
-  * debian/mysql-testsuite-5.7.install: add test_udf_services.so.
 
- -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Wed, 18 Jan 2017 14:53:51 -0500
+ -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Wed, 18 Jan 2017 13:43:17 -0500
 
-mysql-5.7 (5.7.16-0ubuntu0.16.04.1) xenial-security; urgency=medium
+mysql-5.7 (5.7.16-0ubuntu0.16.10.1) yakkety-security; urgency=medium
 
   * SECURITY UPDATE: Update to 5.7.16 to fix security issues
     - CVE-2016-5584
     - CVE-2016-7440
 
- -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Mon, 24 Oct 2016 08:05:46 -0400
+ -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Mon, 24 Oct 2016 08:02:10 -0400
 
-mysql-5.7 (5.7.15-0ubuntu0.16.04.1) xenial-security; urgency=medium
+mysql-5.7 (5.7.15-0ubuntu2) yakkety; urgency=medium
+
+  * Add working dir to perl lib path for dep8 upstream.
+    New versions of perl will no longer automatically include working dir in
+    the path. This was causing the mtr suite to fail to start.
+  * Change mysql-testsuite dependency from python to libjson-perl.
+    Tests written in python were rewritten in perl, so testsuite no longer
+    depends on python, but tests fail if libjson-perl is missing.
+  * Build with DWITH_LZ4=system
+    If the flag is not set the package will be built with a bundled liblz4
+    instead of the one provided by the liblz4-dev build-dep.
+  * Add support for custom datadir to systemd service (LP: #1574782)
+    The service was reporting errors if no database was found in /var/lib/mysql
+    It will now check the path specified in the config
+  * Fix support for soft-link datadir (LP: #1474212)
+    Upgrading more than once when datadir is soft-link was causing errors
+  * Escape special characters in password (LP: #1598992)
+    The password string was not escaped, causing SQL errors if certain special
+    characters such as apostrophes were included.
+  * Removed always-false check on purge in postrm (LP: #1602945)
+    Users were never seeing the query to remove data on a package purge
+
+ -- Lars Tangvald <lars.tangvald@oracle.com>  Fri, 16 Sep 2016 22:23:41 +0200
+
+mysql-5.7 (5.7.15-0ubuntu1) yakkety; urgency=medium
 
   * SECURITY UPDATE: Update to 5.7.15 to fix security issues
     - CVE-2016-6662
@@ -46,129 +67,58 @@ mysql-5.7 (5.7.15-0ubuntu0.16.04.1) xenial-security; urgency=medium
     - debian/patches/allowemptyport.patch
   * debian/rules: new version no longer ships unit.pl.
 
- -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Mon, 12 Sep 2016 10:10:36 -0400
+ -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Thu, 15 Sep 2016 08:05:22 -0400
 
-mysql-5.7 (5.7.13-0ubuntu0.16.04.2) xenial-security; urgency=medium
+mysql-5.7 (5.7.13-0ubuntu4) yakkety; urgency=medium
 
-  * SECURITY UPDATE: Update to 5.7.13 to fix security issues (LP: #1604796)
-    - http://www.oracle.com/technetwork/security-advisory/cpujul2016-2881720.html
-    - CVE-2016-3424
-    - CVE-2016-3459
-    - CVE-2016-3477
-    - CVE-2016-3486
-    - CVE-2016-3501
-    - CVE-2016-3518
-    - CVE-2016-3521
-    - CVE-2016-3588
-    - CVE-2016-3614
-    - CVE-2016-3615
-    - CVE-2016-5436
-    - CVE-2016-5437
-    - CVE-2016-5439
-    - CVE-2016-5440
-    - CVE-2016-5441
-    - CVE-2016-5442
-    - CVE-2016-5443
-  * debian/patches/mysql-export-scramble.patch: removed, upstream.
+  * Check that /etc/mysql/my.cnf.migrated exists before attempting to
+    amend it, so that it is properly idempotent. This fixes a postinst
+    failure in some known edge cases where the version match still
+    passes. Cherry-picked from Debian VCS 8672b6b.
 
- -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Wed, 20 Jul 2016 08:44:25 -0400
+ -- Robie Basak <robie.basak@ubuntu.com>  Thu, 14 Jul 2016 14:14:56 +0100
 
-mysql-5.7 (5.7.12-0ubuntu1.2) xenial; urgency=medium
+mysql-5.7 (5.7.13-0ubuntu3) yakkety; urgency=medium
 
-  [ Robie Basak ]
-  * Replace removed config options from 5.5 and old 5.6 installations
-    (LP: #1571865)
+  * Automatically replace removed config options from 5.5 and old 5.6
+    installations (LP: #1571865). Cherry-picked from Debian VCS ef3f92b.
+    Thanks to Lars Tangvald.
 
-  [ Christian Ehrhardt ]
-  * Avoid running mysql_upgrade twice concurrently (LP: #1577712)
-    - Changed debian-start to just exit 0
-    - Removed debian-start.inc.sh, which was only used by debian-start
-    - Drop install of d/additions/debian-start.inc.sh
-  * d/a/source_mysql-5.7.py: strip lines from log that may contain
-    passwords (LP: #1574458)
-  * Restart server after running mysqld_upgrade (LP: #1576647)
-  * Try to fail postinst with useful error message if server can
-    not start (LP: #1602763)
+ -- Robie Basak <robie.basak@ubuntu.com>  Tue, 12 Jul 2016 17:45:00 +0100
 
- -- Robie Basak <robie.basak@ubuntu.com>  Thu, 14 Jul 2016 17:09:53 +0100
+mysql-5.7 (5.7.13-0ubuntu2) yakkety; urgency=medium
 
-mysql-5.7 (5.7.12-0ubuntu1.1) xenial; urgency=medium
+  * Drop obsolete initscripts dependency. Backported from Debian packaging
+    git. (Closes: #804992)
 
-  * Recompile to resolve miscompilation on s390x architecture. LP:
-    #1572613
+ -- Martin Pitt <martin.pitt@ubuntu.com>  Thu, 23 Jun 2016 08:33:04 +0200
 
- -- Dimitri John Ledkov <xnox@ubuntu.com>  Fri, 20 May 2016 04:30:16 +0100
+mysql-5.7 (5.7.13-0ubuntu1) yakkety; urgency=medium
 
-mysql-5.7 (5.7.12-0ubuntu1) xenial-security; urgency=medium
+  * Ubuntu merge from Debian VCS 1cdae6c. Remaining changes:
+    - Revert "Build with libmecab-dev" since libmecab-dev is in
+      universe.
+  * Drop changes:
+    - mysql-server-5.7: depend on apparmor (>= 2.10) for Trusty upgrade
+      path (all upgrade paths go through Xenial; in hindsight this
+      should have been a Breaks anyway).
+    - Upstreamed to Debian:
+      + d/p/allowemptyport.patch: update corresponding test
+      + postinst: ignore mysql_upgrade's exit status 2
+      + Export my_make_scrambled_password
+      + Client commands in postinst should ignore custom config
+      + Enable setting password for existing database if it was empty
+      + Quote $rootpw correctly
+      + Add libnuma-dev, libaio-dev to libmysqld-dev deps
+      + d/p/fix-man-page-links.patch: drop (fixed upstream)
+      + Add d/NEWS
 
-  * SECURITY UPDATE: Update to 5.7.12 to fix security issues (LP: #1572559)
-    - http://www.oracle.com/technetwork/security-advisory/cpuapr2016v3-2985753.html
-    - CVE-2016-0639
-    - CVE-2016-0642
-    - CVE-2016-0643
-    - CVE-2016-0647
-    - CVE-2016-0648
-    - CVE-2016-0655
-    - CVE-2016-0657
-    - CVE-2016-0659
-    - CVE-2016-0662
-    - CVE-2016-0666
-    - CVE-2016-0667
-    - CVE-2016-2047
-  * d/p/fix-manpage-links.patch: drop (fixed upstream).
-  * Add NEWS entry missed from my previous upload.
+ -- Robie Basak <robie.basak@ubuntu.com>  Tue, 14 Jun 2016 16:15:59 +0100
 
- -- Robie Basak <robie.basak@ubuntu.com>  Thu, 21 Apr 2016 12:05:40 +0100
-
-mysql-5.7 (5.7.11-0ubuntu6) xenial; urgency=medium
-
-  [ Lars Tangvald ]
-  * Added patch for exporting my_make_scrambled_password to fix
-    pure-ftpd FTBFS.
-  * Client commands in d/postinst will ignore custom config (LP:
-    #1567695)
-  * Enable changing root password on install if previous db had empty
-    (LP: #1567098)
+mysql-5.7 (5.7.13-1~exp1) UNRELEASED; urgency=medium
 
   [ Robie Basak ]
-  * d/mysql-server-5.7.postinst: quote "$rootpw" correctly.
-  * d/control: add libnuma-dev and libaio-dev to libmysqld-dev
-    dependencies, since these are required according to "mysql_config
-    --libmysqld-libs". This fixes FTBFS of packages that use
-    libmysqld-dev.
-
- -- Robie Basak <robie.basak@ubuntu.com>  Wed, 13 Apr 2016 17:34:08 +0100
-
-mysql-5.7 (5.7.11-0ubuntu5) xenial; urgency=medium
-
-  * d/mysql-server-5.7.postinst: ignore mysql_upgrade's exit status when
-    it is one that includes the indication that there is nothing to do
-    (LP: #1566406).
-
- -- Robie Basak <robie.basak@ubuntu.com>  Thu, 07 Apr 2016 11:58:28 +0100
-
-mysql-5.7 (5.7.11-0ubuntu4) xenial; urgency=medium
-
-  * d/p/allowemptyport.patch: update corresponding test.
-
- -- Robie Basak <robie.basak@ubuntu.com>  Wed, 06 Apr 2016 12:48:52 +0100
-
-mysql-5.7 (5.7.11-0ubuntu3) xenial; urgency=medium
-
-  * Ubuntu upload from Debian VCS c17404a.
-  * FFe update to MySQL 5.7 (LP: #1528583).
-  * Revert "Build with libmecab-dev" since libmecab-dev is in universe.
-  * mysql-server-5.7: depend on apparmor (>= 2.10) for Trusty upgrade
-    path.
-
- -- Robie Basak <robie.basak@ubuntu.com>  Wed, 16 Mar 2016 14:01:31 +0000
-
-mysql-5.7 (5.7.11-1~exp1) UNRELEASED; urgency=medium
-
-  [ Bjoern Boschman ]
-  * Imported Upstream version 5.7.11.
-
-  [ Robie Basak ]
+  * Import upstream version 5.7.13.
   * Drop d/libmysqlclient18.lintian-overrides as the problem is genuine
     and should not be hidden. This addresses #812812 in part, but does
     not close it.
@@ -281,8 +231,110 @@ mysql-5.7 (5.7.11-1~exp1) UNRELEASED; urgency=medium
   * Move needed header files to default include path (LP: #1565414).
   * Add missing grant_priv privilege to debian-sys-maint.
   * Allow empty port config values (LP: #1563274).
+  * d/p/allowemptyport.patch: update corresponding test.
 
- -- Robie Basak <robie.basak@canonical.com>  Wed, 16 Mar 2016 13:48:32 +0000
+  [ Robie Basak ]
+  * d/mysql-server-5.7.postinst: ignore mysql_upgrade's exit status when
+    it is one that includes the indication that there is nothing to do
+    (LP: #1566406).
+
+  [ Lars Tangvald ]
+  * d/p/mysql-export-scramble.patch: export my_make_scrambled_password
+    since some reverse dependencies still need it.
+  * Ignore dotfiles in postinst (LP: #1567695).
+  * Enable changing root password on install if previous db had empty
+    (LP: #1567098).
+
+  [ Robie Basak ]
+  * d/mysql-server-5.7.postinst: quote "$rootpw" correctly.
+  * d/control: add libnuma-dev and libaio-dev to libmysqld-dev
+    dependencies, since these are required according to "mysql_config --
+    libmysqld-libs". This fixes FTBFS of packages that use libmysqld-
+    dev.
+  * d/p/fix-man-page-links.patch: drop (fixed upstream)
+  * Update translations for ja, pt_BR and tr
+    (Closes: #817088, #815522, #804780, #801352)
+  * Update translated references from 5.6 to 5.7
+
+  [ Lars Tangvald ]
+  * Try to fail postinst with useful error message if server can't start
+  * Restart server after running mysqld_upgrade (LP: #1576647)
+  * Removed workaround for ALTER USER setting user to expired
+  * Strip lines from log that may contain passwords
+  * Fix deprecated commented-out config options (LP: #1577096)
+  * Change d/additions/debian-start to no-op (LP: #1577712)
+
+ -- Robie Basak <robie.basak@canonical.com>  Tue, 24 May 2016 15:39:33 +0100
+
+mysql-5.7 (5.7.12-0ubuntu2) yakkety; urgency=medium
+
+  * No change rebuild to fix miscompilation on s390x. LP: #1572613
+
+ -- Dimitri John Ledkov <xnox@ubuntu.com>  Tue, 26 Apr 2016 13:11:50 +0100
+
+mysql-5.7 (5.7.12-0ubuntu1) xenial-security; urgency=medium
+
+  * SECURITY UPDATE: Update to 5.7.12 to fix security issues (LP: #1572559)
+    - http://www.oracle.com/technetwork/security-advisory/cpuapr2016v3-2985753.html
+    - CVE-2016-0639
+    - CVE-2016-0642
+    - CVE-2016-0643
+    - CVE-2016-0647
+    - CVE-2016-0648
+    - CVE-2016-0655
+    - CVE-2016-0657
+    - CVE-2016-0659
+    - CVE-2016-0662
+    - CVE-2016-0666
+    - CVE-2016-0667
+    - CVE-2016-2047
+  * d/p/fix-manpage-links.patch: drop (fixed upstream).
+  * Add NEWS entry missed from my previous upload.
+
+ -- Robie Basak <robie.basak@ubuntu.com>  Thu, 21 Apr 2016 12:05:40 +0100
+
+mysql-5.7 (5.7.11-0ubuntu6) xenial; urgency=medium
+
+  [ Lars Tangvald ]
+  * Added patch for exporting my_make_scrambled_password to fix
+    pure-ftpd FTBFS.
+  * Client commands in d/postinst will ignore custom config (LP:
+    #1567695)
+  * Enable changing root password on install if previous db had empty
+    (LP: #1567098)
+
+  [ Robie Basak ]
+  * d/mysql-server-5.7.postinst: quote "$rootpw" correctly.
+  * d/control: add libnuma-dev and libaio-dev to libmysqld-dev
+    dependencies, since these are required according to "mysql_config
+    --libmysqld-libs". This fixes FTBFS of packages that use
+    libmysqld-dev.
+
+ -- Robie Basak <robie.basak@ubuntu.com>  Wed, 13 Apr 2016 17:34:08 +0100
+
+mysql-5.7 (5.7.11-0ubuntu5) xenial; urgency=medium
+
+  * d/mysql-server-5.7.postinst: ignore mysql_upgrade's exit status when
+    it is one that includes the indication that there is nothing to do
+    (LP: #1566406).
+
+ -- Robie Basak <robie.basak@ubuntu.com>  Thu, 07 Apr 2016 11:58:28 +0100
+
+mysql-5.7 (5.7.11-0ubuntu4) xenial; urgency=medium
+
+  * d/p/allowemptyport.patch: update corresponding test.
+
+ -- Robie Basak <robie.basak@ubuntu.com>  Wed, 06 Apr 2016 12:48:52 +0100
+
+mysql-5.7 (5.7.11-0ubuntu3) xenial; urgency=medium
+
+  * Ubuntu upload from Debian VCS c17404a.
+  * FFe update to MySQL 5.7 (LP: #1528583).
+  * Revert "Build with libmecab-dev" since libmecab-dev is in universe.
+  * mysql-server-5.7: depend on apparmor (>= 2.10) for Trusty upgrade
+    path.
+
+ -- Robie Basak <robie.basak@ubuntu.com>  Wed, 16 Mar 2016 14:01:31 +0000
 
 mysql-5.6 (5.6.28-1) unstable; urgency=medium
 

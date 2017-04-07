@@ -169,7 +169,7 @@ case "$1" in
     db_set mysql-server/postrm_remove_database false || true
 
     # Fix old options that were deprecated in 5.5 and removed in 5.7
-    if dpkg --compare-versions "$2" le "5.7.13-0ubuntu0~"; then
+    if dpkg --compare-versions "$2" le-nl "5.7.13-0ubuntu3~"; then
       echo "Renaming removed key_buffer and myisam-recover options (if present)"
       fix_old_config_options
     fi
@@ -223,6 +223,7 @@ case "$1" in
       echo "USE mysql; " >> "$initfile"
       db_get mysql-server/root_password && rootpw="$RET"
       if [ ! -z "$rootpw" ]; then
+        rootpw=$(printf %q "${rootpw}")
         echo "ALTER USER 'root'@'localhost' IDENTIFIED BY '$rootpw';" >> "$initfile"
       fi
       echo "CREATE USER IF NOT EXISTS 'debian-sys-maint'@'localhost' IDENTIFIED BY '$pass';" >> "$initfile"
@@ -283,6 +284,7 @@ if [ "$1" = "configure" ]; then
   if test_mysql_access; then
     db_get mysql-server/root_password && rootpw="$RET"
     if [ ! -z "$rootpw" ]; then
+      rootpw=$(printf %q "${rootpw}")
       invoke stop
       initfile=`mktemp --tmpdir=/var/lib/mysql-files/`
       chown mysql:mysql "$initfile"
@@ -306,9 +308,6 @@ if [ "$1" = "configure" ]; then
       # If there is no root password set we enable the auth_socket plugin for the root user
       echo "USE mysql;"                                                                   >> "$initfile"
       echo "ALTER USER 'root'@'localhost' IDENTIFIED WITH 'auth_socket';"                 >> "$initfile"
-      # Bug: http://bugs.mysql.com/bug.php?id=80632
-      echo "UPDATE user SET password_expired='N', account_locked='N' WHERE user='root';"  >> "$initfile"
-      echo "FLUSH PRIVILEGES;"                                                            >> "$initfile"
       echo "SHUTDOWN;"                                                                    >> "$initfile"
       # The INSTALL PLUGIN line will throw an error if the plugin is already installed
       run_init_sql "$initfile"
