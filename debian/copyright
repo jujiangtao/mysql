@@ -173,7 +173,6 @@ Files: cmd-line-utils/libedit/config.h
  storage/ndb/demos/*
  support-files/build-tags
  support-files/magic
- support-files/my-default.cnf.sh
  support-files/mysqld_multi.server.sh
  support-files/mysql-log-rotate.sh
  support-files/mysql.server-sys5.sh
