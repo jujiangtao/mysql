@@ -1,3 +1,20 @@
+mysql-5.7 (5.7.18-0ubuntu0.17.04.1) zesty-security; urgency=medium
+
+  * SECURITY UPDATE: Update to 5.7.18 to fix security issues
+    - CVE-2017-3308, CVE-2017-3309, CVE-2017-3329, CVE-2017-3331,
+      CVE-2017-3450, CVE-2017-3453, CVE-2017-3454, CVE-2017-3455,
+      CVE-2017-3456, CVE-2017-3457, CVE-2017-3458, CVE-2017-3459,
+      CVE-2017-3460, CVE-2017-3461, CVE-2017-3462, CVE-2017-3463,
+      CVE-2017-3464, CVE-2017-3465, CVE-2017-3467, CVE-2017-3468,
+      CVE-2017-3599, CVE-2017-3600
+  * Removed patches included in new version:
+    - debian/patches/fix_mysql_config_flags.patch
+    - debian/patches/fix_test_events_2.patch
+  * debian/mysql-server-5.7.install: added connection_control.so
+  * debian/server-core.install: removed my-default.cnf
+
+ -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Wed, 26 Apr 2017 07:22:12 -0400
+
 mysql-5.7 (5.7.17-0ubuntu1) zesty; urgency=medium
 
   * Merge from Debian VCS 8305cfa. Remaining changes:
