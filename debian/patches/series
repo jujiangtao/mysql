@@ -4,5 +4,3 @@ mysql-test-run-paths
 removedojo.patch
 fix_failing_test.patch
 fix_grant_user_lock_as_root.patch
-fix_mysql_config_flags.patch
-fix_test_events_2.patch
