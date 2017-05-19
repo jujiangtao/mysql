@@ -1,3 +1,12 @@
+mysql-5.7 (5.7.18-0ubuntu1) artful; urgency=medium
+
+  * Fixed failing test main.mysql_not_windows
+    The test was failing because it expected the os limit on open
+    files to be less than 1M, but on Artful it's 1048576.
+    Patch ups the value to 10M.
+
+ -- Lars Tangvald <lars.tangvald@oracle.com>  Fri, 19 May 2017 07:55:55 +0200
+
 mysql-5.7 (5.7.18-0ubuntu0.17.04.1) zesty-security; urgency=medium
 
   * SECURITY UPDATE: Update to 5.7.18 to fix security issues
