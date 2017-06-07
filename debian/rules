@@ -23,7 +23,7 @@ DEB_UPSTREAM_VERSION ?= $(shell echo $(DEB_NOEPOCH_VERSION) | sed 's/-[^-]*$$//'
 DEB_UPSTREAM_VERSION_MAJOR_MINOR := $(shell echo $(DEB_UPSTREAM_VERSION) | sed -r -n 's/^([0-9]+\.[0-9]+).*/\1/p')
 DEB_HOST_MULTIARCH ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
 DISTRIBUTION := $(shell lsb_release -i -s)
-EXPORTED_SOURCE_TARBALL := debian/mysql-source-5.7.tar.gz
+EXPORTED_SOURCE_TARBALL := debian/mysql-source-8.0.tar.gz
 TMP := $(CURDIR)/debian/tmp/
 NUMJOBS=$(patsubst parallel=%,%,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
 TESTJOBS=$(NUMJOBS)
@@ -129,7 +129,7 @@ override_dh_auto_build: build-stamp
 $(EXPORTED_SOURCE_TARBALL):
 	GZIP=-n tar -zcf $(EXPORTED_SOURCE_TARBALL) \
 	    --exclude=debian . \
-	    --transform="s,^\./,mysql-5.7/,"
+	    --transform="s,^\./,mysql-8.0/,"
 
 build-stamp: $(EXPORTED_SOURCE_TARBALL)
 	@echo "RULES.$@"
@@ -178,8 +178,8 @@ auto_install-stamp:
 		| xargs --no-run-if-empty chrpath -d; \
 	set -e
 	install -d -m 0755 -o root -g root $(TMP)/usr/lib/mysql
-	mkdir -p $(TMP)/usr/share/doc/mysql-server-5.7
-	nm -n $(BUILDDIR)/sql/mysqld |gzip -n -9 > $(TMP)/usr/share/doc/mysql-server-5.7/mysqld.sym.gz
+	mkdir -p $(TMP)/usr/share/doc/mysql-server-8.0
+	nm -n $(BUILDDIR)/sql/mysqld |gzip -n -9 > $(TMP)/usr/share/doc/mysql-server-8.0/mysqld.sym.gz
 	# This seems to be the only safe place to fix permissions issues
         # not handled by dh_fixperms.
 	install -m 0755 debian/additions/echo_stderr $(TMP)/usr/share/mysql/
@@ -203,7 +203,7 @@ override_dh_install:
 	dh_install --list-missing		\
 		-Xusr/share/man			\
 		-Xusr/share/mysql/mysql.server
-	dh_apparmor -pmysql-server-5.7 --profile-name=usr.sbin.mysqld
+	dh_apparmor -pmysql-server-8.0 --profile-name=usr.sbin.mysqld
 
 override_dh_installchangelogs:
 	dh_installchangelogs Docs/ChangeLog
