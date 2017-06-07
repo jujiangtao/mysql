@@ -150,6 +150,8 @@ else
 	echo "main.type_float			: fails on ppc64el. Ref https://bugs.mysql.com/bug.php?id=92375" >> $(builddir)/mysql-test/skiplist
 	echo "main.type_newdecimal		: Same as above" >> $(builddir)/mysql-test/skiplist
 	echo "main.type_ranges			: Same as above" >> $(builddir)/mysql-test/skiplist
+	# https://bugs.mysql.com/bug.php?id=86608
+	echo "main.mysqlpump_basic		: needs openssl with zlib" >> $(builddir)/mysql-test/skiplist
 
 	# Skip replication tests since they are timing sensitive and may
 	# result in false positives.
@@ -176,7 +178,7 @@ auto_install-stamp:
 	mkdir -p $(TMP)/usr/share/doc/mysql-server-8.0
 	nm -n $(BUILDDIR)/sql/mysqld |gzip -n -9 > $(TMP)/usr/share/doc/mysql-server-8.0/mysqld.sym.gz
 	# This seems to be the only safe place to fix permissions issues
-        # not handled by dh_fixperms.
+	# not handled by dh_fixperms.
 	install -m 0755 debian/additions/echo_stderr $(TMP)/usr/share/mysql/
 	mkdir -p $(TMP)/etc/mysql
 	install -m 0755 debian/additions/debian-start $(TMP)/etc/mysql/
