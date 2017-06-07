@@ -7,7 +7,7 @@
 # Even minor modifications require translation updates and such
 # changes should be coordinated with translators and reviewers.
 
-Template: mysql-server-5.7/installation_freeze_mode_active
+Template: mysql-server-8.0/installation_freeze_mode_active
 Type: note
 _Description: Automatic maintenance of MySQL server daemon disabled
  Packaging maintainer scripts detected a case that it does not know how to
@@ -15,7 +15,7 @@ _Description: Automatic maintenance of MySQL server daemon disabled
  MySQL installation has been disabled to allow other packaging tasks to
  complete. For more details, see /etc/mysql/FROZEN.
 
-Template: mysql-server-5.7/nis_warning
+Template: mysql-server-8.0/nis_warning
 Type: note
 #flag:translate!:3,5
 _Description: Important note for NIS/YP users
@@ -29,7 +29,7 @@ _Description: Important note for NIS/YP users
  .
   /var/lib/mysql: drwxr-xr-x   mysql    mysql
 
-Template: mysql-server-5.7/postrm_remove_databases
+Template: mysql-server-8.0/postrm_remove_databases
 Type: boolean
 Default: false
 _Description: Remove all MySQL databases?
@@ -43,7 +43,7 @@ _Description: Remove all MySQL databases?
  recent version or if a different mysql-server package is already
  using it, the data should be kept.
 
-Template: mysql-server-5.7/start_on_boot
+Template: mysql-server-8.0/start_on_boot
 Type: boolean
 Default: true
 _Description: Start the MySQL server on boot?
@@ -70,6 +70,6 @@ _Description: Password input error
 Template: mysql-server/no_upgrade_when_using_ndb
 Type: error
 _Description: NDB Cluster seems to be in use
- MySQL-5.7 no longer provides NDB Cluster support. Please migrate to the new
+ MySQL-8.0 no longer provides NDB Cluster support. Please migrate to the new
  mysql-cluster-server package and remove all lines starting with "ndb" from
  all config files below /etc/mysql/.
