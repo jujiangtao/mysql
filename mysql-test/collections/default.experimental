@@ -15,7 +15,6 @@ rpl.rpl_show_slave_running               # BUG#12346048 2011-04-11 sven fails sp
 perfschema.transaction_nested_events     # Bug#17752288 2013-12-17 agopi Fails several times each day in PB2 
 
 main.ssl-big @windows                    # Bug#18200216 2014-03-14 horst Fails too often in daily in PB2.
-rpl_gtid.rpl_gtid_stress_failover             # Bug#20630589  2015-03-19 agopi Originally made experimental due to bug#16409537 which was closed as not reproducible.
 
 main.user_var				 # Bug#21907546 2015-12-11 erlend experimental to reduce noise
 main.locking_service			 # Bug#22304322 2015-12-11 erlend experimental to reduce noise
@@ -26,6 +25,10 @@ main.partition_pruning			 # Bug#20597049 2015-12-11 erlend experimental to reduc
 ndb.ndb_addnode_withbinlog
 
 innodb.index_merge_threshold             # WL6378 2015-04-14 mattiasj innodb DD tables causes unstable index_merge_attempts counts for explicit temporary tables
+# For easier human reading (MTR doesn't care), please keep entries
+# in alphabetical order. This also helps with merge conflict resolution.
+
+group_replication.gr_generated_column                           # BUG#24940226  2016-10-25 Nuno Carvalho
 # For easier human reading (MTR doesn't care), please keep entries
 # in alphabetical order. This also helps with merge conflict resolution.
 

@@ -2,12 +2,12 @@
 .\"     Title: \fBmysqld_multi\fR
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 08/25/2016
+.\"      Date: 03/22/2017
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 8.0
 .\"  Language: English
 .\"
-.TH "\FBMYSQLD_MULTI\FR" "1" "08/25/2016" "MySQL 8\&.0" "MySQL Database System"
+.TH "\FBMYSQLD_MULTI\FR" "1" "03/22/2017" "MySQL 8\&.0" "MySQL Database System"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -53,8 +53,8 @@ processes that listen for connections on different Unix socket files and TCP/IP 
 .PP
 For MySQL installation using an RPM distribution, server startup and shutdown is managed by systemd on several Linux platforms\&. On these platforms,
 \fBmysqld_multi\fR
-is no longer installed because it is unnecessary\&. For more information, see
-Section\ \&2.5.10, \(lqManaging MySQL Server with systemd\(rq\&.
+is no longer installed because it is unnecessary\&. For information about using systemd to handle multiple MySQL instances, see
+Section\ \&2.5.9, \(lqManaging MySQL Server with systemd\(rq\&.
 .sp .5v
 .RE
 .PP
@@ -75,7 +75,7 @@ to specify which servers you want to start, stop, or obtain a status report for\
 group used for starting
 \fBmysqld\fR\&. (See, for example,
 Section\ \&2.9.5, \(lqStarting and Stopping MySQL Automatically\(rq\&.) However, when using multiple servers, it is necessary that each one use its own value for options such as the Unix socket file and TCP/IP port number\&. For more information on which options must be unique per server in a multiple\-server environment, see
-Section\ \&5.7, \(lqRunning Multiple MySQL Instances on One Machine\(rq\&.
+Section\ \&6.7, \(lqRunning Multiple MySQL Instances on One Machine\(rq\&.
 .PP
 To invoke
 \fBmysqld_multi\fR, use the following syntax:
@@ -452,17 +452,7 @@ servers with the same data directory\&. Use separate data directories, unless yo
 what you are doing\&. Starting multiple servers with the same data directory does
 \fInot\fR
 give you extra performance in a threaded system\&. See
-Section\ \&5.7, \(lqRunning Multiple MySQL Instances on One Machine\(rq\&.
-.RE
-.sp
-.RS 4
-.ie n \{\
-\h'-04'\(bu\h'+03'\c
-.\}
-.el \{\
-.sp -1
-.IP \(bu 2.3
-.\}
+Section\ \&6.7, \(lqRunning Multiple MySQL Instances on One Machine\(rq\&.
 .if n \{\
 .sp
 .\}
@@ -484,7 +474,7 @@ use the Unix
 account for this, unless you
 \fIknow\fR
 what you are doing\&. See
-Section\ \&6.1.5, \(lqHow to Run MySQL as a Normal User\(rq\&.
+Section\ \&7.1.5, \(lqHow to Run MySQL as a Normal User\(rq\&.
 .sp .5v
 .RE
 .RE
@@ -521,7 +511,7 @@ mysql> \fBGRANT SHUTDOWN ON *\&.* TO \*(Aqmulti_admin\*(Aq@\*(Aqlocalhost\*(Aq;\
 .\}
 .sp
 See
-Section\ \&6.2, \(lqThe MySQL Access Privilege System\(rq\&. You have to do this for each
+Section\ \&7.2, \(lqThe MySQL Access Privilege System\(rq\&. You have to do this for each
 \fBmysqld\fR
 server\&. Change the connection parameters appropriately when connecting to each one\&. Note that the host name part of the account name must permit you to connect as
 multi_admin
@@ -672,11 +662,11 @@ user       = unix_user4
 .\}
 .PP
 See
-Section\ \&4.2.6, \(lqUsing Option Files\(rq\&.
+Section\ \&5.2.6, \(lqUsing Option Files\(rq\&.
 .SH "COPYRIGHT"
 .br
 .PP
-Copyright \(co 1997, 2016, Oracle and/or its affiliates. All rights reserved.
+Copyright \(co 1997, 2017, Oracle and/or its affiliates. All rights reserved.
 .PP
 This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP
