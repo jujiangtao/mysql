@@ -3,6 +3,9 @@ mysql-defaults (1.0.3) UNRELEASED; urgency=medium
   [ Andreas Beckmann ]
   * default-mysql-server: Add Breaks against the transitional mysql-server
     package in stretch to reduce future upgrade problems.
+  * Use substvars for the defaults and dpkg-vendor to distinguish between
+    Debian and Ubuntu at build time.
+  * Set Ubuntu defaults to the mysql-5.7 family.
 
   [ Pino Toscano ]
   * Add default-libmysqld-dev package.  (Closes: #852102)

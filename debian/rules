@@ -4,9 +4,31 @@
 
 VERSION	:= $(shell dpkg-parsechangelog --show-field=Version)
 
+ifeq (Ubuntu,$(shell dpkg-vendor --derives-from Ubuntu && echo Ubuntu))
+default-mysql-client-core	 = mysql-client-core-5.7
+default-mysql-client		 = mysql-client-5.7
+default-mysql-server-core	 = mysql-server-core-5.7
+default-mysql-server		 = mysql-server-5.7
+default-libmysqlclient-dev	 = libmysqlclient-dev
+default-libmysqld-dev		 = libmysqld-dev
+else
+default-mysql-client-core	 = mariadb-client-core-10.1
+default-mysql-client		 = mariadb-client-10.1
+default-mysql-server-core	 = mariadb-server-core-10.1
+default-mysql-server		 = mariadb-server-10.1
+default-libmysqlclient-dev	 = libmariadbclient-dev-compat
+default-libmysqld-dev		 = libmariadbd-dev
+endif
+
 %:
 	dh $@
 
 override_dh_gencontrol:
 	dh_gencontrol -pmysql-common -- -v5.8+$(VERSION)
-	dh_gencontrol -Nmysql-common
+	dh_gencontrol -Nmysql-common -- \
+		-Vdefault:mysql-client-core=$(default-mysql-client-core) \
+		-Vdefault:mysql-client=$(default-mysql-client) \
+		-Vdefault:mysql-server-core=$(default-mysql-server-core) \
+		-Vdefault:mysql-server=$(default-mysql-server) \
+		-Vdefault:libmysqlclient-dev=$(default-libmysqlclient-dev) \
+		-Vdefault:libmysqld-dev=$(default-libmysqld-dev)
