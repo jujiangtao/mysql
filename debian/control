@@ -81,6 +81,8 @@ Architecture: all
 Depends:
  mariadb-server-10.1,
  ${misc:Depends}
+Breaks:
+ mysql-server (<< 5.7),
 Description: MySQL database server binaries and system database setup (metapackage)
  MySQL is a fast, stable and true multi-user, multi-threaded SQL database
  server. SQL (Structured Query Language) is the most popular database query

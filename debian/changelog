@@ -1,3 +1,10 @@
+mysql-defaults (1.0.3) UNRELEASED; urgency=medium
+
+  * default-mysql-server: Add Breaks against the transitional mysql-server
+    package in stretch to reduce future upgrade problems.
+
+ -- Andreas Beckmann <anbe@debian.org>  Mon, 19 Jun 2017 11:18:16 +0200
+
 mysql-defaults (1.0.2) unstable; urgency=medium
 
   [ Andreas Beckmann ]
