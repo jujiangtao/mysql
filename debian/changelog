@@ -6,6 +6,7 @@ mysql-defaults (1.0.3) UNRELEASED; urgency=medium
   * Use substvars for the defaults and dpkg-vendor to distinguish between
     Debian and Ubuntu at build time.
   * Set Ubuntu defaults to the mysql-5.7 family.
+  * Bump Standards-Version to 4.0.0, no changes needed.
 
   [ Pino Toscano ]
   * Add default-libmysqld-dev package.  (Closes: #852102)
