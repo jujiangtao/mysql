@@ -1,4 +1,4 @@
-mysql-defaults (1.0.3) UNRELEASED; urgency=medium
+mysql-defaults (1.0.3) unstable; urgency=medium
 
   [ Andreas Beckmann ]
   * default-mysql-server: Add Breaks against the transitional mysql-server
@@ -11,7 +11,7 @@ mysql-defaults (1.0.3) UNRELEASED; urgency=medium
   [ Pino Toscano ]
   * Add default-libmysqld-dev package.  (Closes: #852102)
 
- -- Andreas Beckmann <anbe@debian.org>  Mon, 19 Jun 2017 11:18:16 +0200
+ -- Andreas Beckmann <anbe@debian.org>  Wed, 28 Jun 2017 13:12:15 +0200
 
 mysql-defaults (1.0.2) unstable; urgency=medium
 
