@@ -1,6 +1,5 @@
 fix_hurd_kfreebsd.patch
 mips64el.patch
 mysql-test-run-paths
-removedojo.patch
 fix_failing_test.patch
 fix_grant_user_lock_as_root.patch
