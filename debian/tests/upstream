@@ -35,5 +35,5 @@ echo "starting mysql-test-run.pl..."
 export PERLLIB=.
 ./mysql-test-run.pl --suite=main --vardir=$WORKDIR/var --tmpdir=$WORKDIR/tmp \
     --skip-ndbcluster --parallel=auto --skip-rpl --report-features \
-    --force --skip-test-list=$SKIP_TEST_LST $@ 2>&1
+    --force --skip-test-list=$SKIP_TEST_LST --report-unstable-tests $@ 2>&1
 echo "run: OK"
