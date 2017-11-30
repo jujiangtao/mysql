@@ -1,5 +1,6 @@
 mysql-5.7 (5.7.20-1) unstable; urgency=high (security fixes)
 
+  [ Lars Tangvald ]
   * Imported upstream version 5.7.20 to fix security issues:
     - http://www.oracle.com/technetwork/security-advisory/cpuoct2017-3236626.html
     - CVE-2017-3731 CVE-2017-10155 CVE-2017-10165 CVE-2017-10167
@@ -11,7 +12,10 @@ mysql-5.7 (5.7.20-1) unstable; urgency=high (security fixes)
   * d/patches: Removed patch for failing test
     (Fixed upstream: https://bugs.mysql.com/bug.php?id=83321)
 
- -- Lars Tangvald <lars.tangvald@oracle.com>  Tue, 17 Oct 2017 12:37:14 +0200
+  [ Robie Basak ]
+  * Update translations (Closes: #856791, #863940, #871560, #845692)
+
+ -- Robie Basak <robie.basak@canonical.com>  Thu, 30 Nov 2017 12:31:24 +0000
 
 mysql-5.7 (5.7.19-1) unstable; urgency=high (security fixes)
 
