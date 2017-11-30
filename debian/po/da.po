@@ -2,17 +2,17 @@
 # Copyright (C) 2010 mysql-5.1 & nedenstående oversættere.
 # This file is distributed under the same license as the mysql-5.1 package.
 # Claus Hindsgaul <claus_h@image.dk> 2005, 2006, 2007.
-# Joe Hansen <joedalton2@yahoo.dk>, 2010.
+# Joe Hansen <joedalton2@yahoo.dk>, 2010-2017.
 #
 msgid ""
 msgstr ""
 "Project-Id-Version: mysql-5.1\n"
 "Report-Msgid-Bugs-To: mysql-5.7@packages.debian.org\n"
 "POT-Creation-Date: 2016-03-16 15:13+0000\n"
-"PO-Revision-Date: 2010-10-07 05:26+0100\n"
+"PO-Revision-Date: 2017-03-04 05:26+0100\n"
 "Last-Translator: Joe Hansen <joedalton2@yahoo.dk>\n"
-"Language-Team: Danish <debian-l10n-danish@lists.debian.org> \n"
-"Language: \n"
+"Language-Team: Danish <debian-l10n-danish@lists.debian.org>\n"
+"Language: da\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
@@ -97,6 +97,8 @@ msgid ""
 "This will also erase all data in /var/lib/mysql-files as well as /var/lib/"
 "mysql-keyring."
 msgstr ""
+"Dette vil slette alle data i /var/lib/mysql-files samt /var/lib/"
+"mysql-keyring."
 
 #. Type: boolean
 #. Description
@@ -176,44 +178,13 @@ msgstr "NDB-cluster ser ud til at være i brug"
 #. Type: error
 #. Description
 #: ../mysql-server-5.7.templates:9001
-#, fuzzy
-#| msgid ""
-#| "MySQL-5.1 no longer provides NDB Cluster support. Please migrate to the "
-#| "new mysql-cluster package and remove all lines starting with \"ndb\" from "
-#| "all config files below /etc/mysql/."
 msgid ""
 "MySQL-5.7 no longer provides NDB Cluster support. Please migrate to the new "
 "mysql-cluster-server package and remove all lines starting with \"ndb\" from "
 "all config files below /etc/mysql/."
 msgstr ""
-"MySQL-5.1 tilbyder ikke længere NDB-clusterunderstøttelse. Migrer venligst "
+"MySQL-5.7 tilbyder ikke længere NDB-clusterunderstøttelse. Migrer venligst "
 "til den nye pakke mysql-cluster og fjern alle linjer der starter med »ndb« "
 "fra alle konfigurationsfiler under /etc/mysql/."
 
-#~ msgid "Unable to set password for the MySQL \"root\" user"
-#~ msgstr "Kunne ikke sætte adgangskoden for MySQL's »root-bruger«"
 
-#~ msgid ""
-#~ "An error occurred while setting the password for the MySQL administrative "
-#~ "user. This may have happened because the account already has a password, "
-#~ "or because of a communication problem with the MySQL server."
-#~ msgstr ""
-#~ "Der opstod en fejl, da adgangskoden for MySQL's administrationsbruger "
-#~ "blev forsøgt ændret. Dette kan være sket, fordi brugeren allerede har en "
-#~ "adgangskode, eller fordi der var problemer med at kommunikere med MySQL-"
-#~ "serveren."
-
-#~ msgid ""
-#~ "You should check the account's password after the package installation."
-#~ msgstr "Du bør tjekke kontoens adgangskode efter pakkeinstallationen."
-
-#, fuzzy
-#~| msgid ""
-#~| "Please read the /usr/share/doc/mysql-server-5.1/README.Debian file for "
-#~| "more information."
-#~ msgid ""
-#~ "Please read the /usr/share/doc/mysql-server-5.7/README.Debian file for "
-#~ "more information."
-#~ msgstr ""
-#~ "Læs venligst filen /usr/share/doc/mysql-server-5.1/README.Debian for "
-#~ "yderligere oplysninger."

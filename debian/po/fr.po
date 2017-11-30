@@ -1,23 +1,24 @@
 # Translation of mysql-dfsg-* debconf templates to French
-# Copyright (C) 2004-2009 Debian French l10n team <debian-l10n-french@lists.debian.org>
+# Copyright (C) 2004-2009, 2012, 2017 Debian French l10n team <debian-l10n-french@lists.debian.org>
 # This file is distributed under the same license as the mysql-dfsg-* packages.
 #
 # Translators:
 # Christian Perrier <bubulle@debian.org>, 2004, 2006, 2007, 2009, 2012.
+# Alban Vidal <alban.vidal@zordhak.fr>, 2017.
 msgid ""
 msgstr ""
-"Project-Id-Version: fr\n"
+"Project-Id-Version: mysql-5.7 5.7.18-1\n"
 "Report-Msgid-Bugs-To: mysql-5.7@packages.debian.org\n"
 "POT-Creation-Date: 2016-03-16 15:13+0000\n"
-"PO-Revision-Date: 2012-05-22 08:30+0200\n"
-"Last-Translator: Christian Perrier <bubulle@debian.org>\n"
+"PO-Revision-Date: 2017-05-27 14:13+0100\n"
+"Last-Translator: Alban Vidal <alban.vidal@zordhak.fr>\n"
 "Language-Team: French <debian-l10n-french@lists.debian.org>\n"
 "Language: fr\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "debian.org>\n"
-"X-Generator: Lokalize 1.2\n"
+"X-Generator: Lokalize 2.0\n"
 "Plural-Forms: Plural-Forms: nplurals=2; plural=n>1;\n"
 
 #. Type: boolean
@@ -48,7 +49,9 @@ msgstr ""
 msgid ""
 "There is no guarantee that the version you're currently installing will be "
 "able to use the current databases."
-msgstr "Il n'est pas garanti que cette version puisse en utiliser les données."
+msgstr ""
+"Il n'est pas garanti que cette version puisse utiliser les bases de données "
+"existantes."
 
 #. Type: note
 #. Description
@@ -99,6 +102,8 @@ msgid ""
 "This will also erase all data in /var/lib/mysql-files as well as /var/lib/"
 "mysql-keyring."
 msgstr ""
+"Cela effacera aussi toutes les données du répertoire /var/lib/mysql-files et "
+"du répertoire /var/lib/mysql-keyring."
 
 #. Type: boolean
 #. Description
@@ -178,7 +183,6 @@ msgstr "Abandon de la gestion de NDB"
 #. Type: error
 #. Description
 #: ../mysql-server-5.7.templates:9001
-#, fuzzy
 #| msgid ""
 #| "MySQL-5.7 no longer provides NDB Cluster support. Please migrate to the "
 #| "new mysql-cluster-server package and remove all lines starting with \"ndb"

@@ -2,19 +2,21 @@
 # Copyright (C) 2006 Miguel Figueiredo <elmig@debianpt.org>
 # This file is distributed under the same license as the mysql-5.7 package.
 # Miguel Figueiredo <elmig@debianpt.org>, 2012
+# Rui Branco <ruipb@debianpt.org>, 2017.
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: mysql-dfsg-5.6\n"
+"Project-Id-Version: mysql-5.7 5.7.18-1\n"
 "Report-Msgid-Bugs-To: mysql-5.7@packages.debian.org\n"
 "POT-Creation-Date: 2016-03-16 15:13+0000\n"
-"PO-Revision-Date: 2012-05-28 22:40+0100\n"
-"Last-Translator: Miguel Figueiredo <elmig@debianpt.org>\n"
+"PO-Revision-Date: 2017-08-07 19:34+0100\n"
+"Last-Translator: Rui Branco <ruipb@debianpt.org>\n"
 "Language-Team: Portuguese <traduz@debianpt.org>\n"
 "Language: pt\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
 #. Type: boolean
 #. Description
@@ -97,6 +99,8 @@ msgid ""
 "This will also erase all data in /var/lib/mysql-files as well as /var/lib/"
 "mysql-keyring."
 msgstr ""
+"Isto irá apagar todos os dados em /var/lib/mysql-files bem como em /var/lib/"
+"mysql-keyring."
 
 #. Type: boolean
 #. Description
@@ -178,7 +182,6 @@ msgstr "NDB Cluster parece estar a ser utilizado"
 #. Type: error
 #. Description
 #: ../mysql-server-5.7.templates:9001
-#, fuzzy
 #| msgid ""
 #| "MySQL-5.7 no longer provides NDB Cluster support. Please migrate to the "
 #| "new mysql-cluster-server package and remove all lines starting with \"ndb"
@@ -188,112 +191,6 @@ msgid ""
 "mysql-cluster-server package and remove all lines starting with \"ndb\" from "
 "all config files below /etc/mysql/."
 msgstr ""
-"MySQL-5.7 já não disponibiliza suporte para NDB Cluster. Por favor migre "
+"O MySQL-5.7 já não disponibiliza suporte para NDB Cluster. Por favor migre "
 "para o novo pacote mysql-cluster-server e remova todas as linhas que comecem "
 "por \"ndb\" em todos os ficheiros de configuração em /etc/mysql/."
-
-#~ msgid "Unable to set password for the MySQL \"root\" user"
-#~ msgstr ""
-#~ "Não foi possível definir a palavra-passe para o utilizador \"root\" do "
-#~ "MySQL"
-
-#~ msgid ""
-#~ "An error occurred while setting the password for the MySQL administrative "
-#~ "user. This may have happened because the account already has a password, "
-#~ "or because of a communication problem with the MySQL server."
-#~ msgstr ""
-#~ "Ocorreu um erro enquanto era definida a palavra-passe para o utilizador "
-#~ "administrativo do MySQL. Isto pode ter acontecido porque a conta já tem "
-#~ "uma palavra-passe, ou porque ocorreu um problema ao comunicação com o "
-#~ "servidor MySQL."
-
-#~ msgid ""
-#~ "You should check the account's password after the package installation."
-#~ msgstr ""
-#~ "Você deve verificar a palavra-passe da conta após a instalação do pacote."
-
-#~ msgid ""
-#~ "Please read the /usr/share/doc/mysql-server-5.7/README.Debian file for "
-#~ "more information."
-#~ msgstr ""
-#~ "Para mais informações, por favor leia o ficheiro /usr/share/doc/mysql-"
-#~ "server-5.7/README.Debian."
-
-#~ msgid ""
-#~ "To use MySQL, the following entries for users and groups should be added "
-#~ "to the system:"
-#~ msgstr ""
-#~ "Para utilizar o MySQL, têm de ser acrescentadas as seguintes entradas "
-#~ "para os utilizadores e grupos:"
-
-#~ msgid "Cannot upgrade if ISAM tables are present!"
-#~ msgstr "Não é possível actualizar se estiverem presentes tabelas ISAM!"
-
-#~ msgid ""
-#~ "Recent versions of MySQL can no longer use the old ISAM table format and "
-#~ "it is necessary to convert your tables to e.g. MyISAM before upgrading by "
-#~ "using \"mysql_convert_table_format\" or \"ALTER TABLE x ENGINE=MyISAM\". "
-#~ "The installation of mysql-server-5.7 will now abort. In case your old "
-#~ "mysql-server-4.1 gets removed nevertheless just reinstall it to convert "
-#~ "those tables."
-#~ msgstr ""
-#~ "As versões recentes de MySQL já não podem utilizar o antigo formato de "
-#~ "tabelas ISAM e é por isso necessário converter as suas tabelas pra e.g. "
-#~ "MyISAM antes da actualização, utilizando \"mysql_convert_table_format\" "
-#~ "ou \"ALTER TABLE x ENGINE=MyISAM\". A instalação de mysql-server-5.7 irá "
-#~ "agora ser cancelada. Se o seu antigo mysql-server-4.1 for removido apenas "
-#~ "reinstale para converter essas tabelas."
-
-#~ msgid ""
-#~ "Support MySQL connections from hosts running Debian \"sarge\" or older?"
-#~ msgstr ""
-#~ "Suportar ligações MySQL de máquinas que corram Debian \"sarge\" ou mais "
-#~ "antigos?"
-
-#~ msgid ""
-#~ "In old versions of MySQL clients on Debian, passwords were not stored "
-#~ "securely. This has been improved since then, however clients (such as "
-#~ "PHP) from hosts running Debian 3.1 Sarge will not be able to connect to "
-#~ "recent accounts or accounts whose password have been changed."
-#~ msgstr ""
-#~ "Nas versões antigas de clientes de MySQL em Debian, as palavras-passe não "
-#~ "eram guardadas de forma segura. Isto foi melhorado desde aí, no entanto "
-#~ "os clientes (como o PHP) de máquinas que corram Debian 3.1 Sarge não irão "
-#~ "conseguir ligar-se a contas novas ou cuja palavra-passe foi alterada."
-
-#~ msgid ""
-#~ "To use mysql you must install an equivalent user and group to the "
-#~ "following and ensure yourself that /var/lib/mysql has the right "
-#~ "permissions (the uid/gid may be different)."
-#~ msgstr ""
-#~ "Para utilizar mysql e instalar um utilizador e grupo equivalentes para o "
-#~ "seguinte e assegurar-se que /var/lib/mysql têm as permissões correctas (o "
-#~ "uid/gid podem ser diferentes)."
-
-#~ msgid ""
-#~ "/etc/passwd:      mysql:x:100:101:MySQL Server:/var/lib/mysql:/bin/false"
-#~ msgstr ""
-#~ "/etc/passwd:      mysql:x:100:101:MySQL Server:/var/lib/mysql:/bin/false"
-
-#~ msgid "/etc/group:       mysql:x:101:"
-#~ msgstr "/etc/group:       mysql:x:101:"
-
-#~ msgid "/var/lib/mysql:   drwxr-xr-x   mysql    mysql"
-#~ msgstr "/var/lib/mysql:   drwxr-xr-x   mysql    mysql"
-
-#~ msgid "Remove the databases used by all MySQL versions?"
-#~ msgstr "Remover as bases de dados utilizadas por todas as versões de MySQL?"
-
-#~ msgid ""
-#~ "If you do not provide a password no changes will be made to the account."
-#~ msgstr ""
-#~ "Se não disponibilizar uma password não serão feitas alterações nesta "
-#~ "conta."
-
-#~ msgid ""
-#~ "When installation finishes, you should verify that the account is "
-#~ "properly protected with a password (see README.Debian for more "
-#~ "information)."
-#~ msgstr ""
-#~ "Quando terminar a instalação, deve verificar se a conta está devidamente "
-#~ "protegida com uma password (para mais informações veja README.Debian)."
