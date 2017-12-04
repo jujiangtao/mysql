@@ -1,3 +1,15 @@
+mysql-5.7 (5.7.20-0ubuntu0.17.10.1) artful-security; urgency=medium
+
+  * SECURITY UPDATE: Update to 5.7.20 to fix security issues
+    - CVE-2017-10155, CVE-2017-10165, CVE-2017-10167, CVE-2017-10227,
+      CVE-2017-10268, CVE-2017-10276, CVE-2017-10283, CVE-2017-10286,
+      CVE-2017-10294, CVE-2017-10311, CVE-2017-10313, CVE-2017-10314,
+      CVE-2017-10320, CVE-2017-10379, CVE-2017-10384
+  * Removed patches included in new version:
+    - debian/patches/fix_failing_test.patch 
+
+ -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Wed, 18 Oct 2017 12:59:08 -0400
+
 mysql-5.7 (5.7.19-0ubuntu1) artful; urgency=medium
 
   * SECURITY UPDATE: Update to 5.7.19 to fix security issues
