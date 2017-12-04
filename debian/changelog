@@ -1,3 +1,17 @@
+mysql-5.7 (5.7.19-0ubuntu1) artful; urgency=medium
+
+  * SECURITY UPDATE: Update to 5.7.19 to fix security issues
+    - CVE-2017-3529, CVE-2017-3633, CVE-2017-3634, CVE-2017-3635,
+      CVE-2017-3637, CVE-2017-3638, CVE-2017-3639, CVE-2017-3640,
+      CVE-2017-3641, CVE-2017-3642, CVE-2017-3643, CVE-2017-3644,
+      CVE-2017-3645, CVE-2017-3647, CVE-2017-3648, CVE-2017-3649,
+      CVE-2017-3650, CVE-2017-3651, CVE-2017-3652, CVE-2017-3653
+  * Removed patches included in new version:
+    - debian/patches/removedojo.patch
+    - fix_test_mysql_not_windows.patch
+
+ -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Tue, 01 Aug 2017 08:02:22 -0400
+
 mysql-5.7 (5.7.18-0ubuntu2) artful; urgency=medium
 
   * No-change rebuild against libevent-core-2.1-6
