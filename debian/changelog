@@ -1,3 +1,29 @@
+mysql-5.7 (5.7.20-1ubuntu1) bionic; urgency=medium
+
+  * Merge from Debian.
+    - Previous merge was 5.7.17-0ubuntu1.
+    - Most changes in Ubuntu since were simply new bringing in new
+      upstream versions. Since we're merging in from the same upstream
+      version in Debian that Ubuntu is currently on, these are no-ops in
+      this merge.
+  * Remaining changes:
+    - Revert "Build with libmecab-dev" since libmecab-dev is in
+      universe.
+  * Drop changes (all adopted in Debian or originally cherry-picked from
+    Debian):
+    - Dropping of patches included upstream also dropped in Debian VCS
+      commit dd7b6e7:
+      + debian/patches/fix_mysql_config_flags.patch
+      + debian/patches/fix_test_events_2.patch
+    - debian/mysql-server-5.7.install: added connection_control.so, also
+      added in Debian VCS commit c77f03f.
+    - debian/server-core.install: removed my-default.cnf, also dropped
+      in Debian VCS commit 1363efd.
+    - Drop debian/patches/removedojo.patch, also dropped in Debian VCS
+      commit 1324dae.
+
+ -- Robie Basak <robie.basak@ubuntu.com>  Mon, 04 Dec 2017 15:35:52 +0000
+
 mysql-5.7 (5.7.20-1) unstable; urgency=high (security fixes)
 
   [ Lars Tangvald ]
