@@ -131,6 +131,8 @@ test_mysql_access() {
   mysql --no-defaults -u root --socket="$tmpdir/mysqld.sock" </dev/null >/dev/null 2>&1
 }
 
+this_version=5.7
+
 # This is necessary because mysql_install_db removes the pid file in /var/run
 # and because changed configuration options should take effect immediately.
 # In case the server wasn't running at all it should be ok if the stop
@@ -139,6 +141,23 @@ set +e; invoke stop; set -e
     
 case "$1" in
   configure)
+    # INSERT ANY VERSIONED UPGRADE PATH HANDLING HERE AND NO LATER
+
+    # Versioned upgrade path handling must be done before freeze mode detection;
+    # otherwise the following freeze mode handling may cause upgrade path
+    # handling to be skipped over multiple version upgrades, meaning that the
+    # upgrade path handling never runs on some systems where freeze mode
+    # remains active for a long period.
+
+    if [ -e /etc/mysql/FROZEN -o -h /etc/mysql/FROZEN ]; then
+      db_input critical mysql-server-$this_version/installation_freeze_mode_active || true
+      db_go
+      db_stop
+      echo "Packaging maintenance of MySQL will stop and the daemon disabled to prevent damage to your system." 1>&2
+      echo "For help, see /etc/mysql/FROZEN" 1>&2
+      exit 0
+    fi
+
     mysql_datadir=/usr/share/mysql
     mysql_statedir=/var/lib/mysql
     mysql_rundir=/var/run/mysqld

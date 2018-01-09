@@ -7,17 +7,13 @@
 # Even minor modifications require translation updates and such
 # changes should be coordinated with translators and reviewers.
 
-Template: mysql-server-5.7/really_downgrade
-Type: boolean
-Default: false
-_Description: Really proceed with downgrade?
- A file named /var/lib/mysql/debian-*.flag exists on this system.
- .
- Such a file is an indication that a mysql-server package with a higher
- version has been installed previously.
- .
- There is no guarantee that the version you're currently installing
- will be able to use the current databases.
+Template: mysql-server-5.7/installation_freeze_mode_active
+Type: note
+_Description: Automatic maintenance of MySQL server daemon disabled
+ Packaging maintainer scripts detected a case that it does not know how to
+ handle and cannot continue configuring MySQL. Automatic management of your
+ MySQL installation has been disabled to allow other packaging tasks to
+ complete. For more details, see /etc/mysql/FROZEN.
 
 Template: mysql-server-5.7/nis_warning
 Type: note
