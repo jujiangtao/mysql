@@ -8,12 +8,13 @@ After=network.target
 WantedBy=multi-user.target
 
 [Service]
+Type=forking
 User=mysql
 Group=mysql
+PIDFile=/run/mysqld/mysqld.pid
 PermissionsStartOnly=true
 ExecStartPre=/usr/share/mysql/mysql-systemd-start pre
-ExecStart=/usr/sbin/mysqld
-ExecStartPost=/usr/share/mysql/mysql-systemd-start post
+ExecStart=/usr/sbin/mysqld --daemonize --pid-file=/run/mysqld/mysqld.pid
 TimeoutSec=600
 Restart=on-failure
 RuntimeDirectory=mysqld
