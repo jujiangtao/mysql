@@ -25,7 +25,7 @@ start_server() {
   # If a database is already running, mysqld will keep trying to lock the files for ~100 seconds before failing.
   # If the ibdata1 file is locked we fail immediately
   if fuser "$datadir/ibdata1"; then
-    echo "ERROR: Database files are locked. Daemon already running?"
+    echo "ERROR: Database files are locked. Daemon already running?" >&2
     return 1
   fi
   # The --daemonize flag makes the process fork, with the original exiting once the database is ready for use
@@ -55,7 +55,7 @@ stop_server(){
     fi
   done
   # The server hasn't shut down in a timely manner
-  echo "Error: Unable to shut down server with process id $server_pid"
+  echo "Error: Unable to shut down server with process id $server_pid" >&2
   return 1
 }
 
@@ -316,7 +316,7 @@ if [ "$1" = "configure" ]; then
     start_server "$mysql_statedir" "$tmpdir" "skip_grant" || result=$?
     # If the server fails to start, then skip the various client operations
     if [ $result -ne 0 ]; then
-      echo "Warning: Unable to start the server. Please run mysql_upgrade to ensure the database is ready for use."
+      echo "Warning: Unable to start the server. Please run mysql_upgrade to ensure the database is ready for use." >&2
     else
       # mysql_upgrade returns exit status 2 if the database is already upgraded
       # (LP: #1566406) so ignore its exit status if it is 2.
@@ -341,7 +341,7 @@ if [ "$1" = "configure" ]; then
   result=0
   start_server "$mysql_statedir" "$tmpdir" || result=$?
   if [ $result -ne 0 ]; then
-    echo "Warning: Unable to start the server. Please run mysql_upgrade to ensure the database is ready for use."
+    echo "Warning: Unable to start the server. Please run mysql_upgrade to ensure the database is ready for use." >&2
   elif test_mysql_access "$tmpdir"; then
     db_get mysql-server/root_password && rootpw="$RET"
     if [ ! -z "$rootpw" ]; then
