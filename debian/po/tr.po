@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: mysql-5.6\n"
 "Report-Msgid-Bugs-To: mysql-5.7@packages.debian.org\n"
-"POT-Creation-Date: 2016-03-16 15:13+0000\n"
+"POT-Creation-Date: 2018-01-10 07:21+0000\n"
 "PO-Revision-Date: 2015-11-04 12:16+0200\n"
 "Last-Translator: Atila KOÇ <koc@artielektronik.com.tr>\n"
 "Language-Team: Turkish <debian-l10n-turkish@lists.debian.org>\n"
@@ -18,37 +18,21 @@ msgstr ""
 "Plural-Forms: nplurals=1; plural=0;\n"
 "X-Generator: Poedit 1.5.4\n"
 
-#. Type: boolean
+#. Type: note
 #. Description
 #: ../mysql-server-5.7.templates:2001
-msgid "Really proceed with downgrade?"
-msgstr "Sürüm düşürme işlemine gerçekten başlansın mı?"
+msgid "Automatic maintenance of MySQL server daemon disabled"
+msgstr ""
 
-#. Type: boolean
-#. Description
-#: ../mysql-server-5.7.templates:2001
-msgid "A file named /var/lib/mysql/debian-*.flag exists on this system."
-msgstr "Bu sistemde /var/lib/mysql/debian-*.flag adlı bir dosya bulunmaktadır."
-
-#. Type: boolean
+#. Type: note
 #. Description
 #: ../mysql-server-5.7.templates:2001
 msgid ""
-"Such a file is an indication that a mysql-server package with a higher "
-"version has been installed previously."
+"Packaging maintainer scripts detected a case that it does not know how to "
+"handle and cannot continue configuring MySQL. Automatic management of your "
+"MySQL installation has been disabled to allow other packaging tasks to "
+"complete. For more details, see /etc/mysql/FROZEN."
 msgstr ""
-"Böyle bir dosyanın varlığı daha yüksek sürümde bir mysql-server paketinin "
-"önceden kurulu olduğunu gösterir."
-
-#. Type: boolean
-#. Description
-#: ../mysql-server-5.7.templates:2001
-msgid ""
-"There is no guarantee that the version you're currently installing will be "
-"able to use the current databases."
-msgstr ""
-"Kurmakta olduğunuz sürümün var olan veritabanlarını kullanabileceğinin "
-"garantisi yoktur."
 
 #. Type: note
 #. Description
@@ -189,6 +173,27 @@ msgstr ""
 "MySQL-5.7 artık NDB Kümesi desteği vermemektedir. Lütfen yeni mysql-cluster-"
 "server paketine geçin ve /etc/mysql/ dizinindeki tüm yapılandırma "
 "dosyalarından \"ndb\" ile başlayan satırları kaldırın."
+
+#~ msgid "Really proceed with downgrade?"
+#~ msgstr "Sürüm düşürme işlemine gerçekten başlansın mı?"
+
+#~ msgid "A file named /var/lib/mysql/debian-*.flag exists on this system."
+#~ msgstr ""
+#~ "Bu sistemde /var/lib/mysql/debian-*.flag adlı bir dosya bulunmaktadır."
+
+#~ msgid ""
+#~ "Such a file is an indication that a mysql-server package with a higher "
+#~ "version has been installed previously."
+#~ msgstr ""
+#~ "Böyle bir dosyanın varlığı daha yüksek sürümde bir mysql-server paketinin "
+#~ "önceden kurulu olduğunu gösterir."
+
+#~ msgid ""
+#~ "There is no guarantee that the version you're currently installing will "
+#~ "be able to use the current databases."
+#~ msgstr ""
+#~ "Kurmakta olduğunuz sürümün var olan veritabanlarını kullanabileceğinin "
+#~ "garantisi yoktur."
 
 #~ msgid "Unable to set password for the MySQL \"root\" user"
 #~ msgstr "MySQL \"root\" kullanıcısı için parola oluşturulamadı"

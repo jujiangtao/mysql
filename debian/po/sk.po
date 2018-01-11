@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: mysql-5.1 5.1.49-3\n"
 "Report-Msgid-Bugs-To: mysql-5.7@packages.debian.org\n"
-"POT-Creation-Date: 2016-03-16 15:13+0000\n"
+"POT-Creation-Date: 2018-01-10 07:21+0000\n"
 "PO-Revision-Date: 2011-01-04 12:55+0100\n"
 "Last-Translator: Slavko <linux@slavino.sk>\n"
 "Language-Team: Slovak <nomail>\n"
@@ -18,37 +18,21 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=3; plural=(n==1) ? 0 : (n>=2 && n<=4) ? 1 : 2;\n"
 
-#. Type: boolean
+#. Type: note
 #. Description
 #: ../mysql-server-5.7.templates:2001
-msgid "Really proceed with downgrade?"
-msgstr "Naozaj pokračovať v znížení verzie?"
+msgid "Automatic maintenance of MySQL server daemon disabled"
+msgstr ""
 
-#. Type: boolean
-#. Description
-#: ../mysql-server-5.7.templates:2001
-msgid "A file named /var/lib/mysql/debian-*.flag exists on this system."
-msgstr "Súbor s menom /var/lib/mysql/debian-*.flag už v systéme existuje."
-
-#. Type: boolean
+#. Type: note
 #. Description
 #: ../mysql-server-5.7.templates:2001
 msgid ""
-"Such a file is an indication that a mysql-server package with a higher "
-"version has been installed previously."
+"Packaging maintainer scripts detected a case that it does not know how to "
+"handle and cannot continue configuring MySQL. Automatic management of your "
+"MySQL installation has been disabled to allow other packaging tasks to "
+"complete. For more details, see /etc/mysql/FROZEN."
 msgstr ""
-"Takýto súbor udáva, že už bol predtým nainštalovaný balík mysql-server s "
-"vyššou verziou."
-
-#. Type: boolean
-#. Description
-#: ../mysql-server-5.7.templates:2001
-msgid ""
-"There is no guarantee that the version you're currently installing will be "
-"able to use the current databases."
-msgstr ""
-"Neexistuje žiadna záruka, že aktuálne inštalovaná verzia dokáže pracovať s "
-"existujúcimi databázami."
 
 #. Type: note
 #. Description
@@ -187,6 +171,26 @@ msgstr ""
 "MySQL-5.1 už nepodporuje NDB Cluster. Použite prosím nový balík mysql-"
 "cluster a zo všetkých konfiguračných súborov v /etc/mysql/ odstráňte všetky "
 "riadky, ktoré začínajú na „ndb”."
+
+#~ msgid "Really proceed with downgrade?"
+#~ msgstr "Naozaj pokračovať v znížení verzie?"
+
+#~ msgid "A file named /var/lib/mysql/debian-*.flag exists on this system."
+#~ msgstr "Súbor s menom /var/lib/mysql/debian-*.flag už v systéme existuje."
+
+#~ msgid ""
+#~ "Such a file is an indication that a mysql-server package with a higher "
+#~ "version has been installed previously."
+#~ msgstr ""
+#~ "Takýto súbor udáva, že už bol predtým nainštalovaný balík mysql-server s "
+#~ "vyššou verziou."
+
+#~ msgid ""
+#~ "There is no guarantee that the version you're currently installing will "
+#~ "be able to use the current databases."
+#~ msgstr ""
+#~ "Neexistuje žiadna záruka, že aktuálne inštalovaná verzia dokáže pracovať "
+#~ "s existujúcimi databázami."
 
 #~ msgid "Unable to set password for the MySQL \"root\" user"
 #~ msgstr "Nemožno nastaviť heslo MySQL používateľa „root“"

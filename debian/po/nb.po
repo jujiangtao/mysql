@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: mysql_nb\n"
 "Report-Msgid-Bugs-To: mysql-5.7@packages.debian.org\n"
-"POT-Creation-Date: 2016-03-16 15:13+0000\n"
+"POT-Creation-Date: 2018-01-10 07:21+0000\n"
 "PO-Revision-Date: 2007-02-18 12:13+0100\n"
 "Last-Translator: Bjørn Steensrud <bjornst@powertech.no>\n"
 "Language-Team: Norwegian Bokmål <i18n-nb@lister.ping.uio.no>\n"
@@ -17,42 +17,20 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "X-Generator: KBabel 1.11.2\n"
 
-#. Type: boolean
+#. Type: note
 #. Description
 #: ../mysql-server-5.7.templates:2001
-#, fuzzy
-#| msgid "Do you really want to downgrade?"
-msgid "Really proceed with downgrade?"
-msgstr "Er du sikker på at du vil nedgradere?"
-
-#. Type: boolean
-#. Description
-#: ../mysql-server-5.7.templates:2001
-msgid "A file named /var/lib/mysql/debian-*.flag exists on this system."
+msgid "Automatic maintenance of MySQL server daemon disabled"
 msgstr ""
 
-#. Type: boolean
-#. Description
-#: ../mysql-server-5.7.templates:2001
-#, fuzzy
-#| msgid ""
-#| "WARNING: The file /var/lib/mysql/debian-*.flag exists. This indicates "
-#| "that a mysql-server package with a higher version has been installed "
-#| "before. It can not be guaranteed that this version can use its data."
-msgid ""
-"Such a file is an indication that a mysql-server package with a higher "
-"version has been installed previously."
-msgstr ""
-"ADVARSEL: Fila /var/lib/mysql/debian-*.flag finnes. Dette viser at en mysql-"
-"server-pakke med et høyere versjonsnummer har vært installert før. Det kan "
-"ikke garanteres at denne versjonen kan bruke data fra den høyere versjonen."
-
-#. Type: boolean
+#. Type: note
 #. Description
 #: ../mysql-server-5.7.templates:2001
 msgid ""
-"There is no guarantee that the version you're currently installing will be "
-"able to use the current databases."
+"Packaging maintainer scripts detected a case that it does not know how to "
+"handle and cannot continue configuring MySQL. Automatic management of your "
+"MySQL installation has been disabled to allow other packaging tasks to "
+"complete. For more details, see /etc/mysql/FROZEN."
 msgstr ""
 
 #. Type: note
@@ -202,6 +180,25 @@ msgid ""
 "mysql-cluster-server package and remove all lines starting with \"ndb\" from "
 "all config files below /etc/mysql/."
 msgstr ""
+
+#, fuzzy
+#~| msgid "Do you really want to downgrade?"
+#~ msgid "Really proceed with downgrade?"
+#~ msgstr "Er du sikker på at du vil nedgradere?"
+
+#, fuzzy
+#~| msgid ""
+#~| "WARNING: The file /var/lib/mysql/debian-*.flag exists. This indicates "
+#~| "that a mysql-server package with a higher version has been installed "
+#~| "before. It can not be guaranteed that this version can use its data."
+#~ msgid ""
+#~ "Such a file is an indication that a mysql-server package with a higher "
+#~ "version has been installed previously."
+#~ msgstr ""
+#~ "ADVARSEL: Fila /var/lib/mysql/debian-*.flag finnes. Dette viser at en "
+#~ "mysql-server-pakke med et høyere versjonsnummer har vært installert før. "
+#~ "Det kan ikke garanteres at denne versjonen kan bruke data fra den høyere "
+#~ "versjonen."
 
 #, fuzzy
 #~| msgid "Unable to set password for MySQL \"root\" user"

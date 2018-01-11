@@ -9,7 +9,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: mysql-5.7 5.7.18-1\n"
 "Report-Msgid-Bugs-To: mysql-5.7@packages.debian.org\n"
-"POT-Creation-Date: 2016-03-16 15:13+0000\n"
+"POT-Creation-Date: 2018-01-10 07:21+0000\n"
 "PO-Revision-Date: 2017-05-27 14:13+0100\n"
 "Last-Translator: Alban Vidal <alban.vidal@zordhak.fr>\n"
 "Language-Team: French <debian-l10n-french@lists.debian.org>\n"
@@ -21,37 +21,21 @@ msgstr ""
 "X-Generator: Lokalize 2.0\n"
 "Plural-Forms: Plural-Forms: nplurals=2; plural=n>1;\n"
 
-#. Type: boolean
+#. Type: note
 #. Description
 #: ../mysql-server-5.7.templates:2001
-msgid "Really proceed with downgrade?"
-msgstr "Faut-il vraiment revenir à la version précédente ?"
+msgid "Automatic maintenance of MySQL server daemon disabled"
+msgstr ""
 
-#. Type: boolean
-#. Description
-#: ../mysql-server-5.7.templates:2001
-msgid "A file named /var/lib/mysql/debian-*.flag exists on this system."
-msgstr "Un fichier /var/lib/mysql/debian-*.flag est présent sur ce système."
-
-#. Type: boolean
+#. Type: note
 #. Description
 #: ../mysql-server-5.7.templates:2001
 msgid ""
-"Such a file is an indication that a mysql-server package with a higher "
-"version has been installed previously."
+"Packaging maintainer scripts detected a case that it does not know how to "
+"handle and cannot continue configuring MySQL. Automatic management of your "
+"MySQL installation has been disabled to allow other packaging tasks to "
+"complete. For more details, see /etc/mysql/FROZEN."
 msgstr ""
-"Cela indique qu'une version plus récente du paquet mysql-server a été "
-"précédemment installée."
-
-#. Type: boolean
-#. Description
-#: ../mysql-server-5.7.templates:2001
-msgid ""
-"There is no guarantee that the version you're currently installing will be "
-"able to use the current databases."
-msgstr ""
-"Il n'est pas garanti que cette version puisse utiliser les bases de données "
-"existantes."
 
 #. Type: note
 #. Description
@@ -183,10 +167,6 @@ msgstr "Abandon de la gestion de NDB"
 #. Type: error
 #. Description
 #: ../mysql-server-5.7.templates:9001
-#| msgid ""
-#| "MySQL-5.7 no longer provides NDB Cluster support. Please migrate to the "
-#| "new mysql-cluster-server package and remove all lines starting with \"ndb"
-#| "\" from all config files below /etc/mysql/."
 msgid ""
 "MySQL-5.7 no longer provides NDB Cluster support. Please migrate to the new "
 "mysql-cluster-server package and remove all lines starting with \"ndb\" from "
@@ -195,6 +175,26 @@ msgstr ""
 "La version 5.7 de MySQL ne gère plus les grappes NDB. Vous devriez utiliser "
 "le paquet mysql-cluster-server et supprimer toutes les lignes commençant par "
 "« ndb » des fichiers de configuration situés dans /etc/mysql."
+
+#~ msgid "Really proceed with downgrade?"
+#~ msgstr "Faut-il vraiment revenir à la version précédente ?"
+
+#~ msgid "A file named /var/lib/mysql/debian-*.flag exists on this system."
+#~ msgstr "Un fichier /var/lib/mysql/debian-*.flag est présent sur ce système."
+
+#~ msgid ""
+#~ "Such a file is an indication that a mysql-server package with a higher "
+#~ "version has been installed previously."
+#~ msgstr ""
+#~ "Cela indique qu'une version plus récente du paquet mysql-server a été "
+#~ "précédemment installée."
+
+#~ msgid ""
+#~ "There is no guarantee that the version you're currently installing will "
+#~ "be able to use the current databases."
+#~ msgstr ""
+#~ "Il n'est pas garanti que cette version puisse utiliser les bases de "
+#~ "données existantes."
 
 #~ msgid "Unable to set password for the MySQL \"root\" user"
 #~ msgstr ""

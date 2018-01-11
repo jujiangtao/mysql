@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: mysql-dfsg-5.6 5.0.21-3\n"
 "Report-Msgid-Bugs-To: mysql-5.7@packages.debian.org\n"
-"POT-Creation-Date: 2016-03-16 15:13+0000\n"
+"POT-Creation-Date: 2018-01-10 07:21+0000\n"
 "PO-Revision-Date: 2012-05-30 00:29+0100\n"
 "Last-Translator: Martin Bagge / brother <brother@bsnet.se>\n"
 "Language-Team: Swedish <debian-l10n-swedish@lists.debian.org>\n"
@@ -19,37 +19,21 @@ msgstr ""
 "X-Poedit-Language: Swedish\n"
 "X-Poedit-Country: Sweden\n"
 
-#. Type: boolean
+#. Type: note
 #. Description
 #: ../mysql-server-5.7.templates:2001
-msgid "Really proceed with downgrade?"
-msgstr "Vill du verkligen genomföra nedgraderingen?"
+msgid "Automatic maintenance of MySQL server daemon disabled"
+msgstr ""
 
-#. Type: boolean
-#. Description
-#: ../mysql-server-5.7.templates:2001
-msgid "A file named /var/lib/mysql/debian-*.flag exists on this system."
-msgstr "En fil med namnet /var/lib/mysql/debian-*.flag hittades i systemet."
-
-#. Type: boolean
+#. Type: note
 #. Description
 #: ../mysql-server-5.7.templates:2001
 msgid ""
-"Such a file is an indication that a mysql-server package with a higher "
-"version has been installed previously."
+"Packaging maintainer scripts detected a case that it does not know how to "
+"handle and cannot continue configuring MySQL. Automatic management of your "
+"MySQL installation has been disabled to allow other packaging tasks to "
+"complete. For more details, see /etc/mysql/FROZEN."
 msgstr ""
-"En sådan fil är en indikation på att paketet mysql-server med ett högre "
-"versionsnummer har installerats tidigare."
-
-#. Type: boolean
-#. Description
-#: ../mysql-server-5.7.templates:2001
-msgid ""
-"There is no guarantee that the version you're currently installing will be "
-"able to use the current databases."
-msgstr ""
-"Det finns ingen garanti för att den version som du håller på att installera "
-"kommer att kunna använda de aktuella databaserna."
 
 #. Type: note
 #. Description
@@ -190,6 +174,26 @@ msgstr ""
 "Stödet för NDB-kluster har tagits bort i MySQL-5.7. Migrera till det nya "
 "paketet mysql-cluster-server  och ta bort alla rader som inleds med \"ndb\" "
 "från alla inställlningsfiler i /etc/mysql/."
+
+#~ msgid "Really proceed with downgrade?"
+#~ msgstr "Vill du verkligen genomföra nedgraderingen?"
+
+#~ msgid "A file named /var/lib/mysql/debian-*.flag exists on this system."
+#~ msgstr "En fil med namnet /var/lib/mysql/debian-*.flag hittades i systemet."
+
+#~ msgid ""
+#~ "Such a file is an indication that a mysql-server package with a higher "
+#~ "version has been installed previously."
+#~ msgstr ""
+#~ "En sådan fil är en indikation på att paketet mysql-server med ett högre "
+#~ "versionsnummer har installerats tidigare."
+
+#~ msgid ""
+#~ "There is no guarantee that the version you're currently installing will "
+#~ "be able to use the current databases."
+#~ msgstr ""
+#~ "Det finns ingen garanti för att den version som du håller på att "
+#~ "installera kommer att kunna använda de aktuella databaserna."
 
 #~ msgid "Unable to set password for the MySQL \"root\" user"
 #~ msgstr "Kunde inte sätta lösenord för MySQLs \"root\"-användare"
