@@ -131,27 +131,6 @@ test_mysql_access() {
   mysql --no-defaults -u root --socket="$tmpdir/mysqld.sock" </dev/null >/dev/null 2>&1
 }
 
-# Check if the debian-sys-maint user can log in
-test_sysmaint_access() {
-  mysql --defaults-file=/etc/mysql/debian.cnf </dev/null >/dev/null 2>&1
-}
-
-# $1 is username, e.g. 'root' $2 is password
-set_mysql_pw() {
-  # These variables are global (POSIX doesn't define local) so prefix them
-  # to avoid any potential collisions.
-  set_mysql_pw_user="$1"
-  set_mysql_pw_pass="$2"
-  set_mysql_pw_passfile=`mktemp --tmpdir=/var/lib/mysql-files/`
-  chown mysql:mysql "$set_mysql_pw_passfile"
-  echo "USE mysql;" >> "$set_mysql_pw_passfile"
-  echo "UPDATE user SET authentication_string=PASSWORD('$set_mysql_pw_pass') WHERE user='$set_mysql_pw_user';" >> "$set_mysql_pw_passfile"
-  echo "FLUSH PRIVILEGES;" >> "$set_mysql_pw_passfile"
-  echo "SHUTDOWN;" >> "$set_mysql_pw_passfile"
-  run_init_sql "$set_mysql_pw_passfile"
-  rm "$set_mysql_pw_passfile"
-}
-
 # This is necessary because mysql_install_db removes the pid file in /var/run
 # and because changed configuration options should take effect immediately.
 # In case the server wasn't running at all it should be ok if the stop
