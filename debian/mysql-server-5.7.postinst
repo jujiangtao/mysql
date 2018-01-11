@@ -47,12 +47,11 @@ stop_server(){
   kill "$server_pid"
 
   for i in $(seq 1 60); do
-    sleep 1
-    if $(ps $server_pid >/dev/null 2>&1); then
-      shutdown_ok=0
-    else
+    sleep 0.1 # A full second is too long, but we need to give the server _some_ time.
+    if ! $(ps $server_pid >/dev/null 2>&1); then
       return 0
     fi
+    sleep 1
   done
   # The server hasn't shut down in a timely manner
   echo "Error: Unable to shut down server with process id $server_pid" >&2
