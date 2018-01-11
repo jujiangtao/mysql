@@ -44,7 +44,7 @@ stop_server_no_auth(){
   local tmpdir=$1
   # Send kill signal
   server_pid=$(cat "$tmpdir/mysqld.pid")
-  kill $server_pid
+  kill "$server_pid"
 
   for i in $(seq 1 60); do
     sleep 1
