@@ -305,8 +305,9 @@ esac
 
 
 if [ "$1" = "configure" ]; then
-  # We want to run mysql_upgrade to cover users upgrading. First we check if
-  # the debian-sys-maint user can log in. If not, we reset its password first.
+  # We want to run mysql_upgrade to cover users upgrading. Since
+  # mysql_upgrade is a client and we don't know the root credentials,
+  # we run the server in skip_grant mode to allow it access.
   if [ $existingdatabase = 1 ]; then
     # Generate a tmpdir to store socket and pid files
     tmpdir=$(mktemp -d)
