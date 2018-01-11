@@ -30,7 +30,7 @@ start_server() {
   fi
   # The --daemonize flag makes the process fork, with the original exiting once the database is ready for use
   if [ ! -z "$skip_grant" ]; then
-    mysqld --user=mysql --daemonize --socket="$tmpdir/mysqld.sock" --pid-file="$tmpdir/mysqld.pid" --skip-networking --skip-grant-tables 
+    mysqld --user=mysql --daemonize --socket="$tmpdir/mysqld.sock" --pid-file="$tmpdir/mysqld.pid" --skip-networking --skip-grant-tables
   else
     mysqld --user=mysql --daemonize --socket="$tmpdir/mysqld.sock" --pid-file="$tmpdir/mysqld.pid" --skip-networking
   fi
