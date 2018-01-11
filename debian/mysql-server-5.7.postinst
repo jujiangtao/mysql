@@ -320,6 +320,7 @@ if [ "$1" = "configure" ]; then
     else
       # mysql_upgrade returns exit status 2 if the database is already upgraded
       # (LP: #1566406) so ignore its exit status if it is 2.
+      result=0
       mysql_upgrade --no-defaults --socket="$tmpdir/mysqld.sock" || result=$?
       if [ $result -ne 0 -a $result -ne 2 ]; then
         echo "mysql_upgrade failed with exit status $result" >&2
