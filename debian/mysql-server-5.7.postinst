@@ -37,10 +37,10 @@ start_server() {
 }
 
 # Shut down the server by sending a kill signal to the process
-# Usage: stop_server_no_auth <tmpdir>
+# Usage: stop_server <tmpdir>
 # Params:
 # tmpdir - Location of temporary pid-file
-stop_server_no_auth(){
+stop_server(){
   local tmpdir=$1
   # Send kill signal
   server_pid=$(cat "$tmpdir/mysqld.pid")
@@ -326,7 +326,7 @@ if [ "$1" = "configure" ]; then
         exit 1
       fi
       # Stop the server
-      stop_server_no_auth "$tmpdir"
+      stop_server "$tmpdir"
     fi
     rm -rf "$tmpdir"
   fi
@@ -345,7 +345,7 @@ if [ "$1" = "configure" ]; then
   elif test_mysql_access "$tmpdir"; then
     db_get mysql-server/root_password && rootpw="$RET"
     if [ ! -z "$rootpw" ]; then
-      stop_server_no_auth "$tmpdir"
+      stop_server "$tmpdir"
       rootpw=$(printf %q "${rootpw}")
       initfile=`mktemp --tmpdir=/var/lib/mysql-files/`
       chown mysql:mysql "$initfile"
@@ -361,7 +361,7 @@ if [ "$1" = "configure" ]; then
       echo "INSTALL PLUGIN auth_socket SONAME 'auth_socket.so';" >> "$pluginfile"
       mysql --no-defaults --socket="$tmpdir/mysqld.sock" -uroot < "$pluginfile" > /dev/null 2>&1 || true
       rm "$pluginfile"
-      stop_server_no_auth "$tmpdir"
+      stop_server "$tmpdir"
       initfile=`mktemp --tmpdir=/var/lib/mysql-files/`
       chown mysql:mysql "$initfile"
       # If there is no root password set we enable the auth_socket plugin for the root user
@@ -373,7 +373,7 @@ if [ "$1" = "configure" ]; then
       rm "$initfile"
     fi
   else
-    stop_server_no_auth "$tmpdir"
+    stop_server "$tmpdir"
   fi
   rm -rf "$tmpdir"
 fi
