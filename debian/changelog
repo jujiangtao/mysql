@@ -1,3 +1,23 @@
+mysql-5.7 (5.7.20-2) unstable; urgency=medium
+
+  [ Lars Tangvald ]
+  * Change systemd service type to forking.
+  * Add server test startup to systemd sanity check.
+  * Reduce priority of root password prompt as the existing default of Unix
+    socket authentication when the root password is empty is preferred.
+  * Refactor database upgrades to use an internal "no-network" daemon instead
+    of using invoke-rc.d on the main service which could be locally disabled.
+    (Closes: #843959, LP: #1592669).
+
+  [ Robie Basak ]
+  * Use maintainer script freeze mode instead of failing entirely when a
+    downgrade is detected.
+
+  [ fr33l ]
+  * Increase open_files_limit to 5000 (LP: #1721546).
+
+ -- Robie Basak <robie.basak@ubuntu.com>  Fri, 12 Jan 2018 11:06:00 +0000
+
 mysql-5.7 (5.7.20-1) unstable; urgency=high (security fixes)
 
   [ Lars Tangvald ]
