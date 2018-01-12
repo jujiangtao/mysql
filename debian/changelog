@@ -1,3 +1,12 @@
+mysql-5.7 (5.7.20-2ubuntu1) bionic; urgency=medium
+
+  * Merge from Debian.
+  * Remaining changes:
+    - Revert "Build with libmecab-dev" since libmecab-dev is in
+      universe.
+
+ -- Lars Tangvald <lars.tangvald@oracle.com>  Fri, 12 Jan 2018 13:53:00 +0100
+
 mysql-5.7 (5.7.20-2) unstable; urgency=medium
 
   [ Lars Tangvald ]
