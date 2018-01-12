@@ -295,7 +295,7 @@ if [ "$1" = "configure" ]; then
     start_server "$mysql_statedir" "$tmpdir" "skip_grant" || result=$?
     # If the server fails to start, then skip the various client operations
     if [ $result -ne 0 ]; then
-      echo "Warning: Unable to start the server. Please run mysql_upgrade to ensure the database is ready for use." >&2
+      echo "Warning: Unable to start the server. Please restart MySQL and run mysql_upgrade to ensure the database is ready for use." >&2
     else
       # mysql_upgrade returns exit status 2 if the database is already upgraded
       # (LP: #1566406) so ignore its exit status if it is 2.
@@ -323,7 +323,7 @@ if [ "$1" = "configure" ]; then
   result=0
   start_server "$mysql_statedir" "$tmpdir" || result=$?
   if [ $result -ne 0 ]; then
-    echo "Warning: Unable to start the server. Please run mysql_upgrade to ensure the database is ready for use." >&2
+    echo "Warning: Unable to start the server." >&2
   elif test_mysql_access "$tmpdir"; then
     db_get mysql-server/root_password && rootpw="$RET"
     if [ ! -z "$rootpw" ]; then
