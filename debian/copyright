@@ -22,6 +22,11 @@ Copyright:
  2016, Andreas Beckmann <anbe@debian.org>
 License: GPL-2+
 
+Files: doc/*
+Copyright:
+ 2018, Canonical Ltd
+License: GPL-2+
+
 License: GPL-2+
  This file is part of GNU Readline, a library for reading lines
  of text with interactive input and history editing.
