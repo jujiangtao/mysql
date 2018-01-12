@@ -1,3 +1,9 @@
+mysql-defaults (1.0.4) unstable; urgency=medium
+
+  * Add frozen mode common documentation.
+
+ -- Robie Basak <robie.basak@ubuntu.com>  Fri, 12 Jan 2018 09:43:13 +0000
+
 mysql-defaults (1.0.3) unstable; urgency=medium
 
   [ Andreas Beckmann ]
