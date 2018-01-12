@@ -1,6 +1,7 @@
 mysql-defaults (1.0.4) unstable; urgency=medium
 
   * Add frozen mode common documentation.
+  * Add copyright statement for files in doc/*
 
  -- Robie Basak <robie.basak@ubuntu.com>  Fri, 12 Jan 2018 09:43:13 +0000
 
