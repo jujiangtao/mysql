@@ -1,13 +1,20 @@
-/* Copyright (c) 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -16,16 +23,16 @@
 #ifndef GCS_LOGGER_INCLUDED
 #define GCS_LOGGER_INCLUDED
 
-#include <mysql/gcs/gcs_logging.h>
+#include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/gcs_logging.h"
 
 /**
-  Group Replication implementation of @interface Ext_logger_interface
+  Group Replication implementation of @interface Logger_interface
 
   Once a instance of this logger is set at Gcs_interface, all log
   produced by MySQL GCS will be routed by this logger to MySQL
   error log.
 */
-class Gcs_gr_logger_impl : public Ext_logger_interface
+class Gcs_gr_logger_impl : public Logger_interface
 {
 public:
   /**
@@ -62,7 +69,7 @@ public:
     @param[in] level    logging level of message
     @param[in] message  the message to log
   */
-  void log_event(gcs_log_level_t level, const char *message);
+  void log_event(const gcs_log_level_t level, const std::string &message);
 
   /*
     Disabling copy constructor and assignment operator.

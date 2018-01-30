@@ -1,29 +1,44 @@
 /* Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include <my_atomic.h>
+#define LOG_SUBSYSTEM_TAG "CONNECTION_CONTROL"
+
+#include "plugin/connection_control/connection_control.h"
+
 #include <mysql/plugin_audit.h>         /* mysql_event_connection */
 #include <stddef.h>
 
-#include "connection_control.h"
-#include "connection_control_coordinator.h" /* g_connection_event_coordinator */
-#include "connection_delay_api.h"       /* connection_delay apis */
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "mysql_version.h"
+#include "mysqld_error.h"
+#include <mysql/components/services/log_builtins.h>
+#include "plugin/connection_control/connection_control_coordinator.h" /* g_connection_event_coordinator */
+#include "plugin/connection_control/connection_delay_api.h" /* connection_delay apis */
+
+static SERVICE_TYPE(registry) *reg_srv= nullptr;
+SERVICE_TYPE(log_builtins) *log_bi= nullptr;
+SERVICE_TYPE(log_builtins_string) *log_bs= nullptr;
 
 namespace connection_control
 {
@@ -36,9 +51,7 @@ namespace connection_control
 
     void handle_error(const char * error_message)
     {
-      my_plugin_log_message(&m_plugin_info,
-                            MY_ERROR_LEVEL,
-                            "%s", error_message);
+      LogPluginErr(ERROR_LEVEL, ER_CONN_CONTROL_ERROR_MSG, error_message);
     }
   private:
     MYSQL_PLUGIN m_plugin_info;
@@ -111,12 +124,17 @@ connection_control_notify(MYSQL_THD thd,
 static int
 connection_control_init(MYSQL_PLUGIN plugin_info)
 {
+  // Initialize error logging service.
+  if (init_logging_service_for_plugin(&reg_srv))
+    return 1;
+
   connection_control_plugin_info= plugin_info;
   Connection_control_error_handler error_handler(connection_control_plugin_info);
   g_connection_event_coordinator= new Connection_event_coordinator();
   if (!g_connection_event_coordinator)
   {
     error_handler.handle_error("Failed to initialize Connection_event_coordinator");
+    deinit_logging_service_for_plugin(&reg_srv);
     return 1;
   }
 
@@ -125,8 +143,10 @@ connection_control_init(MYSQL_PLUGIN plugin_info)
                                   &error_handler))
   {
     delete g_connection_event_coordinator;
+    deinit_logging_service_for_plugin(&reg_srv);
     return 1;
   }
+
   return 0;
 }
 
@@ -146,6 +166,8 @@ connection_control_deinit(void *arg MY_ATTRIBUTE((unused)))
   g_connection_event_coordinator= 0;
   connection_control::deinit_connection_delay_event();
   connection_control_plugin_info= 0;
+
+  deinit_logging_service_for_plugin(&reg_srv);
   return 0;
 }
 
@@ -357,7 +379,7 @@ check_max_connection_delay(MYSQL_THD thd MY_ATTRIBUTE((unused)),
                            struct st_mysql_value *value)
 {
   long long new_value;
-  int64 existing_value= my_atomic_load64(&g_variables.min_connection_delay);
+  int64 existing_value= g_variables.min_connection_delay;
   if (value->val_int(value, &new_value))
     return 1;                           /* NULL value */
 
@@ -391,7 +413,7 @@ update_max_connection_delay(MYSQL_THD thd MY_ATTRIBUTE((unused)),
                             const void *save)
 {
   longlong new_value= *(reinterpret_cast<const longlong *>(save));
-  my_atomic_store64(&g_variables.max_connection_delay, (int64)new_value);
+  g_variables.max_connection_delay= (int64)new_value;
   Connection_control_error_handler error_handler(connection_control_plugin_info);
   g_connection_event_coordinator->notify_sys_var(&error_handler,
                                                  OPT_MAX_CONNECTION_DELAY,
@@ -443,7 +465,7 @@ static int show_delay_generated(MYSQL_THD,
   var->type= SHOW_LONGLONG;
   var->value= buff;
   longlong *value= reinterpret_cast<longlong *>(buff);
-  int64 current_val= my_atomic_load64(&g_statistics.stats_array[STAT_CONNECTION_DELAY_TRIGGERED]);
+  int64 current_val= g_statistics.stats_array[STAT_CONNECTION_DELAY_TRIGGERED].load();
   *value= static_cast<longlong>(current_val);
   return 0;
 }
@@ -470,6 +492,7 @@ mysql_declare_plugin(audit_log)
   "Connection event processing",        /* description                   */
   PLUGIN_LICENSE_GPL        ,           /* license                       */
   connection_control_init,              /* plugin initializer            */
+  NULL,                                 /* plugin check uninstall        */
   connection_control_deinit,            /* plugin deinitializer          */
   0x0100,                               /* version                       */
   connection_control_status_variables,  /* status variables              */
@@ -485,6 +508,7 @@ mysql_declare_plugin(audit_log)
    "I_S table providing a view into failed attempts statistics",
    PLUGIN_LICENSE_GPL,
    connection_control_failed_attempts_view_init,
+   NULL,
    NULL,
    0x0100,
    NULL,

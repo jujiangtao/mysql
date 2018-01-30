@@ -1,44 +1,54 @@
 /* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "dd/impl/types/column_impl.h"
+#include "sql/dd/impl/types/column_impl.h"
 
 #include <stddef.h>
 #include <memory>
 #include <sstream>
+#include <string>
 
-#include "dd/impl/properties_impl.h"                 // Properties_impl
-#include "dd/impl/raw/raw_record.h"                  // Raw_record
-#include "dd/impl/sdi_impl.h"                        // sdi read/write functions
-#include "dd/impl/tables/column_type_elements.h"     // Column_type_elements
-#include "dd/impl/tables/columns.h"                  // Colummns
-#include "dd/impl/transaction_impl.h"                // Open_dictionary_tables_ctx
-#include "dd/impl/types/abstract_table_impl.h"       // Abstract_table_impl
-#include "dd/impl/types/column_type_element_impl.h"  // Column_type_element_impl
-#include "dd/properties.h"
-#include "dd/string_type.h"                          // dd::String_type
-#include "dd/types/column_type_element.h"            // Column_type_element
-#include "dd/types/object_table.h"
-#include "dd/types/weak_object.h"
+#include "my_rapidjson_size_t.h"    // IWYU pragma: keep
+#include <rapidjson/document.h>
+#include <rapidjson/prettywriter.h>
+
 #include "m_string.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_sys.h"
 #include "mysqld_error.h"                            // ER_*
-#include "rapidjson/document.h"
-#include "rapidjson/prettywriter.h"
+#include "sql/dd/impl/properties_impl.h"             // Properties_impl
+#include "sql/dd/impl/raw/raw_record.h"              // Raw_record
+#include "sql/dd/impl/sdi_impl.h"                    // sdi read/write functions
+#include "sql/dd/impl/tables/column_type_elements.h" // Column_type_elements
+#include "sql/dd/impl/tables/columns.h"              // Colummns
+#include "sql/dd/impl/transaction_impl.h"            // Open_dictionary_tables_ctx
+#include "sql/dd/impl/types/abstract_table_impl.h"   // Abstract_table_impl
+#include "sql/dd/impl/types/column_type_element_impl.h" // Column_type_element_impl
+#include "sql/dd/properties.h"
+#include "sql/dd/string_type.h"                      // dd::String_type
+#include "sql/dd/types/column_type_element.h"        // Column_type_element
+#include "sql/dd/types/object_table.h"
+#include "sql/dd/types/weak_object.h"
 
 using dd::tables::Columns;
 using dd::tables::Column_type_elements;
@@ -48,23 +58,6 @@ namespace dd {
 class Abstract_table;
 class Sdi_rcontext;
 class Sdi_wcontext;
-
-///////////////////////////////////////////////////////////////////////////
-// Column implementation.
-///////////////////////////////////////////////////////////////////////////
-
-const Object_table &Column::OBJECT_TABLE()
-{
-  return Columns::instance();
-}
-
-///////////////////////////////////////////////////////////////////////////
-
-const Object_type &Column::TYPE()
-{
-  static Column_type s_instance;
-  return s_instance;
-}
 
 ///////////////////////////////////////////////////////////////////////////
 // Column_impl implementation.
@@ -173,7 +166,7 @@ bool Column_impl::validate() const
   {
     my_error(ER_INVALID_DD_OBJECT,
              MYF(0),
-             Column_impl::OBJECT_TABLE().name().c_str(),
+             DD_table::instance().name().c_str(),
              "Column does not belong to any table.");
     return true;
   }
@@ -182,7 +175,7 @@ bool Column_impl::validate() const
   {
     my_error(ER_INVALID_DD_OBJECT,
              MYF(0),
-             Column_impl::OBJECT_TABLE().name().c_str(),
+             DD_table::instance().name().c_str(),
              "Collation ID is not set");
     return true;
   }
@@ -193,7 +186,7 @@ bool Column_impl::validate() const
   {
     my_error(ER_INVALID_DD_OBJECT,
              MYF(0),
-             Column_impl::OBJECT_TABLE().name().c_str(),
+             DD_table::instance().name().c_str(),
              "There are no elements supplied.");
     return true;
   }
@@ -295,6 +288,8 @@ bool Column_impl::restore_attributes(const Raw_record &r)
 
   m_column_type_utf8= r.read_str(Columns::FIELD_COLUMN_TYPE_UTF8);
 
+  if (!r.is_null(Columns::FIELD_SRS_ID))
+    m_srs_id= r.read_uint(Columns::FIELD_SRS_ID);
   return false;
 }
 
@@ -356,7 +351,10 @@ bool Column_impl::store_attributes(Raw_record *r)
     r->store(Columns::FIELD_OPTIONS, *m_options) ||
     r->store(Columns::FIELD_SE_PRIVATE_DATA, *m_se_private_data) ||
     r->store(Columns::FIELD_COLUMN_KEY, m_column_key) ||
-    r->store(Columns::FIELD_COLUMN_TYPE_UTF8, m_column_type_utf8);
+    r->store(Columns::FIELD_COLUMN_TYPE_UTF8, m_column_type_utf8) ||
+    r->store(Columns::FIELD_SRS_ID,
+             (m_srs_id.has_value() ? m_srs_id.value() : 0),
+             !m_srs_id.has_value());
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -378,12 +376,19 @@ Column_impl::serialize(Sdi_wcontext *wctx, Sdi_writer *w) const
   write(w, m_char_length, STRING_WITH_LEN("char_length"));
   write(w, m_numeric_precision, STRING_WITH_LEN("numeric_precision"));
   write(w, m_numeric_scale, STRING_WITH_LEN("numeric_scale"));
+  write(w, m_numeric_scale_null, STRING_WITH_LEN("numeric_scale_null"));
   write(w, m_datetime_precision, STRING_WITH_LEN("datetime_precision"));
+  write(w, m_datetime_precision_null, STRING_WITH_LEN("datetime_precision_null"));
   write(w, m_has_no_default, STRING_WITH_LEN("has_no_default"));
   write(w, m_default_value_null, STRING_WITH_LEN("default_value_null"));
+  write(w, !m_srs_id.has_value(), STRING_WITH_LEN("srs_id_null"));
+  write(w, (m_srs_id.has_value() ? m_srs_id.value() : 0),
+        STRING_WITH_LEN("srs_id"));
 
   // Binary
   write_binary(wctx, w, m_default_value, STRING_WITH_LEN("default_value"));
+  write(w, m_default_value_utf8_null, STRING_WITH_LEN("default_value_utf8_null"));
+  write(w, m_default_value_utf8, STRING_WITH_LEN("default_value_utf8"));
   write(w, m_default_option, STRING_WITH_LEN("default_option"));
   write(w, m_update_option, STRING_WITH_LEN("update_option"));
   write(w, m_comment, STRING_WITH_LEN("comment"));
@@ -416,10 +421,14 @@ Column_impl::deserialize(Sdi_rcontext *rctx, const RJ_Value &val)
   read(&m_char_length, val, "char_length");
   read(&m_numeric_precision, val, "numeric_precision");
   read(&m_numeric_scale, val, "numeric_scale");
+  read(&m_numeric_scale_null, val, "numeric_scale_null");
   read(&m_datetime_precision, val, "datetime_precision");
+  read(&m_datetime_precision_null, val, "datetime_precision_null");
   read(&m_has_no_default, val, "has_no_default");
   read(&m_default_value_null, val, "default_value_null");
   read_binary(rctx, &m_default_value, val, "default_value");
+  read(&m_default_value_utf8_null, val, "default_value_utf8_null");
+  read(&m_default_value_utf8, val, "default_value_utf8");
   read(&m_default_option, val, "default_option");
   read(&m_update_option, val, "update_option");
   read(&m_comment, val, "comment");
@@ -429,6 +438,16 @@ Column_impl::deserialize(Sdi_rcontext *rctx, const RJ_Value &val)
   read_properties(&m_se_private_data, val, "se_private_data");
   read_enum(&m_column_key, val, "column_key");
   read(&m_column_type_utf8, val, "column_type_utf8");
+
+  bool srs_id_is_null;
+  read(&srs_id_is_null, val, "srs_id_null");
+
+  if (!srs_id_is_null)
+  {
+    gis::srid_t srs_id;
+    read(&srs_id, val, "srs_id");
+    m_srs_id= srs_id;
+  }
 
   deserialize_each(rctx, [this] () { return add_element(); },
                    val, "elements");
@@ -474,7 +493,11 @@ void Column_impl::debug_print(String_type &outb) const
     << "m_hidden: " << m_hidden << "; "
     << "m_options: " << m_options->raw_string() << "; "
     << "m_column_key: " << m_column_key << "; "
-    << "m_column_type_utf8: " << m_column_type_utf8 << "; ";
+    << "m_column_type_utf8: " << m_column_type_utf8 << "; "
+    << "m_srs_id_null: " << !m_srs_id.has_value() << "; ";
+
+  if (m_srs_id.has_value())
+    ss << "m_srs_id: " << m_srs_id.value() << "; ";
 
   if (m_type == enum_column_types::ENUM || m_type == enum_column_types::SET)
   {
@@ -540,16 +563,22 @@ Column_impl::Column_impl(const Column_impl &src, Abstract_table_impl *parent)
     m_table(parent), m_elements(),
     m_column_type_utf8(src.m_column_type_utf8),
     m_collation_id(src.m_collation_id),
-    m_column_key(src.m_column_key)
+    m_column_key(src.m_column_key),
+    m_srs_id(src.m_srs_id)
 {
   m_elements.deep_copy(src.m_elements, this);
 }
 
 ///////////////////////////////////////////////////////////////////////////
-// Column_type implementation.
+
+const Object_table &Column_impl::object_table() const
+{
+  return DD_table::instance();
+}
+
 ///////////////////////////////////////////////////////////////////////////
 
-void Column_type::register_tables(Open_dictionary_tables_ctx *otx) const
+void Column_impl::register_tables(Open_dictionary_tables_ctx *otx)
 {
   otx->add_table<Columns>();
 

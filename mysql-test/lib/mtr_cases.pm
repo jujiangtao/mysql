@@ -1,18 +1,25 @@
 # -*- cperl -*-
-# Copyright (c) 2005, 2017 Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2005, 2017, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; version 2 of the License.
+# it under the terms of the GNU General Public License, version 2.0,
+# as published by the Free Software Foundation.
+#
+# This program is also distributed with certain software (including
+# but not limited to OpenSSL) that is licensed under separate terms,
+# as designated in a particular file or component or in included license
+# documentation.  The authors of MySQL hereby grant you an additional
+# permission to link the program and your derivative works with the
+# separately licensed software that they have included with MySQL.
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU General Public License, version 2.0, for more details.
 #
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
-# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 # This is a library file used by the Perl version of mysql-test-run,
 # and is part of the translation of the Bourne shell script with the
@@ -26,7 +33,7 @@ my $threads_shared_support= eval 'use threads::shared; 1';
 
 use base qw(Exporter);
 our @EXPORT= qw(collect_option collect_test_cases init_pattern
-                $suitedir $group_replication $xplugin);
+                $group_replication $xplugin);
 
 use mtr_report;
 use mtr_match;
@@ -50,7 +57,6 @@ our $quick_collect;
 # as default.  (temporary option used in connection
 # with the change of default storage engine to InnoDB)
 our $default_myisam= 0;
-our $suitedir;
 
 our $xplugin;
 our $group_replication;
@@ -165,7 +171,6 @@ sub collect_test_cases ($$$$) {
       share(\$xplugin);
       share(\$group_replication);
       share(\$some_test_found);
-      share(\$suitedir) if $quick_collect;
       # Array containing thread id of all the threads used for
       # collecting test cases from different test suites.
       my @collect_test_cases_thrds;
@@ -376,7 +381,9 @@ sub collect_one_suite($)
 
   mtr_verbose("Collecting: $suite");
 
-  $suitedir= "$::glob_mysql_test_dir"; # Default
+  # Default suite(i.e main suite) directory location
+  my $suitedir= "$::glob_mysql_test_dir";
+
   if ( $suite ne "main" )
   {
     # Allow suite to be path to "some dir" if $suite has at least
@@ -401,6 +408,7 @@ sub collect_one_suite($)
 			      "internal/plugin/$suite/tests",
 			      "rapid/plugin/$suite/tests",
 			      "rapid/mysql-test/suite",
+                              "components/$suite/tests",
 			     ],
 			     [$suite, "mtr"], ($suite =~ /^i_/));
       return unless $suitedir;
@@ -447,6 +455,27 @@ sub collect_one_suite($)
   }
   my @disabled_collection= @{$opt_skip_test_list} if $opt_skip_test_list;
   unshift (@disabled_collection, "$testdir/disabled.def");
+
+  # Check for the tests to be skipped in a sanitizer which are listed
+  # in "mysql-test/collections/disabled-<sanitizer>.list" file.
+  if ($::opt_sanitize)
+  {
+    # Check for disabled-asan.list
+    if($::mysql_version_extra =~ /asan/i &&
+       !grep(/disabled-asan\.list$/, @{$opt_skip_test_list}))
+    {
+      push (@disabled_collection,
+            "collections/disabled-asan.list");
+    }
+    # Check for disabled-ubsan.list
+    elsif($::mysql_version_extra =~ /ubsan/i &&
+         !grep(/disabled-ubsan\.list$/, @{$opt_skip_test_list}))
+    {
+      push (@disabled_collection,
+            "collections/disabled-ubsan.list");
+    }
+  }
+
   for my $skip (@disabled_collection)
     {
       if ( open(DISABLED, $skip ) )
@@ -630,7 +659,7 @@ sub collect_one_suite($)
 
 	  # Skip this combination if the values it provides
 	  # already are set in master_opt or slave_opt
-	  if (My::Options::is_set($test->{master_opt}, $comb->{comb_opt}) &&
+	  if (My::Options::is_set($test->{master_opt}, $comb->{comb_opt}) ||
 	      My::Options::is_set($test->{slave_opt}, $comb->{comb_opt}) ){
 	    next;
 	  }
@@ -740,7 +769,8 @@ sub optimize_cases {
 	  defined $tinfo->{binlog_formats} )
       {
 	my $supported=
-	  grep { My::Options::option_equals($_,$test_binlog_format) } @{$tinfo->{'binlog_formats'}};
+	  grep { My::Options::option_equals($_, lc $test_binlog_format) }
+            @{$tinfo->{'binlog_formats'}};
 	if ( !$supported )
 	{
 	  $tinfo->{'skip'}= 1;
@@ -759,6 +789,15 @@ sub optimize_cases {
 
     foreach my $opt ( @{$tinfo->{master_opt}} ) {
      (my $dash_opt = $opt) =~ s/_/-/g;
+
+      # Check whether server supports SSL connection
+      if ($dash_opt eq "--skip-ssl" and $::opt_ssl)
+      {
+        $tinfo->{'skip'}= 1;
+        $tinfo->{'comment'}= "Server doesn't support SSL connection";
+        next;
+      }
+
       my $default_engine=
 	mtr_match_prefix($dash_opt, "--default-storage-engine=");
       my $default_tmp_engine=
@@ -912,13 +951,15 @@ sub collect_one_test_case {
   my $disabled=   shift;
   my $suite_opts= shift;
 
-  #print "collect_one_test_case\n";
-  #print " suitedir: $suitedir\n";
-  #print " testdir: $testdir\n";
-  #print " resdir: $resdir\n";
-  #print " suitename: $suitename\n";
-  #print " tname: $tname\n";
-  #print " filename: $filename\n";
+  # Test file name should consist of only alpha-numeric characters, dash (-)
+  # or underscore (_), but should not start with dash or underscore.
+  if ($tname !~ /^[^_\W][\w-]*$/)
+  {
+    die("Invalid test file name '$suitename.$tname'. Test file ".
+        "name should consist of only alpha-numeric characters, ".
+        "dash (-) or underscore (_), but should not start with ".
+        "dash or underscore.");
+  }
 
   # ----------------------------------------------------------------------
   # Check --start-from
@@ -954,11 +995,20 @@ sub collect_one_test_case {
     # should fail by default
     $tinfo->{result_file}= $result_file;
   }
-  else {
-    # No .result file exist
-    # Remember the path  where it should be
-    # saved in case of --record
-    $tinfo->{record_file}= $result_file;
+  else
+  {
+    # Result file doesn't exist
+    if ($::opt_check_testcases and !$::opt_record)
+    {
+      # Set 'no_result_file' flag if check-testcases is enabled.
+      $tinfo->{'no_result_file'}= $result_file;
+    }
+    else
+    {
+      # No .result file exist, remember the path where it should
+      # be saved in case of --record.
+      $tinfo->{record_file}= $result_file;
+    }
   }
 
   # ----------------------------------------------------------------------
@@ -1076,6 +1126,13 @@ sub collect_one_test_case {
 
   tags_from_test_file($tinfo,"$testdir/${tname}.test");
 
+  # Disable the result file check for NDB tests not having its
+  # corresponding result file.
+  if ($tinfo->{'ndb_test'} and $tinfo->{'ndb_no_result_file_test'})
+  {
+    delete $tinfo->{'no_result_file'} if $tinfo->{'no_result_file'};
+  }
+
   if ( defined $default_storage_engine )
   {
     # Different default engine is used
@@ -1085,22 +1142,28 @@ sub collect_one_test_case {
 
     $tinfo->{'mysiam_test'}= 1
       if ( $default_storage_engine =~ /^mysiam/i );
-
   }
 
-  if ( ! $tinfo->{'not_parallel'} and $::opt_run_non_parallel_tests )
+  # Skip non-parallel tests if 'non-parallel-test' option is disabled
+  if ($tinfo->{'not_parallel'} and !$::opt_non_parallel_test)
   {
     $tinfo->{'skip'}= 1;
-    $tinfo->{'comment'}= "Test needs 'include/not_parallel.inc' include file when 'run-non-parallel-tests' option is set";
+    $tinfo->{'comment'}= "Test needs 'non-parallel-test' option";
     return $tinfo;
   }
 
-  # Normal tests shouldn't run with only-big-test option
-  if ($::opt_only_big_test and !$tinfo->{'big_test'})
+  # Except the tests which need big-test or only-big-test option to run
+  # in valgrind environment(i.e tests having no_valgrind_without_big.inc
+  # include file), other normal/non-big tests shouldn't run with
+  # only-big-test option.
+  if ($::opt_only_big_test)
   {
-    $tinfo->{'skip'}= 1;
-    $tinfo->{'comment'}= "Not a big test";
-    return $tinfo;
+    if (!$tinfo->{'no_valgrind_without_big'} and !$tinfo->{'big_test'})
+    {
+      $tinfo->{'skip'}= 1;
+      $tinfo->{'comment'}= "Not a big test";
+      return $tinfo;
+    }
   }
 
   # Check for big test
@@ -1109,6 +1172,19 @@ sub collect_one_test_case {
     $tinfo->{'skip'}= 1;
     $tinfo->{'comment'}= "Test needs 'big-test' or 'only-big-test' option";
     return $tinfo;
+  }
+
+  # Tests having no_valgrind_without_big.inc include file needs either
+  # big-test or only-big-test option to run in valgrind environment.
+  if ($tinfo->{'no_valgrind_without_big'} and $::opt_valgrind)
+  {
+    if (!$::opt_big_test and !$::opt_only_big_test)
+    {
+      $tinfo->{'skip'}= 1;
+      $tinfo->{'comment'}= "Need '--big-test' or '--only-big-test' when ".
+                           "running with Valgrind.";
+      return $tinfo;
+    }
   }
 
   if ( $tinfo->{'need_debug'} && ! $::debug_compiled_binaries )
@@ -1169,8 +1245,8 @@ sub collect_one_test_case {
   {
     # Test does not need binlog, add --skip-binlog to
     # the options used when starting
-    push(@{$tinfo->{'master_opt'}}, "--loose-skip-log-bin");
-    push(@{$tinfo->{'slave_opt'}}, "--loose-skip-log-bin");
+    # push(@{$tinfo->{'master_opt'}}, "--loose-skip-log-bin");
+    # push(@{$tinfo->{'slave_opt'}}, "--loose-skip-log-bin");
   }
 
   if ( $tinfo->{'rpl_test'} or $tinfo->{'grp_rpl_test'} )
@@ -1274,6 +1350,15 @@ sub collect_one_test_case {
     # ----------------------------------------------------------------------
     process_opts_file($tinfo, "$testdir/$tname-slave.opt", 'slave_opt');
   }
+
+  if (!$::start_only)
+  {
+    # ----------------------------------------------------------------------
+    # Add client opts, extra options only for mysqltest client
+    # ----------------------------------------------------------------------
+    process_opts_file($tinfo, "$testdir/$tname-client.opt", 'client_opt');
+  }
+
   return $tinfo;
 }
 
@@ -1293,20 +1378,26 @@ my @tags=
   "binlog_formats", ["row", "statement"]],
 
  ["include/have_log_bin.inc", "need_binlog", 1],
-# an empty file to use test that needs myisam engine.
+
+ # An empty file to use test that needs myisam engine.
  ["include/force_myisam_default.inc", "myisam_test", 1],
+
  ["include/big_test.inc", "big_test", 1],
  ["include/have_debug.inc", "need_debug", 1],
  ["include/have_ndb.inc", "ndb_test", 1],
  ["include/have_multi_ndb.inc", "ndb_test", 1],
 
-#  The tests with below four .inc files are considered to be rpl tests.
+ # Any test sourcing the below inc file is considered to be an NDB
+ # test not having its corresponding result file.
+ ["include/ndb_no_result_file.inc", "ndb_no_result_file_test", 1],
+
+ # The tests with below four .inc files are considered to be rpl tests.
  ["include/rpl_init.inc", "rpl_test", 1],
  ["include/rpl_ip_mix.inc", "rpl_test", 1],
  ["include/rpl_ip_mix2.inc", "rpl_test", 1],
  ["include/rpl_ipv6.inc", "rpl_test", 1],
 
-["include/ndb_master-slave.inc", "ndb_test", 1],
+ ["include/ndb_master-slave.inc", "ndb_test", 1],
  ["federated.inc", "federated_test", 1],
  ["include/have_ssl.inc", "need_ssl", 1],
  ["include/not_windows.inc", "not_windows", 1],
@@ -1317,6 +1408,10 @@ my @tags=
 
  # Tests with below .inc file are considered to be xplugin tests
  ["include/have_mysqlx_plugin.inc", "xplugin_test", 1],
+
+ # Tests with below .inc file needs either big-test or only-big-test
+ # option along with valgrind option.
+ ["include/no_valgrind_without_big.inc", "no_valgrind_without_big", 1],
 );
 
 

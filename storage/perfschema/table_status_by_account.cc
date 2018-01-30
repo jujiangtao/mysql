@@ -1,13 +1,20 @@
 /* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
   along with this program; if not, write to the Free Software
@@ -23,51 +30,37 @@
 #include <stddef.h>
 #include <new>
 
-#include "current_thd.h"
-#include "field.h"
 #include "my_dbug.h"
 #include "my_thread.h"
-#include "mysqld.h"
-#include "pfs_account.h"
-#include "pfs_column_types.h"
-#include "pfs_column_values.h"
-#include "pfs_global.h"
-#include "pfs_instr_class.h"
-#include "sql_class.h"
+#include "sql/current_thd.h"
+#include "sql/field.h"
+#include "sql/mysqld.h"
+#include "sql/sql_class.h"
+#include "storage/perfschema/pfs_account.h"
+#include "storage/perfschema/pfs_column_types.h"
+#include "storage/perfschema/pfs_column_values.h"
+#include "storage/perfschema/pfs_global.h"
+#include "storage/perfschema/pfs_instr_class.h"
 
 THR_LOCK table_status_by_account::m_table_lock;
 
-/* clang-format off */
-static const TABLE_FIELD_TYPE field_types[]=
-{
-  {
-    { C_STRING_WITH_LEN("USER") },
-    { C_STRING_WITH_LEN("char(" USERNAME_CHAR_LENGTH_STR ")") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("HOST") },
-    { C_STRING_WITH_LEN("char(60)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("VARIABLE_NAME") },
-    { C_STRING_WITH_LEN("varchar(64)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("VARIABLE_VALUE") },
-    { C_STRING_WITH_LEN("varchar(1024)") },
-    { NULL, 0}
-  }
-};
-/* clang-format on */
-
-TABLE_FIELD_DEF
-table_status_by_account::m_field_def = {4, field_types};
+Plugin_table table_status_by_account::m_table_def(
+  /* Schema name */
+  "performance_schema",
+  /* Name */
+  "status_by_account",
+  /* Definition */
+  "  USER CHAR(32) collate utf8_bin default null,\n"
+  "  HOST CHAR(60) collate utf8_bin default null,\n"
+  "  VARIABLE_NAME VARCHAR(64) not null,\n"
+  "  VARIABLE_VALUE VARCHAR(1024),\n"
+  "  UNIQUE KEY `ACCOUNT` (USER, HOST, VARIABLE_NAME) USING HASH\n",
+  /* Options */
+  " ENGINE=PERFORMANCE_SCHEMA",
+  /* Tablespace */
+  nullptr);
 
 PFS_engine_table_share table_status_by_account::m_share = {
-  {C_STRING_WITH_LEN("status_by_account")},
   &pfs_truncatable_acl,
   table_status_by_account::create,
   NULL, /* write_row */
@@ -75,9 +68,11 @@ PFS_engine_table_share table_status_by_account::m_share = {
   table_status_by_account::get_row_count,
   sizeof(pos_t),
   &m_table_lock,
-  &m_field_def,
-  false, /* checked */
-  false  /* perpetual */
+  &m_table_def,
+  false, /* perpetual */
+  PFS_engine_table_proxy(),
+  {0},
+  false /* m_in_purgatory */
 };
 
 bool
@@ -115,7 +110,7 @@ PFS_index_status_by_account::match(const Status_variable *pfs)
 }
 
 PFS_engine_table *
-table_status_by_account::create(void)
+table_status_by_account::create(PFS_engine_table_share *)
 {
   return new table_status_by_account();
 }
@@ -233,7 +228,7 @@ table_status_by_account::rnd_pos(const void *pos)
 }
 
 int
-table_status_by_account::index_init(uint idx, bool)
+table_status_by_account::index_init(uint idx MY_ATTRIBUTE((unused)), bool)
 {
   /* Build array of SHOW_VARs from the global status array prior to
    * materializing. */

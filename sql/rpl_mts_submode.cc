@@ -1,13 +1,20 @@
 /* Copyright (c) 2013, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -19,35 +26,35 @@
 #include <limits.h>
 #include <string.h>
 #include <time.h>
+#include <memory>
 
-#include "debug_sync.h"
-#include "handler.h"
-#include "hash.h"                           // HASH
 #include "lex_string.h"
-#include "log.h"                            // sql_print_information
-#include "log_event.h"                      // Query_log_event
 #include "m_string.h"
-#include "mdl.h"
 #include "my_byteorder.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
+#include "my_inttypes.h"
+#include "my_loglevel.h"
 #include "my_systime.h"
 #include "my_thread.h"
+#include "mysql/components/services/psi_stage_bits.h"
 #include "mysql/psi/mysql_cond.h"
 #include "mysql/psi/mysql_mutex.h"
-#include "mysql/psi/psi_stage.h"
-#include "mysqld.h"                         // stage_worker_....
 #include "mysqld_error.h"
-#include "query_options.h"
-#include "rpl_filter.h"
-#include "rpl_rli.h"                        // Relay_log_info
-#include "rpl_rli_pdb.h"                    // db_worker_hash_entry
-#include "rpl_slave.h"
-#include "rpl_slave_commit_order_manager.h" // Commit_order_manager
-#include "sql_class.h"                      // THD
-#include "sql_plugin_ref.h"
-#include "system_variables.h"
-#include "table.h"
+#include "sql/debug_sync.h"
+#include "sql/log.h"
+#include "sql/log_event.h"                  // Query_log_event
+#include "sql/mdl.h"
+#include "sql/mysqld.h"                     // stage_worker_....
+#include "sql/query_options.h"
+#include "sql/rpl_filter.h"
+#include "sql/rpl_rli.h"                    // Relay_log_info
+#include "sql/rpl_rli_pdb.h"                // db_worker_hash_entry
+#include "sql/rpl_slave.h"
+#include "sql/rpl_slave_commit_order_manager.h" // Commit_order_manager
+#include "sql/sql_class.h"                  // THD
+#include "sql/system_variables.h"
+#include "sql/table.h"
 
 
 /**
@@ -116,7 +123,6 @@ Mts_submode_database::wait_for_workers_to_finish(Relay_log_info *rli,
                                                  Slave_worker *ignore)
 {
   uint ret= 0;
-  HASH *hash= &rli->mapping_db_to_worker;
   THD *thd= rli->info_thd;
   bool cant_sync= FALSE;
   char llbuf[22];
@@ -128,20 +134,16 @@ Mts_submode_database::wait_for_workers_to_finish(Relay_log_info *rli,
                       "procedure when scheduling event relay-log: %s "
                       "pos: %s", rli->get_event_relay_log_name(), llbuf));
 
-  for (uint i= 0, ret= 0; i < hash->records; i++)
+  mysql_mutex_lock(&rli->slave_worker_hash_lock);
+
+  for (const auto &key_and_value : rli->mapping_db_to_worker)
   {
-    db_worker_hash_entry *entry;
-
-    mysql_mutex_lock(&rli->slave_worker_hash_lock);
-
-    entry= (db_worker_hash_entry*) my_hash_element(hash, i);
-
+    db_worker_hash_entry *entry= key_and_value.second.get();
     DBUG_ASSERT(entry);
 
     // the ignore Worker retains its active resources
     if (ignore && entry->worker == ignore && entry->usage > 0)
     {
-      mysql_mutex_unlock(&rli->slave_worker_hash_lock);
       continue;
     }
 
@@ -177,7 +179,10 @@ Mts_submode_database::wait_for_workers_to_finish(Relay_log_info *rli,
     entry->temporary_tables= NULL;
     if (entry->worker->running_status != Slave_worker::RUNNING)
       cant_sync= TRUE;
+    mysql_mutex_lock(&rli->slave_worker_hash_lock);
   }
+
+  mysql_mutex_unlock(&rli->slave_worker_hash_lock);
 
   if (!ignore)
   {
@@ -300,9 +305,8 @@ Mts_submode_database::get_least_occupied_worker(Relay_log_info*,
   if (DBUG_EVALUATE_IF("mts_distribute_round_robin", 1, 0))
   {
     worker= ws->at(w_rr % ws->size());
-    sql_print_information("Chosing worker id %lu, the following is"
-                          " going to be %lu", worker->id,
-                          static_cast<ulong>(w_rr % ws->size()));
+    LogErr(INFORMATION_LEVEL, ER_RPL_WORKER_ID_IS, worker->id,
+           static_cast<ulong>(w_rr % ws->size()));
     DBUG_ASSERT(worker != NULL);
     DBUG_RETURN(worker);
   }
@@ -426,7 +430,7 @@ longlong Mts_submode_logical_clock::get_lwm_timestamp(Relay_log_info *rli,
   }
   else if (is_stale)
   {
-    my_atomic_store64(&last_lwm_timestamp, lwm_estim);
+    last_lwm_timestamp.store(lwm_estim);
   }
 
   if (!need_lock)
@@ -484,7 +488,7 @@ wait_for_last_committed_trx(Relay_log_info* rli,
 
   DBUG_ASSERT(min_waited_timestamp == SEQ_UNINIT);
 
-  my_atomic_store64(&min_waited_timestamp, last_committed_arg);
+  min_waited_timestamp.store(last_committed_arg);
   /*
     This transaction is a candidate for insertion into the waiting list.
     That fact is descibed by incrementing waited_timestamp_cnt.
@@ -508,15 +512,15 @@ wait_for_last_committed_trx(Relay_log_info* rli,
     }
     while ((!rli->info_thd->killed && !is_error) &&
            !clock_leq(last_committed_arg, estimate_lwm_timestamp()));
-    my_atomic_store64(&min_waited_timestamp, SEQ_UNINIT);  // reset waiting flag
+    min_waited_timestamp.store(SEQ_UNINIT);  // reset waiting flag
     mysql_mutex_unlock(&rli->mts_gaq_LOCK);
     thd->EXIT_COND(&old_stage);
     set_timespec_nsec(&ts[1], 0);
-    my_atomic_add64(&rli->mts_total_wait_overlap, diff_timespec(&ts[1], &ts[0]));
+    rli->mts_total_wait_overlap+= diff_timespec(&ts[1], &ts[0]);
   }
   else
   {
-    my_atomic_store64(&min_waited_timestamp, SEQ_UNINIT);
+    min_waited_timestamp.store(SEQ_UNINIT);
     mysql_mutex_unlock(&rli->mts_gaq_LOCK);
   }
 
@@ -587,20 +591,16 @@ Mts_submode_logical_clock::schedule_next_event(Relay_log_info* rli,
                  last_committed != SEQ_UNINIT))
     {
       /* inconsistent (buggy) timestamps */
-      sql_print_error("Transaction is tagged with inconsistent logical "
-                      "timestamps: "
-                      "sequence_number (%lld) <= last_committed (%lld)",
-                      sequence_number, last_committed);
+      LogErr(ERROR_LEVEL, ER_RPL_INCONSISTENT_TIMESTAMPS_IN_TRX,
+             sequence_number, last_committed);
       DBUG_RETURN(ER_MTS_CANT_PARALLEL);
     }
     if (unlikely(clock_leq(sequence_number, last_sequence_number) &&
                  sequence_number != SEQ_UNINIT))
     {
       /* inconsistent (buggy) timestamps */
-      sql_print_error("Transaction's sequence number is inconsistent with that "
-                      "of a preceding one: "
-                      "sequence_number (%lld) <= previous sequence_number (%lld)",
-                      sequence_number, last_sequence_number);
+      LogErr(ERROR_LEVEL, ER_RPL_INCONSISTENT_SEQUENCE_NO_IN_TRX,
+             sequence_number, last_sequence_number);
       DBUG_RETURN(ER_MTS_CANT_PARALLEL);
     }
     /*
@@ -677,6 +677,14 @@ Mts_submode_logical_clock::schedule_next_event(Relay_log_info* rli,
       */
       if (wait_for_last_committed_trx(rli, last_committed))
       {
+        /*
+          MTS was waiting for a dependent transaction to finish but either it
+          has failed or the applier was requested to stop. In any case, this
+          transaction wasn't started yet and should not warn about the
+          coordinator stopping in a middle of a transaction to avoid polluting
+          the server error log.
+        */
+        rli->reported_unsafe_warning= true;
         DBUG_RETURN(-1);
       }
       /*
@@ -835,8 +843,8 @@ Mts_submode_logical_clock::detach_temp_tables(THD *thd, const Relay_log_info* rl
 
 Slave_worker *
 Mts_submode_logical_clock::get_least_occupied_worker(Relay_log_info *rli,
-                                                     Slave_worker_array *ws,
-                                                     Log_event * ev)
+                                  Slave_worker_array *ws MY_ATTRIBUTE((unused)),
+                                  Log_event * ev)
 {
   Slave_worker *worker= NULL;
   PSI_stage_info *old_stage= 0;
@@ -847,9 +855,8 @@ Mts_submode_logical_clock::get_least_occupied_worker(Relay_log_info *rli,
   if (DBUG_EVALUATE_IF("mts_distribute_round_robin", 1, 0))
   {
     worker= ws->at(w_rr % ws->size());
-    sql_print_information("Chosing worker id %lu, the following is"
-                          " going to be %lu", worker->id,
-                          static_cast<ulong>(w_rr % ws->size()));
+    LogErr(INFORMATION_LEVEL, ER_RPL_WORKER_ID_IS, worker->id,
+           static_cast<ulong>(w_rr % ws->size()));
     DBUG_ASSERT(worker != NULL);
     DBUG_RETURN(worker);
   }

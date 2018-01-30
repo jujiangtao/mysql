@@ -2,13 +2,20 @@
   Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
   along with this program; if not, write to the Free Software
@@ -23,15 +30,15 @@
 
 #include <stddef.h>
 
-#include "field.h"
-#include "log.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
-#include "pfs_instr.h"
-#include "pfs_instr_class.h"
-#include "rpl_group_replication.h"
-#include "table.h"
-#include "table_helper.h"
+#include "sql/field.h"
+#include "sql/log.h"
+#include "sql/rpl_group_replication.h"
+#include "sql/table.h"
+#include "storage/perfschema/pfs_instr.h"
+#include "storage/perfschema/pfs_instr_class.h"
+#include "storage/perfschema/table_helper.h"
 #include "thr_lock.h"
 
 /*
@@ -139,64 +146,69 @@ set_transactions_rows_in_validation(void* const context,
   row->trx_rows_validating = value;
 }
 
+static void
+set_transactions_remote_applier_queue(void* const context,
+                                      unsigned long long int value)
+{
+  struct st_row_group_member_stats* row =
+    static_cast<struct st_row_group_member_stats*>(context);
+  row->trx_remote_applier_queue = value;
+}
+
+static void
+set_transactions_remote_applied(void* const context,
+                                unsigned long long int value)
+{
+  struct st_row_group_member_stats* row =
+    static_cast<struct st_row_group_member_stats*>(context);
+  row->trx_remote_applied = value;
+}
+
+static void
+set_transactions_local_proposed(void* const context,
+                                unsigned long long int value)
+{
+  struct st_row_group_member_stats* row =
+    static_cast<struct st_row_group_member_stats*>(context);
+  row->trx_local_proposed = value;
+}
+
+static void
+set_transactions_local_rollback(void* const context,
+                                unsigned long long int value)
+{
+  struct st_row_group_member_stats* row =
+    static_cast<struct st_row_group_member_stats*>(context);
+  row->trx_local_rollback = value;
+}
+
 THR_LOCK table_replication_group_member_stats::m_table_lock;
 
-/* clang-format off */
-static const TABLE_FIELD_TYPE field_types[]=
-{
-  {
-    {C_STRING_WITH_LEN("CHANNEL_NAME")},
-    {C_STRING_WITH_LEN("char(64)")},
-    {NULL, 0}
-  },
-  {
-    {C_STRING_WITH_LEN("VIEW_ID")},
-    {C_STRING_WITH_LEN("char(60)")},
-    {NULL, 0}
-  },
-  {
-    {C_STRING_WITH_LEN("MEMBER_ID")},
-    {C_STRING_WITH_LEN("char(36)")},
-    {NULL, 0}
-  },
-  {
-    {C_STRING_WITH_LEN("COUNT_TRANSACTIONS_IN_QUEUE")},
-    {C_STRING_WITH_LEN("bigint")},
-    {NULL, 0}
-  },
-  {
-    {C_STRING_WITH_LEN("COUNT_TRANSACTIONS_CHECKED")},
-    {C_STRING_WITH_LEN("bigint")},
-    {NULL, 0}
-  },
-  {
-    {C_STRING_WITH_LEN("COUNT_CONFLICTS_DETECTED")},
-    {C_STRING_WITH_LEN("bigint")},
-    {NULL, 0}
-  },
-  {
-    {C_STRING_WITH_LEN("COUNT_TRANSACTIONS_ROWS_VALIDATING")},
-    {C_STRING_WITH_LEN("bigint")},
-    {NULL, 0}
-  },
-  {
-    {C_STRING_WITH_LEN("TRANSACTIONS_COMMITTED_ALL_MEMBERS")},
-    {C_STRING_WITH_LEN("longtext")},
-    {NULL, 0}
-  },
-  {
-    {C_STRING_WITH_LEN("LAST_CONFLICT_FREE_TRANSACTION")},
-    {C_STRING_WITH_LEN("text")},
-    {NULL, 0}
-  }
-};
-/* clang-format on */
-
-TABLE_FIELD_DEF
-table_replication_group_member_stats::m_field_def = {9, field_types};
+Plugin_table table_replication_group_member_stats::m_table_def(
+  /* Schema name */
+  "performance_schema",
+  /* Name */
+  "replication_group_member_stats",
+  /* Definition */
+  "  CHANNEL_NAME CHAR(64) collate utf8_general_ci not null,\n"
+  "  VIEW_ID CHAR(60) collate utf8_bin not null,\n"
+  "  MEMBER_ID CHAR(36) collate utf8_bin not null,\n"
+  "  COUNT_TRANSACTIONS_IN_QUEUE BIGINT unsigned not null,\n"
+  "  COUNT_TRANSACTIONS_CHECKED BIGINT unsigned not null,\n"
+  "  COUNT_CONFLICTS_DETECTED BIGINT unsigned not null,\n"
+  "  COUNT_TRANSACTIONS_ROWS_VALIDATING BIGINT unsigned not null,\n"
+  "  TRANSACTIONS_COMMITTED_ALL_MEMBERS LONGTEXT not null,\n"
+  "  LAST_CONFLICT_FREE_TRANSACTION TEXT not null,\n"
+  "  COUNT_TRANSACTIONS_REMOTE_IN_APPLIER_QUEUE BIGINT unsigned not null,\n"
+  "  COUNT_TRANSACTIONS_REMOTE_APPLIED BIGINT unsigned not null,\n"
+  "  COUNT_TRANSACTIONS_LOCAL_PROPOSED BIGINT unsigned not null,\n"
+  "  COUNT_TRANSACTIONS_LOCAL_ROLLBACK BIGINT unsigned not null\n",
+  /* Options */
+  " ENGINE=PERFORMANCE_SCHEMA",
+  /* Tablespace */
+  nullptr);
 
 PFS_engine_table_share table_replication_group_member_stats::m_share = {
-  {C_STRING_WITH_LEN("replication_group_member_stats")},
   &pfs_readonly_acl,
   &table_replication_group_member_stats::create,
   NULL, /* write_row */
@@ -204,13 +216,15 @@ PFS_engine_table_share table_replication_group_member_stats::m_share = {
   table_replication_group_member_stats::get_row_count,
   sizeof(PFS_simple_index), /* ref length */
   &m_table_lock,
-  &m_field_def,
-  false, /* checked */
-  false  /* perpetual */
+  &m_table_def,
+  true, /* perpetual */
+  PFS_engine_table_proxy(),
+  {0},
+  false /* m_in_purgatory */
 };
 
 PFS_engine_table*
-table_replication_group_member_stats::create(void)
+table_replication_group_member_stats::create(PFS_engine_table_share*)
 {
   return new table_replication_group_member_stats();
 }
@@ -240,14 +254,7 @@ table_replication_group_member_stats::reset_position(void)
 ha_rows
 table_replication_group_member_stats::get_row_count()
 {
-  uint row_count = 0;
-
-  if (is_group_replication_plugin_loaded())
-  {
-    row_count = 1;
-  }
-
-  return row_count;
+  return get_group_replication_members_number_info();
 }
 
 int
@@ -258,11 +265,11 @@ table_replication_group_member_stats::rnd_next(void)
     return HA_ERR_END_OF_FILE;
   }
 
-  m_pos.set_at(&m_next_pos);
-  if (m_pos.m_index == 0)
+  for (m_pos.set_at(&m_next_pos); m_pos.m_index < get_row_count(); m_pos.next())
   {
+    make_row(m_pos.m_index);
     m_next_pos.set_after(&m_pos);
-    return make_row();
+    return 0;
   }
 
   return HA_ERR_END_OF_FILE;
@@ -272,18 +279,21 @@ int
 table_replication_group_member_stats::rnd_pos(
   const void* pos MY_ATTRIBUTE((unused)))
 {
+  if (!is_group_replication_plugin_loaded())
+    return HA_ERR_END_OF_FILE;
+
   if (get_row_count() == 0)
   {
     return HA_ERR_END_OF_FILE;
   }
 
   set_position(pos);
-  DBUG_ASSERT(m_pos.m_index < 1);
-  return make_row();
+  DBUG_ASSERT(m_pos.m_index < get_row_count());
+  return make_row(m_pos.m_index);
 }
 
 int
-table_replication_group_member_stats::make_row()
+table_replication_group_member_stats::make_row(uint index)
 {
   DBUG_ENTER("table_replication_group_member_stats::make_row");
   // Set default values.
@@ -296,6 +306,10 @@ table_replication_group_member_stats::make_row()
   m_row.trx_checked = 0;
   m_row.trx_conflicts = 0;
   m_row.trx_rows_validating = 0;
+  m_row.trx_remote_applier_queue = 0;
+  m_row.trx_remote_applied = 0;
+  m_row.trx_local_proposed = 0;
+  m_row.trx_local_rollback = 0;
 
   // Set callbacks on GROUP_REPLICATION_GROUP_MEMBER_STATS_CALLBACKS.
   const GROUP_REPLICATION_GROUP_MEMBER_STATS_CALLBACKS callbacks = {
@@ -309,15 +323,16 @@ table_replication_group_member_stats::make_row()
     &set_transactions_certified,
     &set_transactions_conflicts_detected,
     &set_transactions_rows_in_validation,
+    &set_transactions_remote_applier_queue,
+    &set_transactions_remote_applied,
+    &set_transactions_local_proposed,
+    &set_transactions_local_rollback,
   };
 
   // Query plugin and let callbacks do their job.
-  if (get_group_replication_group_member_stats_info(callbacks))
+  if (get_group_replication_group_member_stats_info(index, callbacks))
   {
     DBUG_PRINT("info", ("Group Replication stats not available!"));
-  }
-  else
-  {
   }
 
   DBUG_RETURN(0);
@@ -363,14 +378,25 @@ table_replication_group_member_stats::read_row_values(
         set_field_ulonglong(f, m_row.trx_rows_validating);
         break;
       case 7: /** stable_set */
-        set_field_longtext_utf8(
-          f, m_row.trx_committed, m_row.trx_committed_length);
+        set_field_blob(f, m_row.trx_committed, m_row.trx_committed_length);
         break;
       case 8: /** last_certified_transaction */
-        set_field_longtext_utf8(
-          f, m_row.last_cert_trx, m_row.last_cert_trx_length);
+        set_field_blob(f, m_row.last_cert_trx, m_row.last_cert_trx_length);
 
         break;
+      case 9:
+        set_field_ulonglong(f, m_row.trx_remote_applier_queue);
+        break;
+      case 10:
+        set_field_ulonglong(f, m_row.trx_remote_applied);
+        break;
+      case 11:
+        set_field_ulonglong(f, m_row.trx_local_proposed);
+        break;
+      case 12:
+        set_field_ulonglong(f, m_row.trx_local_rollback);
+        break;
+
       default:
         DBUG_ASSERT(false);
       }

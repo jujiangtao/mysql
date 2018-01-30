@@ -4,13 +4,20 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -23,31 +30,32 @@
 #include <sys/types.h>
 
 #include "binary_log_types.h"
-#include "enum_query_type.h"
-#include "handler.h"
-#include "item.h"
-#include "item_func.h"       // Item_int_func
-#include "item_row.h"        // Item_row
-#include "mem_root_array.h"  // Mem_root_array
+#include "extra/regex/my_regex.h" // my_regex_t
+#include "my_alloc.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
-#include "my_decimal.h"
 #include "my_inttypes.h"
 #include "my_macros.h"
-#include "my_regex.h"        // my_regex_t
 #include "my_sys.h"
 #include "my_table_map.h"
 #include "my_time.h"
+#include "mysql/udf_registration_types.h"
 #include "mysql_com.h"
-#include "parse_tree_node_base.h"
-#include "sql_alloc.h"
-#include "sql_const.h"
-#include "sql_list.h"
+#include "sql/enum_query_type.h"
+#include "sql/handler.h"
+#include "sql/item.h"
+#include "sql/item_func.h"   // Item_int_func
+#include "sql/item_row.h"    // Item_row
+#include "sql/mem_root_array.h" // Mem_root_array
+#include "sql/my_decimal.h"
+#include "sql/parse_tree_node_base.h"
+#include "sql/sql_alloc.h"
+#include "sql/sql_const.h"
+#include "sql/sql_list.h"
+#include "sql/table.h"
+#include "sql/thr_malloc.h"
 #include "sql_string.h"
-#include "system_variables.h"
-#include "table.h"
 #include "template_utils.h"  // down_cast
-#include "typelib.h"
 
 class Arg_comparator;
 class Field;
@@ -335,7 +343,9 @@ public:
   Item_in_optimizer(Item *a, Item_in_subselect *b):
     Item_bool_func(a, reinterpret_cast<Item *>(b)), cache(0),
     save_cache(0), result_for_null_param(UNKNOWN)
-  { with_subselect= TRUE; }
+  {
+    set_subquery();
+  }
   bool fix_fields(THD *, Item **) override;
   bool fix_left(THD *thd, Item **ref);
   void fix_after_pullout(SELECT_LEX *parent_select,
@@ -396,7 +406,7 @@ protected:
 class Equal_creator :public Linear_comp_creator
 {
 public:
-  virtual const char* symbol(bool invert) const
+  virtual const char* symbol(bool invert MY_ATTRIBUTE((unused))) const
   {
     // This will never be called with true.
     DBUG_ASSERT(!invert);
@@ -494,7 +504,7 @@ public:
   }
 
   bool is_null() override
-  { return MY_TEST(args[0]->is_null() || args[1]->is_null()); }
+  { return args[0]->is_null() || args[1]->is_null(); }
   const CHARSET_INFO *compare_collation() const override
   { return cmp.cmp_collation.collation; }
   void top_level_item() override { abort_on_null= true; }
@@ -544,7 +554,7 @@ public:
   void top_level_item() override {}
   Item *neg_transformer(THD *thd) override;
 
-  float get_filtering_effect(table_map filter_for_table,
+  float get_filtering_effect(THD *thd, table_map filter_for_table,
                              table_map read_tables,
                              const MY_BITMAP *fields_to_ignore,
                              double rows_in_table) override;
@@ -562,7 +572,7 @@ public:
   Item *neg_transformer(THD *) override;
   void print(String *str, enum_query_type query_type) override;
 
-  float get_filtering_effect(table_map filter_for_table,
+  float get_filtering_effect(THD *thd, table_map filter_for_table,
                              table_map read_tables,
                              const MY_BITMAP *fields_to_ignore,
                              double rows_in_table) override;
@@ -658,10 +668,37 @@ public:
   enum Functype functype() const override { return TRIG_COND_FUNC; };
   /// '@<if@>', to distinguish from the if() SQL function
   const char *func_name() const override { return "<if>"; };
-  bool const_item() const override { return false; }
+  /// Get range of inner tables spanned by associated outer join operation
+  void get_table_range(TABLE_LIST **first_table, TABLE_LIST **last_table);
+  bool fix_fields(THD *thd, Item **ref) override
+  {
+    if (Item_bool_func::fix_fields(thd, ref))
+      return true;
+    add_trig_func_tables();
+    return false;
+  }
+  void add_trig_func_tables()
+  {
+    if (trig_type == IS_NOT_NULL_COMPL || trig_type == FOUND_MATCH)
+    {
+      DBUG_ASSERT(m_join != nullptr);
+      // Make this function dependent on the range of inner tables
+      TABLE_LIST *first_table, *last_table;
+      get_table_range(&first_table, &last_table);
+      used_tables_cache|= last_table->map() |
+                          ((last_table->map() - 1) & ~(first_table->map() - 1));
+    }
+    else if (trig_type == OUTER_FIELD_IS_NOT_NULL)
+    {
+      used_tables_cache|= OUTER_REF_TABLE_BIT;
+    }
+  }
+  void update_used_tables() override
+  {
+    Item_bool_func::update_used_tables();
+    add_trig_func_tables();
+  }
   bool *get_trig_var() { return trig_var; }
-  /* The following is needed for ICP: */
-  table_map used_tables() const override { return args[0]->used_tables(); }
   void print(String *str, enum_query_type query_type) override;
 };
 
@@ -750,7 +787,7 @@ public:
   Item *equality_substitution_transformer(uchar *arg) override;
   bool gc_subst_analyzer(uchar **) override { return true; }
 
-  float get_filtering_effect(table_map filter_for_table,
+  float get_filtering_effect(THD *thd, table_map filter_for_table,
                              table_map read_tables,
                              const MY_BITMAP *fields_to_ignore,
                              double rows_in_table) override;
@@ -759,21 +796,24 @@ public:
 class Item_func_equal final : public Item_bool_rowready_func2
 {
 public:
-  Item_func_equal(Item *a,Item *b) :Item_bool_rowready_func2(a,b) {};
+  Item_func_equal(Item *a,Item *b) :Item_bool_rowready_func2(a,b)
+  {
+    null_on_null= false;
+  }
   Item_func_equal(const POS &pos, Item *a,Item *b)
     : Item_bool_rowready_func2(pos, a,b)
-  {};
-
+  {
+    null_on_null= false;
+  }
   longlong val_int() override;
   bool resolve_type(THD *thd) override;
-  table_map not_null_tables() const override { return 0; }
   enum Functype functype() const override { return EQUAL_FUNC; }
   enum Functype rev_functype() const override { return EQUAL_FUNC; }
   cond_result eq_cmp_result() const override { return COND_TRUE; }
   const char *func_name() const override { return "<=>"; }
   Item *neg_transformer(THD *) override { return nullptr; }
 
-  float get_filtering_effect(table_map filter_for_table,
+  float get_filtering_effect(THD *thd, table_map filter_for_table,
                              table_map read_tables,
                              const MY_BITMAP *fields_to_ignore,
                              double rows_in_table) override;
@@ -792,7 +832,7 @@ public:
   Item *negated_item() override;
   bool gc_subst_analyzer(uchar **) override { return true; }
 
-  float get_filtering_effect(table_map filter_for_table,
+  float get_filtering_effect(THD *thd, table_map filter_for_table,
                              table_map read_tables,
                              const MY_BITMAP *fields_to_ignore,
                              double rows_in_table) override;
@@ -810,7 +850,7 @@ public:
   Item *negated_item() override;
   bool gc_subst_analyzer(uchar **) override { return true; }
 
-  float get_filtering_effect(table_map filter_for_table,
+  float get_filtering_effect(THD *thd, table_map filter_for_table,
                              table_map read_tables,
                              const MY_BITMAP *fields_to_ignore,
                              double rows_in_table) override;
@@ -829,7 +869,7 @@ public:
   Item *negated_item() override;
   bool gc_subst_analyzer(uchar **) override { return true; }
 
-  float get_filtering_effect(table_map filter_for_table,
+  float get_filtering_effect(THD *thd, table_map filter_for_table,
                              table_map read_tables,
                              const MY_BITMAP *fields_to_ignore,
                              double rows_in_table) override;
@@ -848,7 +888,7 @@ public:
   Item *negated_item() override;
   bool gc_subst_analyzer(uchar **) override { return true; }
 
-  float get_filtering_effect(table_map filter_for_table,
+  float get_filtering_effect(THD *thd, table_map filter_for_table,
                              table_map read_tables,
                              const MY_BITMAP *fields_to_ignore,
                              double rows_in_table) override;
@@ -866,7 +906,7 @@ public:
   const char *func_name() const override { return "<>"; }
   Item *negated_item() override;
 
-  float get_filtering_effect(table_map filter_for_table,
+  float get_filtering_effect(THD *thd, table_map filter_for_table,
                              table_map read_tables,
                              const MY_BITMAP *fields_to_ignore,
                              double rows_in_table) override;
@@ -947,7 +987,7 @@ public:
   uint decimal_precision() const override { return 1; }
   bool gc_subst_analyzer(uchar **) override { return true; }
 
-  float get_filtering_effect(table_map filter_for_table,
+  float get_filtering_effect(THD *thd, table_map filter_for_table,
                              table_map read_tables,
                              const MY_BITMAP *fields_to_ignore,
                              double rows_in_table) override;
@@ -1020,12 +1060,20 @@ class Item_func_coalesce : public Item_func_numhybrid
 protected:
   Item_func_coalesce(const POS &pos, Item *a, Item *b)
     : Item_func_numhybrid(pos, a, b)
-  {}
+  {
+    null_on_null= false;
+  }
   Item_func_coalesce(const POS &pos, Item *a)
     : Item_func_numhybrid(pos, a)
-  {}
+  {
+    null_on_null= false;
+  }
 public:
-  Item_func_coalesce(const POS &pos, PT_item_list *list);
+  Item_func_coalesce(const POS &pos, PT_item_list *list)
+    : Item_func_numhybrid(pos, list)
+  {
+    null_on_null= false;
+  }
   double real_op() override;
   longlong int_op() override;
   String *str_op(String *) override;
@@ -1041,7 +1089,6 @@ public:
   void set_numeric_type() override {}
   enum Item_result result_type() const override { return hybrid_type; }
   const char *func_name() const override { return "coalesce"; }
-  table_map not_null_tables() const override { return 0; }
 };
 
 
@@ -1088,10 +1135,14 @@ class Item_func_if final : public Item_func
 public:
   Item_func_if(Item *a,Item *b,Item *c)
     :Item_func(a,b,c), cached_result_type(INT_RESULT)
-  {}
+  {
+    null_on_null= false;
+  }
   Item_func_if(const POS &pos, Item *a,Item *b,Item *c)
     :Item_func(pos, a,b,c), cached_result_type(INT_RESULT)
-  {}
+  {
+    null_on_null= false;
+  }
 
   double val_real() override;
   longlong val_int() override;
@@ -1116,11 +1167,14 @@ class Item_func_nullif final : public Item_bool_func2
 public:
   Item_func_nullif(const POS &pos, Item *a, Item *b)
     :Item_bool_func2(pos, a, b), cached_result_type(INT_RESULT)
-  {}
+  {
+    null_on_null= false;
+  }
   double val_real() override;
   longlong val_int() override;
   String *val_str(String *str) override;
   my_decimal *val_decimal(my_decimal *) override;
+  bool val_json(Json_wrapper *wr) override;
   Item_result result_type() const override { return cached_result_type; }
   bool resolve_type(THD *thd) override;
   uint decimal_precision() const override
@@ -1132,7 +1186,6 @@ public:
     Item_func::print(str, query_type);
   }
 
-  table_map not_null_tables() const override { return 0; }
   bool is_null() override;
 };
 
@@ -1599,6 +1652,7 @@ public:
     : super(pos), first_expr_num(-1), else_expr_num(-1),
     cached_result_type(INT_RESULT), left_result_type(INT_RESULT), case_item(0)
   {
+    null_on_null= false;
     ncases= list.elements;
     if (first_expr_arg)
     {
@@ -1623,7 +1677,6 @@ public:
   bool fix_fields(THD *thd, Item **ref) override;
   bool resolve_type(THD *) override;
   uint decimal_precision() const override;
-  table_map not_null_tables() const override { return 0; }
   enum Item_result result_type() const override { return cached_result_type; }
   const char *func_name() const override { return "case"; }
   void print(String *str, enum_query_type query_type) override;
@@ -1689,11 +1742,11 @@ public:
   void cleanup_arrays()
   {
     uint i;
-    delete array;
+    destroy(array);
     array= 0;
     for (i= 0; i <= (uint)DECIMAL_RESULT + 1; i++)
     {
-      delete cmp_items[i];
+      destroy(cmp_items[i]);
       cmp_items[i]= 0;
     }
   }
@@ -1714,7 +1767,7 @@ public:
   { return cmp_collation.collation; }
   bool gc_subst_analyzer(uchar **) override { return true; }
 
-  float get_filtering_effect(table_map filter_for_table,
+  float get_filtering_effect(THD *thd, table_map filter_for_table,
                              table_map read_tables,
                              const MY_BITMAP *fields_to_ignore,
                              double rows_in_table) override;
@@ -1796,42 +1849,25 @@ class Item_func_isnull : public Item_bool_func
 protected:
   longlong cached_value;
 public:
-  Item_func_isnull(Item *a) :Item_bool_func(a) {}
-  Item_func_isnull(const POS &pos, Item *a) :Item_bool_func(pos, a) {}
-
+  Item_func_isnull(Item *a) :Item_bool_func(a)
+  {
+    null_on_null= false;
+  }
+  Item_func_isnull(const POS &pos, Item *a) :Item_bool_func(pos, a)
+  {
+    null_on_null= false;
+  }
   longlong val_int() override;
   enum Functype functype() const override { return ISNULL_FUNC; }
   bool resolve_type(THD *thd) override;
   const char *func_name() const override { return "isnull"; }
   /* Optimize case of not_null_column IS NULL */
-  void update_used_tables() override
-  {
-    if (!args[0]->maybe_null)
-    {
-      used_tables_cache= 0;			/* is always false */
-      const_item_cache= 1;
-      cached_value= (longlong) 0;
-    }
-    else
-    {
-      args[0]->update_used_tables();
-      with_subselect= args[0]->has_subquery();
-      with_stored_program= args[0]->has_stored_program();
+  void update_used_tables() override;
 
-      if ((const_item_cache= !(used_tables_cache= args[0]->used_tables()) &&
-           !with_subselect && !with_stored_program))
-      {
-	/* Remember if the value is always NULL or never NULL */
-	cached_value= (longlong) args[0]->is_null();
-      }
-    }
-  }
-
-  float get_filtering_effect(table_map filter_for_table,
+  float get_filtering_effect(THD *thd, table_map filter_for_table,
                              table_map read_tables,
                              const MY_BITMAP *fields_to_ignore,
                              double rows_in_table) override;
-  table_map not_null_tables() const override { return 0; }
   optimize_type select_optimize() const override { return OPTIMIZE_NULL; }
   Item *neg_transformer(THD *thd) override;
   const CHARSET_INFO *compare_collation() const override
@@ -1839,8 +1875,6 @@ public:
 };
 
 /* Functions used by HAVING for rewriting IN subquery */
-
-class Item_in_subselect;
 
 /* 
   This is like IS NOT NULL but it also remembers if it ever has
@@ -1895,7 +1929,7 @@ public:
   { return args[0]->collation.collation; }
   void top_level_item() override { abort_on_null= true; }
 
-  float get_filtering_effect(table_map filter_for_table,
+  float get_filtering_effect(THD *thd, table_map filter_for_table,
                              table_map read_tables,
                              const MY_BITMAP *fields_to_ignore,
                              double rows_in_table) override;
@@ -1905,21 +1939,6 @@ public:
 class Item_func_like final : public Item_bool_func2
 {
   typedef Item_bool_func2 super;
-
-  // Boyer-Moore data
-  bool        can_do_bm;	// pattern is '%abcd%' case
-  const char* pattern;
-  int         pattern_len;
-
-  // Boyer-Moore buffers, *this is owner
-  int* bmGs; //   good suffix shift table, size is pattern_len + 1
-  int* bmBc; // bad character shift table, size is alphabet_size
-
-  void bm_compute_suffixes(int* suff);
-  void bm_compute_good_suffix_shifts(int* suff);
-  void bm_compute_bad_character_shifts();
-  bool bm_matches(const char* text, size_t text_len) const;
-  enum { alphabet_size = 256 };
 
   Item *escape_item;
 
@@ -1932,12 +1951,10 @@ public:
   int escape;
 
   Item_func_like(Item *a,Item *b, Item *escape_arg, bool escape_used)
-    :Item_bool_func2(a,b), can_do_bm(false), pattern(0), pattern_len(0), 
-     bmGs(0), bmBc(0), escape_item(escape_arg),
+    :Item_bool_func2(a,b), escape_item(escape_arg),
      escape_used_in_parsing(escape_used), escape_evaluated(false) {}
   Item_func_like(const POS &pos, Item *a, Item *b, Item *opt_escape_arg)
-    :super(pos, a, b), can_do_bm(false), pattern(0), pattern_len(0), 
-     bmGs(0), bmBc(0), escape_item(opt_escape_arg),
+    :super(pos, a, b), escape_item(opt_escape_arg),
      escape_used_in_parsing(opt_escape_arg != NULL), escape_evaluated(false)
   {}
 
@@ -1964,39 +1981,10 @@ public:
   */
   bool escape_is_evaluated() const { return escape_evaluated; }
 
-  float get_filtering_effect(table_map filter_for_table,
+  float get_filtering_effect(THD *thd, table_map filter_for_table,
                              table_map read_tables,
                              const MY_BITMAP *fields_to_ignore,
                              double rows_in_table) override;
-};
-
-
-class Item_func_regex final : public Item_bool_func
-{
-  my_regex_t preg;
-  bool regex_compiled;
-  bool regex_is_const;
-  String prev_regexp;
-  DTCollation cmp_collation;
-  const CHARSET_INFO *regex_lib_charset;
-  int regex_lib_flags;
-  String conv;
-  int regcomp(bool send_error);
-public:
-  Item_func_regex(const POS &pos, Item *a,Item *b) :Item_bool_func(pos, a,b),
-    regex_compiled(0),regex_is_const(0) {}
-  void cleanup() override;
-  longlong val_int() override;
-  bool fix_fields(THD *thd, Item **ref) override;
-  const char *func_name() const override { return "regexp"; }
-
-  void print(String *str, enum_query_type query_type) override
-  {
-    print_op(str, query_type);
-  }
-
-  const CHARSET_INFO *compare_collation() const override
-  { return cmp_collation.collation; }
 };
 
 
@@ -2011,8 +1999,7 @@ protected:
 public:
   /* Item_cond() is only used to create top level items */
   Item_cond(): Item_bool_func(), abort_on_null(1)
-  { const_item_cache=0; }
-
+  {}
   Item_cond(Item *i1,Item *i2)
     :Item_bool_func(), abort_on_null(0)
   {
@@ -2042,7 +2029,7 @@ public:
   void add_at_head(List<Item> *nlist)
   {
     DBUG_ASSERT(nlist->elements);
-    list.prepand(nlist);
+    list.prepend(nlist);
   }
 
   bool itemize(Parse_context *pc, Item **res) override;
@@ -2157,13 +2144,13 @@ class Item_equal final : public Item_bool_func
 public:
   inline Item_equal()
     : Item_bool_func(), const_item(0), eval_item(0), cond_false(0)
-  { const_item_cache=0 ;}
+  {}
   Item_equal(Item_field *f1, Item_field *f2);
   Item_equal(Item *c, Item_field *f);
   Item_equal(Item_equal *item_equal);
   virtual ~Item_equal()
   {
-    delete eval_item;
+    destroy(eval_item);
   }
 
   inline Item* get_const() { return const_item; }
@@ -2201,7 +2188,7 @@ public:
 
   Item *equality_substitution_transformer(uchar *arg) override;
 
-  float get_filtering_effect(table_map filter_for_table,
+  float get_filtering_effect(THD *thd, table_map filter_for_table,
                              table_map read_tables,
                              const MY_BITMAP *fields_to_ignore,
                              double rows_in_table) override;
@@ -2265,7 +2252,7 @@ public:
   Item *neg_transformer(THD *thd) override;
   bool gc_subst_analyzer(uchar **) override { return true; }
 
-  float get_filtering_effect(table_map filter_for_table,
+  float get_filtering_effect(THD *thd, table_map filter_for_table,
                              table_map read_tables,
                              const MY_BITMAP *fields_to_ignore,
                              double rows_in_table) override;
@@ -2295,7 +2282,7 @@ public:
   Item *neg_transformer(THD *thd) override;
   bool gc_subst_analyzer(uchar **) override { return true; }
 
-  float get_filtering_effect(table_map filter_for_table,
+  float get_filtering_effect(THD *thd, table_map filter_for_table,
                              table_map read_tables,
                              const MY_BITMAP *fields_to_ignore,
                              double rows_in_table) override;

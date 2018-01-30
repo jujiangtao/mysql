@@ -1,13 +1,3 @@
-########################################
-##### WL#7554 Force schema `test` to character set latin1
-##### This test should be migrated to utf8mb4
---disable_query_log
-let $testdbcs104=`select default_character_set_name from information_schema.schemata where schema_name='test'`;
-alter schema default character set latin1;
-use test;
---enable_query_log
-########################################
-
 ######## suite/innodb/t/innodb_prefix_index_liftedlimit.test ##########
 #                                                                    #
 # Testcase for worklog WL#5743: Lift the limit of index key prefixes #
@@ -38,10 +28,11 @@ set global innodb_file_per_table=1;
 CREATE TABLE worklog5743 (
 col_1_varchar VARCHAR (4000) , col_2_varchar VARCHAR (4000) ,
 PRIMARY KEY (col_1_varchar(3072))
-) ROW_FORMAT=DYNAMIC, engine = innodb;
+) charset latin1 ROW_FORMAT=DYNAMIC, engine = innodb;
 INSERT INTO worklog5743 VALUES(REPEAT("a", 4000) , REPEAT("o", 4000));
 CREATE INDEX prefix_idx ON worklog5743(col_1_varchar (3072));
 # check IS
+--sorted_result
 SELECT COLUMN_NAME,INDEX_NAME,SUB_PART,INDEX_TYPE FROM
 INFORMATION_SCHEMA.STATISTICS WHERE table_name = 'worklog5743' ;
 INSERT INTO worklog5743 VALUES(REPEAT("b", 4000) , REPEAT("p", 4000));
@@ -67,10 +58,11 @@ DROP TABLE worklog5743;
 CREATE TABLE worklog5743 (
 col_1_text TEXT (4000) , col_2_text TEXT (4000) ,
 PRIMARY KEY (col_1_text(3072))
-) ROW_FORMAT=DYNAMIC, engine = innodb;
+) charset latin1 ROW_FORMAT=DYNAMIC, engine = innodb;
 INSERT INTO worklog5743 VALUES(REPEAT("a", 4000) , REPEAT("o", 4000));
 CREATE INDEX prefix_idx ON worklog5743(col_1_text (3072));
 # check IS
+--sorted_result
 SELECT COLUMN_NAME,INDEX_NAME,SUB_PART,INDEX_TYPE FROM
 INFORMATION_SCHEMA.STATISTICS WHERE table_name = 'worklog5743' ;
 INSERT INTO worklog5743 VALUES(REPEAT("b", 4000) , REPEAT("p", 4000));
@@ -90,7 +82,7 @@ DROP TABLE worklog5743;
 CREATE TABLE worklog5743 (
 col_1_mediumtext MEDIUMTEXT , col_2_mediumtext MEDIUMTEXT ,
 PRIMARY KEY (col_1_mediumtext(3072))
-) ROW_FORMAT=DYNAMIC, engine = innodb;
+) charset latin1 ROW_FORMAT=DYNAMIC, engine = innodb;
 INSERT INTO worklog5743 VALUES(REPEAT("a", 4000) , REPEAT("o", 4000));
 CREATE INDEX prefix_idx ON worklog5743(col_1_mediumtext (3072));
 INSERT INTO worklog5743 VALUES(REPEAT("b", 4000) , REPEAT("p", 4000));
@@ -113,7 +105,7 @@ DROP TABLE worklog5743;
 CREATE TABLE worklog5743 (
 col_1_longtext LONGTEXT , col_2_longtext LONGTEXT ,
 PRIMARY KEY (col_1_longtext(3072))
-) ROW_FORMAT=DYNAMIC, engine = innodb;
+) charset latin1 ROW_FORMAT=DYNAMIC, engine = innodb;
 INSERT INTO worklog5743 VALUES(REPEAT("a", 4000) , REPEAT("o", 4000));
 CREATE INDEX prefix_idx ON worklog5743(col_1_longtext (3072));
 INSERT INTO worklog5743 VALUES(REPEAT("b", 4000) , REPEAT("p", 4000));
@@ -140,6 +132,7 @@ PRIMARY KEY (col_1_blob(3072))
 INSERT INTO worklog5743 VALUES(REPEAT("a", 4000) , REPEAT("o", 4000));
 CREATE INDEX prefix_idx ON worklog5743(col_1_blob (3072));
 # check IS
+--sorted_result
 SELECT COLUMN_NAME,INDEX_NAME,SUB_PART,INDEX_TYPE FROM
 INFORMATION_SCHEMA.STATISTICS WHERE table_name = 'worklog5743' ;
 INSERT INTO worklog5743 VALUES(REPEAT("b", 4000) , REPEAT("p", 4000));
@@ -228,7 +221,7 @@ col_3_char CHAR (255), col_4_char CHAR (255),col_5_char CHAR (255),
 col_6_char CHAR (255), col_7_char CHAR (255),col_8_char CHAR (255),
 col_9_char CHAR (255), col_10_char CHAR (255),col_11_char CHAR (255),
 col_12_char CHAR (255), col_13_char CHAR (255),col_14_char CHAR (255)
-) ROW_FORMAT=DYNAMIC, engine = innodb;
+) charset latin1 ROW_FORMAT=DYNAMIC, engine = innodb;
 INSERT INTO worklog5743 VALUES(REPEAT("a", 255) , REPEAT("o", 255),
 REPEAT("a", 255) , REPEAT("o", 255),REPEAT("a", 255),
 REPEAT("a", 255) , REPEAT("o", 255),REPEAT("a", 255),
@@ -314,7 +307,7 @@ DROP TABLE worklog5743;
 CREATE TABLE worklog5743_key2 (
 col_1_varchar VARCHAR (4000) , col_2_varchar VARCHAR (4000) ,
 PRIMARY KEY (col_1_varchar(948))
-) ROW_FORMAT=COMPRESSED KEY_BLOCK_SIZE=2, engine = innodb;
+) charset latin1 ROW_FORMAT=COMPRESSED KEY_BLOCK_SIZE=2, engine = innodb;
 INSERT INTO worklog5743_key2 VALUES(REPEAT("a", 4000) , REPEAT("o", 4000));
 #CREATE INDEX prefix_idx ON worklog5743_key2 (col_1_varchar (767));
 INSERT INTO worklog5743_key2 VALUES(REPEAT("b", 4000) , REPEAT("p", 4000));
@@ -333,7 +326,7 @@ DROP TABLE worklog5743_key2;
 CREATE TABLE worklog5743_key4 (
 col_1_varchar VARCHAR (4000) , col_2_varchar VARCHAR (4000) ,
 PRIMARY KEY (col_1_varchar(1964))
-) ROW_FORMAT=COMPRESSED KEY_BLOCK_SIZE=4, engine = innodb;
+) charset latin1 ROW_FORMAT=COMPRESSED KEY_BLOCK_SIZE=4, engine = innodb;
 INSERT INTO worklog5743_key4 VALUES(REPEAT("a", 4000) , REPEAT("o", 4000));
 #CREATE INDEX prefix_idx ON worklog5743_key4 (col_1_varchar (767));
 INSERT INTO worklog5743_key4 VALUES(REPEAT("b", 4000) , REPEAT("p", 4000));
@@ -353,7 +346,7 @@ DROP TABLE worklog5743_key4;
 CREATE TABLE worklog5743_key8 (
 col_1_varchar VARCHAR (4000) , col_2_varchar VARCHAR (4000) ,
 PRIMARY KEY (col_1_varchar(3072))
-) ROW_FORMAT=COMPRESSED KEY_BLOCK_SIZE=8, engine = innodb;
+) charset latin1 ROW_FORMAT=COMPRESSED KEY_BLOCK_SIZE=8, engine = innodb;
 INSERT INTO worklog5743_key8 VALUES(REPEAT("a", 4000) , REPEAT("o", 4000));
 #CREATE INDEX prefix_idx ON worklog5743_key8 (col_1_varchar (767));
 INSERT INTO worklog5743_key8 VALUES(REPEAT("b", 4000) , REPEAT("p", 4000));
@@ -375,7 +368,7 @@ DROP TABLE worklog5743_key8;
 CREATE TABLE worklog5743_key2 (
 col_1_text TEXT (4000) , col_2_text TEXT (4000) ,
 PRIMARY KEY (col_1_text(948))
-) ROW_FORMAT=COMPRESSED KEY_BLOCK_SIZE=2, engine = innodb;
+) charset latin1 ROW_FORMAT=COMPRESSED KEY_BLOCK_SIZE=2, engine = innodb;
 INSERT INTO worklog5743_key2 VALUES(REPEAT("a", 4000) , REPEAT("o", 4000));
 #CREATE INDEX prefix_idx ON worklog5743_key2 (col_1_text (767));
 INSERT INTO worklog5743_key2 VALUES(REPEAT("b", 4000) , REPEAT("p", 4000));
@@ -394,7 +387,7 @@ DROP TABLE worklog5743_key2;
 CREATE TABLE worklog5743_key4 (
 col_1_text TEXT (4000) , col_2_text TEXT (4000) ,
 PRIMARY KEY (col_1_text(1964))
-) ROW_FORMAT=COMPRESSED KEY_BLOCK_SIZE=4, engine = innodb;
+) charset latin1 ROW_FORMAT=COMPRESSED KEY_BLOCK_SIZE=4, engine = innodb;
 INSERT INTO worklog5743_key4 VALUES(REPEAT("a", 4000) , REPEAT("o", 4000));
 #CREATE INDEX prefix_idx ON worklog5743_key4 (col_1_text (767));
 INSERT INTO worklog5743_key4 VALUES(REPEAT("b", 4000) , REPEAT("p", 4000));
@@ -413,7 +406,7 @@ DROP TABLE worklog5743_key4;
 CREATE TABLE worklog5743_key8 (
 col_1_text TEXT (4000) , col_2_text TEXT (4000) ,
 PRIMARY KEY (col_1_text(3072))
-) ROW_FORMAT=COMPRESSED KEY_BLOCK_SIZE=8, engine = innodb;
+) charset latin1 ROW_FORMAT=COMPRESSED KEY_BLOCK_SIZE=8, engine = innodb;
 INSERT INTO worklog5743_key8 VALUES(REPEAT("a", 4000) , REPEAT("o", 4000));
 #CREATE INDEX prefix_idx ON worklog5743_key8 (col_1_text (767));
 INSERT INTO worklog5743_key8 VALUES(REPEAT("b", 4000) , REPEAT("p", 4000));
@@ -497,7 +490,7 @@ CREATE TABLE worklog5743 (
 col_1_varbinary VARBINARY (4000) , col_2_varchar VARCHAR (4000) ,
 col_3_text TEXT (4000), col_4_blob BLOB (4000), col_5_text TEXT (4000),
 col_6_varchar VARCHAR (4000), col_7_binary BINARY (255)
-) ROW_FORMAT=DYNAMIC, engine = innodb;
+) charset latin1 ROW_FORMAT=DYNAMIC, engine = innodb;
 INSERT INTO worklog5743 VALUES(REPEAT("a", 4000) , REPEAT("o", 4000),
 REPEAT("a", 4000) , REPEAT("o", 4000), REPEAT("a", 4000),
 REPEAT("a", 4000) ,  REPEAT("a", 255)
@@ -551,7 +544,7 @@ CREATE TABLE worklog5743 (
 col_1_varbinary VARBINARY (4000) , col_2_varchar VARCHAR (4000) ,
 col_3_text TEXT (4000), col_4_blob BLOB (4000),col_5_text TEXT (4000),
 col_6_varchar VARCHAR (4000), col_7_binary BINARY (255)
-) ROW_FORMAT=DYNAMIC, engine = innodb;
+) charset latin1 ROW_FORMAT=DYNAMIC, engine = innodb;
 
 
 # Update used to hang if we create following 5 indexes. Fixed in;
@@ -720,7 +713,7 @@ DROP TABLE worklog5743;
 CREATE TABLE worklog5743 (
 col_1_text TEXT(4000) , col_2_text TEXT(4000) ,
 PRIMARY KEY (col_1_text(3072))
-) ROW_FORMAT=DYNAMIC, engine = innodb;
+) charset latin1 ROW_FORMAT=DYNAMIC, engine = innodb;
 INSERT INTO worklog5743 VALUES(REPEAT("a", 200) , REPEAT("o", 200));
 SELECT col_1_text = REPEAT("a", 200) , col_2_text  = REPEAT("o", 200) FROM
 worklog5743;
@@ -746,11 +739,11 @@ worklog5743;
 
 --echo "In connection 1"
 --connection con1
-select @@session.tx_isolation;
+select @@session.transaction_isolation;
 SELECT col_1_text = REPEAT("b", 200) , col_2_text = REPEAT("o", 200) FROM
 worklog5743;
 SET SESSION TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
-select @@session.tx_isolation;
+select @@session.transaction_isolation;
 SELECT col_1_text = REPEAT("b", 200) , col_2_text = REPEAT("o", 200) FROM
 worklog5743;
 SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ;
@@ -790,7 +783,7 @@ DROP TABLE worklog5743;
 CREATE TABLE worklog5743 (
 col_1_text TEXT(4000) , col_2_text TEXT(4000) ,
 PRIMARY KEY (col_1_text(3072))
-) ROW_FORMAT=DYNAMIC, engine = innodb;
+) charset latin1 ROW_FORMAT=DYNAMIC, engine = innodb;
 INSERT INTO worklog5743 VALUES(REPEAT("a", 200) , REPEAT("o", 200));
 SELECT col_1_text = REPEAT("a", 200) , col_2_text  = REPEAT("o", 200) FROM
 worklog5743;
@@ -820,7 +813,7 @@ WHERE info='COMMIT';
 --echo "In connection 1"
 --connection con1
 SET SESSION TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
-select @@session.tx_isolation;
+select @@session.transaction_isolation;
 SELECT col_1_text = REPEAT("b", 200) , col_2_text = REPEAT("o", 200) FROM
 worklog5743;
 SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ;
@@ -842,7 +835,7 @@ DROP TABLE worklog5743;
 CREATE TABLE worklog5743 (
 col_1_text TEXT(4000) , col_2_text TEXT(4000) ,
 PRIMARY KEY (col_1_text(3072))
-) ROW_FORMAT=DYNAMIC, engine = innodb;
+) charset latin1 ROW_FORMAT=DYNAMIC, engine = innodb;
 INSERT INTO worklog5743 VALUES(REPEAT("a", 200) , REPEAT("o", 200));
 SELECT col_1_text = REPEAT("a", 200) , col_2_text  = REPEAT("o", 200) FROM
 worklog5743;
@@ -894,7 +887,7 @@ DROP TABLE worklog5743;
 CREATE TABLE worklog5743 (
 col_1_varchar VARCHAR (4000) , col_2_varchar VARCHAR (4000) ,
 PRIMARY KEY (col_1_varchar(3072))
-) ROW_FORMAT=DYNAMIC, engine = innodb;
+) charset latin1 ROW_FORMAT=DYNAMIC, engine = innodb;
 INSERT INTO worklog5743 VALUES(REPEAT("a", 4000) , REPEAT("o", 4000));
 CREATE INDEX prefix_idx ON worklog5743(col_1_varchar (3072));
 INSERT INTO worklog5743 VALUES(REPEAT("b", 4000) , REPEAT("p", 4000));
@@ -958,7 +951,7 @@ CREATE TABLE worklog5743 (
 col_1_varchar VARCHAR (4000) ,
 col_2_varchar VARCHAR (4000) ,
 UNIQUE INDEX (col_1_varchar(3072))
-) ROW_FORMAT=DYNAMIC, engine = innodb;
+) charset latin1 ROW_FORMAT=DYNAMIC, engine = innodb;
 INSERT INTO worklog5743
 VALUES(concat(REPEAT("a", 2000),REPEAT("b", 1000),REPEAT("c", 1000)), REPEAT("o", 4000));
 INSERT INTO worklog5743
@@ -966,6 +959,7 @@ VALUES(concat(REPEAT("a", 2000),REPEAT("b", 2000)), REPEAT("o", 4000));
 INSERT INTO worklog5743 VALUES(NULL,NULL);
 INSERT INTO worklog5743 VALUES(NULL,NULL);
 # check IS
+--sorted_result
 SELECT COLUMN_NAME,INDEX_NAME,SUB_PART,INDEX_TYPE
 FROM INFORMATION_SCHEMA.STATISTICS WHERE table_name = 'worklog5743' ;
 SELECT col_1_varchar FROM worklog5743 WHERE col_1_varchar IS NULL;
@@ -979,7 +973,7 @@ DROP TABLE worklog5743;
 #  Try drop and add secondary prefix index
 CREATE TABLE worklog5743 (
 col_1_varchar VARCHAR (4000) , col_2_varchar VARCHAR (4000) ,
-PRIMARY KEY (col_1_varchar(3072))) ROW_FORMAT=DYNAMIC, engine = innodb;
+PRIMARY KEY (col_1_varchar(3072))) charset latin1 ROW_FORMAT=DYNAMIC, engine = innodb;
 INSERT INTO worklog5743 VALUES(REPEAT("a", 4000) , REPEAT("o", 4000));
 # Create index
 CREATE INDEX prefix_idx ON worklog5743(col_1_varchar (3072));
@@ -1006,7 +1000,7 @@ DROP TABLE worklog5743;
 CREATE TABLE worklog5743 (
 col_1_varchar VARCHAR (4000) , col_2_varchar VARCHAR (4000) ,
 PRIMARY KEY `prefix_primary` (col_1_varchar(3072))
-) ROW_FORMAT=DYNAMIC, engine = innodb;
+) charset latin1 ROW_FORMAT=DYNAMIC, engine = innodb;
 INSERT INTO worklog5743 VALUES(REPEAT("a", 4000) , REPEAT("o", 4000));
 # Create index
 CREATE INDEX prefix_idx ON worklog5743(col_1_varchar (3072));
@@ -1039,7 +1033,7 @@ DROP TABLE worklog5743;
 CREATE TABLE worklog5743 (
 col_1_varchar VARCHAR (4000) , col_2_varchar VARCHAR (4000) ,
 PRIMARY KEY `prefix_primary` (col_1_varchar(3072))
-) ROW_FORMAT=DYNAMIC, engine = innodb;
+) charset latin1 ROW_FORMAT=DYNAMIC, engine = innodb;
 INSERT INTO worklog5743 VALUES(REPEAT("a", 4000) , REPEAT("o", 4000));
 # Create index
 CREATE INDEX prefix_idx ON worklog5743(col_1_varchar (3072));
@@ -1072,7 +1066,7 @@ DROP TABLE worklog5743;
 CREATE TABLE worklog5743 (
 col_1_varchar VARCHAR(4000) , col_2_varchar VARCHAR(4000) ,
 PRIMARY KEY (col_1_varchar (3072))
-) ROW_FORMAT=DYNAMIC, engine = innodb;
+) charset latin1 ROW_FORMAT=DYNAMIC, engine = innodb;
 INSERT INTO worklog5743 VALUES(REPEAT("c", 3500) , REPEAT("o", 3500));
 CREATE INDEX prefix_idx ON worklog5743(col_1_varchar (3072));
 
@@ -1190,7 +1184,7 @@ DROP TABLE worklog5743;
 #  text data type + secondary index
 CREATE TABLE worklog5743 (col_1_text TEXT (4000) , col_2_text TEXT (4000) ,
 PRIMARY KEY (col_1_text(500))
-) ROW_FORMAT=DYNAMIC, engine = innodb;
+) charset latin1 ROW_FORMAT=DYNAMIC, engine = innodb;
 INSERT INTO worklog5743 VALUES(REPEAT("a", 4000) , REPEAT("o", 4000));
 # Create index of 3072
 CREATE INDEX prefix_idx ON worklog5743(col_1_text (3072));
@@ -1247,7 +1241,7 @@ DROP TABLE worklog5743;
 CREATE TABLE worklog5743 (
 col_1_text TEXT (4000) , col_2_text TEXT (4000) ,
 PRIMARY KEY (col_1_text(948))
-) ROW_FORMAT=COMPRESSED KEY_BLOCK_SIZE=2, engine = innodb;
+) charset latin1 ROW_FORMAT=COMPRESSED KEY_BLOCK_SIZE=2, engine = innodb;
 INSERT INTO worklog5743 VALUES(REPEAT("a", 4000) , REPEAT("o", 4000));
 # Create index of 767
 INSERT INTO worklog5743 VALUES(REPEAT("b", 4000) , REPEAT("p", 4000));
@@ -1304,7 +1298,7 @@ DROP TABLE worklog5743;
 # data types VARCHAR
 CREATE TABLE worklog5743 (
 col_1_varchar VARCHAR (4000) , PRIMARY KEY (col_1_varchar(3072))
-) ROW_FORMAT=DYNAMIC, engine = innodb;
+) charset latin1 ROW_FORMAT=DYNAMIC, engine = innodb;
 ALTER TABLE worklog5743 DROP PRIMARY KEY;
 ALTER TABLE worklog5743 ADD PRIMARY KEY (col_1_varchar (900));
 ALTER TABLE worklog5743 DROP PRIMARY KEY;
@@ -1341,7 +1335,7 @@ DROP TABLE worklog5743;
 # Error on adding larger prefix if violates unique index.
 CREATE TABLE worklog5743 (
 col_1_varchar VARCHAR (4000) , col_2_varchar VARCHAR (4000)
-) ROW_FORMAT=DYNAMIC, engine = innodb;
+) charset latin1 ROW_FORMAT=DYNAMIC, engine = innodb;
 INSERT INTO worklog5743
 VALUES(concat(REPEAT("a", 2000),REPEAT("b", 1000),REPEAT("c", 1000)),
 REPEAT("o", 4000));
@@ -1355,7 +1349,7 @@ DROP TABLE worklog5743;
 CREATE TABLE worklog5743 (
 col_1_varchar VARCHAR (4000) , col_2_varchar VARCHAR (4000) ,
 PRIMARY KEY (col_1_varchar(3072))
-) ROW_FORMAT=DYNAMIC, engine = innodb;
+) charset latin1 ROW_FORMAT=DYNAMIC, engine = innodb;
 SHOW CREATE TABLE worklog5743;
 DROP TABLE worklog5743;
 
@@ -1366,7 +1360,7 @@ DROP TABLE worklog5743;
 CREATE TABLE worklog5743 (
 col_1_varchar VARCHAR (4000) , col_2_varchar VARCHAR (4000) ,
 PRIMARY KEY (col_1_varchar(767))
-) engine = innodb ROW_FORMAT=COMPACT;
+) charset latin1 engine = innodb ROW_FORMAT=COMPACT;
 INSERT INTO worklog5743 VALUES(REPEAT('a',4000),REPEAT('b',4000));
 # Prefix index > 767 is truncated with REDUNDANT and COMPACT
 --enable_info
@@ -1385,10 +1379,3 @@ DROP TABLE worklog5743;
 
 --disable_query_log
 eval set global innodb_file_per_table = $innodb_file_per_table_orig;
-
-########################################
-##### WL#7554 set schema `test` back to what it was
---disable_query_log
---eval alter schema test default character set $testdbcs104;
---enable_query_log
-########################################

@@ -1,40 +1,50 @@
 /* Copyright (c) 2011, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA */
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "my_config.h"
 
 #include <signal.h>
 #include <sys/types.h>
 #include <time.h>
+#include <atomic>
+
+#include "my_inttypes.h"
+#include "mysql/udf_registration_types.h"
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
 
-#include "connection_handler_manager.h"  // Connection_handler_manager
-#include "current_thd.h"                 // my_thread_get_THR_THD
 #include "keycache.h"
-#include "my_inttypes.h"
 #include "my_macros.h"
 #include "my_stacktrace.h"
 #include "my_sys.h"
-#include "mysqld.h"
-#include "mysqld_thd_manager.h"          // Global_THD_manager
-#include "session_tracker.h"
-#include "sql_class.h"
-#include "sql_const.h"
-#include "system_variables.h"
+#include "sql/conn_handler/connection_handler_manager.h" // Connection_handler_manager
+#include "sql/current_thd.h"             // my_thread_get_THR_THD
+#include "sql/key.h"
+#include "sql/mysqld.h"
+#include "sql/mysqld_thd_manager.h"      // Global_THD_manager
+#include "sql/sql_class.h"
+#include "sql/sql_const.h"
+#include "sql/system_variables.h"
 
 #ifdef _WIN32
 #include <crtdbg.h>
@@ -148,7 +158,7 @@ extern "C" void handle_fatal_signal(int sig)
     "Hope that's ok; if not, decrease some variables in the equation.\n\n");
 
 #ifdef HAVE_STACKTRACE
-  THD *thd= my_thread_get_THR_THD();
+  THD *thd= current_thd;
 
   if (!(test_flags & TEST_NO_STACKTRACE))
   {
@@ -164,7 +174,7 @@ extern "C" void handle_fatal_signal(int sig)
   if (thd)
   {
     const char *kreason= "UNKNOWN";
-    switch (thd->killed) {
+    switch (thd->killed.load()) {
     case THD::NOT_KILLED:
       kreason= "NOT_KILLED";
       break;

@@ -1,17 +1,24 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 /* 
  * sql_manager.cc
@@ -23,21 +30,24 @@
 #include "sql/sql_manager.h"
 
 #include <errno.h>
-#include <sys/types.h>
 #include <time.h>
 
-#include "log.h"               // sql_print_warning
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
+#include "my_loglevel.h"
 #include "my_systime.h"
 #include "my_thread.h"         // my_thread_t
+#include "mysql/components/services/mysql_cond_bits.h"
+#include "mysql/components/services/mysql_mutex_bits.h"
 #include "mysql/psi/mysql_cond.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/psi/mysql_thread.h"
-#include "mysql_com.h"
-#include "mysqld.h"            // flush_time
-#include "sql_base.h"          // tdc_flush_unused_tables
+#include "mysql/udf_registration_types.h"
+#include "mysqld_error.h"
+#include "sql/log.h"
+#include "sql/mysqld.h"        // flush_time
+#include "sql/sql_base.h"      // tdc_flush_unused_tables
 
 static bool volatile manager_thread_in_use;
 static bool abort_manager;
@@ -111,8 +121,7 @@ void start_handle_manager()
     if ((error= mysql_thread_create(key_thread_handle_manager,
                                     &hThread, &connection_attrib,
                                     handle_manager, 0)))
-      sql_print_warning("Can't create handle_manager thread (errno= %d)",
-                        error);
+      LogErr(WARNING_LEVEL, ER_CANT_CREATE_HANDLE_MGR_THREAD, error);
   }
   DBUG_VOID_RETURN;
 }

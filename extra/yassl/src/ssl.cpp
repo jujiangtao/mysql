@@ -2,18 +2,24 @@
    Copyright (c) 2005, 2014, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; see the file COPYING. If not, write to the
-   Free Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston,
-   MA  02110-1301  USA.
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA.
 */
 
 /*  SSL source implements all openssl compatibility API functions
@@ -52,6 +58,58 @@
 
 namespace yaSSL {
 
+int read_file(x509*& x, FILE *input, CertType type)
+{
+    int ret = SSL_SUCCESS;
+    x= 0;
+
+    if (!input)
+        return SSL_BAD_FILE;
+
+    if (type != PrivateKey && type != PublicKey) {
+        return SSL_BAD_FILE;
+    }
+    else {
+        EncryptedInfo info;
+        x = PemToDer(input, type, &info);
+        if (!x) {
+            return SSL_BAD_FILE;
+        }
+        if (info.set) {
+            ysDelete(x);
+            x= 0;
+            return SSL_BAD_FILE;
+        }
+    }
+
+    if (type == PrivateKey) {
+        // see if key is valid early
+        TaoCrypt::Source rsaSource(x->get_buffer(),
+                                   x->get_length());
+        TaoCrypt::RSA_PrivateKey rsaKey;
+        rsaKey.Initialize(rsaSource);
+
+        if (rsaSource.GetError().What()) {
+            // rsa failed
+            ret = SSL_FAILURE;
+            }
+    }
+
+    if (type == PublicKey) {
+        // see if key is valid early
+        TaoCrypt::Source rsaSource(x->get_buffer(),
+                                   x->get_length());
+        TaoCrypt::RSA_PublicKey rsaKey;
+        rsaKey.Initialize(rsaSource);
+
+        if (rsaSource.GetError().What()) {
+            // rsa failed
+            ret = SSL_FAILURE;
+            }
+    }
+
+    return ret;
+}
 
 
 int read_file(SSL_CTX* ctx, const char* file, int format, CertType type)
@@ -1615,7 +1673,7 @@ int SSLeay_add_ssl_algorithms()  // compatibility only
 }
 
 
-void ERR_remove_state(unsigned long)
+void ERR_remove_thread_state(const void *)
 {
     GetErrors().Remove();
 }
@@ -1682,12 +1740,6 @@ unsigned long ERR_get_error()
     {
         // TODO:
         return 0;
-    }
-
-
-    void RSA_free(RSA*)
-    {
-        // TODO:
     }
 
 
@@ -1877,6 +1929,77 @@ unsigned long ERR_get_error()
     void yaSSL_transport_set_send_function(SSL *ssl, yaSSL_send_func_t func)
     {
       ssl->useSocket().set_transport_send_function(func);
+    }
+
+    RSA *PEM_read_RSAPrivateKey(FILE *fp, RSA **x, pem_password_cb *cb, void *u)
+    {
+      x509 * priv_x509;
+      if (read_file(priv_x509, fp, CertType::PrivateKey) != yaSSL::SSL_SUCCESS)
+        return 0;
+      mySTL::auto_ptr<RSA> priv_rsa(NEW_YS RSA(priv_x509->get_buffer(),
+                                               priv_x509->get_length(), false));
+
+      ysDelete(priv_x509);
+      return priv_rsa.release();
+    }
+
+    RSA *PEM_read_RSA_PUBKEY(FILE *fp, RSA **x, pem_password_cb *cb, void *u)
+    {
+      x509 * pub_x509;
+      if (read_file(pub_x509, fp, CertType::PublicKey) != yaSSL::SSL_SUCCESS)
+        return 0;
+      mySTL::auto_ptr<RSA> pub_rsa(NEW_YS RSA(pub_x509->get_buffer(),
+                                              pub_x509->get_length()));
+
+      ysDelete(pub_x509);
+      return pub_rsa.release();
+    }
+
+    RSA *PEM_read_mem_RSA_PUBKEY(void *buffer, long buffer_size)
+    {
+      x509 * pub_x509;
+      if (!(pub_x509 = PemToDer(buffer, PublicKey, buffer_size)))
+        return 0;
+      mySTL::auto_ptr<RSA> pub_rsa(NEW_YS RSA(pub_x509->get_buffer(),
+                                              pub_x509->get_length()));
+
+      ysDelete(pub_x509);
+      return pub_rsa.release();
+    }
+
+    void RSA_free(RSA *rsa)
+    {
+      ysDelete(rsa);
+    }
+
+    int RSA_public_encrypt(int flen, unsigned char *from,
+                           unsigned char *to, RSA *rsa, int padding)
+    {
+      if (!to || !from || !rsa || padding != RSA_PKCS1_PADDING)
+        return 1;
+      RandomPool randompool;
+      rsa->encrypt(to, from, flen, randompool);
+      return 0;
+    }
+
+    int RSA_private_decrypt(int flen, unsigned char *from,
+                            unsigned char *to, RSA *rsa, int padding)
+    {
+      if (!to || !from || !rsa || padding != RSA_PKCS1_PADDING)
+        return 1;
+      if (flen != rsa->get_cipherLength())
+        return 1;
+
+      RandomPool randompool;
+      rsa->decrypt(to, from, flen, randompool);
+      return 0;
+    }
+
+    int RSA_size(RSA *rsa)
+    {
+      if (!rsa)
+        return 0;
+      return rsa->get_cipherLength();
     }
 
 } // extern "C"

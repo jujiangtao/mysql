@@ -1,13 +1,20 @@
 /* Copyright (c) 2010, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -18,24 +25,11 @@
 #include <limits.h>
 #include <string.h>
 #include <sys/types.h>
+#include <string>
 #include <utility>
 
-#include "auth_acls.h"
-#include "auth_common.h"                     // *_ACL
-#include "dd/dd_table.h"                     // dd::recreate_table
-#include "dd/info_schema/stats.h"            // dd::info_schema::update_*
-#include "dd/types/abstract_table.h"         // dd::enum_table_type
-#include "debug_sync.h"                      // DEBUG_SYNC
-#include "derror.h"                          // ER_THD
-#include "handler.h"
-#include "hash.h"
-#include "item.h"
-#include "key.h"
 #include "keycache.h"
-#include "keycaches.h"                       // get_key_cache
-#include "log.h"
 #include "m_string.h"
-#include "mdl.h"
 #include "my_base.h"
 #include "my_dbug.h"
 #include "my_dir.h"
@@ -48,35 +42,53 @@
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/service_my_snprintf.h"
 #include "mysql_com.h"
-#include "mysqld.h"                          // key_file_misc
 #include "mysqld_error.h"
-#include "partition_element.h"               // PART_ADMIN
-#include "protocol.h"
-#include "rpl_gtid.h"
-#include "sp.h"                              // Sroutine_hash_entry
-#include "sp_rcontext.h"                     // sp_rcontext
-#include "sql_alter.h"
-#include "sql_alter_instance.h"              // Alter_instance
-#include "sql_base.h"                        // Open_table_context
-#include "sql_cache.h"                       // query_cache
-#include "sql_class.h"                       // THD
-#include "sql_error.h"
-#include "sql_lex.h"
-#include "sql_list.h"
-#include "sql_parse.h"                       // check_table_access
-#include "sql_partition.h"                   // set_part_state
-#include "sql_plugin.h"
-#include "sql_plugin_ref.h"
-#include "sql_prepare.h"                     // mysql_test_show
-#include "sql_security_ctx.h"
+#include "sql/auth/auth_acls.h"
+#include "sql/auth/auth_common.h"            // *_ACL
+#include "sql/auth/sql_security_ctx.h"
+#include "sql/clone_handler.h"
+#include "sql/dd/dd_table.h"                 // dd::recreate_table
+#include "sql/dd/info_schema/table_stats.h"  // dd::info_schema::update_*
+#include "sql/dd/types/abstract_table.h"     // dd::enum_table_type
+#include "sql/debug_sync.h"                  // DEBUG_SYNC
+#include "sql/derror.h"                      // ER_THD
+#include "sql/handler.h"
+#include "sql/histograms/histogram.h"
+#include "sql/item.h"
+#include "sql/key.h"
+#include "sql/keycaches.h"                   // get_key_cache
+#include "sql/log.h"
+#include "sql/mdl.h"
+#include "sql/mysqld.h"                      // key_file_misc
+#include "sql/partition_element.h"           // PART_ADMIN
+#include "sql/protocol.h"
+#include "sql/rpl_gtid.h"
+#include "sql/sp.h"                          // Sroutine_hash_entry
+#include "sql/sp_rcontext.h"                 // sp_rcontext
+#include "sql/sql_alter.h"
+#include "sql/sql_alter_instance.h"          // Alter_instance
+#include "sql/sql_base.h"                    // Open_table_context
+#include "sql/sql_class.h"                   // THD
+#include "sql/sql_error.h"
+#include "sql/sql_lex.h"
+#include "sql/sql_list.h"
+#include "sql/sql_parse.h"                   // check_table_access
+#include "sql/sql_partition.h"               // set_part_state
+#include "sql/sql_prepare.h"                 // mysql_test_show
+#include "sql/sql_table.h"                   // mysql_recreate_table
+#include "sql/system_variables.h"
+#include "sql/table.h"
+#include "sql/table_trigger_dispatcher.h"    // Table_trigger_dispatcher
+#include "sql/transaction.h"                 // trans_rollback_stmt
 #include "sql_string.h"
-#include "sql_table.h"                       // mysql_recreate_table
-#include "system_variables.h"
-#include "table.h"
-#include "table_trigger_dispatcher.h"        // Table_trigger_dispatcher
 #include "thr_lock.h"
-#include "transaction.h"                     // trans_rollback_stmt
 #include "violite.h"
+
+bool Column_name_comparator::operator()(const String *lhs, const String *rhs) const
+{
+  DBUG_ASSERT(lhs->charset()->number == rhs->charset()->number);
+  return sortcmp(lhs, rhs, lhs->charset()) < 0;
+}
 
 static int send_check_errmsg(THD *thd, TABLE_LIST* table,
 			     const char* operator_name, const char* errmsg)
@@ -129,8 +141,6 @@ static int prepare_for_repair(THD *thd, TABLE_LIST *table_list,
       Attempt to do full-blown table open in mysql_admin_table() has failed.
       Let us try to open at least a .FRM for this table.
     */
-    my_hash_value_type hash_value;
-
     MDL_REQUEST_INIT(&table_list->mdl_request,
                      MDL_key::TABLE,
                      table_list->db, table_list->table_name,
@@ -143,10 +153,9 @@ static int prepare_for_repair(THD *thd, TABLE_LIST *table_list,
 
     key_length= get_table_def_key(table_list, &key);
 
-    hash_value= my_calc_hash(&table_def_cache, (uchar*) key, key_length);
     mysql_mutex_lock(&LOCK_open);
-    share= get_table_share(thd, table_list, key, key_length, false,
-                           hash_value);
+    share= get_table_share(thd, table_list->db, table_list->table_name,
+                           key, key_length, false);
     mysql_mutex_unlock(&LOCK_open);
     if (share == NULL)
       DBUG_RETURN(0);				// Can't open frm file
@@ -232,12 +241,6 @@ static int prepare_for_repair(THD *thd, TABLE_LIST *table_list,
 			     "Failed generating table from .frm file");
     goto end;
   }
-  /*
-    'FALSE' for 'using_transactions' means don't postpone
-    invalidation till the end of a transaction, but do it
-    immediately.
-  */
-  query_cache.invalidate(thd, table_list, FALSE);
   if (mysql_file_rename(key_file_misc, tmp, from, MYF(MY_WME)))
   {
     error= send_check_errmsg(thd, table_list, "repair",
@@ -297,6 +300,169 @@ static inline bool table_not_corrupt_error(uint sql_errno)
 }
 
 
+Sql_cmd_analyze_table::
+Sql_cmd_analyze_table(THD *thd,
+                      Alter_info *alter_info,
+                      Histogram_command histogram_command,
+                      int histogram_buckets)
+: Sql_cmd_ddl_table(alter_info),
+  m_histogram_command(histogram_command),
+  m_histogram_fields(Column_name_comparator(),
+                     Memroot_allocator<String>(thd->mem_root)),
+  m_histogram_buckets(histogram_buckets)
+{}
+
+
+bool
+Sql_cmd_analyze_table::
+drop_histogram(THD *thd, TABLE_LIST *table, histograms::results_map &results)
+{
+  histograms::columns_set fields;
+
+  for (const auto column : get_histogram_fields())
+    fields.emplace(column->ptr(), column->length());
+  return histograms::drop_histograms(thd, *table, fields, results);
+}
+
+
+bool
+Sql_cmd_analyze_table::
+send_histogram_results(THD *thd, const histograms::results_map &results,
+                       const TABLE_LIST *table)
+{
+  Item *item;
+  List<Item> field_list;
+
+  field_list.push_back(item = new Item_empty_string("Table", NAME_CHAR_LEN*2));
+  item->maybe_null= true;
+  field_list.push_back(item = new Item_empty_string("Op", 10));
+  item->maybe_null= true;
+  field_list.push_back(item = new Item_empty_string("Msg_type", 10));
+  item->maybe_null= true;
+  field_list.push_back(item = new Item_empty_string("Msg_text",
+                                                    SQL_ADMIN_MSG_TEXT_SIZE));
+  item->maybe_null= true;
+  if (thd->send_result_metadata(&field_list,
+                                Protocol::SEND_NUM_ROWS | Protocol::SEND_EOF))
+  {
+    return true; /* purecov: deadcode */
+  }
+
+  Protocol *protocol= thd->get_protocol();
+  for (const auto &pair : results)
+  {
+    std::string combined_name(table->db, table->db_length);
+    combined_name.append(".");
+    combined_name.append(table->table_name, table->table_name_length);
+
+    std::string message;
+    std::string message_type;
+    switch (pair.second)
+    {
+      // Status messages
+      case histograms::Message::HISTOGRAM_CREATED:
+        message_type.assign("status");
+        message.assign("Histogram statistics created for column '");
+        message.append(pair.first);
+        message.append("'.");
+        break;
+      case histograms::Message::HISTOGRAM_DELETED:
+        message_type.assign("status");
+        message.assign("Histogram statistics removed for column '");
+        message.append(pair.first);
+        message.append("'.");
+        break;
+      // Errror messages
+      case histograms::Message::FIELD_NOT_FOUND:
+        message_type.assign("Error");
+        message.assign("The column '");
+        message.append(pair.first);
+        message.append("' does not exist.");
+        break;
+      case histograms::Message::UNSUPPORTED_DATA_TYPE:
+        message_type.assign("Error");
+        message.assign("The column '");
+        message.append(pair.first);
+        message.append("' has an unsupported data type.");
+        break;
+      case histograms::Message::TEMPORARY_TABLE:
+        message_type.assign("Error");
+        message.assign("Cannot create histogram statistics for a temporary table.");
+        break;
+      case histograms::Message::ENCRYPTED_TABLE:
+        message_type.assign("Error");
+        message.assign("Cannot create histogram statistics for an encrypted table.");
+        break;
+      case histograms::Message::VIEW:
+        message_type.assign("Error");
+        message.assign("Cannot create histogram statistics for a view.");
+        break;
+      case histograms::Message::UNABLE_TO_OPEN_TABLE:
+        /* purecov: begin inspected */
+        message_type.assign("Error");
+        message.assign("Unable to open and/or lock table.");
+        break;
+        /* purecov: end */
+      case histograms::Message::MULTIPLE_TABLES_SPECIFIED:
+        message_type.assign("Error");
+        message.assign("Only one table can be specified while modifying histogram statistics.");
+        combined_name.clear();
+        break;
+      case histograms::Message::COVERED_BY_SINGLE_PART_UNIQUE_INDEX:
+        message_type.assign("Error");
+        message.assign("The column '");
+        message.append(pair.first);
+        message.append("' is covered by a single-part unique index.");
+        break;
+      case histograms::Message::NO_HISTOGRAM_FOUND:
+        message_type.assign("Error");
+        message.assign("No histogram statistics found for column '");
+        message.append(pair.first);
+        message.append("'.");
+        break;
+      case histograms::Message::NO_SUCH_TABLE:
+        message_type.assign("Error");
+        message.assign("Table '");
+        message.append(combined_name);
+        message.append("' doesn't exist.");
+        break;
+      case histograms::Message::READ_ONLY:
+        message_type.assign("Error");
+        message.assign("The server is in read-only mode.");
+        combined_name.clear();
+        break;
+    }
+
+    protocol->start_row();
+    if (protocol->store(combined_name.c_str(), combined_name.size(),
+                        system_charset_info) ||
+        protocol->store(STRING_WITH_LEN("histogram"), system_charset_info) ||
+        protocol->store(message_type.c_str(), message_type.length(),
+                        system_charset_info) ||
+        protocol->store(message.c_str(), message.size(), system_charset_info) ||
+        protocol->end_row())
+    {
+      return true; /* purecov: deadcode */
+    }
+  }
+
+  return false;
+}
+
+bool
+Sql_cmd_analyze_table::
+update_histogram(THD *thd, TABLE_LIST *table, histograms::results_map &results)
+{
+  histograms::columns_set fields;
+
+  for (const auto column : get_histogram_fields())
+    fields.emplace(column->ptr(), column->length());
+
+  return histograms::update_histogram(thd, table, fields,
+                                      get_histogram_buckets(), results);
+}
+
+
 /*
   RETURN VALUES
     FALSE Message sent to net (admin operation went ok)
@@ -314,7 +480,8 @@ static bool mysql_admin_table(THD* thd, TABLE_LIST* tables,
                                                   HA_CHECK_OPT *),
                               int (handler::*operator_func)(THD *,
                                                             HA_CHECK_OPT *),
-                              int check_view)
+                              int check_view,
+                              Alter_info *alter_info)
 {
   /*
     Prevent InnoDB from automatically committing InnoDB
@@ -412,7 +579,7 @@ static bool mysql_admin_table(THD* thd, TABLE_LIST* tables,
         to differentiate from ALTER TABLE...CHECK PARTITION on which view is not
         allowed.
       */
-      if (lex->alter_info.flags & Alter_info::ALTER_ADMIN_PARTITION ||
+      if (alter_info->flags & Alter_info::ALTER_ADMIN_PARTITION ||
         check_view != 1)
         table->required_type= dd::enum_table_type::BASE_TABLE;
 
@@ -498,8 +665,6 @@ static bool mysql_admin_table(THD* thd, TABLE_LIST* tables,
           if ALTER TABLE t ANALYZE/CHECK/OPTIMIZE/REPAIR PARTITION ..
           CACHE INDEX/LOAD INDEX for specified partitions
         */
-        Alter_info *alter_info= &lex->alter_info;
-
         if (alter_info->flags & Alter_info::ALTER_ADMIN_PARTITION)
         {
           if (!table->table->part_info)
@@ -611,7 +776,6 @@ static bool mysql_admin_table(THD* thd, TABLE_LIST* tables,
         safe for re-execution.
       */
       lex->sql_command= save_sql_command;
-      table->table=0;				// For query cache
       if (protocol->end_row())
 	goto err;
       thd->get_stmt_da()->reset_diagnostics_area();
@@ -638,8 +802,6 @@ static bool mysql_admin_table(THD* thd, TABLE_LIST* tables,
                                    HA_EXTRA_PREPARE_FOR_RENAME))
         goto err;
       DEBUG_SYNC(thd, "after_admin_flush");
-      /* Flush entries in the query cache involving this table. */
-      query_cache.invalidate(thd, table->table, FALSE);
       /*
         XXX: hack: switch off open_for_modify to skip the
         flush that is made later in the execution flow.
@@ -693,9 +855,11 @@ static bool mysql_admin_table(THD* thd, TABLE_LIST* tables,
         /* Same applies to MDL ticket. */
         table->mdl_request.ticket= NULL;
 
-        tmp_disable_binlog(thd); // binlogging is done by caller if wanted
-        result_code= mysql_recreate_table(thd, table, false);
-        reenable_binlog(thd);
+        {
+          // binlogging is done by caller if wanted
+          Disable_binlog_guard binlog_guard(thd);
+          result_code= mysql_recreate_table(thd, table, false);
+        }
         /*
           mysql_recreate_table() can push OK or ERROR.
           Clear 'OK' status. If there is an error, keep it:
@@ -845,7 +1009,6 @@ send_result_message:
     case HA_ADMIN_TRY_ALTER:
     {
       uint save_flags;
-      Alter_info *alter_info= &lex->alter_info;
 
       /* Store the original value of alter_info->flags */
       save_flags= alter_info->flags;
@@ -888,11 +1051,13 @@ send_result_message:
       TABLE_LIST *save_next_local= table->next_local,
                  *save_next_global= table->next_global;
       table->next_local= table->next_global= 0;
-      tmp_disable_binlog(thd); // binlogging is done by caller if wanted
-      /* Don't forget to pre-open temporary tables. */
-      result_code= (open_temporary_tables(thd, table) ||
-                    mysql_recreate_table(thd, table, false));
-      reenable_binlog(thd);
+      {
+        // binlogging is done by caller if wanted
+        Disable_binlog_guard binlog_guard(thd);
+        /* Don't forget to pre-open temporary tables. */
+        result_code= (open_temporary_tables(thd, table) ||
+                      mysql_recreate_table(thd, table, false));
+      }
       /*
         mysql_recreate_table() can push OK or ERROR.
         Clear 'OK' status. If there is an error, keep it:
@@ -940,16 +1105,21 @@ send_result_message:
         DBUG_ASSERT(thd->is_error() || thd->killed);
         if (thd->is_error())
         {
-          const char *err_msg= thd->get_stmt_da()->message_text();
+          Diagnostics_area *da= thd->get_stmt_da();
           if (!thd->get_protocol()->connection_alive())
           {
-            sql_print_error("%s", err_msg);
+            LogEvent().type(LOG_TYPE_ERROR)
+                      .prio(ERROR_LEVEL)
+                      .source_file(MY_BASENAME)
+                      .errcode(da->mysql_errno())
+                      .sqlstate(da->returned_sqlstate())
+                      .verbatim(da->message_text());
           }
           else
           {
             /* Hijack the row already in-progress. */
             protocol->store(STRING_WITH_LEN("error"), system_charset_info);
-            protocol->store(err_msg, system_charset_info);
+            protocol->store(da->message_text(), system_charset_info);
             if (protocol->end_row())
               goto err;
             /* Start off another row for HA_ADMIN_FAILED */
@@ -1003,6 +1173,26 @@ send_result_message:
                       system_charset_info);
       break;
 
+    case HA_ADMIN_NEEDS_DUMP_UPGRADE:
+    {
+      /*
+        In-place upgrade does not allow pre 5.0 decimal to 8.0. Recreation of tables
+        will not create pre 5.0 decimal types. Hence, control should never reach here.
+      */
+      DBUG_ASSERT(FALSE);
+
+      char buf[MYSQL_ERRMSG_SIZE];
+      size_t length;
+
+      protocol->store(STRING_WITH_LEN("error"), system_charset_info);
+      length= my_snprintf(buf, sizeof(buf), "Table upgrade required for "
+                          "`%-.64s`.`%-.64s`. Please dump/reload table to "
+                          "fix it!", table->db, table->table_name);
+      protocol->store(buf, length, system_charset_info);
+      fatal_error=1;
+      break;
+    }
+
     default:				// Probably HA_ADMIN_INTERNAL_ERROR
       {
         char buf[MYSQL_ERRMSG_SIZE];
@@ -1030,12 +1220,6 @@ send_result_message:
       {
         tdc_remove_table(thd, TDC_RT_REMOVE_UNUSED,
                          table->db, table->table_name, FALSE);
-        /*
-          May be something modified. Consequently, we have to
-          invalidate the query cache.
-        */
-        table->table= 0;                        // For query cache
-        query_cache.invalidate(thd, table, FALSE);
       }
       else
       {
@@ -1045,7 +1229,7 @@ send_result_message:
           CACHE INDEX/LOAD INDEX for specified partitions
         */
         if (table->table->part_info &&
-            lex->alter_info.flags & Alter_info::ALTER_ADMIN_PARTITION)
+            alter_info->flags & Alter_info::ALTER_ADMIN_PARTITION)
         {
           set_all_part_state(table->table->part_info, PART_NORMAL);
         }
@@ -1069,21 +1253,6 @@ send_result_message:
     }
     close_thread_tables(thd);
     thd->mdl_context.release_transactional_locks();
-
-    /*
-      If it is CHECK TABLE v1, v2, v3, and v1, v2, v3 are views, we will run
-      separate open_tables() for each CHECK TABLE argument.
-      Right now we do not have a separate method to reset the prelocking
-      state in the lex to the state after parsing, so each open will pollute
-      this state: add elements to lex->srotuines_list, TABLE_LISTs to
-      lex->query_tables. Below is a lame attempt to recover from this
-      pollution.
-      @todo: have a method to reset a prelocking context, or use separate
-      contexts for each open.
-    */
-    for (Sroutine_hash_entry *rt= thd->lex->sroutines_list.first;
-         rt; rt= rt->next)
-      rt->mdl_request.ticket= NULL;
 
     if (protocol->end_row())
       goto err;
@@ -1119,7 +1288,7 @@ err:
   Assigned specified indexes for a table into key cache
 
   SYNOPSIS
-    mysql_assign_to_keycache()
+    assign_to_keycache()
     thd		Thread object
     tables	Table list (one table only)
 
@@ -1128,31 +1297,33 @@ err:
    TRUE  error
 */
 
-bool mysql_assign_to_keycache(THD* thd, TABLE_LIST* tables,
-			     LEX_STRING *key_cache_name)
+bool Sql_cmd_cache_index::assign_to_keycache(THD* thd, TABLE_LIST* tables)
 {
   HA_CHECK_OPT check_opt;
   KEY_CACHE *key_cache;
-  DBUG_ENTER("mysql_assign_to_keycache");
+  DBUG_ENTER("assign_to_keycache");
 
   check_opt.init();
   mysql_mutex_lock(&LOCK_global_system_variables);
-  if (!(key_cache= get_key_cache(key_cache_name)))
+  if (!(key_cache= get_key_cache(&m_key_cache_name)))
   {
     mysql_mutex_unlock(&LOCK_global_system_variables);
-    my_error(ER_UNKNOWN_KEY_CACHE, MYF(0), key_cache_name->str);
+    my_error(ER_UNKNOWN_KEY_CACHE, MYF(0), m_key_cache_name.str);
     DBUG_RETURN(TRUE);
   }
   mysql_mutex_unlock(&LOCK_global_system_variables);
   if (!key_cache->key_cache_inited)
   {
-    my_error(ER_UNKNOWN_KEY_CACHE, MYF(0), key_cache_name->str);
+    my_error(ER_UNKNOWN_KEY_CACHE, MYF(0), m_key_cache_name.str);
     DBUG_RETURN(true);
   }
   check_opt.key_cache= key_cache;
-  DBUG_RETURN(mysql_admin_table(thd, tables, &check_opt,
-                                "assign_to_keycache", TL_READ_NO_INSERT, 0, 0,
-                                0, 0, &handler::assign_to_keycache, 0));
+  // ret is needed since DBUG_RETURN isn't friendly to function call parameters:
+  const bool ret=mysql_admin_table(thd, tables, &check_opt,
+                                   "assign_to_keycache", TL_READ_NO_INSERT, 0,
+                                   0, 0, 0, &handler::assign_to_keycache, 0,
+                                   m_alter_info);
+  DBUG_RETURN(ret);
 }
 
 
@@ -1160,7 +1331,7 @@ bool mysql_assign_to_keycache(THD* thd, TABLE_LIST* tables,
   Preload specified indexes for a table into key cache
 
   SYNOPSIS
-    mysql_preload_keys()
+    preload_keys()
     thd		Thread object
     tables	Table list (one table only)
 
@@ -1169,24 +1340,124 @@ bool mysql_assign_to_keycache(THD* thd, TABLE_LIST* tables,
     TRUE  error
 */
 
-bool mysql_preload_keys(THD* thd, TABLE_LIST* tables)
+bool Sql_cmd_load_index::preload_keys(THD* thd, TABLE_LIST* tables)
 {
-  DBUG_ENTER("mysql_preload_keys");
+  DBUG_ENTER("preload_keys");
   /*
     We cannot allow concurrent inserts. The storage engine reads
     directly from the index file, bypassing the cache. It could read
     outdated information if parallel inserts into cache blocks happen.
   */
-  DBUG_RETURN(mysql_admin_table(thd, tables, 0,
-                                "preload_keys", TL_READ_NO_INSERT, 0, 0, 0, 0,
-                                &handler::preload_keys, 0));
+  // ret is needed since DBUG_RETURN isn't friendly to function call parameters:
+  const bool ret=mysql_admin_table(thd, tables, 0,
+                                   "preload_keys", TL_READ_NO_INSERT,
+                                   0, 0, 0, 0,
+                                   &handler::preload_keys, 0, m_alter_info);
+  DBUG_RETURN(ret);
+}
+
+
+bool Sql_cmd_analyze_table::set_histogram_fields(List<String> *fields)
+{
+  DBUG_ASSERT(m_histogram_fields.empty());
+
+  List_iterator<String> it(*fields);
+  String *field;
+  while ((field= it++))
+  {
+    if (!m_histogram_fields.emplace(field).second)
+    {
+      my_error(ER_DUP_FIELDNAME, MYF(0), field->ptr());
+      return true;
+    }
+  }
+
+  return false;
+}
+
+
+bool Sql_cmd_analyze_table::handle_histogram_command(THD *thd,
+                                                     TABLE_LIST *table)
+{
+  // This should not be empty here.
+  DBUG_ASSERT(!get_histogram_fields().empty());
+
+  histograms::results_map results;
+  bool res= false;
+  if (table->next_local != nullptr)
+  {
+    /*
+      Only one table can be specified for
+      ANALYZE TABLE ... UPDATE/DROP HISTOGRAM
+    */
+    results.emplace("", histograms::Message::MULTIPLE_TABLES_SPECIFIED);
+    res= true;
+  }
+  else
+  {
+    if (read_only)
+    {
+      // Do not try to update histograms when in read_only mode.
+      results.emplace("", histograms::Message::READ_ONLY);
+      res= false;
+    }
+    else
+    {
+      Disable_autocommit_guard autocommit_guard(thd);
+      switch (get_histogram_command())
+      {
+        case Histogram_command::UPDATE_HISTOGRAM:
+          res= update_histogram(thd, table, results);
+          break;
+        case Histogram_command::DROP_HISTOGRAM:
+          res= drop_histogram(thd, table, results);
+
+          if (res)
+          {
+            /*
+              Do a rollback. We can end up here if query was interrupted
+              during drop_histogram.
+            */
+            trans_rollback_stmt(thd);
+            trans_rollback(thd);
+          }
+          else
+          {
+            res= trans_commit_stmt(thd) || trans_commit(thd);
+          }
+          break;
+        case Histogram_command::NONE:
+          DBUG_ASSERT(false); /* purecov: deadcode */
+          break;
+      }
+
+      if (!res)
+      {
+        /*
+          If a histogram was added, updated or removed, we will request the old
+          TABLE_SHARE to go away from the table definition cache. This is
+          beacuse histogram data is cached in the TABLE_SHARE, so we want new
+          transactions to fetch the updated data into the TABLE_SHARE before
+          using it again.
+        */
+        tdc_remove_table(thd, TDC_RT_REMOVE_UNUSED, table->db,
+                         table->table_name, false);
+      }
+    }
+  }
+
+  thd->clear_error();
+  send_histogram_results(thd, results, table);
+  thd->get_stmt_da()->reset_condition_info(thd);
+  my_eof(thd);
+  return res;
 }
 
 
 bool Sql_cmd_analyze_table::execute(THD *thd)
 {
   TABLE_LIST *first_table= thd->lex->select_lex->get_table_list();
-  bool res= TRUE;
+  bool res= true;
   thr_lock_type lock_type = TL_READ_NO_INSERT;
   DBUG_ENTER("Sql_cmd_analyze_table::execute");
 
@@ -1201,9 +1472,18 @@ bool Sql_cmd_analyze_table::execute(THD *thd)
                   });
 
   thd->enable_slow_log= opt_log_slow_admin_statements;
-  res= mysql_admin_table(thd, first_table, &thd->lex->check_opt,
-                         "analyze", lock_type, 1, 0, 0, 0,
-                         &handler::ha_analyze, 0);
+
+  if (get_histogram_command() != Histogram_command::NONE)
+  {
+    res= handle_histogram_command(thd, first_table);
+  }
+  else
+  {
+    res= mysql_admin_table(thd, first_table, &thd->lex->check_opt,
+                           "analyze", lock_type, 1, 0, 0, 0,
+                           &handler::ha_analyze, 0, m_alter_info);
+  }
+
   /* ! we write after unlocking the table */
   if (!res && !thd->lex->no_write_to_binlog)
   {
@@ -1234,7 +1514,7 @@ bool Sql_cmd_check_table::execute(THD *thd)
 
   res= mysql_admin_table(thd, first_table, &thd->lex->check_opt, "check",
                          lock_type, 0, 0, HA_OPEN_FOR_REPAIR, 0,
-                         &handler::ha_check, 1);
+                         &handler::ha_check, 1, m_alter_info);
 
   thd->lex->select_lex->table_list.first= first_table;
   thd->lex->query_tables= first_table;
@@ -1258,7 +1538,7 @@ bool Sql_cmd_optimize_table::execute(THD *thd)
     mysql_recreate_table(thd, first_table, true) :
     mysql_admin_table(thd, first_table, &thd->lex->check_opt,
                       "optimize", TL_WRITE, 1, 0, 0, 0,
-                      &handler::ha_optimize, 0);
+                      &handler::ha_optimize, 0, m_alter_info);
   /* ! we write after unlocking the table */
   if (!res && !thd->lex->no_write_to_binlog)
   {
@@ -1287,9 +1567,9 @@ bool Sql_cmd_repair_table::execute(THD *thd)
   thd->enable_slow_log= opt_log_slow_admin_statements;
   res= mysql_admin_table(thd, first_table, &thd->lex->check_opt, "repair",
                          TL_WRITE, 1,
-                         MY_TEST(thd->lex->check_opt.sql_flags & TT_USEFRM),
+                         thd->lex->check_opt.sql_flags & TT_USEFRM,
                          HA_OPEN_FOR_REPAIR, &prepare_for_repair,
-                         &handler::ha_repair, 0);
+                         &handler::ha_repair, 0, m_alter_info);
 
   /* ! we write after unlocking the table */
   if (!res && !thd->lex->no_write_to_binlog)
@@ -1350,6 +1630,79 @@ bool Sql_cmd_alter_instance::execute(THD *thd)
   }
 
   DBUG_RETURN(res);
+}
+
+
+bool Sql_cmd_clone_local::execute(THD *thd)
+{
+  plugin_ref plugin;
+
+  DBUG_ENTER("Sql_cmd_clone_local::execute");
+  DBUG_PRINT("admin", ("CLONE type = local, DIR = %s", clone_dir));
+
+  auto sctx = thd->security_context();
+
+  if (!(sctx->has_global_grant(STRING_WITH_LEN("BACKUP_ADMIN")).first))
+  {
+    my_error(ER_SPECIFIC_ACCESS_DENIED_ERROR, MYF(0), "BACKUP_ADMIN");
+    DBUG_RETURN(true);
+  }
+
+  Clone_handler* clone = clone_plugin_lock(thd, &plugin);
+
+  if (clone == nullptr)
+  {
+    my_error(ER_PLUGIN_IS_NOT_LOADED, MYF(0), "clone");
+    DBUG_RETURN(true);
+  }
+
+  if (clone->clone_local(thd, clone_dir) != 0)
+  {
+    clone_plugin_unlock(thd, plugin);
+    DBUG_RETURN(true);
+  }
+
+  clone_plugin_unlock(thd, plugin);
+
+  my_ok(thd);
+  DBUG_RETURN(false);
+}
+
+
+bool Sql_cmd_clone_remote::execute(THD *thd)
+{
+  plugin_ref plugin;
+
+  DBUG_ENTER("Sql_cmd_clone_remote::execute");
+  DBUG_PRINT("admin", ("CLONE type = remote, DIR = %s, FOR REPLICATION = %d",
+                       clone_dir, is_for_replication));
+
+  auto sctx = thd->security_context();
+
+  if (!(sctx->has_global_grant(STRING_WITH_LEN("BACKUP_ADMIN")).first))
+  {
+    my_error(ER_SPECIFIC_ACCESS_DENIED_ERROR, MYF(0), "BACKUP_ADMIN");
+    DBUG_RETURN(true);
+  }
+
+  Clone_handler* clone = clone_plugin_lock(thd, &plugin);
+
+  if (clone == nullptr)
+  {
+    my_error(ER_PLUGIN_IS_NOT_LOADED, MYF(0), "clone");
+    DBUG_RETURN(true);
+  }
+
+  if (clone->clone_remote_client(thd, clone_dir))
+  {
+    clone_plugin_unlock(thd, plugin);
+    DBUG_RETURN(true);
+  }
+
+  clone_plugin_unlock(thd, plugin);
+
+  my_ok(thd);
+  DBUG_RETURN(false);
 }
 
 
@@ -1422,16 +1775,16 @@ bool Sql_cmd_set_role::execute(THD *thd)
   int ret= 0;
   switch (role_type)
   {
-    case ROLE_NONE:
+    case role_enum::ROLE_NONE:
       ret= mysql_set_active_role_none(thd);
     break;
-    case ROLE_DEFAULT:
+    case role_enum::ROLE_DEFAULT:
       ret= mysql_set_role_default(thd);
     break;
-    case ROLE_ALL:
+    case role_enum::ROLE_ALL:
       ret= mysql_set_active_role_all(thd, except_roles);
     break;
-    case ROLE_NAME:
+    case role_enum::ROLE_NAME:
       ret= mysql_set_active_role(thd, role_list);
     break;
   }
@@ -1476,105 +1829,33 @@ bool Sql_cmd_revoke_roles::execute(THD *thd)
 bool Sql_cmd_alter_user_default_role::execute(THD *thd)
 {
   DBUG_ENTER("Sql_cmd_alter_user_default_role::execute");
-  bool ret= false;
-  {
-    List<LEX_USER> *tmp_users= const_cast<List<LEX_USER > * >(users);
-    List_iterator<LEX_USER > it(*tmp_users);
-    LEX_USER *user;
-    while((user= it++))
-    {
-      /* Check for CURRENT_USER token */
-      user= get_current_user(thd, user);
-      if (strcmp(thd->security_context()->priv_user().str,
-                 user->user.str)  != 0)
-      {
-        TABLE_LIST table;
-        table.init_one_table("mysql", 5, "default_roles", 4, 0, TL_READ);
-        if (check_access(thd, UPDATE_ACL, "mysql", NULL, NULL, 1, 1) &&
-            check_global_access(thd, CREATE_USER_ACL))
-        {
-          my_error(ER_ACCESS_DENIED_ERROR,MYF(0),
-                   user->user.str,
-                   user->host.str,
-                   (thd->password ?
-                    ER_THD(thd, ER_YES) :
-                    ER_THD(thd, ER_NO)));
-          DBUG_RETURN(true);
-        }
-      }
-      else
-      {
-        // Verify that the user actually is granted the role before it is
-        // set as default.
-        if (roles != 0)
-        {
-          List<LEX_USER> *tmp_roles= const_cast<List<LEX_USER > * >(roles);
-          List_iterator<LEX_USER > roles_it(*tmp_roles);
-          LEX_USER *role;
-          while ((role= roles_it++))
-          {
-             if (!is_granted_role(thd->security_context()->priv_user(),
-                                  thd->security_context()->priv_host(),
-                                  role->user,
-                                  role->host))
-             {
-               my_error(ER_ACCESS_DENIED_ERROR,MYF(0),
-                        user->user.str,
-                        user->host.str,
-                        (thd->password ?
-                         ER_THD(thd, ER_YES) :
-                         ER_THD(thd, ER_NO)));
-               DBUG_RETURN(true);
-             }
-          }
-        }
-      } // end else
-    } // end while
-  } // end scope
-  List_of_auth_id_refs authids;
-  if (roles != 0)
-  {
-    List<LEX_USER> *tmp_roles= const_cast<List<LEX_USER > * >(roles);
-    List_iterator<LEX_USER > roles_it(*tmp_roles);
-    LEX_USER *role;
-    while ((role= roles_it++))
-    {
-      Auth_id_ref authid= std::make_pair(role->user, role->host);
-      authids.push_back(authid);
-    }
-  }
-  List<LEX_USER> *tmp_users= const_cast<List<LEX_USER > * >(users);
-  List_iterator<LEX_USER > it(*tmp_users);
-  LEX_USER *user;
-  while ((user= it++) && !ret)
-  {
-    user= get_current_user(thd, user);
-    if (role_type == ROLE_NONE)
-      ret= mysql_clear_default_roles(thd, user);
-    else if (role_type == ROLE_ALL)
-      ret= mysql_alter_user_set_default_roles_all(thd, user);
-    else if (role_type == ROLE_NAME)
-      ret= mysql_alter_user_set_default_roles(thd, user, authids);
-  }
+
+  bool ret= mysql_alter_or_clear_roles(thd, role_type, users, roles);
   if (!ret)
     my_ok(thd);
+
   DBUG_RETURN(ret);
 }
 
 
-bool Sql_cmd_show_privileges::execute(THD *thd)
+bool Sql_cmd_show_grants::execute(THD *thd)
 {
-  DBUG_ENTER("Sql_cmd_show_privileges::execute");
+  DBUG_ENTER("Sql_cmd_show_grants::execute");
+  bool show_mandatory_roles= false;
+  if (for_user == 0)
+    show_mandatory_roles= true;
+
   if (for_user == 0 || for_user->user.str == 0)
   {
-	  /* SHOW PRIVILEGE FOR CURRENT_USER */
-	  LEX_USER current_user;
-	  get_default_definer(thd, &current_user);
+    /* SHOW PRIVILEGE FOR CURRENT_USER */
+    LEX_USER current_user;
+    get_default_definer(thd, &current_user);
     if (using_users == 0 || using_users->elements == 0)
     {
       List_of_auth_id_refs *active_list=
         thd->security_context()->get_active_roles();
-      DBUG_RETURN(mysql_show_grants(thd, &current_user, *active_list));
+      DBUG_RETURN(mysql_show_grants(thd, &current_user, *active_list,
+                                    show_mandatory_roles));
     }
   }
   else if (strcmp(thd->security_context()->priv_user().str,
@@ -1611,7 +1892,8 @@ bool Sql_cmd_show_privileges::execute(THD *thd)
 
   LEX_USER *tmp_user= const_cast<LEX_USER *>(for_user);
   tmp_user= get_current_user(thd, tmp_user);
-  DBUG_RETURN(mysql_show_grants(thd, tmp_user, authid_list));
+  DBUG_RETURN(mysql_show_grants(thd, tmp_user, authid_list,
+                                show_mandatory_roles));
 }
 
 

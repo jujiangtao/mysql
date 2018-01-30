@@ -3,16 +3,24 @@
 Copyright (c) 2000, 2017, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+the terms of the GNU General Public License, version 2.0, as published by the
+Free Software Foundation.
+
+This program is also distributed with certain software (including but not
+limited to OpenSSL) that is licensed under separate terms, as designated in a
+particular file or component or in included license documentation. The authors
+of MySQL hereby grant you an additional permission to link the program and
+your derivative works with the separately licensed software that they have
+included with MySQL.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+FOR A PARTICULAR PURPOSE. See the GNU General Public License, version 2.0,
+for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 *****************************************************************************/
 
@@ -27,11 +35,14 @@ Created 9/17/2000 Heikki Tuuri
 #ifndef row0mysql_h
 #define row0mysql_h
 
+#ifndef UNIV_HOTBACKUP
 #include "ha_prototypes.h"
+#endif  /* !UNIV_HOTBACKUP */
 
 #include "data0data.h"
 #include "que0types.h"
 #include "dict0types.h"
+#include "dict0dd.h"
 #include "trx0types.h"
 #include "row0types.h"
 #include "btr0pcur.h"
@@ -39,6 +50,7 @@ Created 9/17/2000 Heikki Tuuri
 #include "sess0sess.h"
 #include "sql_cmd.h"
 
+#ifndef UNIV_HOTBACKUP
 extern ibool row_rollback_on_timeout;
 
 struct row_prebuilt_t;
@@ -289,6 +301,7 @@ void
 row_unlock_for_mysql(
 	row_prebuilt_t*	prebuilt,
 	ibool		has_latches_on_recs);
+#endif  /* !UNIV_HOTBACKUP */
 
 /*********************************************************************//**
 Checks if a table name contains the string "/#sql" which denotes temporary
@@ -301,6 +314,7 @@ row_is_mysql_tmp_table_name(
 				/*!< in: table name in the form
 				'database/tablename' */
 
+#ifndef UNIV_HOTBACKUP
 /*********************************************************************//**
 Creates an query graph node of 'update' type to be used in the MySQL
 interface.
@@ -310,6 +324,17 @@ row_create_update_node_for_mysql(
 /*=============================*/
 	dict_table_t*	table,	/*!< in: table to update */
 	mem_heap_t*	heap);	/*!< in: mem heap from which allocated */
+/**********************************************************************//**
+Does a cascaded delete or set null in a foreign key operation.
+@return error code or DB_SUCCESS */
+dberr_t
+row_update_cascade_for_mysql(
+/*=========================*/
+        que_thr_t*      thr,    /*!< in: query thread */
+        upd_node_t*     node,   /*!< in: update node used in the cascade
+                                or set null operation */
+        dict_table_t*   table)  /*!< in: table where we do the operation */
+        MY_ATTRIBUTE((nonnull, warn_unused_result));
 /*********************************************************************//**
 Locks the data dictionary exclusively for performing a table create or other
 data dictionary modification operation. */
@@ -347,18 +372,16 @@ row_mysql_unfreeze_data_dictionary(
 /*********************************************************************//**
 Creates a table for MySQL. On failure the transaction will be rolled back
 and the 'table' object will be freed.
+@param[in]	table		table definition(will be freed, or on
+				DB_SUCCESS added to the data dictionary cache)
+@param[in]	compression	compression algorithm to use, can be nullptr
+@param[in,out]	trx		transasction
 @return error code or DB_SUCCESS */
 dberr_t
 row_create_table_for_mysql(
-/*=======================*/
-	dict_table_t*	table,	/*!< in, own: table definition
-				(will be freed, or on DB_SUCCESS
-				added to the data dictionary cache) */
+	dict_table_t*	table,
         const char*     compression,
-                                /*!< in: compression algorithm to use,
-                                can be NULL */
-	trx_t*		trx,	/*!< in/out: transaction */
-	bool		commit)	/*!< in: if true, commit the transaction */
+	trx_t*		trx)
 	MY_ATTRIBUTE((warn_unused_result));
 /*********************************************************************//**
 Does an index creation operation for MySQL. TODO: currently failure
@@ -399,6 +422,7 @@ fields than mentioned in the constraint.
 @param[in]	reject_fks	if TRUE, fail with error code
 				DB_CANNOT_ADD_CONSTRAINT if any
 				foreign keys are found.
+@param[in]	dd_table	MySQL dd::Table for the table
 @return error code or DB_SUCCESS */
 dberr_t
 row_table_add_foreign_constraints(
@@ -406,7 +430,8 @@ row_table_add_foreign_constraints(
 	const char*		sql_string,
 	size_t			sql_length,
 	const char*		name,
-	ibool			reject_fks)
+	ibool			reject_fks,
+	const dd::Table*	dd_table)
 	MY_ATTRIBUTE((warn_unused_result));
 
 /*********************************************************************//**
@@ -436,6 +461,18 @@ row_mysql_lock_table(
 	enum lock_mode	mode,		/*!< in: LOCK_X or LOCK_S */
 	const char*	op_info)	/*!< in: string for trx->op_info */
 	MY_ATTRIBUTE((warn_unused_result));
+
+/** Drop a single-table tablespace as part of dropping or renaming a table.
+This deletes the fil_space_t if found and the file on disk.
+@param[in]	space_id	Tablespace ID
+@param[in]	tablename	Table name, same as the tablespace name
+@param[in]	filepath	File path of tablespace to delete
+@return error code or DB_SUCCESS */
+dberr_t
+row_drop_single_table_tablespace(
+	space_id_t	space_id,
+	const char*	tablename,
+	const char*	filepath);
 
 /** Drop a table for MySQL. If the data dictionary was not already locked
 by the transaction, the transaction will be committed.  Otherwise, the
@@ -501,7 +538,7 @@ row_import_tablespace_for_mysql(
 /** Drop a database for MySQL.
 @param[in]	name	database name which ends at '/'
 @param[in]	trx	transaction handle
-@param[out]	found	number of dropped tables/partitions
+@param[out]	found	number of dropped tables
 @return error code or DB_SUCCESS */
 dberr_t
 row_drop_database_for_mysql(
@@ -509,28 +546,20 @@ row_drop_database_for_mysql(
 	trx_t*		trx,
 	ulint*		found);
 
-/*********************************************************************//**
-Renames a table for MySQL.
+/** Renames a table for MySQL.
+@param[in]	old_name	old table name
+@param[in]	new_name	new table name
+@param[in]	dd_table	dd::Table for new table
+@param[in,out]	trx		transaction
+@param[in]	log		whether to write rename table log
 @return error code or DB_SUCCESS */
 dberr_t
 row_rename_table_for_mysql(
-/*=======================*/
-	const char*	old_name,	/*!< in: old table name */
-	const char*	new_name,	/*!< in: new table name */
-	trx_t*		trx,		/*!< in/out: transaction */
-	bool		commit)		/*!< in: whether to commit trx */
-	MY_ATTRIBUTE((warn_unused_result));
-
-/** Renames a partitioned table for MySQL.
-@param[in]	old_name	Old table name.
-@param[in]	new_name	New table name.
-@param[in,out]	trx		Transaction.
-@return error code or DB_SUCCESS */
-dberr_t
-row_rename_partitions_for_mysql(
-	const char*	old_name,
-	const char*	new_name,
-	trx_t*		trx)
+	const char*		old_name,
+	const char*		new_name,
+	const dd::Table*	dd_table,
+	trx_t*			trx,
+	bool			log)
 	MY_ATTRIBUTE((warn_unused_result));
 
 /*********************************************************************//**
@@ -580,8 +609,9 @@ struct mysql_row_templ_t {
 					ROW_MYSQL_WHOLE_ROW */
 	ulint	icp_rec_field_no;	/*!< field number of the column in an
 					Innobase record in the current index;
-					not defined unless
-					index condition pushdown is used */
+					only defined for columns that could be
+					used to evaluate a pushed down index
+					condition and/or end-range condition */
 	ulint	mysql_col_offset;	/*!< offset of the column in the MySQL
 					row format */
 	ulint	mysql_col_len;		/*!< length of the column in the MySQL
@@ -693,6 +723,8 @@ struct row_prebuilt_t {
 	mem_heap_t*	heap;		/*!< memory heap from which
 					these auxiliary structures are
 					allocated when needed */
+	mem_heap_t*     cursor_heap;    /*!< memory heap from which
+					innodb_api_buf is allocated per session */
 	ins_node_t*	ins_node;	/*!< Innobase SQL insert node
 					used to perform inserts
 					to the table */
@@ -836,6 +868,9 @@ struct row_prebuilt_t {
 	unsigned	innodb_api:1;	/*!< whether this is a InnoDB API
 					query */
 	const rec_t*	innodb_api_rec;	/*!< InnoDB API search result */
+	void*           innodb_api_buf; /*!< Buffer holding copy of the physical
+					Innodb API search record */
+	ulint           innodb_api_rec_size; /*!< Size of the Innodb API record */
 	/*----------------------*/
 
 	/*----------------------*/
@@ -971,5 +1006,6 @@ innobase_rename_vc_templ(
 void
 row_wait_for_background_drop_list_empty();
 #endif /* UNIV_DEBUG */
+#endif  /* !UNIV_HOTBACKUP */
 
 #endif /* row0mysql.h */

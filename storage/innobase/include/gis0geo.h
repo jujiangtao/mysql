@@ -2,17 +2,24 @@
 Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
 This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; version 2 of the License.
+it under the terms of the GNU General Public License, version 2.0,
+as published by the Free Software Foundation.
+
+This program is also distributed with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have included with MySQL.
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
+GNU General Public License, version 2.0, for more details.
 
 You should have received a copy of the GNU General Public License
-along with this program; if not, write to the Free Software Foundation,
-51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+along with this program; if not, write to the Free Software
+Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 *****************************************************************************/
 
 /**************************************************//**
@@ -24,10 +31,14 @@ The r-tree define from MyISAM
 #define _gis0geo_h
 
 #include "page0types.h"
-#include "gis/srs/rtree_support.h"
+#include "sql/gis/rtree_support.h"
 
 #define SPTYPE HA_KEYTYPE_DOUBLE
 #define SPLEN  8
+
+namespace dd {
+class Spatial_reference_system;
+}
 
 /* Rtree split node structure. */
 struct rtr_split_node_t
@@ -67,7 +78,8 @@ split_rtree_node(
 	int			size2,		/*!< in: initial group sizes */
 	double**		d_buffer,	/*!< in/out: buffer.*/
 	int			n_dim,		/*!< in: dimensions. */
-	uchar*			first_rec);	/*!< in: the first rec. */
+	uchar*			first_rec,	/*!< in: the first rec. */
+	const dd::Spatial_reference_system*	srs); /*!< in: SRS of R-tree */
 
 /*************************************************************//**
 Compares two keys a and b depending on nextflag
@@ -83,6 +95,7 @@ nextflag can contain these flags:
 @param[in]	a_len	first key len
 @param[in]	b	second key
 @param[in]	b_len	second_key_len
+@param[in]	srs	Spatial reference system of R-tree
 @retval 0 on success, otherwise 1. */
 int
 rtree_key_cmp(
@@ -90,5 +103,6 @@ rtree_key_cmp(
 	const uchar*	a,
 	int		a_len,
 	const uchar*	b,
-	int		b_len);
+	int		b_len,
+	const dd::Spatial_reference_system*	srs);
 #endif

@@ -1,13 +1,20 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -24,46 +31,49 @@
   @{
 */
 
-#include "sql_planner.h"
+#include "sql/sql_planner.h"
+
+#include "my_config.h"
 
 #include <float.h>
 #include <limits.h>
 #include <string.h>
 #include <algorithm>
+#include <atomic>
 
-#include "enum_query_type.h"
-#include "field.h"
-#include "handler.h"
-#include "item.h"
-#include "item_cmpfunc.h"
-#include "key.h"
-#include "merge_sort.h"         // merge_sort
 #include "my_base.h"            // key_part_map
 #include "my_bit.h"             // my_count_bits
 #include "my_bitmap.h"
 #include "my_compiler.h"
-#include "my_config.h"
 #include "my_dbug.h"
 #include "my_macros.h"
-#include "opt_costmodel.h"
-#include "opt_hints.h"          // hint_table_state
-#include "opt_range.h"          // QUICK_SELECT_I
-#include "opt_trace.h"          // Opt_trace_object
-#include "opt_trace_context.h"
-#include "query_options.h"
-#include "sql_bitmap.h"
-#include "sql_class.h"          // THD
-#include "sql_const.h"
-#include "sql_executor.h"
-#include "sql_lex.h"
-#include "sql_list.h"
-#include "sql_opt_exec_shared.h"
-#include "sql_optimizer.h"      // JOIN
-#include "sql_select.h"         // JOIN_TAB
+#include "mysql/udf_registration_types.h"
+#include "sql/enum_query_type.h"
+#include "sql/field.h"
+#include "sql/handler.h"
+#include "sql/item.h"
+#include "sql/item_cmpfunc.h"
+#include "sql/key.h"
+#include "sql/merge_sort.h"     // merge_sort
+#include "sql/opt_costmodel.h"
+#include "sql/opt_hints.h"      // hint_table_state
+#include "sql/opt_range.h"      // QUICK_SELECT_I
+#include "sql/opt_trace.h"      // Opt_trace_object
+#include "sql/opt_trace_context.h"
+#include "sql/query_options.h"
+#include "sql/sql_bitmap.h"
+#include "sql/sql_class.h"      // THD
+#include "sql/sql_const.h"
+#include "sql/sql_executor.h"
+#include "sql/sql_lex.h"
+#include "sql/sql_list.h"
+#include "sql/sql_opt_exec_shared.h"
+#include "sql/sql_optimizer.h"  // JOIN
+#include "sql/sql_select.h"     // JOIN_TAB
+#include "sql/sql_test.h"       // print_plan
+#include "sql/system_variables.h"
+#include "sql/table.h"
 #include "sql_string.h"
-#include "sql_test.h"           // print_plan
-#include "system_variables.h"
-#include "table.h"
 
 using std::max;
 using std::min;
@@ -324,7 +334,7 @@ Key_use* Optimize_table_order::find_best_ref(const JOIN_TAB *tab,
     // fulltext indexes require special treatment
     if (cur_keytype != FULLTEXT)
     {
-      *found_condition|= MY_TEST(found_part);
+      *found_condition|= found_part;
 
       const bool all_key_parts_covered=
          (found_part == LOWER_BITS(key_part_map, actual_key_parts(keyinfo)));
@@ -542,8 +552,6 @@ Key_use* Optimize_table_order::find_best_ref(const JOIN_TAB *tab,
               on the same index,
               (2) and that quick select uses more keyparts (i.e. it will
               scan equal/smaller interval then this ref(const))
-              (3) and E(#rows) for quick select is higher then our
-              estimate,
               Then use E(#rows) from quick select.
 
               One observation is that when there are multiple
@@ -559,12 +567,10 @@ Key_use* Optimize_table_order::find_best_ref(const JOIN_TAB *tab,
               TODO: figure this out and adjust the plan choice if needed.
             */
             if (!table_deps && table->quick_keys.is_set(key) &&     // (1)
-                table->quick_key_parts[key] > cur_used_keyparts &&  // (2)
-                cur_fanout < (double)table->quick_rows[key])        // (3)
+                table->quick_key_parts[key] > cur_used_keyparts)    // (2)
             {
               trace_access_idx.add("chosen", false).
-                add_alnum("cause",
-                          "unreliable_ref_cost_and_range_uses_more_keyparts");
+                add_alnum("cause", "range_uses_more_keyparts");
               continue;
             }
 
@@ -808,7 +814,7 @@ Optimize_table_order::calculate_scan_cost(const JOIN_TAB *tab,
     const float const_cond_filter=
       calculate_condition_filter(tab, NULL, 0,
                                  static_cast<double>(tab->found_records),
-                                 !disable_jbuf);
+                                 !disable_jbuf, true, *trace_access_scan);
 
     /*
       For high found_records values, multiplication by float may
@@ -1154,7 +1160,7 @@ void Optimize_table_order::best_access_path(JOIN_TAB *tab,
           calculate_condition_filter(tab, NULL,
                                      ~remaining_tables & ~excluded_tables,
                                      static_cast<double>(tab->found_records),
-                                     false);
+                                     false, false, trace_access_scan);
         filter_effect=
           static_cast<float>(std::min(1.0,
                                       tab->found_records * full_filter /
@@ -1190,7 +1196,7 @@ void Optimize_table_order::best_access_path(JOIN_TAB *tab,
     filter_effect=
       calculate_condition_filter(tab, best_ref,
                                  ~remaining_tables & ~excluded_tables,
-                                 rows_fetched, false);
+                                 rows_fetched, false, false, trace_access_scan);
 
   pos->filter_effect=   filter_effect;
   pos->rows_fetched=    rows_fetched;
@@ -1217,7 +1223,9 @@ float calculate_condition_filter(const JOIN_TAB *const tab,
                                  const Key_use *const keyuse,
                                  table_map used_tables,
                                  double fanout,
-                                 bool is_join_buffering)
+                                 bool is_join_buffering,
+                                 bool write_to_trace,
+                                 Opt_trace_object &parent_trace)
 {
   /*
     Because calculating condition filtering has a cost, it should only
@@ -1270,7 +1278,7 @@ float calculate_condition_filter(const JOIN_TAB *const tab,
         !tab->join()->select_lex->sj_nests.is_empty() ||                   // 2d
         ((tab->join()->order || tab->join()->group_list) &&
          tab->join()->unit->select_limit_cnt != HA_POS_ERROR) ||           // 2e
-        thd->lex->describe)))                                              // 2f
+        thd->lex->is_explain())))                                          // 2f
     return COND_FILTER_ALLPASS;
 
   // No filtering is calculated if we expect less than one row to be fetched
@@ -1293,6 +1301,12 @@ float calculate_condition_filter(const JOIN_TAB *const tab,
   DBUG_ASSERT(bitmap_is_clear_all(&table->tmp_set));
 
   float filter= COND_FILTER_ALLPASS;
+
+  Opt_trace_context * const trace= &tab->join()->thd->opt_trace;
+
+  Opt_trace_disable_I_S disable_trace(trace, !write_to_trace);
+  Opt_trace_array filtering_effect_trace(trace, "filtering_effect");
+
 
   /*
     If ref/range access, the condition is already included in the
@@ -1441,7 +1455,8 @@ float calculate_condition_filter(const JOIN_TAB *const tab,
       based on index statistics and guesstimates.
     */
     filter*=
-      tab->join()->where_cond->get_filtering_effect(tab->table_ref->map(),
+      tab->join()->where_cond->get_filtering_effect(tab->join()->thd,
+                                                    tab->table_ref->map(),
                                                     used_tables,
                                                     &table->tmp_set,
                                           static_cast<double>(tab->records()));
@@ -1471,6 +1486,9 @@ float calculate_condition_filter(const JOIN_TAB *const tab,
     filter= 0.05f/static_cast<float>(fanout);
 
 cleanup:
+  filtering_effect_trace.end();
+  parent_trace.add("final_filtering_effect", filter);
+
   // Clear tmp_set so it can be used elsewhere
   bitmap_clear_all(&table->tmp_set);
   DBUG_ASSERT(filter >= 0.0f && filter <= 1.0f);
@@ -1837,7 +1855,7 @@ semijoin_loosescan_fill_driving_table_position(const JOIN_TAB  *tab,
       calculate_condition_filter(tab, pos->key,
                                 ~remaining_tables & ~excluded_tables,
                                 pos->rows_fetched,
-                                false);
+                                false, false, trace_ls);
     return true;
   }
 
@@ -4594,8 +4612,9 @@ void Optimize_table_order::advance_sj_state(
                           current partial join order.
 */
 
-void Optimize_table_order::backout_nj_state(const table_map remaining_tables,
-                                            const JOIN_TAB *tab)
+void Optimize_table_order::
+backout_nj_state(const table_map remaining_tables MY_ATTRIBUTE((unused)),
+                 const JOIN_TAB *tab)
 {
   DBUG_ASSERT(remaining_tables & tab->table_ref->map());
 

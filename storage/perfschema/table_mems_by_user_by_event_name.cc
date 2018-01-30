@@ -1,17 +1,24 @@
 /* Copyright (c) 2011, 2017, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
-  along with this program; if not, write to the Free Software Foundation,
-  51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+  along with this program; if not, write to the Free Software
+  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 /**
   @file storage/perfschema/table_mems_by_user_by_event_name.cc
@@ -22,100 +29,56 @@
 
 #include <stddef.h>
 
-#include "field.h"
 #include "my_dbug.h"
 #include "my_thread.h"
-#include "pfs_buffer_container.h"
-#include "pfs_column_types.h"
-#include "pfs_column_values.h"
-#include "pfs_global.h"
-#include "pfs_instr_class.h"
-#include "pfs_memory.h"
-#include "pfs_visitor.h"
+#include "sql/field.h"
+#include "storage/perfschema/pfs_buffer_container.h"
+#include "storage/perfschema/pfs_column_types.h"
+#include "storage/perfschema/pfs_column_values.h"
+#include "storage/perfschema/pfs_global.h"
+#include "storage/perfschema/pfs_instr_class.h"
+#include "storage/perfschema/pfs_memory.h"
+#include "storage/perfschema/pfs_visitor.h"
 
 THR_LOCK table_mems_by_user_by_event_name::m_table_lock;
 
-/* clang-format off */
-static const TABLE_FIELD_TYPE field_types[]=
-{
-  {
-    { C_STRING_WITH_LEN("USER") },
-    { C_STRING_WITH_LEN("char(" USERNAME_CHAR_LENGTH_STR ")") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("EVENT_NAME") },
-    { C_STRING_WITH_LEN("varchar(128)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("COUNT_ALLOC") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("COUNT_FREE") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("SUM_NUMBER_OF_BYTES_ALLOC") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("SUM_NUMBER_OF_BYTES_FREE") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("LOW_COUNT_USED") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("CURRENT_COUNT_USED") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("HIGH_COUNT_USED") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("LOW_NUMBER_OF_BYTES_USED") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("CURRENT_NUMBER_OF_BYTES_USED") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("HIGH_NUMBER_OF_BYTES_USED") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  }
-};
-/* clang-format on */
-
-TABLE_FIELD_DEF
-table_mems_by_user_by_event_name::m_field_def = {12, field_types};
+Plugin_table table_mems_by_user_by_event_name::m_table_def(
+  /* Schema name */
+  "performance_schema",
+  /* Name */
+  "memory_summary_by_user_by_event_name",
+  /* Definition */
+  "  USER CHAR(32) collate utf8_bin default null,\n"
+  "  EVENT_NAME VARCHAR(128) not null,\n"
+  "  COUNT_ALLOC BIGINT UNSIGNED not null,\n"
+  "  COUNT_FREE BIGINT UNSIGNED not null,\n"
+  "  SUM_NUMBER_OF_BYTES_ALLOC BIGINT unsigned not null,\n"
+  "  SUM_NUMBER_OF_BYTES_FREE BIGINT unsigned not null,\n"
+  "  LOW_COUNT_USED BIGINT not null,\n"
+  "  CURRENT_COUNT_USED BIGINT not null,\n"
+  "  HIGH_COUNT_USED BIGINT not null,\n"
+  "  LOW_NUMBER_OF_BYTES_USED BIGINT not null,\n"
+  "  CURRENT_NUMBER_OF_BYTES_USED BIGINT not null,\n"
+  "  HIGH_NUMBER_OF_BYTES_USED BIGINT not null,\n"
+  "  UNIQUE KEY (USER, EVENT_NAME) USING HASH\n",
+  /* Options */
+  " ENGINE=PERFORMANCE_SCHEMA",
+  /* Tablespace */
+  nullptr);
 
 PFS_engine_table_share table_mems_by_user_by_event_name::m_share = {
-  {C_STRING_WITH_LEN("memory_summary_by_user_by_event_name")},
-  &pfs_readonly_acl,
+  &pfs_truncatable_acl,
   table_mems_by_user_by_event_name::create,
   NULL, /* write_row */
   table_mems_by_user_by_event_name::delete_all_rows,
   table_mems_by_user_by_event_name::get_row_count,
   sizeof(PFS_simple_index),
   &m_table_lock,
-  &m_field_def,
-  false, /* checked */
-  false  /* perpetual */
+  &m_table_def,
+  false, /* perpetual */
+  PFS_engine_table_proxy(),
+  {0},
+  false /* m_in_purgatory */
 };
 
 bool
@@ -145,7 +108,7 @@ PFS_index_mems_by_user_by_event_name::match(PFS_instr_class *instr_class)
 }
 
 PFS_engine_table *
-table_mems_by_user_by_event_name::create(void)
+table_mems_by_user_by_event_name::create(PFS_engine_table_share *)
 {
   return new table_mems_by_user_by_event_name();
 }
@@ -233,7 +196,8 @@ table_mems_by_user_by_event_name::rnd_pos(const void *pos)
 }
 
 int
-table_mems_by_user_by_event_name::index_init(uint idx, bool)
+table_mems_by_user_by_event_name::index_init(uint idx MY_ATTRIBUTE((unused)),
+                                             bool)
 {
   PFS_index_mems_by_user_by_event_name *result = NULL;
   DBUG_ASSERT(idx == 0);

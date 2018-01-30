@@ -1,17 +1,24 @@
 /* Copyright (c) 2006, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA */
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 /**
   @file
@@ -69,11 +76,32 @@
 #define TIME_INT_DIGITS       7         /* hhhmmss        */
 #define DATETIME_INT_DIGITS  14         /* YYYYMMDDhhmmss */
 
-#define MAX_TABLES	(sizeof(table_map)*8-3)	/* Max tables in join */
-#define PARAM_TABLE_BIT	(((table_map) 1) << (sizeof(table_map)*8-3))
-#define OUTER_REF_TABLE_BIT	(((table_map) 1) << (sizeof(table_map)*8-2))
-#define RAND_TABLE_BIT	(((table_map) 1) << (sizeof(table_map)*8-1))
-#define PSEUDO_TABLE_BITS (PARAM_TABLE_BIT | OUTER_REF_TABLE_BIT | \
+/**
+  MAX_TABLES and xxx_TABLE_BIT are used in optimization of table factors and
+  expressions, and in join plan generation.
+  MAX_TABLES counts the maximum number of tables that can be handled in a
+  join operation. It is the number of bits in the table_map, minus the
+  number of pseudo table bits (bits that do not represent actual tables, but
+  still need to be handled by our algorithms). The pseudo table bits are:
+  INNER_TABLE_BIT is set for all expressions that contain a parameter,
+  a subquery that accesses tables, or a function that accesses tables.
+  An expression that has only INNER_TABLE_BIT is constant for the duration
+  of a query expression, but must be evaluated at least once during execution.
+  OUTER_REF_TABLE_BIT is set for expressions that contain a column that
+  is resolved as an outer reference. Also notice that all subquery items
+  between the column reference and the query block where the column is
+  resolved, have this bit set. Expressions that are represented by this bit
+  are constant for the duration of the subquery they are defined in.
+  RAND_TABLE_BIT is set for expressions containing a non-deterministic
+  element, such as a random function or a non-deterministic function.
+  Expressions containing this bit cannot be evaluated once and then cached,
+  they must be evaluated at latest possible point.
+*/
+#define MAX_TABLES          (sizeof(table_map)*8-3) /* Max tables in join */
+#define INNER_TABLE_BIT     (((table_map) 1) << (MAX_TABLES+0))
+#define OUTER_REF_TABLE_BIT (((table_map) 1) << (MAX_TABLES+1))
+#define RAND_TABLE_BIT      (((table_map) 1) << (MAX_TABLES+2))
+#define PSEUDO_TABLE_BITS (INNER_TABLE_BIT | OUTER_REF_TABLE_BIT | \
                            RAND_TABLE_BIT)
 #define MAX_FIELDS	4096			/* Maximum number of columns */
 #define MAX_PARTITIONS  8192
@@ -96,7 +124,7 @@
 #define TRANS_MEM_ROOT_BLOCK_SIZE 4096
 #define TRANS_MEM_ROOT_PREALLOC   4096
 
-#define DEFAULT_ERROR_COUNT	64
+#define DEFAULT_ERROR_COUNT	1024
 #define EXTRA_RECORDS	10			/* Extra records in sort */
 #define SCROLL_EXTRA	5			/* Extra scroll-rows. */
 #define FERR		-1			/* Error from my_functions */
@@ -117,7 +145,7 @@
 #define MAX_FIELDS_BEFORE_HASH	32
 #define USER_VARS_HASH_SIZE     16
 #define TABLE_OPEN_CACHE_MIN    400
-#define TABLE_OPEN_CACHE_DEFAULT 2000
+#define TABLE_OPEN_CACHE_DEFAULT 4000
 static const ulong TABLE_DEF_CACHE_DEFAULT=          400;
 static const ulong SCHEMA_DEF_CACHE_DEFAULT=         256;
 static const ulong STORED_PROGRAM_DEF_CACHE_DEFAULT= 256;
@@ -154,7 +182,11 @@ static const ulong EVENT_DEF_CACHE_MIN=          256;
   Feel free to raise this by the smallest amount you can to get the
   "execution_constants" test to pass.
 */
-#define STACK_MIN_SIZE          16000   // Abort if less stack during eval.
+#if defined HAVE_UBSAN && SIZEOF_CHARP == 4
+#define STACK_MIN_SIZE          30000   // Abort if less stack during eval.
+#else
+#define STACK_MIN_SIZE          20000   // Abort if less stack during eval.
+#endif
 
 #define STACK_MIN_SIZE_FOR_OPEN 1024*80
 
@@ -312,7 +344,8 @@ static const ulong EVENT_DEF_CACHE_MIN=          256;
 #define OPTIMIZER_SWITCH_USE_INDEX_EXTENSIONS      (1ULL << 16)
 #define OPTIMIZER_SWITCH_COND_FANOUT_FILTER        (1ULL << 17)
 #define OPTIMIZER_SWITCH_DERIVED_MERGE             (1ULL << 18)
-#define OPTIMIZER_SWITCH_LAST                      (1ULL << 19)
+#define OPTIMIZER_SWITCH_USE_INVISIBLE_INDEXES     (1ULL << 19)
+#define OPTIMIZER_SWITCH_LAST                      (1ULL << 20)
 
 #define OPTIMIZER_SWITCH_DEFAULT (OPTIMIZER_SWITCH_INDEX_MERGE | \
                                   OPTIMIZER_SWITCH_INDEX_MERGE_UNION | \
@@ -347,7 +380,7 @@ enum enum_mark_columns
   Exit code used by mysqld_exit, exit and _exit function to
   signify unsuccessful termination of mysqld. The exit
   code signifies the server should NOT BE RESTARTED AUTOMATICALLY
-  by init systems like systemd. 
+  by init systems like systemd.
 */
 #define MYSQLD_ABORT_EXIT 1
 /*
@@ -357,7 +390,34 @@ enum enum_mark_columns
   init systems like systemd.
 */
 #define MYSQLD_FAILURE_EXIT 2
+/*
+  Exit code used by mysqld_exit, my_thread_exit function which allows
+  for external programs like systemd, mysqld_safe to restart mysqld
+  server. The exit code  16 is choosen so it is safe as InnoDB code
+  exit directly with values like 3.
+*/
+#define MYSQLD_RESTART_EXIT 16
 
 #define UUID_LENGTH (8+1+4+1+4+1+4+1+12)
+
+/*
+  This enumeration type is used only by the function find_item_in_list
+  to return the info on how an item has been resolved against a list
+  of possibly aliased items.
+  The item can be resolved:
+   - against an alias name of the list's element (RESOLVED_AGAINST_ALIAS)
+   - against non-aliased field name of the list  (RESOLVED_WITH_NO_ALIAS)
+   - against an aliased field name of the list   (RESOLVED_BEHIND_ALIAS)
+   - ignoring the alias name in cases when SQL requires to ignore aliases
+     (e.g. when the resolved field reference contains a table name or
+     when the resolved item is an expression)   (RESOLVED_IGNORING_ALIAS)
+*/
+enum enum_resolution_type {
+  NOT_RESOLVED=0,
+  RESOLVED_BEHIND_ALIAS,
+  RESOLVED_AGAINST_ALIAS,
+  RESOLVED_WITH_NO_ALIAS,
+  RESOLVED_IGNORING_ALIAS
+};
 
 #endif /* SQL_CONST_INCLUDED */

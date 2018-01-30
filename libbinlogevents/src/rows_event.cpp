@@ -1,13 +1,20 @@
 /* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -502,8 +509,9 @@ Rows_event::Rows_event(const char *buf, unsigned int event_len,
   ptr_after_width+= (m_width + 7) / 8;
 
   columns_after_image= columns_before_image;
-  if ((event_type == UPDATE_ROWS_EVENT) ||
-      (event_type == UPDATE_ROWS_EVENT_V1))
+  if (event_type == UPDATE_ROWS_EVENT ||
+      event_type == UPDATE_ROWS_EVENT_V1 ||
+      event_type == PARTIAL_UPDATE_ROWS_EVENT)
   {
     columns_after_image.reserve((m_width + 7) / 8);
     columns_after_image.clear();
@@ -619,7 +627,8 @@ void Rows_event::print_long_info(std::ostream& info)
     info << "\nType: Delete" ;
 
   if (this->get_event_type() == UPDATE_ROWS_EVENT_V1 ||
-      this->get_event_type() == UPDATE_ROWS_EVENT)
+      this->get_event_type() == UPDATE_ROWS_EVENT ||
+      this->get_event_type() == PARTIAL_UPDATE_ROWS_EVENT)
     info << "\nType: Update" ;
 }
 #endif

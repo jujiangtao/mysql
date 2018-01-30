@@ -4,13 +4,20 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -24,28 +31,30 @@
 #include <algorithm>
 
 #include "binary_log_types.h"
-#include "current_thd.h"
-#include "enum_query_type.h"
-#include "field.h"
-#include "item.h"
-#include "item_func.h"
-#include "item_strfunc.h"  // Item_str_func
 #include "m_ctype.h"
 #include "my_dbug.h"
-#include "my_decimal.h"
 #include "my_inttypes.h"
 #include "my_macros.h"
 #include "my_table_map.h"
 #include "my_time.h"
+#include "mysql/udf_registration_types.h"
 #include "mysql_com.h"
 #include "mysql_time.h"
-#include "parse_tree_node_base.h"
-#include "set_var.h"
-#include "sql_const.h"
+#include "sql/derror.h"
+#include "sql/enum_query_type.h"
+#include "sql/field.h"
+#include "sql/item.h"
+#include "sql/item_func.h"
+#include "sql/item_strfunc.h" // Item_str_func
+#include "sql/my_decimal.h"
+#include "sql/parse_tree_node_base.h"
+#include "sql/set_var.h"
+#include "sql/sql_const.h"
+#include "sql/system_variables.h"
 #include "sql_string.h"
-#include "system_variables.h"
 
 class MY_LOCALE;
+class PT_item_list;
 class THD;
 class Time_zone;
 struct Date_time_format;
@@ -597,6 +606,9 @@ public:
   Item_temporal_func(const POS &pos, Item *a, Item *b, Item *c, Item *d)
     :Item_func(pos, a, b, c, d)
   {}
+  Item_temporal_func(const POS &pos, PT_item_list *list)
+    : Item_func(pos, list)
+  {}
 
   Item_result result_type() const override { return STRING_RESULT; }
   const CHARSET_INFO *charset_for_protocol() const override
@@ -774,6 +786,9 @@ public:
   { set_data_type(MYSQL_TYPE_DATETIME); }
   Item_datetime_func(const POS &pos, Item *a,Item *b, Item *c, Item *d)
     :Item_temporal_func(pos, a, b, c, d)
+  { set_data_type(MYSQL_TYPE_DATETIME); }
+  Item_datetime_func(const POS &pos, PT_item_list *list)
+    : Item_temporal_func(pos, list)
   { set_data_type(MYSQL_TYPE_DATETIME); }
 
   double val_real() override { return val_real_from_decimal(); }
@@ -1031,7 +1046,6 @@ public:
   }
   bool check_partition_func_processor(uchar *) override { return false; }
   bool basic_const_item() const override { return true; }
-  bool const_item() const override { return true; }
   table_map used_tables() const override { return 0; }
   table_map not_null_tables() const override { return used_tables(); }
   void cleanup() override
@@ -1085,7 +1099,6 @@ public:
   }
   bool check_partition_func_processor(uchar *) override { return false; }
   bool basic_const_item() const override { return true; }
-  bool const_item() const override { return true; }
   table_map used_tables() const override { return 0; }
   table_map not_null_tables() const override { return used_tables(); }
   void cleanup() override
@@ -1139,7 +1152,6 @@ public:
   }
   bool check_partition_func_processor(uchar *) override { return false; }
   bool basic_const_item() const override { return true; }
-  bool const_item() const override { return true; }
   table_map used_tables() const override { return 0; }
   table_map not_null_tables() const override { return used_tables(); }
   void cleanup() override
@@ -1364,7 +1376,6 @@ class Item_func_sysdate_local final :public Item_datetime_func
 public:
   Item_func_sysdate_local(uint8 dec_arg) :
     Item_datetime_func() { decimals= dec_arg; }
-  bool const_item() const override { return false; }
   const char *func_name() const override { return "sysdate"; }
   bool resolve_type(THD *) override;
   bool get_date(MYSQL_TIME *res, my_time_flags_t fuzzy_date) override;
@@ -1422,12 +1433,6 @@ class Item_func_from_unixtime final : public Item_datetime_func
 };
 
 
-/* 
-  We need Time_zone class declaration for storing pointers in
-  Item_func_convert_tz.
-*/
-class Time_zone;
-
 /*
   This class represents CONVERT_TZ() function.
   The important fact about this function that it is handled in special way.
@@ -1471,6 +1476,7 @@ public:
   bool get_time(MYSQL_TIME *ltime) override;
 };
 
+extern const char *interval_names[];
 
 class Item_date_add_interval final : public Item_temporal_hybrid_func
 {
@@ -1486,6 +1492,13 @@ public:
   Item_date_add_interval(const POS &pos,
                          Item *a, Item *b, interval_type type_arg, bool neg_arg)
     :Item_temporal_hybrid_func(pos, a, b),
+     int_type(type_arg), date_sub_interval(neg_arg) {}
+  /**
+     POS-less ctor for post-parse construction with implicit addition to THD's
+     free_list (see Item::Item() no-argument ctor).
+  */
+  Item_date_add_interval(Item *a, Item *b, interval_type type_arg, bool neg_arg)
+    :Item_temporal_hybrid_func(a, b),
      int_type(type_arg), date_sub_interval(neg_arg) {}
   const char *func_name() const override { return "date_add_interval"; }
   bool resolve_type(THD *) override;
@@ -1769,13 +1782,12 @@ public:
 class Item_func_str_to_date final : public Item_temporal_hybrid_func
 {
   timestamp_type cached_timestamp_type;
-  bool const_item;
   void fix_from_format(const char *format, size_t length);
 protected:
   bool val_datetime(MYSQL_TIME *ltime, my_time_flags_t fuzzy_date) override;
 public:
   Item_func_str_to_date(const POS &pos, Item *a, Item *b)
-    :Item_temporal_hybrid_func(pos, a, b), const_item(false)
+    :Item_temporal_hybrid_func(pos, a, b)
   {}
   const char *func_name() const override { return "str_to_date"; }
   bool resolve_type(THD *) override;
@@ -1795,10 +1807,11 @@ class Item_func_internal_update_time final : public Item_datetime_func
 {
   THD *thd;
 public:
-  Item_func_internal_update_time(const POS &pos,
-                                 Item *a, Item *b, Item *c, Item *d)
-    : Item_datetime_func(pos, a, b, c, d)
+  Item_func_internal_update_time(
+    const POS &pos, PT_item_list *list)
+    : Item_datetime_func(pos, list)
   {}
+  enum Functype functype() const override { return DD_INTERNAL_FUNC; }
   const char *func_name() const override { return "internal_update_time"; }
   bool resolve_type(THD *thd) override;
   bool get_date(MYSQL_TIME *res, my_time_flags_t fuzzy_date) override;
@@ -1808,10 +1821,11 @@ class Item_func_internal_check_time final : public Item_datetime_func
 {
   THD *thd;
 public:
-  Item_func_internal_check_time(const POS &pos,
-                                 Item *a, Item *b, Item *c, Item *d)
-    : Item_datetime_func(pos, a, b, c, d)
+  Item_func_internal_check_time(
+    const POS &pos, PT_item_list *list)
+    : Item_datetime_func(pos, list)
   {}
+  enum Functype functype() const override { return DD_INTERNAL_FUNC; }
   const char *func_name() const override { return "internal_check_time"; }
   bool resolve_type(THD *thd) override;
   bool get_date(MYSQL_TIME *res, my_time_flags_t fuzzy_date) override;

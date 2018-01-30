@@ -1,13 +1,20 @@
 /* Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
   along with this program; if not, write to the Free Software
@@ -22,70 +29,41 @@
 
 #include <stddef.h>
 
-#include "current_thd.h"
-#include "field.h"
 #include "my_dbug.h"
 #include "my_thread.h"
-#include "mysqld.h"
-#include "pfs_column_types.h"
-#include "pfs_column_values.h"
-#include "pfs_global.h"
-#include "pfs_instr_class.h"
-#include "sql_class.h"
+#include "sql/current_thd.h"
+#include "sql/field.h"
+#include "sql/mysqld.h"
+#include "sql/sql_class.h"
+#include "storage/perfschema/pfs_column_types.h"
+#include "storage/perfschema/pfs_column_values.h"
+#include "storage/perfschema/pfs_global.h"
+#include "storage/perfschema/pfs_instr_class.h"
 
 THR_LOCK table_variables_info::m_table_lock;
 
-/* clang-format off */
-static const TABLE_FIELD_TYPE field_types[]=
-{
-  {
-    { C_STRING_WITH_LEN("VARIABLE_NAME") },
-    { C_STRING_WITH_LEN("varchar(64)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("VARIABLE_SOURCE") },
-    { C_STRING_WITH_LEN("enum('COMPILED','GLOBAL','SERVER','EXPLICIT','EXTRA','USER','LOGIN','COMMAND_LINE','PERSISTED','DYNAMIC')") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("VARIABLE_PATH") },
-    { C_STRING_WITH_LEN("varchar(1024)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("MIN_VALUE") },
-    { C_STRING_WITH_LEN("varchar(64)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("MAX_VALUE") },
-    { C_STRING_WITH_LEN("varchar(64)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("SET_TIME") },
-    { C_STRING_WITH_LEN("timestamp") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("SET_USER") },
-    { C_STRING_WITH_LEN("char(" USERNAME_CHAR_LENGTH_STR ")") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("SET_HOST") },
-    { C_STRING_WITH_LEN("char(60)") },
-    { NULL, 0}
-  }
-};
-/* clang-format on */
-
-TABLE_FIELD_DEF
-table_variables_info::m_field_def = {8, field_types};
+Plugin_table table_variables_info::m_table_def(
+  /* Schema name */
+  "performance_schema",
+  /* Name */
+  "variables_info",
+  /* Definition */
+  "  VARIABLE_NAME varchar(64) not null,\n"
+  "  VARIABLE_SOURCE ENUM('COMPILED','GLOBAL','SERVER','EXPLICIT','EXTRA',\n"
+  "                       'USER','LOGIN','COMMAND_LINE','PERSISTED',\n"
+  "                       'DYNAMIC') DEFAULT 'COMPILED',\n"
+  "  VARIABLE_PATH varchar(1024),\n"
+  "  MIN_VALUE varchar(64),\n"
+  "  MAX_VALUE varchar(64),\n"
+  "  SET_TIME TIMESTAMP(0) default null,\n"
+  "  SET_USER CHAR(32) collate utf8_bin default null,\n"
+  "  SET_HOST CHAR(60) collate utf8_bin default null\n",
+  /* Options */
+  " ENGINE=PERFORMANCE_SCHEMA",
+  /* Tablespace */
+  nullptr);
 
 PFS_engine_table_share table_variables_info::m_share = {
-  {C_STRING_WITH_LEN("variables_info")},
   &pfs_readonly_world_acl,
   table_variables_info::create,
   NULL, /* write_row */
@@ -93,13 +71,15 @@ PFS_engine_table_share table_variables_info::m_share = {
   table_variables_info::get_row_count,
   sizeof(pos_t),
   &m_table_lock,
-  &m_field_def,
-  false, /* checked */
-  true   /* perpetual */
+  &m_table_def,
+  true, /* perpetual */
+  PFS_engine_table_proxy(),
+  {0},
+  false /* m_in_purgatory */
 };
 
 PFS_engine_table *
-table_variables_info::create(void)
+table_variables_info::create(PFS_engine_table_share *)
 {
   return new table_variables_info();
 }
@@ -241,23 +221,43 @@ table_variables_info::read_row_values(TABLE *table,
         set_field_varchar_utf8(
           f, m_row.m_variable_path, m_row.m_variable_path_length);
         break;
-      case 3: /* VARIABLE_MIN_VALUE */
+      case 3: /* MIN_VALUE */
         set_field_varchar_utf8(f, m_row.m_min_value, m_row.m_min_value_length);
         break;
-      case 4: /* VARIABLE_MAX_VALUE */
+      case 4: /* MAX_VALUE */
         set_field_varchar_utf8(f, m_row.m_max_value, m_row.m_max_value_length);
         break;
-      case 5: /* VARIABLE_SET_TIME */
+      case 5: /* SET_TIME */
         if (m_row.m_set_time != 0)
+        {
           set_field_timestamp(f, m_row.m_set_time);
+        }
+        else
+        {
+          f->set_null();
+        }
         break;
-      case 6: /* VARIABLE_SET_USER */
-        set_field_char_utf8(
-          f, m_row.m_set_user_str, m_row.m_set_user_str_length);
+      case 6: /* SET_USER */
+        if (m_row.m_set_user_str_length != 0)
+        {
+          set_field_char_utf8(
+            f, m_row.m_set_user_str, m_row.m_set_user_str_length);
+        }
+        else
+        {
+          f->set_null();
+        }
         break;
-      case 7: /* VARIABLE_SET_HOST */
-        set_field_char_utf8(
-          f, m_row.m_set_host_str, m_row.m_set_host_str_length);
+      case 7: /* SET_HOST */
+        if (m_row.m_set_host_str_length != 0)
+        {
+          set_field_char_utf8(
+            f, m_row.m_set_host_str, m_row.m_set_host_str_length);
+        }
+        else
+        {
+          f->set_null();
+        }
         break;
 
       default:

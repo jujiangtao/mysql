@@ -1,51 +1,64 @@
 /* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "dd/sdi_file.h"
+#include "sql/dd/sdi_file.h"
 
 #include "my_config.h"
 
 #include <errno.h>
 #include <fcntl.h>
 #include <stddef.h>
+#include <string.h>
 #include <sys/types.h>
+#include <memory>
+#include <ostream>
+#include <string>
+
+#include "mysql/components/services/psi_file_bits.h"
+#include "mysql/udf_registration_types.h"
 
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
 
-#include "dd/impl/sdi_utils.h"      // dd::sdi_util::checked_return
-#include "dd/types/entity_object.h" // dd::Entity_object
-#include "dd/types/schema.h"        // dd::Schema
-#include "dd/types/table.h"         // dd::Table
-#include "handler.h"
 #include "lex_string.h"
 #include "m_ctype.h"
 #include "my_dbug.h"
+#include "my_dir.h"
 #include "my_inttypes.h"
 #include "my_io.h"
 #include "my_sys.h"
 #include "my_thread_local.h"
 #include "mysql/psi/mysql_file.h" // mysql_file_create
-#include "mysql/psi/psi_base.h"
-#include "mysqld.h"               // is_secure_file_path
 #include "mysqld_error.h"
-#include "psi_memory_key.h"       // key_memory_DD_import
-#include "sql_const.h"            // CREATE_MODE
-#include "sql_table.h"            // build_table_filename
-#include "table.h"
+#include "sql/dd/impl/sdi.h"        // dd::Sdi_type
+#include "sql/dd/impl/sdi_utils.h"  // dd::sdi_util::checked_return
+#include "sql/dd/types/schema.h"    // dd::Schema
+#include "sql/dd/types/table.h"     // dd::Table
+#include "sql/key.h"
+#include "sql/mysqld.h"           // is_secure_file_path
+#include "sql/sql_class.h"
+#include "sql/sql_const.h"        // CREATE_MODE
+#include "sql/sql_table.h"        // build_table_filename
 
 
 /**
@@ -62,7 +75,7 @@ using namespace dd::sdi_utils;
 extern PSI_file_key key_file_sdi;
 namespace {
 
-bool write_sdi_file(const dd::String_type &fname, const MYSQL_LEX_CSTRING &sdi)
+bool write_sdi_file(const dd::String_type &fname, const dd::Sdi_type &sdi)
 {
   File sdif= mysql_file_create(key_file_sdi, fname.c_str(), CREATE_MODE,
                                O_WRONLY | O_TRUNC, MYF(MY_FAE));
@@ -75,8 +88,8 @@ bool write_sdi_file(const dd::String_type &fname, const MYSQL_LEX_CSTRING &sdi)
   }
 
   size_t bw= mysql_file_write(sdif,
-                              reinterpret_cast<const uchar*>(sdi.str),
-                              sdi.length, MYF(MY_FNABP));
+                              reinterpret_cast<const uchar*>(sdi.c_str()),
+                              sdi.length(), MYF(MY_FNABP));
 
   if (bw == MY_FILE_ERROR)
   {
@@ -263,12 +276,12 @@ bool expand_sdi_pattern(const Dir_pat_tuple &dpt,
 namespace dd {
 namespace sdi_file {
 
-String_type sdi_filename(const dd::Entity_object *eo,
+String_type sdi_filename(Object_id id, const String_type &entity_name,
                          const String_type &schema)
 {
   typedef String_type::const_iterator CHARIT;
-  const CHARIT begin= eo->name().begin();
-  const CHARIT end= eo->name().end();
+  const CHARIT begin= entity_name.begin();
+  const CHARIT end= entity_name.end();
   CHARIT i= begin;
   size_t count= 0;
 
@@ -281,28 +294,23 @@ String_type sdi_filename(const dd::Entity_object *eo,
   }
 
   Stringstream_type fnamestr;
-  fnamestr << String_type(begin, i) << "_" << eo->id();
+  fnamestr << String_type(begin, i) << "_" << id;
 
   char path[FN_REFLEN+1];
   bool was_truncated= false;
   build_table_filename(path, sizeof(path) - 1, schema.c_str(),
                        fnamestr.str().c_str(),
-                       ".SDI", 0, &was_truncated);
+                       EXT.c_str(), 0, &was_truncated);
   DBUG_ASSERT(!was_truncated);
 
   return String_type(path);
 }
 
-bool store(THD*, const MYSQL_LEX_CSTRING &sdi, const dd::Schema *schema)
+bool store_tbl_sdi(const dd::Sdi_type &sdi, const dd::Table &table,
+                   const dd::Schema &schema)
 {
-  return checked_return(write_sdi_file(sdi_filename(schema, ""), sdi));
-}
-
-bool store(THD*, handlerton*, const MYSQL_LEX_CSTRING &sdi, const dd::Table *table,
-           const dd::Schema *schema)
-{
-  return checked_return(write_sdi_file(sdi_filename(table,
-                                                    schema->name()), sdi));
+  return checked_return(write_sdi_file(sdi_filename(table.id(), table.name(),
+                                                    schema.name()), sdi));
 }
 
 bool remove(const String_type &fname)
@@ -327,16 +335,9 @@ static bool remove_sdi_file_if_exists(const String_type &fname)
   return checked_return(remove(fname));
 }
 
-bool remove(THD*, const dd::Schema *schema)
+bool drop_tbl_sdi(const dd::Table &table, const dd::Schema &schema)
 {
-  String_type sdi_fname= sdi_filename(schema, "");
-  return checked_return(remove_sdi_file_if_exists(sdi_fname));
-}
-
-bool remove(THD*, handlerton*, const dd::Table *table,
-            const dd::Schema *schema)
-{
-  String_type sdi_fname= sdi_filename(table, schema->name());
+  String_type sdi_fname= sdi_filename(table.id(), table.name(), schema.name());
   return checked_return(remove_sdi_file_if_exists(sdi_fname));
 }
 

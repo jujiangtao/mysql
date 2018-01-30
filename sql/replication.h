@@ -1,24 +1,31 @@
 /* Copyright (c) 2008, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef REPLICATION_H
 #define REPLICATION_H
 
-#include "handler.h"                  // enum_tx_isolation
 #include "my_thread_local.h"          // my_thread_id
 #include "mysql/psi/mysql_thread.h"   // mysql_mutex_t
+#include "sql/handler.h"              // enum_tx_isolation
 
 typedef struct st_mysql MYSQL;
 typedef struct st_io_cache IO_CACHE;
@@ -33,6 +40,22 @@ class THD;
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/**
+  Struct to share server ssl variables
+*/
+struct st_server_ssl_variables
+{
+  bool have_ssl_opt;
+  char *ssl_ca;
+  char *ssl_capath;
+  char *tls_version;
+  char *ssl_cert;
+  char *ssl_cipher;
+  char *ssl_key;
+  char *ssl_crl;
+  char *ssl_crlpath;
+};
 
 /**
    Transaction observer flags.
@@ -546,6 +569,16 @@ typedef int (*thread_start_t)(Binlog_relay_IO_param *param);
 typedef int (*thread_stop_t)(Binlog_relay_IO_param *param);
 
 /**
+  This callback is called when a relay log consumer thread starts
+
+  @param param Observer common parameter
+
+  @retval 0 Sucess
+  @retval 1 Failure
+*/
+typedef int (*applier_start_t)(Binlog_relay_IO_param *param);
+
+/**
   This callback is called when a relay log consumer thread stops
 
   @param param   Observer common parameter
@@ -611,6 +644,20 @@ typedef int (*after_queue_event_t)(Binlog_relay_IO_param *param,
 */
 typedef int (*after_reset_slave_t)(Binlog_relay_IO_param *param);
 
+
+/**
+  This callback is called before event gets applied
+
+  @param param  Observer common parameter
+  @param reason Event skip reason
+
+  @retval 0 Success
+  @retval 1 Failure
+*/
+typedef int (*applier_log_event_t)(Binlog_relay_IO_param *param,
+                                   Trans_param *trans_param,
+                                   int& out);
+
 /**
    Observes and extends the service of slave IO thread.
 */
@@ -619,11 +666,13 @@ typedef struct Binlog_relay_IO_observer {
 
   thread_start_t thread_start;
   thread_stop_t thread_stop;
+  applier_start_t applier_start;
   applier_stop_t applier_stop;
   before_request_transmit_t before_request_transmit;
   after_read_event_t after_read_event;
   after_queue_event_t after_queue_event;
   after_reset_slave_t after_reset_slave;
+  applier_log_event_t applier_log_event;
 } Binlog_relay_IO_observer;
 
 

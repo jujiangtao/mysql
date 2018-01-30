@@ -1,19 +1,26 @@
 /***********************************************************************
 
-Copyright (c) 2011, 2016, Oracle and/or its affiliates. All rights reserved.
+Copyright (c) 2011, 2017, Oracle and/or its affiliates. All rights reserved.
 
-This program is free software; you can redistribute it and/or modify it
-under the terms of the GNU General Public License as published by the
-Free Software Foundation; version 2 of the License.
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License, version 2.0,
+as published by the Free Software Foundation.
 
-This program is distributed in the hope that it will be useful, but
-WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
-Public License for more details.
+This program is also distributed with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have included with MySQL.
 
-You should have received a copy of the GNU General Public License along
-with this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License, version 2.0, for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 ***********************************************************************/
 
@@ -161,7 +168,8 @@ static
 bool
 innodb_read_cache_policy(
 /*=====================*/
-	meta_cfg_info_t*	item)	/*!< in: meta info structure */
+	meta_cfg_info_t*	item,	/*!< in: meta info structure */
+	void*			thd)	/*!< in/out: MySQL THD */
 {
 	ib_trx_t		ib_trx;
 	ib_crsr_t		crsr = NULL;
@@ -173,7 +181,7 @@ innodb_read_cache_policy(
 	ib_ulint_t		data_len;
 	ib_col_meta_t		col_meta;
 
-	ib_trx = ib_cb_trx_begin(IB_TRX_READ_COMMITTED, true, false);
+	ib_trx = ib_cb_trx_begin(IB_TRX_READ_COMMITTED, true, false, thd);
 
 	err = innodb_api_begin(NULL, MCI_CFG_DB_NAME,
 			       MCI_CFG_CACHE_POLICIES, NULL, ib_trx,
@@ -278,7 +286,8 @@ static
 bool
 innodb_read_config_option(
 /*======================*/
-	meta_cfg_info_t*	item)	/*!< in: meta info structure */
+	meta_cfg_info_t*	item,	/*!< in: meta info structure */
+	void*			thd)	/*!< in/out: MySQL THD */
 {
 	ib_trx_t		ib_trx;
 	ib_crsr_t		crsr = NULL;
@@ -291,7 +300,7 @@ innodb_read_config_option(
 	ib_col_meta_t		col_meta;
 	int			current_option = -1;
 
-	ib_trx = ib_cb_trx_begin(IB_TRX_READ_COMMITTED, true, false);
+	ib_trx = ib_cb_trx_begin(IB_TRX_READ_COMMITTED, true, false, thd);
 	err = innodb_api_begin(NULL, MCI_CFG_DB_NAME,
 			       MCI_CFG_CONFIG_OPTIONS, NULL, ib_trx,
 			       &crsr, &idx_crsr, IB_LOCK_S);
@@ -413,8 +422,9 @@ innodb_config_add_item(
 /*===================*/
 	ib_tpl_t	tpl,		/*!< in: container row we are fetching
 					row from */
-	hash_table_t*	eng_meta_hash)	/*!< in/out: hash table to insert
+	hash_table_t*	eng_meta_hash,	/*!< in/out: hash table to insert
 					the row */
+	void*		thd)		/*!< in/out: MySQL THD */
 {
 	ib_err_t		err = DB_SUCCESS;
 	int			n_cols;
@@ -482,7 +492,7 @@ innodb_config_add_item(
 	item->index_info.idx_name = my_strdupl((char*)innodb_cb_col_get_value(
 						tpl, i), data_len);
 
-	if (!innodb_verify(item)) {
+	if (!innodb_verify(item, thd)) {
 		err = DB_ERROR;
 		goto func_exit;
 	}
@@ -506,7 +516,8 @@ instantiates the metadata hash table.
 meta_cfg_info_t*
 innodb_config_meta_hash_init(
 /*=========================*/
-	hash_table_t*	meta_hash)	/*!< in/out: InnoDB Memcached engine */
+	hash_table_t*	meta_hash,	/*!< in/out: InnoDB Memcached engine */
+	void*		thd)		/*!< in/out: MySQL THD */
 {
 	ib_trx_t		ib_trx;
 	ib_crsr_t		crsr = NULL;
@@ -515,7 +526,7 @@ innodb_config_meta_hash_init(
 	ib_err_t		err = DB_SUCCESS;
 	meta_cfg_info_t*        default_item = NULL;
 
-	ib_trx = ib_cb_trx_begin(IB_TRX_READ_COMMITTED, true, false);
+	ib_trx = ib_cb_trx_begin(IB_TRX_READ_COMMITTED, true, false, thd);
 	err = innodb_api_begin(NULL, MCI_CFG_DB_NAME,
 			       MCI_CFG_CONTAINER_TABLE, NULL, ib_trx,
 			       &crsr, &idx_crsr, IB_LOCK_S);
@@ -549,7 +560,7 @@ innodb_config_meta_hash_init(
 			goto func_exit;
 		}
 
-		item = innodb_config_add_item(tpl, meta_hash);
+		item = innodb_config_add_item(tpl, meta_hash, thd);
 
 		/* First initialize default setting to be the first row
 		of the table */
@@ -602,7 +613,8 @@ innodb_config_container(
 /*====================*/
 	const char*		name,	/*!< in: option name to look for */
 	size_t			name_len,/*!< in: option name length */
-	hash_table_t*		meta_hash) /*!< in: engine hash table */
+	hash_table_t*		meta_hash, /*!< in: engine hash table */
+	void*			thd)	/*!< in/out: MySQL THD */
 {
 	ib_trx_t		ib_trx;
 	ib_crsr_t		crsr = NULL;
@@ -632,7 +644,7 @@ innodb_config_container(
 		}
 	}
 
-	ib_trx = ib_cb_trx_begin(IB_TRX_READ_COMMITTED, true, false);
+	ib_trx = ib_cb_trx_begin(IB_TRX_READ_COMMITTED, true, false, thd);
 	err = innodb_api_begin(NULL, MCI_CFG_DB_NAME,
 			       MCI_CFG_CONTAINER_TABLE, NULL, ib_trx,
 			       &crsr, &idx_crsr, IB_LOCK_S);
@@ -746,7 +758,7 @@ innodb_config_container(
 	item->index_info.idx_name = my_strdupl((char*)innodb_cb_col_get_value(
 						read_tpl, i), data_len);
 
-	if (!innodb_verify(item)) {
+	if (!innodb_verify(item, thd)) {
 		err = DB_ERROR;
 	}
 
@@ -1121,20 +1133,24 @@ func_exit:
 	return(err);
 }
 
-/**********************************************************************//**
-This function verifies the table configuration information, and fills
+/** This function verifies the table configuration information, and fills
 in columns used for memcached functionalities (cas, exp etc.)
+@param[in]	info	meta info structure
+@param[in,out]	thd	MySQL THD
 @return true if everything works out fine */
 bool
 innodb_verify(
 /*==========*/
-	meta_cfg_info_t*       info)	/*!< in: meta info structure */
+	meta_cfg_info_t*	info,
+	void*			thd)
 {
 	ib_crsr_t	crsr = NULL;
 	char            table_name[MAX_TABLE_NAME_LEN + MAX_DATABASE_NAME_LEN];
 	char*		dbname;
 	char*		name;
 	ib_err_t	err = DB_SUCCESS;
+	ib_trx_t	ib_trx = ib_cb_trx_begin(IB_TRX_READ_COMMITTED,
+						 false, false, thd);
 
 	dbname = info->col_info[CONTAINER_DB].col_name;
 	name = info->col_info[CONTAINER_TABLE].col_name;
@@ -1148,7 +1164,7 @@ innodb_verify(
 	snprintf(table_name, sizeof(table_name), "%s/%s", dbname, name);
 #endif
 
-	err = innodb_cb_open_table(table_name, NULL, &crsr);
+	err = innodb_cb_open_table(table_name, ib_trx, &crsr);
 
 	/* Mapped InnoDB table must be able to open */
 	if (err != DB_SUCCESS) {
@@ -1171,6 +1187,9 @@ func_exit:
 	if (crsr) {
 		innodb_cb_cursor_close(crsr);
 	}
+
+	innodb_cb_trx_commit(ib_trx);
+	ib_cb_trx_release(ib_trx);
 
 	return(err == DB_SUCCESS);
 }
@@ -1195,13 +1214,14 @@ innodb_config(
 {
 	meta_cfg_info_t*	item;
 	bool			success;
+	void*			thd = handler_create_thd(false);
 
 	if (*meta_hash == NULL) {
 		*meta_hash = hash_create(100);
 	}
 
 	if (!name) {
-		item = innodb_config_meta_hash_init(*meta_hash);
+		item = innodb_config_meta_hash_init(*meta_hash, thd);
 	} else {
 		ib_ulint_t	fold;
 
@@ -1212,25 +1232,30 @@ innodb_config(
 			     && strcmp(name, item->col_info[0].col_name) == 0));
 
 		if (item) {
+			handler_close_thd(thd);
 			return(item);
 		}
 
-		item = innodb_config_container(name, name_len, *meta_hash);
+		item = innodb_config_container(name, name_len, *meta_hash, thd);
 	}
 
 	if (!item) {
+		handler_close_thd(thd);
 		return(NULL);
 	}
 
 	/* Following two configure operations are optional, and can be
 	failed */
-	success = innodb_read_cache_policy(item);
+	success = innodb_read_cache_policy(item, thd);
 
 	if (!success) {
+		handler_close_thd(thd);
 		return(NULL);
 	}
 
-	success = innodb_read_config_option(item);
+	success = innodb_read_config_option(item, thd);
+
+	handler_close_thd(thd);
 
 	if (!success) {
 		return(NULL);

@@ -2,44 +2,52 @@
    Copyright (c) 2005, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA */
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "sql/sql_binlog.h"
 
 #include <stddef.h>
-#include <stdint.h>
 #include <sys/types.h>
+#include <utility>
 
-#include "auth_acls.h"
-#include "auth_common.h"                        // check_global_access
 #include "base64.h"                             // base64_needed_decoded_length
 #include "binlog_event.h"
 #include "lex_string.h"
-#include "log_event.h"                          // Format_description_log_event
+#include "m_string.h"
 #include "my_byteorder.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_sys.h"
 #include "mysql/service_mysql_alloc.h"
+#include "mysql/udf_registration_types.h"
 #include "mysqld_error.h"
-#include "psi_memory_key.h"
-#include "rpl_info_factory.h"                   // Rpl_info_factory
-#include "rpl_info_handler.h"
-#include "rpl_rli.h"                            // Relay_log_info
-#include "sql_class.h"
-#include "sql_lex.h"
-#include "sql_udf.h"
-#include "system_variables.h"
+#include "sql/auth/auth_acls.h"
+#include "sql/auth/sql_security_ctx.h"
+#include "sql/log_event.h"                      // Format_description_log_event
+#include "sql/psi_memory_key.h"
+#include "sql/rpl_info_factory.h"               // Rpl_info_factory
+#include "sql/rpl_info_handler.h"
+#include "sql/rpl_rli.h"                        // Relay_log_info
+#include "sql/sql_class.h"
+#include "sql/sql_lex.h"
+#include "sql/system_variables.h"
 
 
 /**
@@ -52,31 +60,15 @@ static int check_event_type(int type, Relay_log_info *rli)
 {
   Format_description_log_event *fd_event= rli->get_rli_description_event();
 
-  /*
-    Convert event type id of certain old versions (see comment in
-    Format_description_log_event::Format_description_log_event(char*,...)).
-  */
-  if (fd_event && fd_event->event_type_permutation)
-  {
-#ifndef DBUG_OFF
-    Log_event_type new_type;
-    new_type= (Log_event_type) fd_event->event_type_permutation[type];
-    DBUG_PRINT("info", ("converting event type %d to %d (%s)",
-                        type, new_type, Log_event::get_type_str(new_type)));
-#endif
-    type= fd_event->event_type_permutation[type];
-  }
-
   switch (type)
   {
-  case binary_log::START_EVENT_V3:
   case binary_log::FORMAT_DESCRIPTION_EVENT:
     /*
       We need a preliminary FD event in order to parse the FD event,
       if we don't already have one.
     */
     if (!fd_event)
-      rli->set_rli_description_event(new Format_description_log_event(4));
+      rli->set_rli_description_event(new Format_description_log_event());
 
     /* It is always allowed to execute FD events. */
     return 0;
@@ -89,6 +81,7 @@ static int check_event_type(int type, Relay_log_info *rli)
   case binary_log::WRITE_ROWS_EVENT_V1:
   case binary_log::UPDATE_ROWS_EVENT_V1:
   case binary_log::DELETE_ROWS_EVENT_V1:
+  case binary_log::PARTIAL_UPDATE_ROWS_EVENT:
     /*
       Row events are only allowed if a Format_description_event has
       already been seen.

@@ -21,7 +21,7 @@
 # For crash recovery test on default change please run the ibtest             #
 ###############################################################################
 
--- source include/not_embedded.inc
+--source include/not_valgrind.inc
 
 echo '#________________________VAR_05_table_definition_cache__________________#'
 echo '##'
@@ -33,8 +33,8 @@ SELECT COUNT(@@GLOBAL.table_definition_cache);
 --echo 1 Expected
 
 SET @@GLOBAL.table_definition_cache=DEFAULT;
-SELECT IF (@@open_files_limit < 5000, 1400, @@GLOBAL.table_definition_cache);
---echo 1400 Expected
+SELECT IF (@@open_files_limit < 5000, 2000, @@GLOBAL.table_definition_cache);
+--echo 2000 Expected
 
 
 --echo '#---------------------WL6372_VAR_5_02----------------------#'
@@ -55,8 +55,8 @@ SELECT @@GLOBAL.table_definition_cache;
 --echo 2000 Expected
 
 SET @@GLOBAL.table_definition_cache=DEFAULT;
-SELECT IF (@@open_files_limit < 5000, 1400, @@GLOBAL.table_definition_cache);
---echo 1400 Expected
+SELECT IF (@@open_files_limit < 5000, 2000, @@GLOBAL.table_definition_cache);
+--echo 2000 Expected
 
 
 --echo '#---------------------WL6372_VAR_5_03----------------------#'
@@ -79,8 +79,8 @@ SET @@GLOBAL.table_definition_cache=1;
 SET @@GLOBAL.table_definition_cache=DEFAULT;
 
 
-SELECT IF (@@open_files_limit < 5000, 1400, @@GLOBAL.table_definition_cache);
---echo 1400 Expected
+SELECT IF (@@open_files_limit < 5000, 2000, @@GLOBAL.table_definition_cache);
+--echo 2000 Expected
 
 --echo '#---------------------WL6372_VAR_5_04----------------------#'
 #################################################################
@@ -145,7 +145,7 @@ flush status;
 
 # With new data dictionary (DD) introduced, the size of table definition cache
 # is bit more than expected. 
-set @dd_definitions = 13;
+set @dd_definitions = 14;
 
 --disable_warnings
 set @Open_table_definitions = (select variable_value from performance_schema.session_status where variable_name ='Open_table_definitions') + @dd_definitions;

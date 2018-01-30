@@ -1,13 +1,20 @@
 /* Copyright (c) 2005, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -22,11 +29,14 @@
 
 #ifndef MYSQL_ABI_CHECK
 #include <stddef.h>
+
 #include "mysql_version.h" /* MYSQL_VERSION_ID */
 #ifdef __cplusplus
-#include "sql_plugin.h"  // plugin_thdvar_safe_update
+#include "sql/sql_plugin.h" // plugin_thdvar_safe_update
 #endif
 #endif
+
+#include "status_var.h"
 
 /*
   On Windows, exports from DLL need to be declared.
@@ -87,7 +97,7 @@ typedef struct st_mysql_xid MYSQL_XID;
   Plugin API. Common for all plugin types.
 */
 
-#define MYSQL_PLUGIN_INTERFACE_VERSION 0x0107
+#define MYSQL_PLUGIN_INTERFACE_VERSION 0x0109
 
 /*
   The allowable types of plugins
@@ -103,7 +113,8 @@ typedef struct st_mysql_xid MYSQL_XID;
 #define MYSQL_VALIDATE_PASSWORD_PLUGIN  8   /* validate password plugin type */
 #define MYSQL_GROUP_REPLICATION_PLUGIN  9  /* The Group Replication plugin */
 #define MYSQL_KEYRING_PLUGIN         10  /* The Keyring plugin type   */
-#define MYSQL_MAX_PLUGIN_TYPE_NUM    11  /* The number of plugin types   */
+#define MYSQL_CLONE_PLUGIN           11  /* The Clone plugin type   */
+#define MYSQL_MAX_PLUGIN_TYPE_NUM    12  /* The number of plugin types   */
 
 /* We use the following strings to define licenses for plugins */
 #define PLUGIN_LICENSE_PROPRIETARY 0
@@ -139,58 +150,7 @@ __MYSQL_DECLARE_PLUGIN(NAME, \
                  builtin_ ## NAME ## _sizeof_struct_st_plugin, \
                  builtin_ ## NAME ## _plugin)
 
-#define mysql_declare_plugin_end ,{0,0,0,0,0,0,0,0,0,0,0,0,0}}
-
-/**
-  Declarations for SHOW STATUS support in plugins
-*/
-enum enum_mysql_show_type
-{
-  SHOW_UNDEF, SHOW_BOOL,
-  SHOW_INT,        ///< shown as _unsigned_ int
-  SHOW_LONG,       ///< shown as _unsigned_ long
-  SHOW_LONGLONG,   ///< shown as _unsigned_ longlong
-  SHOW_CHAR, SHOW_CHAR_PTR,
-  SHOW_ARRAY, SHOW_FUNC, SHOW_DOUBLE
-#ifdef MYSQL_SERVER
-  /*
-    This include defines server-only values of the enum.
-    Using them in plugins is not supported.
-  */
-  #include "sql_plugin_enum.h"
-#endif
-};
-
-/**
-  Status variable scope.
-  Only GLOBAL status variable scope is available in plugins.
-*/
-enum enum_mysql_show_scope
-{
-  SHOW_SCOPE_UNDEF,
-  SHOW_SCOPE_GLOBAL
-#ifdef MYSQL_SERVER
-  /* Server-only values. Not supported in plugins. */
-  ,
-  SHOW_SCOPE_SESSION,
-  SHOW_SCOPE_ALL
-#endif
-};
-
-/**
-  SHOW STATUS Server status variable
-*/
-struct st_mysql_show_var
-{
-  const char *name;
-  char *value;
-  enum enum_mysql_show_type type;
-  enum enum_mysql_show_scope scope;
-};
-
-#define SHOW_VAR_MAX_NAME_LEN 64
-#define SHOW_VAR_FUNC_BUFF_SIZE 1024
-typedef int (*mysql_show_var_func)(MYSQL_THD, struct st_mysql_show_var*, char *);
+#define mysql_declare_plugin_end ,{0,0,0,0,0,0,0,0,0,0,0,0,0,0}}
 
 
 /*
@@ -224,6 +184,14 @@ typedef int (*mysql_show_var_func)(MYSQL_THD, struct st_mysql_show_var*, char *)
 #define PLUGIN_VAR_OPCMDARG     0x2000 /* Argument optional for cmd line */
 #define PLUGIN_VAR_NODEFAULT    0x4000 /* SET DEFAULT is prohibited */
 #define PLUGIN_VAR_MEMALLOC     0x8000 /* String needs memory allocated */
+#define PLUGIN_VAR_NOPERSIST    0x10000 /* SET PERSIST_ONLY is prohibited
+                                           for read only variables */
+/**
+  There can be some variables which needs to be set before plugin is loaded but
+  not after plugin is loaded. ex: GR specific variables. Below flag must be set
+  for these kind of variables.
+*/
+#define PLUGIN_VAR_PERSIST_AS_READ_ONLY    0x20000
 
 struct st_mysql_sys_var;
 struct st_mysql_value;
@@ -277,7 +245,8 @@ typedef void (*mysql_var_update_func)(MYSQL_THD thd,
         (PLUGIN_VAR_READONLY | PLUGIN_VAR_NOSYSVAR | \
          PLUGIN_VAR_NOCMDOPT | PLUGIN_VAR_NOCMDARG | \
          PLUGIN_VAR_OPCMDARG | PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_MEMALLOC | \
-         PLUGIN_VAR_NODEFAULT)
+         PLUGIN_VAR_NODEFAULT | PLUGIN_VAR_NOPERSIST | \
+         PLUGIN_VAR_PERSIST_AS_READ_ONLY)
 
 #define MYSQL_PLUGIN_VAR_HEADER \
   int flags;                    \
@@ -484,8 +453,12 @@ struct st_mysql_plugin
   const char *author;   /* plugin author (for I_S.PLUGINS)              */
   const char *descr;    /* general descriptive text (for I_S.PLUGINS)   */
   int license;          /* the plugin license (PLUGIN_LICENSE_XXX)      */
-  int (*init)(MYSQL_PLUGIN);  /* the function to invoke when plugin is loaded */
-  int (*deinit)(MYSQL_PLUGIN);/* the function to invoke when plugin is unloaded */
+  /** Function to invoke when plugin is loaded. */
+  int (*init)(MYSQL_PLUGIN);
+  /** Function to invoke when plugin is uninstalled. */
+  int (*check_uninstall)(MYSQL_PLUGIN);
+  /** Function to invoke when plugin is unloaded. */
+  int (*deinit)(MYSQL_PLUGIN);
   unsigned int version; /* plugin version (for I_S.PLUGINS)             */
   struct st_mysql_show_var *status_vars;
   struct st_mysql_sys_var **system_vars;
@@ -705,19 +678,6 @@ unsigned long thd_get_thread_id(const MYSQL_THD thd);
   @param xid  location where identifier is stored
 */
 void thd_get_xid(const MYSQL_THD thd, MYSQL_XID *xid);
-
-/**
-  Invalidate the query cache for a given table.
-
-  @param thd         user thread connection handle
-  @param key         databasename/tablename in the canonical format.
-  @param key_length  length of key in bytes, including the PATH separator
-  @param using_trx   flag: TRUE if using transactions, FALSE otherwise
-*/
-void mysql_query_cache_invalidate4(MYSQL_THD thd,
-                                   const char *key, unsigned int key_length,
-                                   int using_trx);
-
 
 /**
   Provide a handler data getter to simplify coding

@@ -1,20 +1,27 @@
-#ifndef GIS__GEOMETRIES_CS_H_INCLUDED
-#define GIS__GEOMETRIES_CS_H_INCLUDED
+#ifndef SQL_GIS_GEOMETRIES_CS_H_INCLUDED
+#define SQL_GIS_GEOMETRIES_CS_H_INCLUDED
 
 // Copyright (c) 2017, Oracle and/or its affiliates. All rights reserved.
 //
-// This program is free software; you can redistribute it and/or modify it under
-// the terms of the GNU General Public License as published by the Free Software
-// Foundation; version 2 of the License.
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License, version 2.0,
+// as published by the Free Software Foundation.
 //
-// This program is distributed in the hope that it will be useful, but WITHOUT
-// ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-// FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
-// details.
+// This program is also distributed with certain software (including
+// but not limited to OpenSSL) that is licensed under separate terms,
+// as designated in a particular file or component or in included license
+// documentation.  The authors of MySQL hereby grant you an additional
+// permission to link the program and your derivative works with the
+// separately licensed software that they have included with MySQL.
 //
-// You should have received a copy of the GNU General Public License along with
-// this program; if not, write to the Free Software Foundation, 51 Franklin
-// Street, Suite 500, Boston, MA 02110-1335 USA.
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License, version 2.0, for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA.
 
 /// @file
 ///
@@ -30,8 +37,8 @@
 
 #include <vector>
 
-#include "geometries.h"
-#include "malloc_allocator.h"
+#include "sql/gis/geometries.h"
+#include "sql/malloc_allocator.h"
 
 namespace gis {
 
@@ -76,10 +83,15 @@ class Cartesian_linestring : public Linestring {
     return Coordinate_system::kCartesian;
   }
   bool accept(Geometry_visitor *v) override;
+  void push_back(const Point &pt) override;
   void push_back(Point &&pt) override;
   bool empty() const override;
   std::size_t size() const override { return m_points.size(); }
-  virtual void flip() override;
+  void resize(std::size_t count) { m_points.resize(count); }
+  void clear() { m_points.clear(); }
+
+  Cartesian_point &back() { return m_points.back(); }
+  const Cartesian_point &back() const { return m_points.back(); }
 
   iterator begin() noexcept { return m_points.begin(); }
   const_iterator begin() const noexcept { return m_points.begin(); }
@@ -87,8 +99,10 @@ class Cartesian_linestring : public Linestring {
   iterator end() noexcept { return m_points.end(); }
   const_iterator end() const noexcept { return m_points.end(); }
 
-  Point &operator[](std::size_t i) override { return m_points[i]; }
-  const Point &operator[](std::size_t i) const override { return m_points[i]; }
+  Cartesian_point &operator[](std::size_t i) override { return m_points[i]; }
+  const Cartesian_point &operator[](std::size_t i) const override {
+    return m_points[i];
+  }
 };
 
 /// A geographic (ellipsoidal) 2d linestring.
@@ -114,10 +128,15 @@ class Geographic_linestring : public Linestring {
     return Coordinate_system::kGeographic;
   }
   bool accept(Geometry_visitor *v) override;
+  void push_back(const Point &pt) override;
   void push_back(Point &&pt) override;
   bool empty() const override;
   std::size_t size() const override { return m_points.size(); }
-  virtual void flip() override;
+  void resize(std::size_t count) { m_points.resize(count); }
+  void clear() { m_points.clear(); }
+
+  Geographic_point &back() { return m_points.back(); }
+  const Geographic_point &back() const { return m_points.back(); }
 
   iterator begin() noexcept { return m_points.begin(); }
   const_iterator begin() const noexcept { return m_points.begin(); }
@@ -125,8 +144,10 @@ class Geographic_linestring : public Linestring {
   iterator end() noexcept { return m_points.end(); }
   const_iterator end() const noexcept { return m_points.end(); }
 
-  Point &operator[](std::size_t i) override { return m_points[i]; }
-  const Point &operator[](std::size_t i) const override { return m_points[i]; }
+  Geographic_point &operator[](std::size_t i) override { return m_points[i]; }
+  const Geographic_point &operator[](std::size_t i) const override {
+    return m_points[i];
+  }
 };
 
 /// A Cartesian 2d linear ring.
@@ -138,17 +159,19 @@ class Cartesian_linearring : public Cartesian_linestring, public Linearring {
   }
   bool accept(Geometry_visitor *v) override;
   bool is_empty() const override { return Cartesian_linestring::is_empty(); }
+  void push_back(const gis::Point &pt) override {
+    Cartesian_linestring::push_back(pt);
+  }
   void push_back(gis::Point &&pt) override {
     Cartesian_linestring::push_back(std::forward<Point &&>(pt));
   }
   bool empty() const override { return Cartesian_linestring::empty(); }
   std::size_t size() const override { return Cartesian_linestring::size(); }
-  void flip() override { Cartesian_linestring::flip(); }
 
-  Point &operator[](std::size_t i) override {
+  Cartesian_point &operator[](std::size_t i) override {
     return Cartesian_linestring::operator[](i);
   }
-  const Point &operator[](std::size_t i) const override {
+  const Cartesian_point &operator[](std::size_t i) const override {
     return Cartesian_linestring::operator[](i);
   }
 };
@@ -162,17 +185,19 @@ class Geographic_linearring : public Geographic_linestring, public Linearring {
   }
   bool accept(Geometry_visitor *v) override;
   bool is_empty() const override { return Geographic_linestring::is_empty(); }
+  void push_back(const gis::Point &pt) override {
+    Geographic_linestring::push_back(pt);
+  }
   void push_back(gis::Point &&pt) override {
     Geographic_linestring::push_back(std::forward<Point &&>(pt));
   }
   bool empty() const override { return Geographic_linestring::empty(); }
   std::size_t size() const override { return Geographic_linestring::size(); }
-  void flip() override { Geographic_linestring::flip(); }
 
-  Point &operator[](std::size_t i) override {
+  Geographic_point &operator[](std::size_t i) override {
     return Geographic_linestring::operator[](i);
   }
-  const Point &operator[](std::size_t i) const override {
+  const Geographic_point &operator[](std::size_t i) const override {
     return Geographic_linestring::operator[](i);
   }
 };
@@ -195,6 +220,7 @@ class Cartesian_polygon : public Polygon {
     return Coordinate_system::kCartesian;
   }
   bool accept(Geometry_visitor *v) override;
+  void push_back(const Linearring &lr) override;
   void push_back(Linearring &&lr) override;
   bool empty() const override;
 
@@ -243,6 +269,7 @@ class Geographic_polygon : public Polygon {
     return Coordinate_system::kGeographic;
   }
   bool accept(Geometry_visitor *v) override;
+  void push_back(const Linearring &lr) override;
   void push_back(Linearring &&lr) override;
   bool empty() const override;
 
@@ -286,7 +313,7 @@ class Cartesian_geometrycollection : public Geometrycollection {
   Cartesian_geometrycollection()
       : m_geometries(
             Malloc_allocator<Geometry *>(key_memory_Geometry_objects_data)) {}
-  Cartesian_geometrycollection(Cartesian_geometrycollection &gc);
+  Cartesian_geometrycollection(const Cartesian_geometrycollection &gc);
   Cartesian_geometrycollection(Cartesian_geometrycollection &&gc) noexcept
       : m_geometries(
             Malloc_allocator<Geometry *>(key_memory_Geometry_objects_data)) {
@@ -307,6 +334,7 @@ class Cartesian_geometrycollection : public Geometrycollection {
     }
     return true;
   }
+  void push_back(const Geometry &g) override;
   void push_back(Geometry &&g) override;
   bool empty() const override;
   std::size_t size() const override { return m_geometries.size(); }
@@ -316,6 +344,11 @@ class Cartesian_geometrycollection : public Geometrycollection {
 
   iterator end() noexcept { return m_geometries.end(); }
   const_iterator end() const noexcept { return m_geometries.end(); }
+
+  Geometry &operator[](std::size_t i) override { return *m_geometries[i]; }
+  const Geometry &operator[](std::size_t i) const override {
+    return *m_geometries[i];
+  }
 };
 
 /// A geographic (ellipsoidal) 2d geometry collection.
@@ -331,7 +364,7 @@ class Geographic_geometrycollection : public Geometrycollection {
   Geographic_geometrycollection()
       : m_geometries(
             Malloc_allocator<Geometry *>(key_memory_Geometry_objects_data)) {}
-  Geographic_geometrycollection(Geographic_geometrycollection &gc);
+  Geographic_geometrycollection(const Geographic_geometrycollection &gc);
   Geographic_geometrycollection(Geographic_geometrycollection &&gc) noexcept
       : m_geometries(
             Malloc_allocator<Geometry *>(key_memory_Geometry_objects_data)) {
@@ -352,6 +385,7 @@ class Geographic_geometrycollection : public Geometrycollection {
     }
     return true;
   }
+  void push_back(const Geometry &g) override;
   void push_back(Geometry &&g) override;
   bool empty() const override;
   std::size_t size() const override { return m_geometries.size(); }
@@ -361,6 +395,11 @@ class Geographic_geometrycollection : public Geometrycollection {
 
   iterator end() noexcept { return m_geometries.end(); }
   const_iterator end() const noexcept { return m_geometries.end(); }
+
+  Geometry &operator[](std::size_t i) override { return *m_geometries[i]; }
+  const Geometry &operator[](std::size_t i) const override {
+    return *m_geometries[i];
+  }
 };
 
 /// A Cartesian 2d multipoint.
@@ -370,6 +409,7 @@ class Cartesian_multipoint : public Multipoint {
   std::vector<Cartesian_point, Malloc_allocator<Cartesian_point>> m_points;
 
  public:
+  typedef decltype(m_points)::value_type value_type;
   typedef decltype(m_points)::iterator iterator;
   typedef decltype(m_points)::const_iterator const_iterator;
 
@@ -387,6 +427,7 @@ class Cartesian_multipoint : public Multipoint {
     }
     return true;
   }
+  void push_back(const Geometry &g) override;
   void push_back(Geometry &&g) override;
   bool empty() const override;
   std::size_t size() const override { return m_points.size(); }
@@ -396,6 +437,11 @@ class Cartesian_multipoint : public Multipoint {
 
   iterator end() noexcept { return m_points.end(); }
   const_iterator end() const noexcept { return m_points.end(); }
+
+  Cartesian_point &operator[](std::size_t i) override { return m_points[i]; }
+  const Cartesian_point &operator[](std::size_t i) const override {
+    return m_points[i];
+  }
 };
 
 /// A geographic (ellipsoidal) 2d multipoint.
@@ -405,6 +451,7 @@ class Geographic_multipoint : public Multipoint {
   std::vector<Geographic_point, Malloc_allocator<Geographic_point>> m_points;
 
  public:
+  typedef decltype(m_points)::value_type value_type;
   typedef decltype(m_points)::iterator iterator;
   typedef decltype(m_points)::const_iterator const_iterator;
 
@@ -421,6 +468,7 @@ class Geographic_multipoint : public Multipoint {
     }
     return true;
   }
+  void push_back(const Geometry &g) override;
   void push_back(Geometry &&g) override;
   bool empty() const override;
   std::size_t size() const override { return m_points.size(); }
@@ -430,6 +478,11 @@ class Geographic_multipoint : public Multipoint {
 
   iterator end() noexcept { return m_points.end(); }
   const_iterator end() const noexcept { return m_points.end(); }
+
+  Geographic_point &operator[](std::size_t i) override { return m_points[i]; }
+  const Geographic_point &operator[](std::size_t i) const override {
+    return m_points[i];
+  }
 };
 
 /// A Cartesian 2d multilinestring.
@@ -440,6 +493,7 @@ class Cartesian_multilinestring : public Multilinestring {
       m_linestrings;
 
  public:
+  typedef decltype(m_linestrings)::value_type value_type;
   typedef decltype(m_linestrings)::iterator iterator;
   typedef decltype(m_linestrings)::const_iterator const_iterator;
 
@@ -457,15 +511,25 @@ class Cartesian_multilinestring : public Multilinestring {
     }
     return true;
   }
+  void push_back(const Geometry &g) override;
   void push_back(Geometry &&g) override;
   bool empty() const override;
   std::size_t size() const override { return m_linestrings.size(); }
+  void resize(std::size_t count) { m_linestrings.resize(count); }
+
+  Cartesian_linestring &back() { return m_linestrings.back(); }
+  const Cartesian_linestring &back() const { return m_linestrings.back(); }
 
   iterator begin() noexcept { return m_linestrings.begin(); }
   const_iterator begin() const noexcept { return m_linestrings.begin(); }
 
   iterator end() noexcept { return m_linestrings.end(); }
   const_iterator end() const noexcept { return m_linestrings.end(); }
+
+  Geometry &operator[](std::size_t i) override { return m_linestrings[i]; }
+  const Geometry &operator[](std::size_t i) const override {
+    return m_linestrings[i];
+  }
 };
 
 /// A geographic (ellipsoidal) 2d multilinestring.
@@ -476,6 +540,7 @@ class Geographic_multilinestring : public Multilinestring {
       m_linestrings;
 
  public:
+  typedef decltype(m_linestrings)::value_type value_type;
   typedef decltype(m_linestrings)::iterator iterator;
   typedef decltype(m_linestrings)::const_iterator const_iterator;
 
@@ -493,15 +558,25 @@ class Geographic_multilinestring : public Multilinestring {
     }
     return true;
   }
+  void push_back(const Geometry &g) override;
   void push_back(Geometry &&g) override;
   bool empty() const override;
   std::size_t size() const override { return m_linestrings.size(); }
+  void resize(std::size_t count) { m_linestrings.resize(count); }
+
+  Geographic_linestring &back() { return m_linestrings.back(); }
+  const Geographic_linestring &back() const { return m_linestrings.back(); }
 
   iterator begin() noexcept { return m_linestrings.begin(); }
   const_iterator begin() const noexcept { return m_linestrings.begin(); }
 
   iterator end() noexcept { return m_linestrings.end(); }
   const_iterator end() const noexcept { return m_linestrings.end(); }
+
+  Geometry &operator[](std::size_t i) override { return m_linestrings[i]; }
+  const Geometry &operator[](std::size_t i) const override {
+    return m_linestrings[i];
+  }
 };
 
 /// A Cartesian 2d multipolygon.
@@ -512,6 +587,7 @@ class Cartesian_multipolygon : public Multipolygon {
       m_polygons;
 
  public:
+  typedef decltype(m_polygons)::value_type value_type;
   typedef decltype(m_polygons)::iterator iterator;
   typedef decltype(m_polygons)::const_iterator const_iterator;
 
@@ -529,6 +605,7 @@ class Cartesian_multipolygon : public Multipolygon {
     }
     return true;
   }
+  void push_back(const Geometry &g) override;
   void push_back(Geometry &&g) override;
   bool empty() const override;
   std::size_t size() const override { return m_polygons.size(); }
@@ -538,6 +615,11 @@ class Cartesian_multipolygon : public Multipolygon {
 
   iterator end() noexcept { return m_polygons.end(); }
   const_iterator end() const noexcept { return m_polygons.end(); }
+
+  Geometry &operator[](std::size_t i) override { return m_polygons[i]; }
+  const Geometry &operator[](std::size_t i) const override {
+    return m_polygons[i];
+  }
 };
 
 /// A geographic (ellipsoidal) 2d multipolygon.
@@ -548,6 +630,7 @@ class Geographic_multipolygon : public Multipolygon {
       m_polygons;
 
  public:
+  typedef decltype(m_polygons)::value_type value_type;
   typedef decltype(m_polygons)::iterator iterator;
   typedef decltype(m_polygons)::const_iterator const_iterator;
 
@@ -565,6 +648,7 @@ class Geographic_multipolygon : public Multipolygon {
     }
     return true;
   }
+  void push_back(const Geometry &g) override;
   void push_back(Geometry &&g) override;
   bool empty() const override;
   std::size_t size() const override { return m_polygons.size(); }
@@ -574,8 +658,13 @@ class Geographic_multipolygon : public Multipolygon {
 
   iterator end() noexcept { return m_polygons.end(); }
   const_iterator end() const noexcept { return m_polygons.end(); }
+
+  Geometry &operator[](std::size_t i) override { return m_polygons[i]; }
+  const Geometry &operator[](std::size_t i) const override {
+    return m_polygons[i];
+  }
 };
 
 }  // namespace gis
 
-#endif  // GIS__GEOMETRIES_CS_H_INCLUDED
+#endif  // SQL_GIS_GEOMETRIES_CS_H_INCLUDED

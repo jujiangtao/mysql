@@ -2,13 +2,20 @@
    Copyright (c) 2013, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -19,20 +26,22 @@
 
 #include <new>
 
-#include "channel_info.h"              // Channel_info
-#include "connection_handler_impl.h"   // Per_thread_connection_handler
-#include "current_thd.h"
 #include "my_dbug.h"
+#include "my_macros.h"
 #include "my_psi_config.h"
 #include "my_sys.h"
+#include "mysql/components/services/psi_cond_bits.h"
+#include "mysql/components/services/psi_mutex_bits.h"
 #include "mysql/psi/psi_base.h"
-#include "mysql/psi/psi_cond.h"
-#include "mysql/psi/psi_mutex.h"
 #include "mysql/service_thd_wait.h"
-#include "mysqld.h"                    // max_connections
+#include "mysql/udf_registration_types.h"
 #include "mysqld_error.h"              // ER_*
-#include "plugin_connection_handler.h" // Plugin_connection_handler
-#include "sql_callback.h"              // MYSQL_CALLBACK
+#include "sql/conn_handler/channel_info.h" // Channel_info
+#include "sql/conn_handler/connection_handler_impl.h" // Per_thread_connection_handler
+#include "sql/conn_handler/plugin_connection_handler.h" // Plugin_connection_handler
+#include "sql/current_thd.h"
+#include "sql/mysqld.h"                // max_connections
+#include "sql/sql_callback.h"          // MYSQL_CALLBACK
 #include "thr_lock.h"
 #include "thr_mutex.h"
 
@@ -133,14 +142,14 @@ static PSI_mutex_key key_LOCK_connection_count;
 
 static PSI_mutex_info all_conn_manager_mutexes[]=
 {
-  { &key_LOCK_connection_count, "LOCK_connection_count", PSI_FLAG_GLOBAL, 0}
+  { &key_LOCK_connection_count, "LOCK_connection_count", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME}
 };
 
 static PSI_cond_key key_COND_connection_count;
 
 static PSI_cond_info all_conn_manager_conds[]=
 {
-  { &key_COND_connection_count, "COND_connection_count", PSI_FLAG_GLOBAL}
+  { &key_COND_connection_count, "COND_connection_count", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME}
 };
 #endif
 

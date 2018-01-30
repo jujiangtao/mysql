@@ -1,49 +1,56 @@
-/* Copyright (c) 2010, 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "rpl_info_table.h"
+#include "sql/rpl_info_table.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include "dynamic_ids.h"            // Server_ids
-#include "field.h"
-#include "handler.h"
-#include "key.h"
-#include "log.h"                    // sql_print_error
 #include "m_ctype.h"
 #include "m_string.h"
 #include "my_base.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
+#include "my_loglevel.h"
 #include "my_sys.h"
 #include "mysql/service_mysql_alloc.h"
 #include "mysql/thread_type.h"
-#include "mysql_com.h"
-#include "psi_memory_key.h"
-#include "rpl_info_table_access.h"  // Rpl_info_table_access
-#include "rpl_info_values.h"        // Rpl_info_values
-#ifndef DBUG_OFF
-#include "rpl_rli.h"                // rli_slave
-#endif
-#include "set_var.h"
-#include "sql_class.h"              // THD
+#include "mysql/udf_registration_types.h"
+#include "mysqld_error.h"
+#include "sql/dynamic_ids.h"        // Server_ids
+#include "sql/field.h"
+#include "sql/handler.h"
+#include "sql/key.h"
+#include "sql/log.h"
+#include "sql/log_event.h"
+#include "sql/psi_memory_key.h"
+#include "sql/query_options.h"
+#include "sql/rpl_info_table_access.h" // Rpl_info_table_access
+#include "sql/rpl_info_values.h"    // Rpl_info_values
+#include "sql/sql_class.h"          // THD
+#include "sql/system_variables.h"
+#include "sql/table.h"
 #include "sql_string.h"
-#include "system_variables.h"
-#include "table.h"
 #include "thr_lock.h"
 
 
@@ -122,7 +129,8 @@ int Rpl_info_table::do_init_info(enum_find_method method, uint instance)
   THD *thd= access->create_thd();
 
   saved_mode= thd->variables.sql_mode;
-  tmp_disable_binlog(thd);
+  ulonglong saved_options= thd->variables.option_bits;
+  thd->variables.option_bits &= ~OPTION_BIN_LOG;
 
   /*
     Opens and locks the rpl_info table before accessing it.
@@ -170,8 +178,8 @@ end:
     Unlocks and closes the rpl_info table.
   */
   access->close_table(thd, table, &backup, error);
-  reenable_binlog(thd);
   thd->variables.sql_mode= saved_mode;
+  thd->variables.option_bits= saved_options;
   access->drop_thd(thd);
   DBUG_RETURN(error);
 }
@@ -194,7 +202,8 @@ int Rpl_info_table::do_flush_info(const bool force)
 
   sync_counter= 0;
   saved_mode= thd->variables.sql_mode;
-  tmp_disable_binlog(thd);
+  ulonglong saved_options= thd->variables.option_bits;
+  thd->variables.option_bits &= ~OPTION_BIN_LOG;
   thd->is_operating_substatement_implicitly= true;
 
   /*
@@ -281,8 +290,8 @@ end:
   */
   access->close_table(thd, table, &backup, error);
   thd->is_operating_substatement_implicitly= false;
-  reenable_binlog(thd);
   thd->variables.sql_mode= saved_mode;
+  thd->variables.option_bits= saved_options;
   access->drop_thd(thd);
   DBUG_RETURN(error);
 }
@@ -305,7 +314,8 @@ int Rpl_info_table::do_clean_info()
   THD *thd= access->create_thd();
 
   saved_mode= thd->variables.sql_mode;
-  tmp_disable_binlog(thd);
+  ulonglong saved_options= thd->variables.option_bits;
+  thd->variables.option_bits &= ~OPTION_BIN_LOG;
 
   /*
     Opens and locks the rpl_info table before accessing it.
@@ -336,8 +346,8 @@ end:
     Unlocks and closes the rpl_info table.
   */
   access->close_table(thd, table, &backup, error);
-  reenable_binlog(thd);
   thd->variables.sql_mode= saved_mode;
+  thd->variables.option_bits= saved_options;
   access->drop_thd(thd);
   DBUG_RETURN(error);
 }
@@ -374,7 +384,8 @@ int Rpl_info_table::do_reset_info(uint nparam,
 
   thd= info->access->create_thd();
   saved_mode= thd->variables.sql_mode;
-  tmp_disable_binlog(thd);
+  ulonglong saved_options= thd->variables.option_bits;
+  thd->variables.option_bits &= ~OPTION_BIN_LOG;
 
   /*
     Opens and locks the rpl_info table before accessing it.
@@ -447,8 +458,8 @@ end:
     Unlocks and closes the rpl_info table.
   */
   info->access->close_table(thd, table, &backup, error);
-  reenable_binlog(thd);
   thd->variables.sql_mode= saved_mode;
+  thd->variables.option_bits= saved_options;
   info->access->drop_thd(thd);
   delete info;
   DBUG_RETURN(error);
@@ -473,9 +484,8 @@ enum_return_check Rpl_info_table::do_check_info()
                          get_number_info(), TL_READ,
                          &table, &backup))
   {
-    sql_print_warning("Info table is not ready to be used. Table "
-                      "'%s.%s' cannot be opened.", str_schema.str,
-                      str_table.str);
+    LogErr(WARNING_LEVEL, ER_RPL_CANT_OPEN_INFO_TABLE,
+           str_schema.str, str_table.str);
 
     return_check= ERROR_CHECKING_REPOSITORY;
     goto end;
@@ -528,9 +538,8 @@ enum_return_check Rpl_info_table::do_check_info(uint instance)
                          get_number_info(), TL_READ,
                          &table, &backup))
   {
-    sql_print_warning("Info table is not ready to be used. Table "
-                      "'%s.%s' cannot be opened.", str_schema.str,
-                      str_table.str);
+    LogErr(WARNING_LEVEL, ER_RPL_CANT_OPEN_INFO_TABLE,
+           str_schema.str, str_table.str);
 
     return_check= ERROR_CHECKING_REPOSITORY;
     goto end;
@@ -610,9 +619,8 @@ bool Rpl_info_table::do_count_info(uint nparam,
   */
   if (info->access->count_info(table, counter))
   {
-    sql_print_warning("Info table is not ready to be used. Table "
-                      "'%s.%s' cannot be scanned.", info->str_schema.str,
-                      info->str_table.str);
+    LogErr(WARNING_LEVEL, ER_RPL_CANT_SCAN_INFO_TABLE,
+           info->str_schema.str, info->str_table.str);
     goto end;
   }
   error= 0;
@@ -801,7 +809,8 @@ bool Rpl_info_table::do_update_is_transactional()
 
   THD *thd= access->create_thd();
   saved_mode= thd->variables.sql_mode;
-  tmp_disable_binlog(thd);
+  ulonglong saved_options= thd->variables.option_bits;
+  thd->variables.option_bits &= ~OPTION_BIN_LOG;
 
   /*
     Opens and locks the rpl_info table before accessing it.
@@ -816,8 +825,8 @@ bool Rpl_info_table::do_update_is_transactional()
 
 end:
   access->close_table(thd, table, &backup, 0);
-  reenable_binlog(thd);
   thd->variables.sql_mode= saved_mode;
+  thd->variables.option_bits= saved_options;
   access->drop_thd(thd);
   DBUG_RETURN(error);
 }
@@ -837,8 +846,8 @@ bool Rpl_info_table::verify_table_primary_key_fields(TABLE *table)
               (m_n_pk_fields > 0 &&
                key_info->user_defined_key_parts != m_n_pk_fields)))
   {
-    sql_print_error("Corrupted table %s.%s. Check out table definition.",
-                    str_schema.str, str_table.str);
+    LogErr(ERROR_LEVEL, ER_RPL_CORRUPTED_INFO_TABLE,
+           str_schema.str, str_table.str);
   }
 
   if (!error && m_n_pk_fields && m_pk_field_indexes)
@@ -853,13 +862,11 @@ bool Rpl_info_table::verify_table_primary_key_fields(TABLE *table)
       {
         const char *key_field_name= key_info->key_part[idx].field->field_name;
         const char *table_field_name= table->field[m_pk_field_indexes[idx]]->field_name;
-        sql_print_error("Info table has a problem with its key field(s). "
-                        "Table '%s.%s' expected field #%u to be '%s' but "
-                        "found '%s' instead.",
-                        str_schema.str, str_table.str,
-                        m_pk_field_indexes[idx],
-                        key_field_name,
-                        table_field_name);
+        LogErr(ERROR_LEVEL, ER_RPL_CORRUPTED_KEYS_IN_INFO_TABLE,
+               str_schema.str, str_table.str,
+               m_pk_field_indexes[idx],
+               key_field_name,
+               table_field_name);
         error= true;
         break;
       }

@@ -1,17 +1,24 @@
 /* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef DD__PARTITION_INDEX_IMPL_INCLUDED
 #define DD__PARTITION_INDEX_IMPL_INCLUDED
@@ -20,26 +27,26 @@
 #include <sys/types.h>
 #include <memory>
 #include <new>
-#include <string>
 
-#include "dd/impl/types/weak_object_impl.h"     // dd::Weak_object_impl
-#include "dd/object_id.h"
-#include "dd/properties.h"
-#include "dd/sdi_fwd.h"
-#include "dd/types/object_type.h"               // dd::Object_type
-#include "dd/types/partition_index.h"           // dd::Partition_index
+#include "sql/dd/impl/types/weak_object_impl.h" // dd::Weak_object_impl
+#include "sql/dd/object_id.h"
+#include "sql/dd/properties.h"
+#include "sql/dd/sdi_fwd.h"
+#include "sql/dd/string_type.h"
+#include "sql/dd/types/index.h"
+#include "sql/dd/types/partition_index.h"       // dd::Partition_index
 
 namespace dd {
 
 ///////////////////////////////////////////////////////////////////////////
 
-class Open_dictionary_tables_ctx;
-class Partition_impl;
-class Raw_record;
 class Index;
 class Object_key;
 class Object_table;
+class Open_dictionary_tables_ctx;
 class Partition;
+class Partition_impl;
+class Raw_record;
 class Sdi_rcontext;
 class Sdi_wcontext;
 class Weak_object;
@@ -61,8 +68,7 @@ public:
   { }
 
 public:
-  virtual const Object_table &object_table() const
-  { return Partition_index::OBJECT_TABLE(); }
+  virtual const Object_table &object_table() const;
 
   virtual bool validate() const;
 
@@ -83,6 +89,8 @@ public:
   { return -1; }
 
 public:
+  static void register_tables(Open_dictionary_tables_ctx *otx);
+
   /////////////////////////////////////////////////////////////////////////
   // Partition.
   /////////////////////////////////////////////////////////////////////////
@@ -138,12 +146,6 @@ public:
   virtual void set_tablespace_id(Object_id tablespace_id)
   { m_tablespace_id= tablespace_id; }
 
-  // Fix "inherits ... via dominance" warnings
-  virtual Weak_object_impl *impl()
-  { return Weak_object_impl::impl(); }
-  virtual const Weak_object_impl *impl() const
-  { return Weak_object_impl::impl(); }
-
 public:
   static Partition_index_impl *restore_item(Partition_impl *partition)
   {
@@ -175,13 +177,18 @@ private:
 
 ///////////////////////////////////////////////////////////////////////////
 
-class Partition_index_type : public Object_type
-{
-public:
-  virtual void register_tables(Open_dictionary_tables_ctx *otx) const;
+/**
+  Used to sort Partition_index objects for the same partition in
+  the same order as Index objects for the table.
+*/
 
-  virtual Weak_object *create_object() const
-  { return new (std::nothrow) Partition_index_impl(); }
+struct Partition_index_order_comparator
+{
+  bool operator()(const dd::Partition_index* pi1,
+                  const dd::Partition_index* pi2) const
+  {
+    return pi1->index().ordinal_position() < pi2->index().ordinal_position();
+  }
 };
 
 ///////////////////////////////////////////////////////////////////////////

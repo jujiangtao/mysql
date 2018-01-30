@@ -3,16 +3,24 @@
 Copyright (c) 2006, 2017, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+the terms of the GNU General Public License, version 2.0, as published by the
+Free Software Foundation.
+
+This program is also distributed with certain software (including but not
+limited to OpenSSL) that is licensed under separate terms, as designated in a
+particular file or component or in included license documentation. The authors
+of MySQL hereby grant you an additional permission to link the program and
+your derivative works with the separately licensed software that they have
+included with MySQL.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+FOR A PARTICULAR PURPOSE. See the GNU General Public License, version 2.0,
+for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 *****************************************************************************/
 
@@ -28,9 +36,9 @@ Created December 2006 by Marko Makela
 #include "buf0buf.h"
 #include "buf0flu.h"
 #include "buf0lru.h"
+#include "dict0dict.h"
 #include "my_inttypes.h"
 #include "page0zip.h"
-#include "srv0start.h"
 
 /** When freeing a buf we attempt to coalesce by looking at its buddy
 and deciding whether it is free or not. To ascertain if the buddy is
@@ -40,7 +48,7 @@ safe to look at BUF_BUDDY_STAMP_OFFSET.
 The answer lies in following invariants:
 * All blocks allocated by buddy allocator are used for compressed
 page frame.
-* A compressed table always have space_id < SRV_LOG_SPACE_FIRST_ID
+* A compressed table always have space_id < dict_sys_t::s_log_space_first_id
 * BUF_BUDDY_STAMP_OFFSET always points to the space_id field in
 a frame.
   -- The above is true because we look at these fields when the
@@ -68,15 +76,11 @@ are written.*/
 
 /** Value that we stamp on all buffers that are currently on the zip_free
 list. This value is stamped at BUF_BUDDY_STAMP_OFFSET offset */
-#define BUF_BUDDY_STAMP_FREE	 SRV_LOG_SPACE_FIRST_ID
+#define BUF_BUDDY_STAMP_FREE	dict_sys_t::s_log_space_first_id
 
 /** Stamp value for non-free buffers. Will be overwritten by a non-zero
 value by the consumer of the block */
 #define BUF_BUDDY_STAMP_NONFREE	0XFFFFFFFFUL
-
-#if BUF_BUDDY_STAMP_FREE >= BUF_BUDDY_STAMP_NONFREE
-# error "BUF_BUDDY_STAMP_FREE >= BUF_BUDDY_STAMP_NONFREE"
-#endif
 
 /** Return type of buf_buddy_is_free() */
 enum buf_buddy_state_t {

@@ -1,13 +1,20 @@
 /* Copyright (c) 2006, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -19,15 +26,15 @@
 #include <stddef.h>
 #include <sys/types.h>
 
-#include "handler.h"                 // enum_schema_tables
-#include "key.h"
 #include "lex_string.h"
-#include "m_string.h"
 #include "my_command.h"
 #include "my_sqlcommand.h"
+#include "mysql/components/services/mysql_rwlock_bits.h"
 #include "mysql/psi/mysql_rwlock.h"
 #include "mysql_com.h"               // enum_server_command
-#include "system_variables.h"
+#include "sql/handler.h"             // enum_schema_tables
+#include "sql/key.h"
+#include "sql/system_variables.h"
 
 template <typename T> class SQL_I_List;
 
@@ -113,7 +120,7 @@ void add_join_on(TABLE_LIST *b,Item *expr);
 bool push_new_name_resolution_context(Parse_context *pc,
                                       TABLE_LIST *left_op,
                                       TABLE_LIST *right_op);
-void init_update_queries(void);
+void init_sql_command_flags(void);
 Item *negate_expression(Parse_context *pc, Item *expr);
 const CHARSET_INFO *get_bin_collation(const CHARSET_INFO *cs);
 void killall_non_super_threads(THD *thd);
@@ -136,6 +143,14 @@ bool all_tables_not_ok(THD *thd, TABLE_LIST *tables);
 bool some_non_temp_table_to_be_updated(THD *thd, TABLE_LIST *tables);
 
 bool execute_show(THD *thd, TABLE_LIST *all_tables);
+
+// TODO: remove after refactoring of ALTER DATABASE:
+bool set_default_charset(HA_CREATE_INFO *create_info,
+                         const CHARSET_INFO *value);
+// TODO: remove after refactoring of ALTER DATABASE:
+bool set_default_collation(HA_CREATE_INFO *create_info,
+                           const CHARSET_INFO *value);
+
 
 /* Bits in sql_command_flags */
 
@@ -287,6 +302,14 @@ bool execute_show(THD *thd, TABLE_LIST *all_tables);
   sent by the user (ie: stored procedure).
 */
 #define CF_SKIP_QUESTIONS       (1U << 1)
+
+/**
+  Identifies statement that must acquire Backup Lock before
+  start its execution. It allows all kind of DML on InnoDB tables,
+  and blocks all operations, that could cause an inconsistent
+  backup, if done during a backup operation.
+*/
+#define CF_ACQUIRE_BACKUP_LOCK  (1U << 20)
 
 /**
   1U << 16 is reserved for Protocol Plugin statements and commands

@@ -1,21 +1,28 @@
 /*
-  Copyright (c) 2015, 2016 Oracle and/or its affiliates. All rights reserved.
+  Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
   along with this program; if not, write to the Free Software
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 */
 
-#include "sql_formatter_options.h"
+#include "client/dump/sql_formatter_options.h"
 
 using namespace Mysql::Tools::Dump;
 
@@ -67,11 +74,17 @@ void Sql_formatter_options::create_options()
     "on the server, 'SET @@GLOBAL.GTID_PURGED' is added to the output. "
     "If GTIDs are disabled, AUTO does nothing. If no value is supplied "
     "then the default (AUTO) value will be considered.")
-    ->set_value(GTID_PURGED_AUTO);
+    ->set_value(enum_gtid_purged_mode::GTID_PURGED_AUTO);
+  this->create_new_option(&m_column_statistics,
+    "column-statistics",
+    "Add an ANALYZE TABLE statement to regenerate any existing column "
+    "statistics.")
+    ->set_value(false);
 }
 
 Sql_formatter_options::Sql_formatter_options(
   const Mysql_chain_element_options* mysql_chain_element_options)
   : m_innodb_stats_tables_included(false),
+    m_gtid_purged(enum_gtid_purged_mode::GTID_PURGED_AUTO),
     m_mysql_chain_element_options(mysql_chain_element_options)
 {}

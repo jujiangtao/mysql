@@ -3,16 +3,24 @@
 Copyright (c) 2016, 2017, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+the terms of the GNU General Public License, version 2.0, as published by the
+Free Software Foundation.
+
+This program is also distributed with certain software (including but not
+limited to OpenSSL) that is licensed under separate terms, as designated in a
+particular file or component or in included license documentation. The authors
+of MySQL hereby grant you an additional permission to link the program and
+your derivative works with the separately licensed software that they have
+included with MySQL.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+FOR A PARTICULAR PURPOSE. See the GNU General Public License, version 2.0,
+for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 *****************************************************************************/
 
@@ -35,7 +43,6 @@ Created 2013/03/27 Allen Lai and Jimmy Yang
 #include "page0page.h"
 #include "page0zip.h"
 
-#ifndef UNIV_HOTBACKUP
 #include "btr0cur.h"
 #include "btr0pcur.h"
 #include "btr0sea.h"
@@ -45,8 +52,6 @@ Created 2013/03/27 Allen Lai and Jimmy Yang
 #include "rem0cmp.h"
 #include "srv0mon.h"
 #include "trx0trx.h"
-
-#endif /* UNIV_HOTBACKUP */
 
 /*************************************************************//**
 Initial split nodes info for R-tree split.
@@ -1094,7 +1099,8 @@ func_start:
 					   static_cast<int>(total_data),
 					   static_cast<int>(insert_size),
 					   0, 2, 2, &buf_pos, SPDIMS,
-					   static_cast<uchar*>(first_rec));
+					   static_cast<uchar*>(first_rec),
+					   cursor->index->rtr_srs.get());
 
 	/* Allocate a new page to the index */
 	direction = FSP_UP;
@@ -1766,7 +1772,8 @@ rtr_node_ptr_delete(
 	dberr_t		err;
 
 	compressed = btr_cur_pessimistic_delete(&err, TRUE, cursor,
-						BTR_CREATE_FLAG, false, mtr);
+						BTR_CREATE_FLAG, false,
+						0, 0, 0, mtr);
 	ut_a(err == DB_SUCCESS);
 
 	if (!compressed) {
@@ -1821,7 +1828,8 @@ rtr_rec_cal_increase(
 				has an equal number or more fields than
 				dtuple */
 	const ulint*	offsets,/*!< in: array returned by rec_get_offsets() */
-	double*		area)	/*!< out: increased area */
+	double*		area,	/*!< out: increased area */
+	const dd::Spatial_reference_system*	srs) /*!< in: SRS of R-tree */
 {
 	const dfield_t*	dtuple_field;
 	ulint		dtuple_f_len;
@@ -1837,9 +1845,9 @@ rtr_rec_cal_increase(
 
 	rec_b_ptr = rec_get_nth_field(rec, offsets, 0, &rec_f_len);
 	ret = rtree_area_increase(
-		rec_b_ptr,
+		srs, rec_b_ptr,
 		static_cast<const byte*>(dfield_get_data(dtuple_field)),
-		static_cast<int>(dtuple_f_len), area, 0);
+		static_cast<int>(dtuple_f_len), area);
 
 	return(ret);
 }
@@ -1901,7 +1909,7 @@ rtr_estimate_n_rows_in_range(
 	ulint		n_recs;
 
 	mtr_start(&mtr);
-	mtr.set_named_space(dict_index_get_space(index));
+
 	mtr_s_lock(dict_index_get_lock(index), &mtr);
 
 	block = btr_block_get(page_id, page_size, RW_S_LATCH, index, &mtr);
@@ -1950,7 +1958,8 @@ rtr_estimate_n_rows_in_range(
 			case PAGE_CUR_MBR_EQUAL:
 				if (rtree_key_cmp(
 					PAGE_CUR_WITHIN, range_mbr_ptr,
-					DATA_MBR_LEN, field, DATA_MBR_LEN)
+					DATA_MBR_LEN, field, DATA_MBR_LEN,
+					index->rtr_srs.get())
 				    == 0) {
 					area += 1;
 				}
@@ -1964,15 +1973,19 @@ rtr_estimate_n_rows_in_range(
 			switch (mode) {
 			case PAGE_CUR_CONTAIN:
 			case PAGE_CUR_INTERSECT:
-				area += rtree_area_overlapping(range_mbr_ptr,
-						field, DATA_MBR_LEN, 0)
+				area += rtree_area_overlapping(
+						index->rtr_srs.get(),
+						range_mbr_ptr, field,
+						DATA_MBR_LEN)
 					/ rec_area;
 				break;
 
 			case PAGE_CUR_DISJOINT:
 				area += 1;
-				area -= rtree_area_overlapping(range_mbr_ptr,
-						field, DATA_MBR_LEN, 0)
+				area -= rtree_area_overlapping(
+						index->rtr_srs.get(),
+						range_mbr_ptr, field,
+						DATA_MBR_LEN)
 					/ rec_area;
 				break;
 
@@ -1980,7 +1993,8 @@ rtr_estimate_n_rows_in_range(
 			case PAGE_CUR_MBR_EQUAL:
 				if (rtree_key_cmp(
 					PAGE_CUR_WITHIN, range_mbr_ptr,
-					DATA_MBR_LEN, field, DATA_MBR_LEN)
+					DATA_MBR_LEN, field, DATA_MBR_LEN,
+					index->rtr_srs.get())
 				    == 0) {
 					area += range_area / rec_area;
 				}

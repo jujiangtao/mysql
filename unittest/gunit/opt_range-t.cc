@@ -1,17 +1,24 @@
 /* Copyright (c) 2011, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA */
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include <gtest/gtest.h>
 #include <stddef.h>
@@ -20,15 +27,15 @@
 #include <string>
 #include <vector>
 
-#include "fake_range_opt_param.h"
-#include "fake_table.h"
-#include "handler-t.h"
-#include "mock_field_long.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
-#include "opt_range.cc"
-#include "parse_tree_helpers.h"
-#include "test_utils.h"
+#include "sql/opt_range.cc"
+#include "sql/parse_tree_helpers.h"
+#include "unittest/gunit/fake_range_opt_param.h"
+#include "unittest/gunit/fake_table.h"
+#include "unittest/gunit/handler-t.h"
+#include "unittest/gunit/mock_field_long.h"
+#include "unittest/gunit/test_utils.h"
 
 namespace opt_range_unittest {
 
@@ -458,7 +465,7 @@ TEST_F(OptRangeTest, AllocateImplicit)
   {
     free_root(thd()->mem_root, MYF(MY_KEEP_PREALLOC));
     for (int ii= 0; ii < num_allocs; ++ii)
-      new SEL_ARG;
+      new (*THR_MALLOC) SEL_ARG;
   }
 }
 
@@ -1239,7 +1246,7 @@ TEST_F(OptRangeTest, treeAndOrComboSingleColIndex3)
 */
 TEST_F(OptRangeTest, SelArgOnevalue)
 {
-  Fake_TABLE fake_table(new Item_int(7));
+  Fake_TABLE fake_table({7}, false);
   Field *field_long7= fake_table.field[0];
 
   KEY_PART_INFO kpi;
@@ -1286,7 +1293,7 @@ TEST_F(OptRangeTest, SelArgOnevalue)
 */
 TEST_F(OptRangeTest, SelArgBetween)
 {
-  Fake_TABLE fake_table(new Item_int(3), new Item_int(5));
+  Fake_TABLE fake_table({3, 5}, false);
   Field *field_long3= fake_table.field[0];
   Field *field_long5= fake_table.field[1];
 
@@ -1344,7 +1351,7 @@ TEST_F(OptRangeTest, SelArgBetween)
 */
 TEST_F(OptRangeTest, CopyMax)
 {
-  Fake_TABLE fake_table(new Item_int(3), new Item_int(5));
+  Fake_TABLE fake_table({3, 5}, false);
   Field *field_long3= fake_table.field[0];
   Field *field_long5= fake_table.field[1];
 
@@ -1418,7 +1425,7 @@ TEST_F(OptRangeTest, CopyMax)
 */
 TEST_F(OptRangeTest, CopyMin)
 {
-  Fake_TABLE fake_table(new Item_int(3), new Item_int(5));
+  Fake_TABLE fake_table({3, 5}, false);
   Field *field_long3= fake_table.field[0];
   Field *field_long5= fake_table.field[1];
 
@@ -1495,7 +1502,7 @@ TEST_F(OptRangeTest, KeyOr1)
 {
   Fake_RANGE_OPT_PARAM opt_param(thd(), &m_alloc, 0, false);
 
-  Fake_TABLE fake_table(new Item_int(3), new Item_int(4));
+  Fake_TABLE fake_table({3, 4}, false);
   Field *field_long3= fake_table.field[0];
   Field *field_long4= fake_table.field[1];
 
@@ -1548,7 +1555,8 @@ TEST_F(OptRangeTest, KeyOr1)
   */
 
   SEL_ROOT *tmp= key_or(
-    &opt_param, new SEL_ROOT(&sel_arg_lt3), new SEL_ROOT(&sel_arg_gt3));
+    &opt_param, new (*THR_MALLOC) SEL_ROOT(&sel_arg_lt3),
+    new (*THR_MALLOC) SEL_ROOT(&sel_arg_gt3));
 
   /*
     Ranges now:
@@ -1563,7 +1571,8 @@ TEST_F(OptRangeTest, KeyOr1)
     "3 < field_1";
   EXPECT_STREQ(expected_merged, range_string.c_ptr());
 
-  SEL_ROOT *tmp2= key_or(&opt_param, tmp, new SEL_ROOT(&sel_arg_lt4));
+  SEL_ROOT *tmp2= key_or(
+    &opt_param, tmp, new (*THR_MALLOC) SEL_ROOT(&sel_arg_lt4));
   EXPECT_EQ(null_root, tmp2);
 }
 
@@ -1916,8 +1925,8 @@ TEST_F(OptRangeTest, CombineAlways2)
   always_root.min_flag= NO_MIN_RANGE;
   always_root.max_flag= NO_MAX_RANGE;
   SEL_ROOT always(&always_root), key_range(&key_range_root);
-  Mock_field_long field1("col_1");
-  Mock_field_long field2("col_2");
+  Mock_field_long field1("col_1", false);
+  Mock_field_long field2("col_2", false);
   Fake_TABLE table(&field1, &field2);
   String res(1000), so_far(1000);
   Fake_key_part_info key_part_info[]= { Fake_key_part_info(&field1),
@@ -1937,7 +1946,7 @@ TEST_F(OptRangeTest, CombineAlways2)
 TEST_F(OptRangeTest, AppendRange)
 {
   String out(100);
-  Mock_field_long field("my_field");
+  Mock_field_long field("my_field", false);
   Fake_TABLE table(&field);
   KEY_PART_INFO kp;
   kp.field= &field;

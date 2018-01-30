@@ -1,13 +1,20 @@
 /* Copyright (c) 2012, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -28,13 +35,14 @@
 #include "my_inttypes.h"
 #include "my_psi_config.h"
 #include "my_sys.h"
+#include "mysql/components/services/psi_statement_bits.h"
 #include "mysql/psi/psi_statement.h"
-#include "sql_alloc.h"
-#include "sql_class.h"   // Query_arena
-#include "sql_error.h"
-#include "sql_lex.h"
-#include "sql_list.h"
-#include "sql_servers.h"
+#include "sql/sql_alloc.h"
+#include "sql/sql_class.h" // Query_arena
+#include "sql/sql_error.h"
+#include "sql/sql_lex.h"
+#include "sql/sql_list.h"
+#include "sql/sql_servers.h"
 #include "sql_string.h"
 
 class Item;
@@ -1359,9 +1367,10 @@ public:
     m_valid(true),
     m_cursor_idx(cursor_idx)
   {
-    // Cursor can't be stored in Query Cache, so we should prevent opening QC
-    // for try to write results which are absent.
-
+    /*
+      Cursors cause queries to depend on external state, so they are
+      noncacheable.
+    */
     cursor_lex->safe_to_cache_query= false;
   }
 

@@ -10,18 +10,25 @@ documentation. The contributions by Percona Inc. are incorporated with
 their permission, and subject to the conditions contained in the file
 COPYING.Percona.
 
-This program is free software; you can redistribute it and/or modify it
-under the terms of the GNU General Public License as published by the
-Free Software Foundation; version 2 of the License.
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License, version 2.0,
+as published by the Free Software Foundation.
 
-This program is distributed in the hope that it will be useful, but
-WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
-Public License for more details.
+This program is also distributed with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have included with MySQL.
 
-You should have received a copy of the GNU General Public License along with
-this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License, version 2.0, for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 ***********************************************************************/
 
@@ -42,7 +49,14 @@ Created 10/21/1995 Heikki Tuuri
 #include <dirent.h>
 #include <sys/stat.h>
 #include <time.h>
+#else
+#include <string>
+#include <locale>
+#include <Strsafe.h>
 #endif /* !_WIN32 */
+
+#include <functional>
+#include <stack>
 
 /** File node of a tablespace or the log data space */
 struct fil_node_t;
@@ -76,6 +90,16 @@ the OS actually supports it: Win 95 does not, NT does. */
 @return native file handle */
 # define OS_FILE_FROM_FD(fd) (HANDLE) _get_osfhandle(fd)
 
+/** Associates a C file descriptor with an existing native file handle
+@param[in]	file	native file handle
+@return C file descriptor */
+# define OS_FD_FROM_FILE(file) _open_osfhandle((intptr_t)file, _O_RDONLY)
+
+/** Closes the file associated with C file descriptor fd
+@param[in]	fd	C file descriptor
+@return 0 if success */
+# define OS_FILE_CLOSE_FD(fd) _close(fd)
+
 #else /* _WIN32 */
 
 /** File handle */
@@ -86,16 +110,30 @@ typedef int	os_file_t;
 @return native file handle */
 # define OS_FILE_FROM_FD(fd) fd
 
+/** C file descriptor from an existing native file handle
+@param[in]	file	native file handle
+@return C file descriptor */
+# define OS_FD_FROM_FILE(file) file
+
+/** Closes the file associated with C file descriptor fd
+@param[in]	fd	C file descriptor
+@return 0 if success */
+# define OS_FILE_CLOSE_FD(fd) (os_file_close(fd) ? 0 : -1)
+
 #endif /* _WIN32 */
 
 /** Common file descriptor for file IO instrumentation with PFS
 on windows and other platforms */
-struct pfs_os_file_t
-{
+struct pfs_os_file_t {
 	os_file_t   m_file;
 #ifdef UNIV_PFS_IO
 	struct PSI_file *m_psi;
-#endif
+#else /* UNIV_PFS_IO */
+	struct pfs_os_file_t& operator=(os_file_t file) {
+		m_file = file;
+		return(*this);
+	}
+#endif /* UNIV_PFS_IO */
 };
 
 static const os_file_t OS_FILE_CLOSED = os_file_t(~0);
@@ -144,7 +182,14 @@ static const ulint OS_FILE_NORMAL = 62;
 /** Types for file create @{ */
 static const ulint OS_DATA_FILE = 100;
 static const ulint OS_LOG_FILE = 101;
-static const ulint OS_DATA_TEMP_FILE = 102;
+/* Don't use this for Data files, Log files. Use it for smaller files
+or if number of bytes to write are not multiple of sector size.
+With this flag, writes to file will be always buffered and ignores the value
+of innodb_flush_method. */
+static const ulint OS_BUFFERED_FILE = 102;
+
+static const ulint OS_CLONE_DATA_FILE = 103;
+static const ulint OS_CLONE_LOG_FILE = 104;
 /* @} */
 
 /** Error codes from os_file_get_last_error @{ */
@@ -162,6 +207,7 @@ static const ulint OS_FILE_INSUFFICIENT_RESOURCE = 78;
 static const ulint OS_FILE_AIO_INTERRUPTED = 79;
 static const ulint OS_FILE_OPERATION_ABORTED = 80;
 static const ulint OS_FILE_ACCESS_VIOLATION = 81;
+static const ulint OS_FILE_NAME_TOO_LONG = 82;
 static const ulint OS_FILE_ERROR_MAX = 100;
 /* @} */
 
@@ -194,16 +240,15 @@ static const ulint ENCRYPTION_SERVER_UUID_LEN = 36;
 
 /** Encryption information total size for 5.7.11: magic number + master_key_id +
 key + iv + checksum */
-static const ulint ENCRYPTION_INFO_SIZE_V1 = (ENCRYPTION_MAGIC_SIZE \
-					 + (ENCRYPTION_KEY_LEN * 2) \
-					 + 2 * sizeof(ulint));
+static const ulint ENCRYPTION_INFO_SIZE_V1 = 
+	ENCRYPTION_MAGIC_SIZE + (ENCRYPTION_KEY_LEN * 2) + 2 * sizeof(ulint);
 
 /** Encryption information total size: magic number + master_key_id +
 key + iv + server_uuid + checksum */
-static const ulint ENCRYPTION_INFO_SIZE_V2 = (ENCRYPTION_MAGIC_SIZE \
-					 + (ENCRYPTION_KEY_LEN * 2) \
-					 + ENCRYPTION_SERVER_UUID_LEN \
-					 + 2 * sizeof(ulint));
+static const ulint ENCRYPTION_INFO_SIZE_V2 =
+	ENCRYPTION_MAGIC_SIZE + (ENCRYPTION_KEY_LEN * 2)
+	+ ENCRYPTION_SERVER_UUID_LEN + 2 * sizeof(ulint);
+
 /** Default master key for bootstrap */
 static const char ENCRYPTION_DEFAULT_MASTER_KEY[] = "DefaultMasterKey";
 
@@ -388,8 +433,8 @@ struct Encryption {
 
 	/** Decrypt the log block.
 	@param[in]	type		IORequest
-	@param[in,out]	src		data read from disk, decrypted data will be
-					copied to this page
+	@param[in,out]	src		data read from disk, decrypted data
+					will be copied to this page
 	@param[in,out]	dst		scratch area to use for decryption
 	@return DB_SUCCESS or error code */
 	dberr_t decrypt_log_block(
@@ -399,8 +444,8 @@ struct Encryption {
 
 	/** Decrypt the log data contents.
 	@param[in]	type		IORequest
-	@param[in,out]	src		data read from disk, decrypted data will be
-					copied to this page
+	@param[in,out]	src		data read from disk, decrypted data
+					will be copied to this page
 	@param[in]	src_len		source data length
 	@param[in,out]	dst		scratch area to use for decryption
 	@param[in]	dst_len		size of the scratch area in bytes
@@ -447,10 +492,10 @@ struct Encryption {
 	byte*			m_iv;
 
 	/** Current master key id */
-	static ulint		master_key_id;
+	static ulint		s_master_key_id;
 
 	/** Current uuid of server instance */
-	static char		uuid[ENCRYPTION_SERVER_UUID_LEN + 1];
+	static char		s_uuid[ENCRYPTION_SERVER_UUID_LEN + 1];
 };
 
 /** Types for AIO operations @{ */
@@ -473,7 +518,7 @@ public:
 		/** Double write buffer recovery. */
 		DBLWR_RECOVER = 4,
 
-		/** Enumarations below can be ORed to READ/WRITE above*/
+		/** Enumerations below can be ORed to READ/WRITE above*/
 
 		/** Data file */
 		DATA_FILE = 8,
@@ -811,22 +856,24 @@ struct os_file_size_t {
 static const ulint OS_AIO_N_PENDING_IOS_PER_THREAD = 32;
 
 /** Modes for aio operations @{ */
-/** Normal asynchronous i/o not for ibuf pages or ibuf bitmap pages */
-static const ulint OS_AIO_NORMAL = 21;
+enum class AIO_mode : size_t {
+	/** Normal asynchronous i/o not for ibuf pages or ibuf bitmap pages */
+	NORMAL = 21,
 
-/**  Asynchronous i/o for ibuf pages or ibuf bitmap pages */
-static const ulint OS_AIO_IBUF = 22;
+	/**  Asynchronous i/o for ibuf pages or ibuf bitmap pages */
+	IBUF = 22,
 
-/** Asynchronous i/o for the log */
-static const ulint OS_AIO_LOG = 23;
+	/** Asynchronous i/o for the log */
+	LOG = 23,
 
-/** Asynchronous i/o where the calling thread will itself wait for
-the i/o to complete, doing also the job of the i/o-handler thread;
-can be used for any pages, ibuf or non-ibuf.  This is used to save
-CPU time, as we can do with fewer thread switches. Plain synchronous
-I/O is not as good, because it must serialize the file seek and read
-or write, causing a bottleneck for parallelism. */
-static const ulint OS_AIO_SYNC = 24;
+	/** Asynchronous i/o where the calling thread will itself wait for
+	the i/o to complete, doing also the job of the i/o-handler thread;
+	can be used for any pages, ibuf or non-ibuf.  This is used to save
+	CPU time, as we can do with fewer thread switches. Plain synchronous
+	I/O is not as good, because it must serialize the file seek and read
+	or write, causing a bottleneck for parallelism. */
+	SYNC = 24
+};
 /* @} */
 
 extern ulint	os_n_file_reads;
@@ -836,11 +883,32 @@ extern ulint	os_n_fsyncs;
 /* File types for directory entry data type */
 
 enum os_file_type_t {
-	OS_FILE_TYPE_UNKNOWN = 0,
-	OS_FILE_TYPE_FILE,			/* regular file */
-	OS_FILE_TYPE_DIR,			/* directory */
-	OS_FILE_TYPE_LINK,			/* symbolic link */
-	OS_FILE_TYPE_BLOCK			/* block device */
+	/** Get status failed. */
+	OS_FILE_TYPE_FAILED,
+
+	/** stat() failed, with ENAMETOOLONG */
+	OS_FILE_TYPE_NAME_TOO_LONG,
+
+	/** stat() failed with EACCESS */
+	OS_FILE_PERMISSION_ERROR,
+
+	/** File doesn't exist. */
+	OS_FILE_TYPE_MISSING,
+
+	/** File exists but type is unknown. */
+	OS_FILE_TYPE_UNKNOWN,
+
+	/** Ordinary file. */
+	OS_FILE_TYPE_FILE,
+
+	/** Directory. */
+	OS_FILE_TYPE_DIR,
+
+	/** Symbolic link. */
+	OS_FILE_TYPE_LINK,
+
+	/** Block device. */
+	OS_FILE_TYPE_BLOCK
 };
 
 /* Maximum path string length in bytes when referring to tables with in the
@@ -896,6 +964,24 @@ bool
 os_file_create_directory(
 	const char*	pathname,
 	bool		fail_if_exists);
+
+/** Callback function type to be implemented by caller. It is called for each
+entry in directory.
+@param[in]	path	path to the file
+@param[in]	name	name of the file */
+typedef void (*os_dir_cbk_t)(const char* path, const char* name);
+
+/** This function scans the contents of a directory and invokes the callback
+for each entry.
+@param[in]	path		directory name as null-terminated string
+@param[in]	scan_cbk	use callback to be called for each entry
+@param[in]	is_drop		attempt to drop the directory after scan
+@return true if call succeeds, false on error */
+bool
+os_file_scan_directory(
+	const char*	path,
+	os_dir_cbk_t	scan_cbk,
+	bool		is_delete);
 
 /** NOTE! Use the corresponding macro os_file_create_simple(), not directly
 this function!
@@ -1010,9 +1096,12 @@ os_file_close_func(os_file_t file);
 #ifdef UNIV_PFS_IO
 
 /* Keys to register InnoDB I/O with performance schema */
-extern mysql_pfs_key_t	innodb_data_file_key;
 extern mysql_pfs_key_t	innodb_log_file_key;
 extern mysql_pfs_key_t	innodb_temp_file_key;
+extern mysql_pfs_key_t	innodb_arch_file_key;
+extern mysql_pfs_key_t	innodb_clone_file_key;
+extern mysql_pfs_key_t	innodb_data_file_key;
+extern mysql_pfs_key_t	innodb_tablespace_open_file_key;
 
 /* Following four macros are instumentations to register
 various file I/O operations with performance schema.
@@ -1031,13 +1120,13 @@ do {									\
 		state, key.m_value, op, name, &locker);			\
 	if (locker != NULL) {						\
 		PSI_FILE_CALL(start_file_open_wait)(			\
-			locker, src_file, src_line);			\
+			locker, src_file, static_cast<uint>(src_line));	\
 	}								\
 } while (0)
 
 # define register_pfs_file_open_end(locker, file, result)		\
 do {									\
-	if (locker != NULL) {				\
+	if (locker != NULL) {						\
 		file.m_psi = PSI_FILE_CALL(				\
 		end_file_open_wait)(					\
 			locker, result);				\
@@ -1045,27 +1134,28 @@ do {									\
 } while (0)
 
 # define register_pfs_file_rename_begin(state, locker, key, op, name,	\
-				src_file, src_line)                     \
-	register_pfs_file_open_begin(state, locker, key, op, name,      \
 					src_file, src_line)             \
+	register_pfs_file_open_begin(					\
+		state, locker, key, op, name,				\
+		src_file, static_cast<uint>(src_line))			\
 
-# define register_pfs_file_rename_end(locker, result)			\
+# define register_pfs_file_rename_end(locker, from, to, result)		\
 do {									\
-	if (locker != NULL) {                              \
+	if (locker != NULL) {						\
 		 PSI_FILE_CALL(						\
-			end_file_open_wait)(				\
-			locker, result);				\
+			end_file_rename_wait)(				\
+			locker, from, to, result);			\
 	}								\
 }while(0)
 
 # define register_pfs_file_close_begin(state, locker, key, op, name,	\
-				      src_file, src_line)		\
+				       src_file, src_line)		\
 do {									\
 	locker = PSI_FILE_CALL(get_thread_file_name_locker)(		\
 		state, key.m_value, op, name, &locker);			\
 	if (locker != NULL) {						\
 		PSI_FILE_CALL(start_file_close_wait)(			\
-			locker, src_file, src_line);			\
+			locker, src_file, static_cast<uint>(src_line));	\
 	}								\
 } while (0)
 
@@ -1080,11 +1170,12 @@ do {									\
 # define register_pfs_file_io_begin(state, locker, file, count, op,	\
 				    src_file, src_line)			\
 do {									\
-	locker = PSI_FILE_CALL(get_thread_file_stream_locker)(	\
+	locker = PSI_FILE_CALL(get_thread_file_stream_locker)(		\
 		state, file.m_psi, op);					\
 	if (locker != NULL) {						\
 		PSI_FILE_CALL(start_file_wait)(				\
-			locker, count, src_file, src_line);		\
+			locker, count,					\
+			src_file, static_cast<uint>(src_line));		\
 	}								\
 } while (0)
 
@@ -1139,6 +1230,14 @@ The wrapper functions have the prefix of "innodb_". */
 
 # define os_file_read_pfs(type, file, buf, offset, n)			\
 	pfs_os_file_read_func(type, file, buf, offset, n, __FILE__, __LINE__)
+
+# define os_file_read_first_page_pfs(type, file, buf, n)		\
+	pfs_os_file_read_first_page_func(type, file, buf,n,		\
+					 __FILE__, __LINE__)
+
+# define os_file_copy_pfs(src, src_offset, dest, dest_offset, size)	\
+	pfs_os_file_copy_func(src, src_offset, dest, dest_offset,	\
+	size, __FILE__, __LINE__)
 
 # define os_file_read_no_error_handling_pfs(type, file, buf, offset, n, o)	\
 	pfs_os_file_read_no_error_handling_func(			\
@@ -1302,6 +1401,49 @@ pfs_os_file_read_func(
 	const char*	src_file,
 	uint		src_line);
 
+/** NOTE! Please use the corresponding macro os_file_read_first_page(),
+not directly this function!
+This is the performance schema instrumented wrapper function for
+os_file_read_first_page() which requests a synchronous read operation
+of page 0 of IBD file
+@param[in, out]	type		IO request context
+@param[in]	file		Open file handle
+@param[out]	buf		buffer where to read
+@param[in]	n		number of bytes to read
+@param[in]	src_file	file name where func invoked
+@param[in]	src_line	line where the func invoked
+@return DB_SUCCESS if request was successful */
+UNIV_INLINE
+dberr_t
+pfs_os_file_read_first_page_func(
+	IORequest&	type,
+	pfs_os_file_t	file,
+	void*		buf,
+	ulint		n,
+	const char*	src_file,
+	uint		src_line);
+
+/** copy data from one file to another file. Data is read/written
+at current file offset.
+@param[in]	src		file handle to copy from
+@param[in]	src_offset	offset to copy from
+@param[in]	dest		file handle to copy to
+@param[in]	dest_offset	offset to copy to
+@param[in]	size		number of bytes to copy
+@param[in]	src_file	file name where func invoked
+@param[in]	src_line	line where the func invoked
+@return DB_SUCCESS if successful */
+UNIV_INLINE
+dberr_t
+pfs_os_file_copy_func(
+	pfs_os_file_t	src,
+	os_offset_t	src_offset,
+	pfs_os_file_t	dest,
+	os_offset_t	dest_offset,
+	uint		size,
+	const char*	src_file,
+	uint		src_line);
+
 /** NOTE! Please use the corresponding macro os_file_read_no_error_handling(),
 not directly this function!
 This is the performance schema instrumented wrapper function for
@@ -1381,7 +1523,7 @@ UNIV_INLINE
 dberr_t
 pfs_os_aio_func(
 	IORequest&	type,
-	ulint		mode,
+	AIO_mode	mode,
 	const char*	name,
 	pfs_os_file_t	file,
 	void*		buf,
@@ -1548,6 +1690,12 @@ to original un-instrumented file I/O APIs */
 # define os_file_read_pfs(type, file, buf, offset, n)			\
 	os_file_read_func(type, file, buf, offset, n)
 
+# define os_file_read_first_page_pfs(type, file, buf, n)		\
+	os_file_read_first_page_func(type, file, buf, n)
+
+# define os_file_copy_pfs(src, src_offset, dest, dest_offset, size)	\
+	os_file_copy_func(src, src_offset, dest, dest_offset, size)
+
 # define os_file_read_no_error_handling_pfs(type, file, buf, offset, n, o)	\
 	os_file_read_no_error_handling_func(type, file, buf, offset, n, o)
 
@@ -1587,6 +1735,15 @@ to original un-instrumented file I/O APIs */
 #endif
 
 #ifdef UNIV_PFS_IO
+	#define os_file_read_first_page(type, file, buf, n)	\
+		os_file_read_first_page_pfs(type, file, buf, n)
+#else
+	#define os_file_read_first_page(type, file, buf, n)	\
+                os_file_read_first_page_pfs(type, file.m_file, buf, n)
+#endif
+
+
+#ifdef UNIV_PFS_IO
 	#define os_file_flush(file)	os_file_flush_pfs(file)
 #else
 	#define os_file_flush(file)	os_file_flush_pfs(file.m_file)
@@ -1598,6 +1755,15 @@ to original un-instrumented file I/O APIs */
 #else
 	#define os_file_write(type, name, file, buf, offset, n)         \
                 os_file_write_pfs(type, name, file.m_file, buf, offset, n)
+#endif
+
+#ifdef UNIV_PFS_IO
+	#define os_file_copy(src, src_offset, dest, dest_offset, size)	\
+		os_file_copy_pfs(src, src_offset, dest, dest_offset, size)
+#else
+	#define os_file_copy(src, src_offset, dest, dest_offset, size)	\
+		os_file_copy_pfs(src.m_file, src_offset, dest.m_file,	\
+		dest_offset, size)
 #endif
 
 #ifdef UNIV_PFS_IO
@@ -1634,19 +1800,23 @@ os_file_get_size(
 	pfs_os_file_t	file)
 	MY_ATTRIBUTE((warn_unused_result));
 
-/** Write the specified number of zeros to a newly created file.
+/** Write the specified number of zeros to a file from specific offset.
 @param[in]	name		name of the file or path as a null-terminated
 				string
 @param[in]	file		handle to a file
+@param[in]	offset		file offset
 @param[in]	size		file size
 @param[in]	read_only	Enable read-only checks if true
+@param[in]	flush		Flush file content to disk
 @return true if success */
 bool
 os_file_set_size(
 	const char*	name,
 	pfs_os_file_t	file,
+	os_offset_t	offset,
 	os_offset_t	size,
-	bool		read_only)
+	bool		read_only,
+	bool		flush)
 	MY_ATTRIBUTE((warn_unused_result));
 
 /** Truncates a file at its current position.
@@ -1667,6 +1837,17 @@ os_file_truncate(
 	const char*	pathname,
 	pfs_os_file_t	file,
 	os_offset_t	size);
+
+/** Set read/write position of a file handle to specific offset.
+@param[in]	pathname	file path
+@param[in]	file		file handle
+@param[in]	offset		read/write offset
+@return true if success */
+bool
+os_file_seek(
+	const char*	pathname,
+	os_file_t	file,
+	os_offset_t	offset);
 
 /** NOTE! Use the corresponding macro os_file_flush(), not directly this
 function!
@@ -1704,6 +1885,39 @@ os_file_read_func(
 	void*		buf,
 	os_offset_t	offset,
 	ulint		n)
+	MY_ATTRIBUTE((warn_unused_result));
+
+/** NOTE! Use the corresponding macro os_file_read_first_page(),
+not directly this function!
+Requests a synchronous read operation of page 0 of IBD file
+@param[in]	type		IO request context
+@param[in]	file		Open file handle
+@param[out]	buf		buffer where to read
+@param[in]	n		number of bytes to read
+@return DB_SUCCESS if request was successful */
+dberr_t
+os_file_read_first_page_func(
+	IORequest&	type,
+	os_file_t	file,
+	void*		buf,
+	ulint		n)
+	MY_ATTRIBUTE((warn_unused_result));
+
+/** copy data from one file to another file. Data is read/written
+at current file offset.
+@param[in]	src_file	file handle to copy from
+@param[in]	src_offset	offset to copy from
+@param[in]	dest_file	file handle to copy to
+@param[in]	dest_offset	offset to copy to
+@param[in]	size		number of bytes to copy
+@return DB_SUCCESS if successful */
+dberr_t
+os_file_copy_func(
+	os_file_t	src_file,
+	os_offset_t	src_offset,
+	os_file_t	dest_file,
+	os_offset_t	dest_offset,
+	uint		size)
 	MY_ATTRIBUTE((warn_unused_result));
 
 /** Rewind file to its start, read at most size - 1 bytes from it to str, and
@@ -1771,39 +1985,6 @@ os_file_status(
 	bool*		exists,
 	os_file_type_t* type);
 
-/** This function returns a new path name after replacing the basename
-in an old path with a new basename.  The old_path is a full path
-name including the extension.  The tablename is in the normal
-form "databasename/tablename".  The new base name is found after
-the forward slash.  Both input strings are null terminated.
-
-This function allocates memory to be returned.  It is the callers
-responsibility to free the return value after it is no longer needed.
-
-@param[in]	old_path		pathname
-@param[in]	tablename		new file name
-@return own: new full pathname */
-char*
-os_file_make_new_pathname(
-	const char*	old_path,
-	const char*	tablename);
-
-/** This function reduces a null-terminated full remote path name into
-the path that is sent by MySQL for DATA DIRECTORY clause.  It replaces
-the 'databasename/tablename.ibd' found at the end of the path with just
-'tablename'.
-
-Since the result is always smaller than the path sent in, no new memory
-is allocated. The caller should allocate memory for the path sent in.
-This function manipulates that path in place.
-
-If the path format is not as expected, just return.  The result is used
-to inform a SHOW CREATE TABLE command.
-@param[in,out]	data_dir_path	full path/data_dir_path */
-void
-os_file_make_data_dir_path(
-	char*	data_dir_path);
-
 /** Create all missing subdirectories along the given path.
 @return DB_SUCCESS if OK, otherwise error code. */
 dberr_t
@@ -1815,6 +1996,23 @@ os_file_create_subdirs_if_needed(
 void
 unit_test_os_file_get_parent_dir();
 #endif /* UNIV_ENABLE_UNIT_TEST_GET_PARENT_DIR */
+
+#ifdef UNIV_HOTBACKUP
+/** Deallocates the "Blocks" in block_cache */
+void
+meb_free_block_cache();
+#endif /* UNIV_HOTBACKUP */
+
+/** Creates and initializes block_cache. Creates array of MAX_BLOCKS
+and allocates the memory in each block to hold BUFFER_BLOCK_SIZE
+of data.
+
+This function is called by InnoDB during AIO init (os_aio_init()).
+It is also by MEB while applying the redo logs on TDE tablespaces, the
+"Blocks" allocated in this block_cache are used to hold the decrypted page
+data. */
+void
+os_create_block_cache();
 
 /** Initializes the asynchronous io system. Creates one array each for ibuf
 and log i/o. Also creates one array each for read and write where each
@@ -1841,7 +2039,7 @@ os_aio_free();
 NOTE! Use the corresponding macro os_aio(), not directly this function!
 Requests an asynchronous i/o operation.
 @param[in]	type		IO request context
-@param[in]	mode		IO mode
+@param[in]	aio_mode	IO mode
 @param[in]	name		Name of the file or path as NUL terminated
 				string
 @param[in]	file		Open file handle
@@ -1859,7 +2057,7 @@ Requests an asynchronous i/o operation.
 dberr_t
 os_aio_func(
 	IORequest&	type,
-	ulint		mode,
+	AIO_mode	aio_mode,
 	const char*	name,
 	pfs_os_file_t	file,
 	void*		buf,
@@ -1955,7 +2153,7 @@ os_file_get_status(
 	bool		check_rw_perm,
 	bool		read_only);
 
-#if !defined(UNIV_HOTBACKUP)
+#ifndef UNIV_HOTBACKUP
 /** Creates a temporary file in the location specified by the parameter
 path. If the path is NULL then it will be created on --tmpdir location.
 This function is defined in ha_innodb.cc.
@@ -2023,7 +2221,6 @@ not then the source contents are left unchanged and DB_SUCCESS is returned.
 @param[in,out]	dst		Scratch area to use for decompression
 @param[in]	dst_len		Size of the scratch area in bytes
 @return DB_SUCCESS or error code */
-
 dberr_t
 os_file_decompress_page(
 	bool		dblwr_recover,
@@ -2032,32 +2229,77 @@ os_file_decompress_page(
 	ulint		dst_len)
 	MY_ATTRIBUTE((warn_unused_result));
 
-/** Normalizes a directory path for the current OS:
-On Windows, we convert '/' to '\', else we convert '\' to '/'.
-@param[in,out] str A null-terminated directory and file path */
-void os_normalize_path(char*	str);
-
-/* Determine if a path is an absolute path or not.
-@param[in]	OS directory or file path to evaluate
-@retval true if an absolute path
-@retval false if a relative path */
-UNIV_INLINE
+/** Determine if O_DIRECT is supported.
+@retval	true	if O_DIRECT is supported.
+@retval	false	if O_DIRECT is not supported. */
 bool
-is_absolute_path(
-	const char*	path)
-{
-	if (path[0] == OS_PATH_SEPARATOR) {
-		return(true);
-	}
+os_is_o_direct_supported()
+	MY_ATTRIBUTE((warn_unused_result));
 
+/** Class to scan the directory heirarch using a depth first scan. */
+class Dir_Walker {
+public:
+	using Path = std::string;
+
+	/** Check if the path is a directory. The file/directory must exist.
+	@param[in]	path		The path to check
+	@return true if it is a directory */
+	static bool is_directory(const Path& path);
+
+	/** Depth first traversal of the directory starting from basedir
+	@param[in]	basedir		Start scanning from this directory
+	@param[in]	f		Function to call for each entry */
+	template<typename F>
+	static void walk(const Path& basedir, F&& f)
+	{
 #ifdef _WIN32
-	if (path[1] == ':' && path[2] == OS_PATH_SEPARATOR) {
-		return(true);
-	}
+		walk_win32(
+			basedir,
+			[&](const Path& path, size_t depth)
+			{
+				f(path);
+			});
+#else
+		walk_posix(
+			basedir,
+			[&](const Path& path, size_t depth)
+			{
+				f(path);
+			});
 #endif /* _WIN32 */
+	}
+private:
 
-	return(false);
-}
+	/** Directory names for the depth first directory scan. */
+	struct Entry {
+
+		/** Constructor
+		@param[in]	path		Directory to traverse
+		@param[in]	depth		Relative depth to the base
+						directory in walk() */
+		Entry(const Path& path, size_t depth)
+			:
+			m_path(path),
+			m_depth(depth) { }
+
+		/** Path to the directory */
+		Path		m_path;
+
+		/** Relative depth of m_path */
+		size_t		m_depth;
+	};
+
+	using Function = std::function<void(const Path&, size_t)>;
+
+	/** Depth first traversal of the directory starting from basedir
+	@param[in]	basedir		Start scanning from this directory
+	@param[in]	f		Function to call for each entry */
+#ifdef _WIN32
+	static void walk_win32(const Path& basedir, Function&& f);
+#else
+	static void walk_posix(const Path& basedir, Function&& f);
+#endif /* _WIN32 */
+};
 
 #include "os0file.ic"
 

@@ -2,13 +2,20 @@
    Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -39,10 +46,9 @@
 #include <map>
 #include <utility>
 
-#include "client_priv.h"
-#include "log_event.h"
+#include "caching_sha2_passwordopt-vars.h"
+#include "client/client_priv.h"
 #include "my_dbug.h"
-#include "my_decimal.h"
 #include "my_default.h"
 #include "my_dir.h"
 #include "my_io.h"
@@ -51,8 +57,10 @@
 #include "mysql/service_my_snprintf.h"
 #include "prealloced_array.h"
 #include "print_version.h"
-#include "rpl_constants.h"
-#include "rpl_gtid.h"
+#include "sql/log_event.h"
+#include "sql/my_decimal.h"
+#include "sql/rpl_constants.h"
+#include "sql/rpl_gtid.h"
 #include "sql_common.h"
 #include "sql_string.h"
 #include "sslopt-vars.h"
@@ -68,21 +76,6 @@ using std::max;
 */
 static
 std::map<std::string, std::string> map_mysqlbinlog_rewrite_db;
-
-/**
-  The function represents Log_event delete wrapper
-  to reset possibly active temp_buf member.
-  It's to be invoked in context where the member is
-  not bound with dynamically allocated memory and therefore can
-  be reset as simple as with plain assignment to NULL.
-
-  @param ev  a pointer to Log_event instance
-*/
-inline void reset_temp_buf_and_delete(Log_event *ev)
-{
-  ev->temp_buf= NULL;
-  delete ev;
-}
 
 static bool
 rewrite_db(char **buf, ulong *buf_size,
@@ -213,6 +206,7 @@ Query_log_event::rewrite_db_in_buffer(char **buf, ulong *event_len,
   char* ptr= *buf;
   uint sv_len= 0;
 
+  DBUG_EXECUTE_IF("simulate_corrupt_event_len", *event_len=0;);
   /* Error if the event content is too small */
   if (*event_len < (common_header_len + query_header_len))
     return true;
@@ -342,7 +336,6 @@ static int port= 0;
 static uint my_end_arg;
 static const char* sock= 0;
 static char *opt_plugin_dir= 0, *opt_default_auth= 0;
-static bool opt_secure_auth= TRUE;
 
 #if defined (_WIN32)
 static char *shared_memory_base_name= 0;
@@ -810,7 +803,6 @@ static bool shall_skip_gtids(Log_event* ev)
       In this case, ROTATE and FD events should be processed and
       outputted.
     */
-    case binary_log::START_EVENT_V3: /* for completion */
     case binary_log::SLAVE_EVENT: /* for completion */
     case binary_log::STOP_EVENT:
     case binary_log::FORMAT_DESCRIPTION_EVENT:
@@ -1006,7 +998,6 @@ static Exit_status process_event(PRINT_EVENT_INFO *print_event_info, Log_event *
 {
   char ll_buff[21];
   Log_event_type ev_type= ev->get_type_code();
-  bool destroy_evt= TRUE;
   DBUG_ENTER("process_event");
   Exit_status retval= OK_CONTINUE;
   IO_CACHE *const head= &print_event_info->head_cache;
@@ -1130,34 +1121,32 @@ static Exit_status process_event(PRINT_EVENT_INFO *print_event_info, Log_event *
       if (head->error == -1)
         goto err;
       break;
-      
-      destroy_evt= TRUE;
     }
           
     case binary_log::INTVAR_EVENT:
     {
-      destroy_evt= FALSE;
       buff_event.event= ev;
       buff_event.event_pos= pos;
       buff_ev->push_back(buff_event);
+      ev= NULL;
       break;
     }
     	
     case binary_log::RAND_EVENT:
     {
-      destroy_evt= FALSE;
       buff_event.event= ev;
       buff_event.event_pos= pos;      
       buff_ev->push_back(buff_event);
+      ev= NULL;
       break;
     }
     
     case binary_log::USER_VAR_EVENT:
     {
-      destroy_evt= FALSE;
       buff_event.event= ev;
       buff_event.event_pos= pos;      
       buff_ev->push_back(buff_event);
+      ev= NULL;
       break; 
     }
     case binary_log::APPEND_BLOCK_EVENT:
@@ -1207,17 +1196,6 @@ static Exit_status process_event(PRINT_EVENT_INFO *print_event_info, Log_event *
 
       if (head->error == -1)
         goto err;
-      if (opt_remote_proto == BINLOG_LOCAL)
-      {
-        ev->free_temp_buf(); // free memory allocated in dump_local_log_entries
-      }
-      else
-      {
-        /*
-          disassociate but not free dump_remote_log_entries time memory
-        */
-        ev->temp_buf= 0;
-      }
       /*
         We don't want this event to be deleted now, so let's hide it (I
         (Guilhem) should later see if this triggers a non-serious Valgrind
@@ -1279,10 +1257,11 @@ static Exit_status process_event(PRINT_EVENT_INFO *print_event_info, Log_event *
       {
         print_event_info->skipped_event_in_transaction= true;
         print_event_info->m_table_map_ignored.set_table(map->get_table_id(), map);
-        destroy_evt= FALSE;
+        ev= NULL;
         goto end;
       }
     }
+    // Fall through
     case binary_log::ROWS_QUERY_LOG_EVENT:
     case binary_log::WRITE_ROWS_EVENT:
     case binary_log::DELETE_ROWS_EVENT:
@@ -1290,6 +1269,7 @@ static Exit_status process_event(PRINT_EVENT_INFO *print_event_info, Log_event *
     case binary_log::WRITE_ROWS_EVENT_V1:
     case binary_log::UPDATE_ROWS_EVENT_V1:
     case binary_log::DELETE_ROWS_EVENT_V1:
+    case binary_log::PARTIAL_UPDATE_ROWS_EVENT:
     {
       bool stmt_end= FALSE;
       Table_map_log_event *ignored_map= NULL;
@@ -1298,7 +1278,8 @@ static Exit_status process_event(PRINT_EVENT_INFO *print_event_info, Log_event *
           ev_type == binary_log::UPDATE_ROWS_EVENT ||
           ev_type == binary_log::WRITE_ROWS_EVENT_V1 ||
           ev_type == binary_log::DELETE_ROWS_EVENT_V1 ||
-          ev_type == binary_log::UPDATE_ROWS_EVENT_V1)
+          ev_type == binary_log::UPDATE_ROWS_EVENT_V1 ||
+          ev_type == binary_log::PARTIAL_UPDATE_ROWS_EVENT)
       {
         Rows_log_event *new_ev= (Rows_log_event*) ev;
         if (new_ev->get_flags(Rows_log_event::STMT_END_F))
@@ -1453,16 +1434,9 @@ err:
 end:
   rec_count++;
   /*
-    Destroy the log_event object. If reading from a remote host,
-    set the temp_buf to NULL so that memory isn't freed twice.
+    Destroy the log_event object.
   */
-  if (ev)
-  {
-    if (opt_remote_proto != BINLOG_LOCAL)
-      ev->temp_buf= 0;
-    if (destroy_evt) /* destroy it later if not set (ignored table map) */
-      delete ev;
-  }
+  delete ev;
   DBUG_RETURN(retval);
 }
 
@@ -1585,9 +1559,6 @@ static struct my_option my_long_options[] =
    "prefix for the file names.",
    &output_file, &output_file, 0, GET_STR, REQUIRED_ARG,
    0, 0, 0, 0, 0, 0},
-  {"secure-auth", OPT_SECURE_AUTH, "Refuse client connecting to server if it"
-    " uses old (pre-4.1.1) protocol. Deprecated. Always TRUE",
-    &opt_secure_auth, &opt_secure_auth, 0, GET_BOOL, NO_ARG, 1, 0, 0, 0, 0, 0},
   {"server-id", OPT_SERVER_ID,
    "Extract only binlog entries created by the server having the given id.",
    &filter_server_id, &filter_server_id, 0, GET_ULONG,
@@ -1615,7 +1586,8 @@ static struct my_option my_long_options[] =
   {"socket", 'S', "The socket file to use for connection.",
    &sock, &sock, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0,
    0, 0},
-#include <sslopt-longopts.h>
+#include "caching_sha2_passwordopt-longopts.h"
+#include "sslopt-longopts.h"
 
   {"start-datetime", OPT_START_DATETIME,
    "Start reading the binlog at first event having a datetime equal or "
@@ -1810,19 +1782,6 @@ static void usage()
 Dumps a MySQL binary log in a format usable for viewing or for piping to\n\
 the mysql command line client.\n\n");
   printf("Usage: %s [options] log-files\n", my_progname);
-  /*
-    Turn default for zombies off so that the help on how to 
-    turn them off text won't show up.
-    This is safe to do since it's followed by a call to exit().
-  */
-  for (struct my_option *optp= my_long_options; optp->name; optp++)
-  {
-    if (optp->id == OPT_SECURE_AUTH)
-    {
-      optp->def_value= 0;
-      break;
-    }
-  }
   my_print_help(my_long_options);
   my_print_variables(my_long_options);
 }
@@ -1862,7 +1821,7 @@ get_one_option(int optid, const struct my_option *opt,
     DBUG_PUSH(argument ? argument : default_dbug_option);
     break;
 #endif
-#include <sslopt-case.h>
+#include "sslopt-case.h"
 
   case 'd':
     one_database = 1;
@@ -1949,17 +1908,13 @@ get_one_option(int optid, const struct my_option *opt,
   case '?':
     usage();
     exit(0);
-  case OPT_SECURE_AUTH:
-    /* --secure-auth is a zombie option. */
-    if (!opt_secure_auth)
-    {
-      fprintf(stderr, "mysqlbinlog: [ERROR] --skip-secure-auth is not supported.\n");
-      exit(1);
-    }
-    else
-      CLIENT_WARN_DEPRECATED_NO_REPLACEMENT("--secure-auth");
+  case 's':
+    warning(CLIENT_WARN_DEPRECATED_NO_REPLACEMENT_MSG("--short-form"));
+    short_form= TRUE;
     break;
-
+  case OPT_WAIT_SERVER_ID:
+    warning(CLIENT_WARN_DEPRECATED_MSG("--stop-never-slave-server-id", "--connection-server-id"));
+    break;
   }
   if (tty_password)
     pass= get_tty_password(NullS);
@@ -2028,6 +1983,8 @@ static Exit_status safe_connect()
                  "program_name", "mysqlbinlog");
   mysql_options4(mysql, MYSQL_OPT_CONNECT_ATTR_ADD,
                 "_client_role", "binary_log_listener");
+  set_server_public_key(mysql);
+  set_get_server_public_key_option(mysql);
 
   if (!mysql_real_connect(mysql, host, user, pass, 0, port, sock, 0))
   {
@@ -2081,7 +2038,7 @@ static Exit_status dump_multiple_logs(int argc, char **argv)
   DBUG_ENTER("dump_multiple_logs");
   Exit_status rc= OK_CONTINUE;
 
-  PRINT_EVENT_INFO print_event_info{};
+  PRINT_EVENT_INFO print_event_info;
   if (!print_event_info.init_ok())
     DBUG_RETURN(ERROR_STOP);
   /*
@@ -2199,21 +2156,13 @@ static Exit_status check_master_version()
   }
   delete glob_description_event;
   switch (*version) {
-  case '3':
-    glob_description_event= new Format_description_log_event(1);
-    break;
-  case '4':
-    glob_description_event= new Format_description_log_event(3);
-    break;
   case '5':
   case '8':
     /*
       The server is soon going to send us its Format_description log
-      event, unless it is a 5.0 server with 3.23 or 4.0 binlogs.
-      So we first assume that this is 4.0 (which is enough to read the
-      Format_desc event if one comes).
+      event.
     */
-    glob_description_event= new Format_description_log_event(3);
+    glob_description_event= new Format_description_log_event;
     break;
   default:
     glob_description_event= NULL;
@@ -2265,6 +2214,24 @@ static void fix_gtid_set(MYSQL_RPL *rpl, uchar *packet_gtid_set)
   global_sid_lock->unlock();
 }
 
+/*
+  A RAII class created to handle the memory of Log_event object
+  created in the dump_remote_log_entries method.
+*/
+class Destroy_log_event_guard
+{
+public:
+  Log_event **ev_del;
+  Destroy_log_event_guard(Log_event** ev_arg)
+  {
+    ev_del= ev_arg;
+  }
+  ~Destroy_log_event_guard()
+  {
+    if (*ev_del != NULL)
+      delete *ev_del;
+  }
+};
 
 /**
   Requests binlog dump from a remote server and prints the events it
@@ -2286,6 +2253,8 @@ static Exit_status dump_remote_log_entries(PRINT_EVENT_INFO *print_event_info,
   my_off_t old_off= start_position_mot;
   char log_file_name[FN_REFLEN + 1];
   Exit_status retval= OK_CONTINUE;
+  char *event_buf= NULL;
+  ulong event_len;
 
   DBUG_ENTER("dump_remote_log_entries");
 
@@ -2369,24 +2338,36 @@ static Exit_status dump_remote_log_entries(PRINT_EVENT_INFO *print_event_info,
 
     Log_event_type type= (Log_event_type) rpl.buffer[1 + EVENT_TYPE_OFFSET];
     Log_event *ev= NULL;
+    Destroy_log_event_guard del(&ev);
+    event_len= rpl.size - 1;
+    if (!(event_buf = (char*) my_malloc(key_memory_log_event,
+                                        event_len+1, MYF(0))))
+    {
+      error("Out of memory.");
+      DBUG_RETURN(ERROR_STOP);
+    }
+    memcpy(event_buf, rpl.buffer + 1, event_len);
+    if (rewrite_db_filter(&event_buf, &event_len, glob_description_event))
+    {
+      error("Got a fatal error while applying rewrite db filter.");
+      my_free(event_buf);
+      DBUG_RETURN(ERROR_STOP);
+    }
 
     if (!raw_mode || (type == binary_log::ROTATE_EVENT) ||
         (type == binary_log::FORMAT_DESCRIPTION_EVENT))
     {
       const char *error_msg= NULL;
-      if (!(ev= Log_event::read_log_event((const char*) rpl.buffer + 1,
-                                          rpl.size - 1, &error_msg,
+      if (!(ev= Log_event::read_log_event((const char*) event_buf,
+                                          event_len, &error_msg,
                                           glob_description_event,
                                           opt_verify_binlog_checksum)))
       {
         error("Could not construct log event object: %s", error_msg);
+        my_free(event_buf);
         DBUG_RETURN(ERROR_STOP);
       }
-      /*
-        If reading from a remote host, ensure the temp_buf for the
-        Log_event class is pointing to the incoming stream.
-      */
-      ev->register_temp_buf((char *) rpl.buffer + 1);
+      ev->register_temp_buf(event_buf);
     }
 
     {
@@ -2429,7 +2410,6 @@ static Exit_status dump_remote_log_entries(PRINT_EVENT_INFO *print_event_info,
             if ((rev->ident_len != rpl.file_name_length) ||
                 memcmp(rev->new_log_ident, logname, rpl.file_name_length))
             {
-              reset_temp_buf_and_delete(rev);
               DBUG_RETURN(OK_CONTINUE);
             }
             /*
@@ -2438,7 +2418,6 @@ static Exit_status dump_remote_log_entries(PRINT_EVENT_INFO *print_event_info,
               log. If we are running with to_last_remote_log, we print it,
               because it serves as a useful marker between binlogs then.
             */
-            reset_temp_buf_and_delete(rev);
             continue;
           }
           /*
@@ -2447,6 +2426,7 @@ static Exit_status dump_remote_log_entries(PRINT_EVENT_INFO *print_event_info,
          */
           old_off= start_position_mot;
           rpl.size= 1; // fake Rotate, so don't increment old_off
+          event_len= 0;
         }
       }
       else if (type == binary_log::FORMAT_DESCRIPTION_EVENT)
@@ -2460,14 +2440,18 @@ static Exit_status dump_remote_log_entries(PRINT_EVENT_INFO *print_event_info,
         */
         // fake event when not in raw mode, don't increment old_off
         if ((old_off != BIN_LOG_HEADER_SIZE) && (!raw_mode))
+        {
           rpl.size= 1;
+          event_len= 0;
+        }
         if (raw_mode)
         {
           if (result_file && (result_file != stdout))
             my_fclose(result_file, MYF(0));
           if (!(result_file = my_fopen(log_file_name,
                                        O_WRONLY | MY_FOPEN_BINARY,
-                                       MYF(MY_WME))))
+                                       MYF(MY_WME)))||
+                 DBUG_EVALUATE_IF("simulate_create_log_file_error_for_FD_event", 1, 0))
           {
             error("Could not create log file '%s'", log_file_name);
             DBUG_RETURN(ERROR_STOP);
@@ -2496,17 +2480,24 @@ static Exit_status dump_remote_log_entries(PRINT_EVENT_INFO *print_event_info,
       {
         DBUG_EXECUTE_IF("simulate_result_file_write_error",
                         DBUG_SET("+d,simulate_fwrite_error"););
-        if (my_fwrite(result_file, rpl.buffer + 1, rpl.size - 1, MYF(MY_NABP)))
+        if (my_fwrite(result_file, (const uchar*)event_buf, event_len,
+                      MYF(MY_NABP)))
         {
           error("Could not write into log file '%s'", log_file_name);
           retval= ERROR_STOP;
         }
-        if (ev)
-          reset_temp_buf_and_delete(ev);
+        if (!ev)
+          my_free(event_buf);
+
+        /* Flush result_file after every event */
+        fflush(result_file);
       }
       else
       {
         retval= process_event(print_event_info, ev, old_off, logname);
+        // The event's deletion has been handled in process_event. To prevent that
+        // Destroy_log_event_guard deletes it again, we have to set it to NULL
+        ev= NULL;
       }
 
       if (retval != OK_CONTINUE)
@@ -2560,7 +2551,7 @@ static Exit_status check_header(IO_CACHE* file,
   MY_STAT my_file_stat;
 
   delete glob_description_event;
-  if (!(glob_description_event= new Format_description_log_event(3)))
+  if (!(glob_description_event= new Format_description_log_event))
   {
     error("Failed creating Format_description_log_event; out of memory?");
     DBUG_RETURN(ERROR_STOP);
@@ -2632,25 +2623,7 @@ static Exit_status check_header(IO_CACHE* file,
     {
       DBUG_PRINT("info",("buf[EVENT_TYPE_OFFSET=%d]=%d",
                          EVENT_TYPE_OFFSET, buf[EVENT_TYPE_OFFSET]));
-      /* always test for a Start_v3, even if no --start-position */
-      if (buf[EVENT_TYPE_OFFSET] == binary_log::START_EVENT_V3)
-      {
-        /* This is 3.23 or 4.x */
-        if (uint4korr(buf + EVENT_LEN_OFFSET) < 
-            (LOG_EVENT_MINIMAL_HEADER_LEN + Binary_log_event::START_V3_HEADER_LEN))
-        {
-          /* This is 3.23 (format 1) */
-          delete glob_description_event;
-          if (!(glob_description_event= new Format_description_log_event(1)))
-          {
-            error("Failed creating Format_description_log_event; "
-                  "out of memory?");
-            DBUG_RETURN(ERROR_STOP);
-          }
-        }
-        break;
-      }
-      else if (tmp_pos >= start_position)
+      if (tmp_pos >= start_position)
         break;
       else if (buf[EVENT_TYPE_OFFSET] == binary_log::FORMAT_DESCRIPTION_EVENT)
       {

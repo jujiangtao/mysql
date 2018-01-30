@@ -1,13 +1,20 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -21,11 +28,12 @@
 */
 
 #include <math.h>
-#include "fulltext.h"
-#include <m_ctype.h>
-#include <my_tree.h>
-#include "queues.h"
 #include <mysql/plugin.h>
+
+#include "m_ctype.h"
+#include "my_tree.h"
+#include "storage/myisam/fulltext.h"
+#include "storage/myisam/queues.h"
 
 #define true_word_char(ctype, character) \
                       ((ctype) & (_MY_U | _MY_L | _MY_NMR) || \
@@ -97,6 +105,10 @@
 #define FTB_LQUOT (ft_boolean_syntax[10])
 #define FTB_RQUOT (ft_boolean_syntax[11])
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct st_ft_word {
   uchar * pos;
   uint	 len;
@@ -143,14 +155,21 @@ my_off_t ft_nlq_get_docid(FT_INFO *);
 void ft_nlq_reinit_search(FT_INFO *);
 
 extern const struct _ft_vft _ft_vft_boolean;
+
 int ft_boolean_read_next(FT_INFO *, char *);
 float ft_boolean_find_relevance(FT_INFO *, uchar *, uint);
 void ft_boolean_close_search(FT_INFO *);
 float ft_boolean_get_relevance(FT_INFO *);
 my_off_t ft_boolean_get_docid(FT_INFO *);
 void ft_boolean_reinit_search(FT_INFO *);
+
 MYSQL_FTPARSER_PARAM* ftparser_alloc_param(MI_INFO *info);
 extern MYSQL_FTPARSER_PARAM *ftparser_call_initializer(MI_INFO *info,
                                                        uint keynr,
                                                        uint paramnr);
 extern void ftparser_call_deinitializer(MI_INFO *info);
+
+#ifdef __cplusplus
+}  // extern "C"
+#endif
+

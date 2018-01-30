@@ -1,17 +1,24 @@
 /* Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef DD__TRIGGER_IMPL_INCLUDED
 #define DD__TRIGGER_IMPL_INCLUDED
@@ -19,21 +26,20 @@
 #include "my_config.h"
 
 #include "my_inttypes.h"
+#include "sql/dd/string_type.h"
 
 #if HAVE_SYS_TIME_H
 #include <sys/time.h>
 #endif
 #include <sys/types.h>
 #include <new>
-#include <string>
 
-#include "dd/impl/raw/raw_record.h"
-#include "dd/impl/types/entity_object_impl.h"  // dd::Entity_object_impl
-#include "dd/impl/types/table_impl.h"          // dd::Table_impl
-#include "dd/impl/types/weak_object_impl.h"
-#include "dd/object_id.h"
-#include "dd/types/object_type.h"              // dd::Object_type
-#include "dd/types/trigger.h"                  // dd::Trigger
+#include "sql/dd/impl/raw/raw_record.h"
+#include "sql/dd/impl/types/entity_object_impl.h" // dd::Entity_object_impl
+#include "sql/dd/impl/types/table_impl.h"      // dd::Table_impl
+#include "sql/dd/impl/types/weak_object_impl.h"
+#include "sql/dd/object_id.h"
+#include "sql/dd/types/trigger.h"              // dd::Trigger
 
 namespace dd {
 
@@ -58,8 +64,7 @@ public:
   { }
 
 public:
-  virtual const Object_table &object_table() const override
-  { return Trigger::OBJECT_TABLE(); }
+  virtual const Object_table &object_table() const override;
 
   virtual bool validate() const override;
 
@@ -78,6 +83,8 @@ public:
   { return m_ordinal_position; }
 
 public:
+  static void register_tables(Open_dictionary_tables_ctx *otx);
+
   /////////////////////////////////////////////////////////////////////////
   // Table.
   /////////////////////////////////////////////////////////////////////////
@@ -165,7 +172,9 @@ public:
   /////////////////////////////////////////////////////////////////////////
 
   virtual timeval created() const override
-  { return m_created; }
+  {
+    return m_created;
+  }
 
   virtual void set_created(timeval created) override
   { m_created= created; }
@@ -233,11 +242,11 @@ public:
   { m_schema_collation_id= schema_collation_id; }
 
   // Fix "inherits ... via dominance" warnings
-  virtual Weak_object_impl *impl() override
-  { return Weak_object_impl::impl(); }
+  virtual Entity_object_impl *impl() override
+  { return Entity_object_impl::impl(); }
 
-  virtual const Weak_object_impl *impl() const override
-  { return Weak_object_impl::impl(); }
+  virtual const Entity_object_impl *impl() const override
+  { return Entity_object_impl::impl(); }
 
   virtual Object_id id() const override
   { return Entity_object_impl::id(); }
@@ -298,17 +307,25 @@ private:
 
 ///////////////////////////////////////////////////////////////////////////
 
-class Trigger_type : public Object_type
-{
-public:
-  virtual void register_tables(Open_dictionary_tables_ctx *otx) const;
+/**
+  Used to sort Triggers of the same table by action timing, event type and
+  action order.
+*/
 
-  virtual Weak_object *create_object() const
-  { return new (std::nothrow) Trigger_impl(); }
+struct Trigger_order_comparator
+{
+  bool operator()(const dd::Trigger* t1, const dd::Trigger* t2) const
+  {
+    return ((t1->action_timing() < t2->action_timing()) ||
+            (t1->action_timing() == t2->action_timing() &&
+             t1->event_type() < t2->event_type()) ||
+            (t1->action_timing() == t2->action_timing() &&
+             t1->event_type() == t2->event_type() &&
+             t1->action_order() < t2->action_order()));
+  }
 };
 
 ///////////////////////////////////////////////////////////////////////////
-
 }
 
 #endif // DD__TRIGGER_IMPL_INCLUDED

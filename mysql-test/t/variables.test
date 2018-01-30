@@ -1,16 +1,7 @@
-########################################
-##### WL#7554 Force schema `test` to character set latin1
-##### This test should be migrated to utf8mb4
---disable_query_log
-let $testdbcs311=`select default_character_set_name from information_schema.schemata where schema_name='test'`;
-alter schema default character set latin1;
-use test;
---enable_query_log
-########################################
-
 #
 # test variables
 #
+--source include/have_log_bin.inc
 --disable_warnings
 drop table if exists t1,t2;
 --enable_warnings
@@ -18,7 +9,7 @@ drop table if exists t1,t2;
 SET @default_table_open_cache = @@table_open_cache;
 
 #
-# Bug#19263: variables.test doesn't clean up after itself (I/II -- save)
+# Bug#19263: variables.test does not clean up after itself (I/II -- save)
 #
 set @my_log_error_verbosity       =@@global.log_error_verbosity;
 set @my_connect_timeout           =@@global.connect_timeout;
@@ -41,9 +32,6 @@ set @my_myisam_max_sort_file_size =@@global.myisam_max_sort_file_size;
 set @my_net_buffer_length         =@@global.net_buffer_length;
 set @my_net_write_timeout         =@@global.net_write_timeout;
 set @my_net_read_timeout          =@@global.net_read_timeout;
-set @my_query_cache_limit         =@@global.query_cache_limit;
-set @my_query_cache_type          =@@global.query_cache_type;
-set @my_query_cache_size          =@@global.query_cache_size;
 set @my_server_id                 =@@global.server_id;
 set @my_slow_launch_time          =@@global.slow_launch_time;
 set @my_storage_engine            =@@global.default_storage_engine;
@@ -74,7 +62,7 @@ select @test_int,@test_double,@test_string,@test_string2;
 set @test_int=null,@test_double=null,@test_string=null,@test_string2=null;
 select @test_int,@test_double,@test_string,@test_string2;
 select @t1:=(@t2:=1)+@t3:=4,@t1,@t2,@t3;
-explain extended select @t1:=(@t2:=1)+@t3:=4,@t1,@t2,@t3;
+explain select @t1:=(@t2:=1)+@t3:=4,@t1,@t2,@t3;
 select @t5;
 
 #
@@ -138,9 +126,9 @@ select @@local.max_join_size, @@global.max_join_size;
 select @@identity,  length(@@version)>0;
 select @@VERSION=version();
 select last_insert_id(345);
-explain extended select last_insert_id(345);
+explain select last_insert_id(345);
 select @@IDENTITY,last_insert_id(), @@identity;
-explain extended select @@IDENTITY,last_insert_id(), @@identity;
+explain select @@IDENTITY,last_insert_id(), @@identity;
 
 set big_tables=OFF, big_tables=ON, big_tables=0, big_tables=1, big_tables="OFF", big_tables="ON";
 
@@ -171,7 +159,6 @@ show global variables like 'default_storage_engine';
 --disable_warnings
 select * from performance_schema.global_variables where variable_name like 'default_storage_engine';
 --enable_warnings
-set GLOBAL query_cache_size=102400;
 
 set GLOBAL myisam_max_sort_file_size=2000000;
 show global variables like 'myisam_max_sort_file_size';
@@ -317,8 +304,6 @@ set default_storage_engine=UNKNOWN_TABLE_TYPE;
 --error ER_WRONG_VALUE_FOR_VAR
 set default_storage_engine=MERGE, big_tables=2;
 show local variables like 'default_storage_engine';
---error ER_GLOBAL_VARIABLE
-set SESSION query_cache_size=10000;
 --error ER_UNKNOWN_CHARACTER_SET
 set character_set_client=UNKNOWN_CHARACTER_SET;
 --error ER_UNKNOWN_COLLATION
@@ -365,7 +350,7 @@ set insert_id=1;
 set interactive_timeout=100;
 set join_buffer_size=100;
 set last_insert_id=1;
-set global local_infile=1;
+set global local_infile=0;
 set long_query_time=0.000001;
 select @@long_query_time;
 set long_query_time=100.000001;
@@ -380,7 +365,6 @@ set global max_delayed_threads=100;
 set max_heap_table_size=100;
 set max_join_size=100;
 set max_sort_length=100;
-set max_tmp_tables=100;
 set global max_user_connections=100;
 select @@max_user_connections;
 set global max_write_lock_count=100;
@@ -388,9 +372,6 @@ set myisam_sort_buffer_size=100;
 set global net_buffer_length=100;
 set net_read_timeout=100;
 set net_write_timeout=100;
-set global query_cache_limit=100;
-set global query_cache_size=100;
-set global query_cache_type=demand;
 set read_buffer_size=100;
 set read_rnd_buffer_size=100;
 set global server_id=100;
@@ -418,9 +399,9 @@ set global table_open_cache=100;
 set default_storage_engine=myisam;
 set timestamp=1, timestamp=default;
 set tmp_table_size=100;
-set tx_isolation="READ-COMMITTED";
+set transaction_isolation="READ-COMMITTED";
 set wait_timeout=100;
-set global log_warnings=1;
+set global log_error_verbosity=2;
 set sort_buffer_size=default;
 
 #restore the variable, since it introduces a degree of unpredictability
@@ -523,30 +504,6 @@ SELECT @@global.session.key_buffer_size;
 --error ER_PARSE_ERROR
 SELECT @@global.local.key_buffer_size;
 
-# BUG#5135: cannot turn on log_warnings with SET in 4.1 (and 4.0)
-set @tstlw = @@log_warnings;
-# To ignore MAX_JOIN_SIZE as the no. of rows returned by SELECT in global_variables 
-# exceed the set value of max_join_size=100.
-SET SQL_BIG_SELECTS=1;
-show global variables like 'log_warnings';
---disable_warnings
-select * from performance_schema.global_variables where variable_name like 'log_warnings';
---enable_warnings
-set global log_warnings = 0;
-show global variables like 'log_warnings';
---disable_warnings
-select * from performance_schema.global_variables where variable_name like 'log_warnings';
---enable_warnings
-set global log_warnings = 42;
-show global variables like 'log_warnings';
---disable_warnings
-select * from performance_schema.global_variables where variable_name like 'log_warnings';
---enable_warnings
-set global log_warnings = @tstlw;
-show global variables like 'log_warnings';
---disable_warnings
-select * from performance_schema.global_variables where variable_name like 'log_warnings';
---enable_warnings
 
 #
 # BUG#4788 show create table provides incorrect statement
@@ -792,6 +749,7 @@ select @@version, @@version_comment, @@version_compile_machine,
 # Bug #1039: make tmpdir and datadir available as @@variables (also included
 # basedir)
 #
+SET SQL_BIG_SELECTS=1;
 # Don't actually output, since it depends on the system
 --replace_column 1 # 2 # 3 #
 select @@basedir, @@datadir, @@tmpdir;
@@ -826,6 +784,7 @@ show variables like 'ssl%';
 --replace_column 2 #
 select * from performance_schema.session_variables where variable_name like 'ssl%' order by 1;
 --enable_warnings
+SET SQL_BIG_SELECTS=0;
 
 #
 # Bug #19616: make log_queries_not_using_indexes available in SHOW VARIABLES
@@ -921,9 +880,6 @@ set global myisam_max_sort_file_size =@my_myisam_max_sort_file_size;
 set global net_buffer_length         =@my_net_buffer_length;
 set global net_write_timeout         =@my_net_write_timeout;
 set global net_read_timeout          =@my_net_read_timeout;
-set global query_cache_limit         =@my_query_cache_limit;
-set global query_cache_type          =@my_query_cache_type;
-set global query_cache_size          =@my_query_cache_size;
 set global server_id                 =@my_server_id;
 set global slow_launch_time          =@my_slow_launch_time;
 set global default_storage_engine            =@my_storage_engine;
@@ -1370,7 +1326,7 @@ SET SQL_MODE=DEFAULT;
 
 SET @@global.max_binlog_cache_size=-1;
 SET @@global.max_join_size=0;
-# this is an exception. since this is a new error/warning, let's stay
+# this is an exception. since this is a new error/warning, let us stay
 # compatible with the upcoming 5.6.
 --error ER_WARN_CANT_DROP_DEFAULT_KEYCACHE
 SET @@global.key_buffer_size=0;
@@ -1667,9 +1623,191 @@ set global log_slow_slave_statements = default;
 --echo #
 SHOW VARIABLES LIKE 'sql_mode';
 
-########################################
-##### WL#7554 set schema `test` back to what it was
+# Tests that variables work correctly (setting and showing).
+
+# When log-bin, skip-log-bin and binlog-format options are specified, mask the warning
 --disable_query_log
---eval alter schema test default character set $testdbcs311;
+call mtr.add_suppression("\\[Warning\\] \\[[^]]*\\] You need to use --log-bin to make --binlog-format work.");
 --enable_query_log
-########################################
+
+--echo ---- Init ----
+# Backup global variables so they can be restored at end of test.
+set @my_slave_net_timeout         =@@global.slave_net_timeout;
+
+--echo ---- Test ----
+set global slave_net_timeout=100;
+set global sql_slave_skip_counter=100;
+# The hostname needs to be stripped off its extensions as even
+# in code we use the stripped hostname as default basename
+--let $HOST_NAME= `SELECT SUBSTRING_INDEX(@@hostname, '.', 1)`
+
+# End of 4.1 tests
+
+# BUG #7800: Add various-slave related variables to SHOW VARIABLES
+show variables like 'slave_compressed_protocol';
+--replace_column 2 SLAVE_LOAD_TMPDIR
+show variables like 'slave_load_tmpdir';
+# We just set some arbitrary values in variables-master.opt so we can test
+# that a list of values works correctly
+show variables like 'slave_skip_errors';
+
+--echo ---- Clean Up ----
+
+set global slave_net_timeout=default;
+# sql_slave_skip_counter is write-only, so we can't save previous
+# value and restore it here.  That's ok, because it's normally 0.
+set global sql_slave_skip_counter= 0;
+set @@global.slave_net_timeout= @my_slave_net_timeout;
+
+#
+# Bug#28234 - global/session scope - documentation vs implementation
+#
+--echo
+#
+# Additional variables fixed from sql_repl.cc.
+#
+--echo #
+SHOW VARIABLES like 'log_slave_updates';
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+SELECT @@session.log_slave_updates;
+SELECT @@global.log_slave_updates;
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+SET @@session.log_slave_updates= true;
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+SET @@global.log_slave_updates= true;
+#
+--echo #
+--replace_result $HOST_NAME hostname
+SHOW VARIABLES like 'relay_log';
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+SELECT @@session.relay_log;
+--replace_result $HOST_NAME hostname
+SELECT @@global.relay_log;
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+SET @@session.relay_log= 'x';
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+SET @@global.relay_log= 'x';
+#
+--echo #
+--replace_result $MYSQLTEST_VARDIR MYSQLTEST_VARDIR $HOST_NAME hostname
+SHOW VARIABLES like 'relay_log_basename';
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+SELECT @@session.relay_log_basename;
+--replace_result $MYSQLTEST_VARDIR MYSQLTEST_VARDIR $HOST_NAME hostname
+SELECT @@global.relay_log_basename;
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+SET @@session.relay_log_basename= 'x';
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+SET @@global.relay_log_basename= 'x';
+#
+--echo #
+--replace_column 2 #
+SHOW VARIABLES like 'log_bin_basename';
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+SELECT @@session.log_bin_basename;
+--replace_column 1 #
+SELECT @@global.log_bin_basename;
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+SET @@session.log_bin_basename= 'x';
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+SET @@global.log_bin_basename= 'x';
+#
+--echo #
+--replace_result $MYSQLTEST_VARDIR MYSQLTEST_VARDIR $HOST_NAME hostname
+SHOW VARIABLES like 'relay_log_index';
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+SELECT @@session.relay_log_index;
+--replace_result $MYSQLTEST_VARDIR MYSQLTEST_VARDIR $HOST_NAME hostname
+SELECT @@global.relay_log_index;
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+SET @@session.relay_log_index= 'x';
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+SET @@global.relay_log_index= 'x';
+#
+--echo #
+--replace_column 2 #
+SHOW VARIABLES like 'log_bin_index';
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+SELECT @@session.log_bin_index;
+--replace_column 1 #
+SELECT @@global.log_bin_index;
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+SET @@session.log_bin_index= 'x';
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+SET @@global.log_bin_index= 'x';
+#
+--echo #
+SHOW VARIABLES like 'relay_log_info_file';
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+SELECT @@session.relay_log_info_file;
+SELECT @@global.relay_log_info_file;
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+SET @@session.relay_log_info_file= 'x';
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+SET @@global.relay_log_info_file= 'x';
+#
+--echo #
+SHOW VARIABLES like 'relay_log_space_limit';
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+SELECT @@session.relay_log_space_limit;
+SELECT @@global.relay_log_space_limit;
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+SET @@session.relay_log_space_limit= 7;
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+SET @@global.relay_log_space_limit= 7;
+#
+--echo #
+--replace_column 2 #
+SHOW VARIABLES like 'slave_load_tmpdir';
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+SELECT @@session.slave_load_tmpdir;
+--replace_column 1 #
+SELECT @@global.slave_load_tmpdir;
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+SET @@session.slave_load_tmpdir= 'x';
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+SET @@global.slave_load_tmpdir= 'x';
+#
+--echo #
+SHOW VARIABLES like 'slave_skip_errors';
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+SELECT @@session.slave_skip_errors;
+SELECT @@global.slave_skip_errors;
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+SET @@session.slave_skip_errors= 7;
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+SET @@global.slave_skip_errors= 7;
+#
+
+--echo #
+--echo # Bug #11766769 : 59959: SMALL VALUES OF --MAX-ALLOWED-PACKET 
+--echo #   ARE NOT BEING HONORED
+--echo #
+
+CREATE TABLE t1 (a MEDIUMTEXT);
+
+SET GLOBAL max_allowed_packet=2048;
+SET GLOBAL net_buffer_length=4096;
+CONNECT (con1,localhost,root,,test);
+SHOW SESSION VARIABLES LIKE 'max_allowed_packet';
+SHOW SESSION VARIABLES LIKE 'net_buffer_length';
+--disable_query_log
+--error ER_NET_PACKET_TOO_LARGE,2013
+INSERT INTO t1 VALUES ('123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890');
+--enable_query_log
+
+CONNECTION default;
+DISCONNECT con1;
+SELECT LENGTH(a) FROM t1;
+
+SET GLOBAL max_allowed_packet=default;
+SET GLOBAL net_buffer_length=default;
+DROP TABLE t1;
+
+--echo End of 5.1 tests
+
+#
+# Bug#43835: SHOW VARIABLES does not include 0 for slave_skip_errors
+#
+
+SHOW VARIABLES like 'slave_skip_errors';

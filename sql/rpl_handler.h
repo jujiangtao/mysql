@@ -1,17 +1,24 @@
 /* Copyright (c) 2008, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef RPL_HANDLER_H
 #define RPL_HANDLER_H
@@ -22,11 +29,14 @@
 #include "my_inttypes.h"
 #include "my_psi_config.h"
 #include "my_sys.h"                        // free_root
+#include "mysql/components/services/mysql_rwlock_bits.h"
+#include "mysql/components/services/psi_rwlock_bits.h"
 #include "mysql/psi/mysql_rwlock.h"
 #include "mysql/psi/psi_base.h"
-#include "sql_list.h"                      // List
-#include "sql_plugin_ref.h"                // plugin_ref
-#include "thr_malloc.h"
+#include "mysql/udf_registration_types.h"
+#include "sql/sql_list.h"                  // List
+#include "sql/sql_plugin_ref.h"            // plugin_ref
+#include "sql/thr_malloc.h"
 
 class Master_info;
 class String;
@@ -135,7 +145,7 @@ public:
   }
 
   explicit Delegate(
-#ifdef HAVE_PSI_INTERFACE
+#ifdef HAVE_PSI_RWLOCK_INTERFACE
            PSI_rwlock_key key
 #endif
                     );
@@ -154,7 +164,7 @@ private:
   bool inited;
 };
 
-#ifdef HAVE_PSI_INTERFACE
+#ifdef HAVE_PSI_RWLOCK_INTERFACE
 extern PSI_rwlock_key key_rwlock_Trans_delegate_lock;
 #endif
 
@@ -164,7 +174,7 @@ public:
 
   Trans_delegate()
   : Delegate(
-#ifdef HAVE_PSI_INTERFACE
+#ifdef HAVE_PSI_RWLOCK_INTERFACE
              key_rwlock_Trans_delegate_lock
 #endif
              )
@@ -180,13 +190,9 @@ public:
   int before_rollback(THD *thd, bool all);
   int after_commit(THD *thd, bool all);
   int after_rollback(THD *thd, bool all);
-private:
-  void prepare_table_info(THD* thd,
-                          Trans_table_info*& table_info_list,
-                          uint& number_of_tables);
 };
 
-#ifdef HAVE_PSI_INTERFACE
+#ifdef HAVE_PSI_RWLOCK_INTERFACE
 extern PSI_rwlock_key key_rwlock_Server_state_delegate_lock;
 #endif
 
@@ -196,7 +202,7 @@ public:
 
   Server_state_delegate()
   : Delegate(
-#ifdef HAVE_PSI_INTERFACE
+#ifdef HAVE_PSI_RWLOCK_INTERFACE
              key_rwlock_Server_state_delegate_lock
 #endif
              )
@@ -211,7 +217,7 @@ public:
   int after_server_shutdown(THD *thd);
 };
 
-#ifdef HAVE_PSI_INTERFACE
+#ifdef HAVE_PSI_RWLOCK_INTERFACE
 extern PSI_rwlock_key key_rwlock_Binlog_storage_delegate_lock;
 #endif
 
@@ -221,7 +227,7 @@ public:
 
   Binlog_storage_delegate()
   : Delegate(
-#ifdef HAVE_PSI_INTERFACE
+#ifdef HAVE_PSI_RWLOCK_INTERFACE
              key_rwlock_Binlog_storage_delegate_lock
 #endif
              )
@@ -234,7 +240,7 @@ public:
                  my_off_t log_pos);
 };
 
-#ifdef HAVE_PSI_INTERFACE
+#ifdef HAVE_PSI_RWLOCK_INTERFACE
 extern PSI_rwlock_key key_rwlock_Binlog_transmit_delegate_lock;
 #endif
 
@@ -244,7 +250,7 @@ public:
 
   Binlog_transmit_delegate()
   : Delegate(
-#ifdef HAVE_PSI_INTERFACE
+#ifdef HAVE_PSI_RWLOCK_INTERFACE
              key_rwlock_Binlog_transmit_delegate_lock
 #endif
              )
@@ -265,7 +271,7 @@ public:
   int after_reset_master(THD *thd, ushort flags);
 };
 
-#ifdef HAVE_PSI_INTERFACE
+#ifdef HAVE_PSI_RWLOCK_INTERFACE
 extern PSI_rwlock_key key_rwlock_Binlog_relay_IO_delegate_lock;
 #endif
 
@@ -275,7 +281,7 @@ public:
 
   Binlog_relay_IO_delegate()
   : Delegate(
-#ifdef HAVE_PSI_INTERFACE
+#ifdef HAVE_PSI_RWLOCK_INTERFACE
              key_rwlock_Binlog_relay_IO_delegate_lock
 #endif
              )
@@ -284,6 +290,7 @@ public:
   typedef Binlog_relay_IO_observer Observer;
   int thread_start(THD *thd, Master_info *mi);
   int thread_stop(THD *thd, Master_info *mi);
+  int applier_start(THD *thd, Master_info *mi);
   int applier_stop(THD *thd, Master_info *mi, bool aborted);
   int before_request_transmit(THD *thd, Master_info *mi, ushort flags);
   int after_read_event(THD *thd, Master_info *mi,
@@ -293,6 +300,7 @@ public:
                         const char *event_buf, ulong event_len,
                         bool synced);
   int after_reset_slave(THD *thd, Master_info *mi);
+  int applier_log_event(THD *thd, int& out);
 private:
   void init_param(Binlog_relay_IO_param *param, Master_info *mi);
 };

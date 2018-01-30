@@ -1,17 +1,24 @@
 /* Copyright (c) 2008, 2017, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
-  along with this program; if not, write to the Free Software Foundation,
-  51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+  along with this program; if not, write to the Free Software
+  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 /**
   @file storage/perfschema/table_file_summary_by_instance.cc
@@ -22,161 +29,59 @@
 
 #include <stddef.h>
 
-#include "field.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_thread.h"
-#include "pfs_buffer_container.h"
-#include "pfs_column_types.h"
-#include "pfs_column_values.h"
-#include "pfs_global.h"
-#include "pfs_instr_class.h"
+#include "sql/field.h"
+#include "storage/perfschema/pfs_buffer_container.h"
+#include "storage/perfschema/pfs_column_types.h"
+#include "storage/perfschema/pfs_column_values.h"
+#include "storage/perfschema/pfs_global.h"
+#include "storage/perfschema/pfs_instr_class.h"
 
 THR_LOCK table_file_summary_by_instance::m_table_lock;
 
-/* clang-format off */
-static const TABLE_FIELD_TYPE field_types[]=
-{
-  {
-    { C_STRING_WITH_LEN("FILE_NAME") },
-    { C_STRING_WITH_LEN("varchar(512)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("EVENT_NAME") },
-    { C_STRING_WITH_LEN("varchar(128)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("OBJECT_INSTANCE_BEGIN") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("COUNT_STAR") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("SUM_TIMER_WAIT") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("MIN_TIMER_WAIT") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("AVG_TIMER_WAIT") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("MAX_TIMER_WAIT") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-
-  /** Read */
-  {
-    { C_STRING_WITH_LEN("COUNT_READ") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("SUM_TIMER_READ") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("MIN_TIMER_READ") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("AVG_TIMER_READ") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("MAX_TIMER_READ") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("SUM_NUMBER_OF_BYTES_READ") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-
-  /** Write */
-  {
-    { C_STRING_WITH_LEN("COUNT_WRITE") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("SUM_TIMER_WRITE") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("MIN_TIMER_WRITE") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("AVG_TIMER_WRITE") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("MAX_TIMER_WRITE") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("SUM_NUMBER_OF_BYTES_WRITE") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-
-  /** Misc */
-  {
-    { C_STRING_WITH_LEN("COUNT_MISC") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("SUM_TIMER_MISC") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("MIN_TIMER_MISC") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("AVG_TIMER_MISC") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("MAX_TIMER_MISC") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  }
-};
-/* clang-format on */
-
-TABLE_FIELD_DEF
-table_file_summary_by_instance::m_field_def = {25, field_types};
+Plugin_table table_file_summary_by_instance::m_table_def(
+  /* Schema name */
+  "performance_schema",
+  /* Name */
+  "file_summary_by_instance",
+  /* Definition */
+  "  FILE_NAME VARCHAR(512) not null,\n"
+  "  EVENT_NAME VARCHAR(128) not null,\n"
+  "  OBJECT_INSTANCE_BEGIN BIGINT unsigned not null,\n"
+  "  COUNT_STAR BIGINT unsigned not null,\n"
+  "  SUM_TIMER_WAIT BIGINT unsigned not null,\n"
+  "  MIN_TIMER_WAIT BIGINT unsigned not null,\n"
+  "  AVG_TIMER_WAIT BIGINT unsigned not null,\n"
+  "  MAX_TIMER_WAIT BIGINT unsigned not null,\n"
+  "  COUNT_READ BIGINT unsigned not null,\n"
+  "  SUM_TIMER_READ BIGINT unsigned not null,\n"
+  "  MIN_TIMER_READ BIGINT unsigned not null,\n"
+  "  AVG_TIMER_READ BIGINT unsigned not null,\n"
+  "  MAX_TIMER_READ BIGINT unsigned not null,\n"
+  "  SUM_NUMBER_OF_BYTES_READ BIGINT not null,\n"
+  "  COUNT_WRITE BIGINT unsigned not null,\n"
+  "  SUM_TIMER_WRITE BIGINT unsigned not null,\n"
+  "  MIN_TIMER_WRITE BIGINT unsigned not null,\n"
+  "  AVG_TIMER_WRITE BIGINT unsigned not null,\n"
+  "  MAX_TIMER_WRITE BIGINT unsigned not null,\n"
+  "  SUM_NUMBER_OF_BYTES_WRITE BIGINT not null,\n"
+  "  COUNT_MISC BIGINT unsigned not null,\n"
+  "  SUM_TIMER_MISC BIGINT unsigned not null,\n"
+  "  MIN_TIMER_MISC BIGINT unsigned not null,\n"
+  "  AVG_TIMER_MISC BIGINT unsigned not null,\n"
+  "  MAX_TIMER_MISC BIGINT unsigned not null,\n"
+  "  PRIMARY KEY (OBJECT_INSTANCE_BEGIN) USING HASH,\n"
+  "  KEY (FILE_NAME) USING HASH,\n"
+  "  KEY (EVENT_NAME) USING HASH\n",
+  /* Options */
+  " ENGINE=PERFORMANCE_SCHEMA",
+  /* Tablespace */
+  nullptr);
 
 PFS_engine_table_share table_file_summary_by_instance::m_share = {
-  {C_STRING_WITH_LEN("file_summary_by_instance")},
   &pfs_truncatable_acl,
   table_file_summary_by_instance::create,
   NULL, /* write_row */
@@ -184,9 +89,11 @@ PFS_engine_table_share table_file_summary_by_instance::m_share = {
   table_file_summary_by_instance::get_row_count,
   sizeof(PFS_simple_index),
   &m_table_lock,
-  &m_field_def,
-  false, /* checked */
-  false  /* perpetual */
+  &m_table_def,
+  false, /* perpetual */
+  PFS_engine_table_proxy(),
+  {0},
+  false /* m_in_purgatory */
 };
 
 bool
@@ -229,7 +136,7 @@ PFS_index_file_summary_by_instance_by_event_name::match(const PFS_file *pfs)
 }
 
 PFS_engine_table *
-table_file_summary_by_instance::create(void)
+table_file_summary_by_instance::create(PFS_engine_table_share *)
 {
   return new table_file_summary_by_instance();
 }
@@ -250,6 +157,7 @@ table_file_summary_by_instance::get_row_count(void)
 table_file_summary_by_instance::table_file_summary_by_instance()
   : PFS_engine_table(&m_share, &m_pos), m_pos(0), m_next_pos(0)
 {
+  m_normalizer = time_normalizer::get_wait();
 }
 
 void
@@ -370,10 +278,8 @@ table_file_summary_by_instance::make_row(PFS_file *pfs)
   m_row.m_event_name.make_row(safe_class);
   m_row.m_identity = pfs->m_identity;
 
-  time_normalizer *normalizer = time_normalizer::get(wait_timer);
-
   /* Collect timer and byte count stats */
-  m_row.m_io_stat.set(normalizer, &pfs->m_file_stat.m_io_stat);
+  m_row.m_io_stat.set(m_normalizer, &pfs->m_file_stat.m_io_stat);
 
   if (!pfs->m_lock.end_optimistic_lock(&lock))
   {

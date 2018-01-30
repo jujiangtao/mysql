@@ -1,17 +1,24 @@
-/* Copyright (c) 2014, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA */
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef BASE_MOCK_FIELD_INCLUDED
 #define BASE_MOCK_FIELD_INCLUDED
@@ -21,8 +28,8 @@
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
 
-#include "field.h"
-
+#include "sql/json_dom.h"
+#include "sql/field.h"
 
 /**
   Base mocks for Field_*. Create subclasses mocking additional virtual
@@ -111,6 +118,20 @@ Base_mock_field_varstring(uint32 length, TABLE_SHARE *share)
     delete [] ptr;
     ptr= NULL;
   }
+};
+
+
+class Base_mock_field_json : public Field_json
+{
+  uchar m_null_byte= '\0';
+public:
+  Base_mock_field_json() : Field_json(MAX_BLOB_WIDTH, true, "json_field")
+  {
+    ptr= new uchar[pack_length()];
+    set_null_ptr(&m_null_byte, 1);
+  }
+  ~Base_mock_field_json() { delete[] ptr; }
+  void make_writable() { bitmap_set_bit(table->write_set, field_index); }
 };
 
 #endif // BASE_MOCK_FIELD_INCLUDED

@@ -1,13 +1,20 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -30,20 +37,20 @@
 
 #include <errno.h>
 #include <fcntl.h>
-#include <m_ctype.h>
 #include <sys/types.h>
 #include <time.h>
 
-#include "fulltext.h"
+#include "m_ctype.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_io.h"
 #include "my_macros.h"
 #include "my_pointer_arithmetic.h"
-#include "myisam_sys.h"
-#include "rt_index.h"
-#include "sp_defs.h"
+#include "storage/myisam/fulltext.h"
+#include "storage/myisam/myisam_sys.h"
+#include "storage/myisam/rt_index.h"
+#include "storage/myisam/sp_defs.h"
 
 #ifdef _WIN32
 #include <fcntl.h>
@@ -103,6 +110,7 @@ MI_INFO *mi_open_share(const char *name, MYISAM_SHARE *old_share, int mode,
   ulong rec_per_key_part[HA_MAX_POSSIBLE_KEY*MI_MAX_KEY_SEG];
   my_off_t key_root[HA_MAX_POSSIBLE_KEY],key_del[MI_MAX_KEY_BLOCK_SIZE];
   ulonglong max_key_file_length, max_data_file_length;
+  ST_FILE_ID file_id= {0, 0};
   DBUG_ENTER("mi_open_share");
 
   m_info= NULL;
@@ -114,11 +122,15 @@ MI_INFO *mi_open_share(const char *name, MYISAM_SHARE *old_share, int mode,
 
   realpath_err= my_realpath(name_buff,
                   fn_format(org_name,name,"",MI_NAME_IEXT,4),MYF(0));
-  if (my_is_symlink(org_name) &&
-      (realpath_err || (*myisam_test_invalid_symlink)(name_buff)))
+  if (my_is_symlink(name_buff, &file_id))
   {
-    set_my_errno(HA_WRONG_CREATE_OPTION);
-    DBUG_RETURN (NULL);
+    if (realpath_err ||
+       (*myisam_test_invalid_symlink)(name_buff) ||
+       my_is_symlink(name_buff, &file_id))
+    {
+      set_my_errno(HA_WRONG_CREATE_OPTION);
+      DBUG_RETURN (NULL);
+    }
   }
 
   if (!internal_table)
@@ -148,17 +160,28 @@ MI_INFO *mi_open_share(const char *name, MYISAM_SHARE *old_share, int mode,
                       set_my_errno(HA_ERR_CRASHED);
                       goto err;
                     });
+    DEBUG_SYNC_C("before_opening_indexfile");
     if ((kfile= mysql_file_open(mi_key_file_kfile,
                                 name_buff,
-                                (open_mode= O_RDWR), MYF(0))) < 0)
+                                (open_mode= O_RDWR) | O_NOFOLLOW,
+                                MYF(0))) < 0)
     {
       if ((errno != EROFS && errno != EACCES) ||
 	  mode != O_RDONLY ||
           (kfile= mysql_file_open(mi_key_file_kfile,
                                   name_buff,
-                                  (open_mode= O_RDONLY), MYF(0))) < 0)
+                                  (open_mode= O_RDONLY) | O_NOFOLLOW,
+                                  MYF(0))) < 0)
 	goto err;
     }
+
+    if (!my_is_same_file(kfile, &file_id))
+    {
+      mysql_file_close(kfile, MYF(0));
+      set_my_errno(HA_WRONG_CREATE_OPTION);
+      goto err;
+    }
+
     share->mode=open_mode;
     errpos=1;
     if (mysql_file_read(kfile, share->state.header.file_version, head_length,
@@ -216,7 +239,7 @@ MI_INFO *mi_open_share(const char *name, MYISAM_SHARE *old_share, int mode,
     mysql_file_seek(kfile, 0L, MY_SEEK_SET, MYF(0));
     if (!(open_flags & HA_OPEN_TMP_TABLE))
     {
-      if ((lock_error=my_lock(kfile,F_RDLCK,0L,F_TO_EOF,
+      if ((lock_error=my_lock(kfile,F_RDLCK,
 			      MYF(open_flags & HA_OPEN_WAIT_IF_LOCKED ?
 				  0 : MY_DONT_WAIT))) &&
 	  !(open_flags & HA_OPEN_IGNORE_IF_LOCKED))
@@ -496,7 +519,7 @@ MI_INFO *mi_open_share(const char *name, MYISAM_SHARE *old_share, int mode,
 
     if (! lock_error)
     {
-      (void) my_lock(kfile,F_UNLCK,0L,F_TO_EOF,MYF(MY_SEEK_NOT_DONE));
+      (void) my_lock(kfile,F_UNLCK,MYF(MY_SEEK_NOT_DONE));
       lock_error=1;			/* Database unlocked */
     }
 
@@ -523,10 +546,9 @@ MI_INFO *mi_open_share(const char *name, MYISAM_SHARE *old_share, int mode,
       share->options|= HA_OPTION_READ_ONLY_DATA;
       info.s=share;
       if (_mi_read_pack_info(&info,
-			     (bool)
-			     MY_TEST(!(share->options &
-                                       (HA_OPTION_PACK_RECORD |
-                                        HA_OPTION_TEMP_COMPRESS_RECORD)))))
+			     !(share->options &
+                               (HA_OPTION_PACK_RECORD |
+                                HA_OPTION_TEMP_COMPRESS_RECORD))))
 	goto err;
     }
     else if (share->options & HA_OPTION_PACK_RECORD)
@@ -697,7 +719,7 @@ err:
     /* fall through */
   case 3:
     if (! lock_error)
-      (void) my_lock(kfile, F_UNLCK, 0L, F_TO_EOF, MYF(MY_SEEK_NOT_DONE));
+      (void) my_lock(kfile, F_UNLCK, MYF(MY_SEEK_NOT_DONE));
     /* fall through */
   case 2:
     /* fall through */
@@ -1236,14 +1258,16 @@ int mi_open_datafile(MI_INFO *info, MYISAM_SHARE *share, const char *org_name,
 {
   char *data_name= share->data_file_name;
   char real_data_name[FN_REFLEN];
+  ST_FILE_ID file_id= {0, 0};
 
   if (org_name)
   {
     fn_format(real_data_name,org_name,"",MI_NAME_DEXT,4);
-    if (my_is_symlink(real_data_name))
+    if (my_is_symlink(real_data_name, &file_id))
     {
       if (my_realpath(real_data_name, real_data_name, MYF(0)) ||
-          (*myisam_test_invalid_symlink)(real_data_name))
+          (*myisam_test_invalid_symlink)(real_data_name) ||
+          my_is_symlink(real_data_name, &file_id))
       {
         set_my_errno(HA_WRONG_CREATE_OPTION);
         return 1;
@@ -1251,9 +1275,19 @@ int mi_open_datafile(MI_INFO *info, MYISAM_SHARE *share, const char *org_name,
       data_name= real_data_name;
     }
   }
+  DEBUG_SYNC_C("before_opening_datafile");
   info->dfile= mysql_file_open(mi_key_file_dfile,
-                               data_name, share->mode, MYF(MY_WME));
-  return info->dfile >= 0 ? 0 : 1;
+                               data_name, share->mode | O_NOFOLLOW,
+                               MYF(MY_WME));
+  if (info->dfile < 0)
+    return 1;
+  if (org_name && !my_is_same_file(info->dfile, &file_id))
+  {
+    mysql_file_close(info->dfile, MYF(0));
+    set_my_errno(HA_WRONG_CREATE_OPTION);
+    return 1;
+  }
+  return 0;
 }
 
 

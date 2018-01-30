@@ -1,20 +1,26 @@
 /*
-      Copyright (c) 2013, 2017, Oracle and/or its affiliates. All rights
-   reserved.
+  Copyright (c) 2013, 2017, Oracle and/or its affiliates. All rights reserved.
 
-      This program is free software; you can redistribute it and/or modify
-      it under the terms of the GNU General Public License as published by
-      the Free Software Foundation; version 2 of the License.
+  This program is free software; you can redistribute it and/or modify
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
 
-      This program is distributed in the hope that it will be useful,
-      but WITHOUT ANY WARRANTY; without even the implied warranty of
-      MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-      GNU General Public License for more details.
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
-      You should have received a copy of the GNU General Public License
-      along with this program; if not, write to the Free Software
-      Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
-   */
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License, version 2.0, for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this program; if not, write to the Free Software
+  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
+*/
 
 /**
   @file storage/perfschema/table_replication_applier_status.cc
@@ -27,48 +33,34 @@
 
 #include "my_compiler.h"
 #include "my_dbug.h"
-#include "pfs_instr.h"
-#include "pfs_instr_class.h"
-#include "rpl_info.h"
-#include "rpl_mi.h"
-#include "rpl_msr.h" /*Multi source replication */
-#include "rpl_rli.h"
-#include "rpl_slave.h"
-#include "sql_parse.h"
+#include "sql/rpl_info.h"
+#include "sql/rpl_mi.h"
+#include "sql/rpl_msr.h" /*Multi source replication */
+#include "sql/rpl_rli.h"
+#include "sql/rpl_slave.h"
+#include "sql/sql_parse.h"
+#include "storage/perfschema/pfs_instr.h"
+#include "storage/perfschema/pfs_instr_class.h"
 
 THR_LOCK table_replication_applier_status::m_table_lock;
 
-/* clang-format off */
-static const TABLE_FIELD_TYPE field_types[]=
-{
-  {
-    {C_STRING_WITH_LEN("CHANNEL_NAME")},
-    {C_STRING_WITH_LEN("char(64)")},
-    {NULL, 0}
-  },
-  {
-    {C_STRING_WITH_LEN("SERVICE_STATE")},
-    {C_STRING_WITH_LEN("enum('ON','OFF')")},
-    {NULL, 0}
-  },
-  {
-    {C_STRING_WITH_LEN("REMAINING_DELAY")},
-    {C_STRING_WITH_LEN("int")},
-    {NULL, 0}
-  },
-  {
-    {C_STRING_WITH_LEN("COUNT_TRANSACTIONS_RETRIES")},
-    {C_STRING_WITH_LEN("bigint")},
-    {NULL, 0}
-  },
-};
-/* clang-format on */
-
-TABLE_FIELD_DEF
-table_replication_applier_status::m_field_def = {4, field_types};
+Plugin_table table_replication_applier_status::m_table_def(
+  /* Schema name */
+  "performance_schema",
+  /* Name */
+  "replication_applier_status",
+  /* Definition */
+  "  CHANNEL_NAME CHAR(64) collate utf8_general_ci not null,\n"
+  "  SERVICE_STATE ENUM('ON','OFF') not null,\n"
+  "  REMAINING_DELAY INTEGER unsigned,\n"
+  "  COUNT_TRANSACTIONS_RETRIES BIGINT unsigned not null,\n"
+  "  PRIMARY KEY (CHANNEL_NAME) USING HASH\n",
+  /* Options */
+  " ENGINE=PERFORMANCE_SCHEMA",
+  /* Tablespace */
+  nullptr);
 
 PFS_engine_table_share table_replication_applier_status::m_share = {
-  {C_STRING_WITH_LEN("replication_applier_status")},
   &pfs_readonly_acl,
   table_replication_applier_status::create,
   NULL,                                            /* write_row */
@@ -76,9 +68,11 @@ PFS_engine_table_share table_replication_applier_status::m_share = {
   table_replication_applier_status::get_row_count, /* records */
   sizeof(PFS_simple_index),                        /* ref length */
   &m_table_lock,
-  &m_field_def,
-  false, /* checked */
-  false  /* perpetual */
+  &m_table_def,
+  true, /* perpetual */
+  PFS_engine_table_proxy(),
+  {0},
+  false /* m_in_purgatory */
 };
 
 bool
@@ -103,7 +97,7 @@ PFS_index_rpl_applier_status::match(Master_info *mi)
 }
 
 PFS_engine_table *
-table_replication_applier_status::create(void)
+table_replication_applier_status::create(PFS_engine_table_share *)
 {
   return new table_replication_applier_status();
 }

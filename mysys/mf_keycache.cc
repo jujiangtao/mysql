@@ -1,13 +1,25 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
+
+   Without limiting anything contained in the foregoing, this file,
+   which is part of C Driver for MySQL (Connector/C), is also subject to the
+   Universal FOSS Exception, version 1.0, a copy of which can be found at
+   http://oss.oracle.com/licenses/universal-foss-exception.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -108,6 +120,7 @@
 #include <stddef.h>
 #include <string.h>
 #include <sys/types.h>
+#include <algorithm>
 
 #include "keycache.h"
 #include "my_bit.h"
@@ -123,8 +136,8 @@
 #include "mysql/psi/mysql_cond.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/service_mysql_alloc.h"
+#include "mysys/mysys_priv.h"
 #include "mysys_err.h"
-#include "mysys_priv.h"
 #include "template_utils.h"
 #include "thr_mutex.h"
 
@@ -1856,9 +1869,7 @@ restart:
           block= &keycache->block_root[keycache->blocks_used];
           block_mem_offset= 
            ((size_t) keycache->blocks_used) * keycache->key_cache_block_size;
-          block->buffer= ADD_TO_PTR(keycache->block_mem,
-                                    block_mem_offset,
-                                    uchar*);
+          block->buffer= keycache->block_mem + block_mem_offset;
           keycache->blocks_used++;
           DBUG_ASSERT(!block->next_used);
         }
@@ -3176,15 +3187,6 @@ static void free_block(KEY_CACHE *keycache,
 }
 
 
-static int cmp_sec_link(const void *a_arg, const void *b_arg)
-{
-  BLOCK_LINK **a= pointer_cast<BLOCK_LINK**>(const_cast<void *>(a_arg));
-  BLOCK_LINK **b= pointer_cast<BLOCK_LINK**>(const_cast<void *>(b_arg));
-  return (((*a)->hash_link->diskpos < (*b)->hash_link->diskpos) ? -1 :
-      ((*a)->hash_link->diskpos > (*b)->hash_link->diskpos) ? 1 : 0);
-}
-
-
 /*
   Flush a portion of changed blocks to disk,
   free used blocks if requested
@@ -3206,7 +3208,11 @@ static int flush_cached_blocks(KEY_CACHE *keycache,
      As all blocks referred in 'cache' are marked by BLOCK_IN_FLUSH
      we are guarunteed no thread will change them
   */
-  my_qsort((uchar*) cache, count, sizeof(*cache), cmp_sec_link);
+  std::sort(cache, cache + count,
+    [](const BLOCK_LINK *a, const BLOCK_LINK *b)
+    {
+      return a->hash_link->diskpos < b->hash_link->diskpos;
+    });
 
   mysql_mutex_lock(&keycache->cache_lock);
   /*

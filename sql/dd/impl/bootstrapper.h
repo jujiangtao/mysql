@@ -1,23 +1,33 @@
 /* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef DD__BOOTSTRAPPER_INCLUDED
 #define DD__BOOTSTRAPPER_INCLUDED
 
 
-#include "dd/string_type.h"                    // dd::String_type
+#include <sys/types.h>
+
+#include "sql/dd/string_type.h"                // dd::String_type
+#include "sql/handler.h"                       // dict_init_mode_t
 
 class THD;
 
@@ -39,8 +49,8 @@ bool execute_query(THD *thd, const dd::String_type &q_buf);
 
   The data dictionary is initialized whenever the mysqld process starts.
   We distinguish between the first time start and the subsequent normal
-  restarts, as explained below. However, there are three main design
-  principles that should be elaborated first.
+  restarts/upgrades, as explained below. However, there are three main
+  design principles that should be elaborated first.
 
   1. Two-step process: The dictionary initialization is implemented as
      a two step process. First, scaffolding is built to prepare the
@@ -67,6 +77,12 @@ bool execute_query(THD *thd, const dd::String_type &q_buf);
        generated in the scaffolding phase, to the DD tables.
      - For ordinary restart, we can use the scaffolding to open the physical
        tables, and then sync up the real meta data that is stored persistently.
+     - For upgrade, we first build scaffolding based on the actual DD tables,
+       then we create the target DD tables, migrate the meta data from the old
+       to the new tables, and finally switch from old to new tables
+       atomically by means of DML on the DD tables. This means that we update
+       the schema ids in the DD tables directly instead of executing
+       'RENAME TABLE', which would do auto commit and thus break atomicity.
 
      After the scaffolding has been flushed or synced, what should be left is
      a collection of the core DD meta data objects. This collection is located
@@ -82,29 +98,9 @@ bool execute_query(THD *thd, const dd::String_type &q_buf);
 */
 
 namespace dd {
+class Dictionary_impl;
+
 namespace bootstrap {
-
-// Enumeration of bootstrapping stages.
-enum enum_bootstrap_stage
-{
-  BOOTSTRAP_NOT_STARTED,  // Not started.
-  BOOTSTRAP_STARTED,      // Started, nothing prepared yet.
-  BOOTSTRAP_PREPARED,     // Ready to start creating tables.
-  BOOTSTRAP_CREATED,      // Tables created, able to store persistently.
-  BOOTSTRAP_SYNCED,       // Cached meta data synced with persistent storage.
-  BOOTSTRAP_POPULATED,    // (Re)populated tables with meta data.
-  BOOTSTRAP_FINISHED      // Completed.
-};
-
-
-/**
-  Get the current stage of bootstrapping.
-
-  @return Enumerated value indicating the current bootstrapping stage.
-*/
-
-enum_bootstrap_stage stage();
-
 
 /**
   Initialize the dictionary while starting the server for the first time.
@@ -112,7 +108,7 @@ enum_bootstrap_stage stage();
   At this point, the DDSE has been initialized as a normal plugin. The
   dictionary initialization proceeds as follows:
 
-  1. Preparation phase
+   1. Preparation phase
 
   1.1 Call dict_init() to initialize the DDSE. This will make the predefined
       tablespaces be created physically, and their meta data be returned to
@@ -144,17 +140,15 @@ enum_bootstrap_stage stage();
       other ways, e.g. by storing generated DD objects (see above) or by
       inserting data from other sources (see re-population of character sets
       in the context of server restart below).
-  3.3 Add cyclic foreign keys that cannot be defined while creating the tables
-      in the scaffolding phase. For e.g. the tables representing character
-      sets and collations, there is a cyclic foreign key relationship.
-      Non-cyclic foreign keys are defined as part of the create table
-      statements, but the cyclic keys must be added by ALTER TABLE statements
-      afterwards.
+  3.3 Store various properties of the DD tables, including the SE private data,
+      a representation of the DDL statement used to create the table etc.
   3.4 Verify that the dictionary objects representing the core DD table meta
       data are present in the core registry of the storage adapter. If an
       object representing the meta data of a core DD table is not available,
       then we loose access to the DD tables, and we will not be able to handle
       cache misses or updates to the meta data.
+  3.5 Update the version numbers that are stored, e.g. the DD version and the
+      current mysqld server version.
 
   @param thd    Thread context.
 
@@ -188,7 +182,9 @@ bool initialize(THD *thd);
       tables are not created physically, but the meta data is generated
       and stored in the core registry without being written to disk.
       This is done to prepare enough meta data to actually be able to
-      open the DD tables.
+      open the DD tables. The SQL DDL statements are either retrieved from
+      the table definitions that are part of the server binary (for restart),
+      or from one of the DD tables (for upgrade).
 
   3. Synchronization phase
 
@@ -201,17 +197,29 @@ bool initialize(THD *thd);
       table share structures for the DD tables are re-created based on the
       actual meta data that was read from disk rather than the temporary meta
       data from the scaffolding phase.
-  3.2 Re-populate character sets and collations: The character set and
+  3.2 If this is a restart with a new DD version, we must upgrade the DD
+      tables. In that case, we create the new target DD tables in a temporary
+      schema, migrate the meta data to the new tables, and then do DML on the
+      DD tables to make sure the new DD tables will be used instead of the old
+      ones. This DML involves changing the schema ids directly in the DD tables,
+      and updating the meta data stored in the 'dd_properties' DD table.
+      This will make sure the switch from the old to the new tables is
+      atomic. After this is done, we will reset the DD cache and start over
+      the initialization from step 1.2. Then, the new DD tables will be used,
+      and a normal restart will be done.
+  3.3 Re-populate character sets and collations: The character set and
       collation information is read from files and added to a server
       internal data structure when the server starts. This data structure is,
       in turn, used to populate the corresponding DD tables. The tables must
       be re-populated on each server start if new character sets or collations
       have been added. However, we can not do this if in read only mode.
-  3.3 Verify that the dictionary objects representing the core DD table meta
+  3.4 Verify that the dictionary objects representing the core DD table meta
       data are present in the core registry of the storage adapter. If an
       object representing the meta data of a core DD table is not available,
       then we loose access to the DD tables, and we will not be able to handle
       cache misses or updates to the meta data.
+  3.5 If an upgrade was done, the persistent version numbers are updated,
+      e.g. the DD version and the current mysqld server version.
 
   @param thd            Thread context.
 
@@ -233,53 +241,79 @@ bool store_plugin_IS_table_metadata(THD *thd);
 
 
 /**
-  Check if the server is starting on a data directory without dictionary
-  tables or not.
+  Initialization and verification of dictionary objects
+  after upgrade, similar to what is done after normal server
+  restart.
 
-  If the dictionary tables are present, continue with restart of the server.
-
-  If the dicionary tables are not present, create the dictionary tables in
-  existing data directory.  This function marks dd_upgrade_flag as true to
-  indicate to the server that Data dictionary is being upgraded.
-
-  metadata mysql.plugin table is migrated to the DD tables in case of upgrade.
-  mysql.plugin table is used to initialize all other Storage Engines.
-  This is necessary before migrating other user tables.
-
-  @param thd    Thread context.
-
-  @return       Upon failure, return true, otherwise false.
+  @param thd    Thread context
 */
-bool upgrade_do_pre_checks_and_initialize_dd(THD *thd);
+bool setup_dd_objects_and_collations(THD *thd);
+
 
 /**
-  Finalize upgrade to the new data-dictionary by populating
-  Data Dictionary tables with metadata.
-
-  Populate metadata in Data dictionary tables.
-  This will be done for following database objects:
-  - Databases
-  - Tables
-  - Views
-  - Stored Procedures and Stored Functions
-  - Events
-  - Triggers
+  This function is used in case of crash during upgrade.
+  It tries to initialize dictionary and calls DDSE_dict_recover.
+  InnoDB should do the recovery and empty undo log. Upgrade
+  process will do the cleanup and exit.
 
   @param thd    Thread context.
-
-  @return       Upon failure, return true, otherwise false.
 */
-bool upgrade_fill_dd_and_finalize(THD *thd);
+void recover_innodb_upon_upgrade(THD *thd);
+
 
 /**
-  Drop all DD tables in case there is an error while upgrading server.
+  Initialize InnoDB for
+  - creating new data directory : InnoDB creates system tablespace and
+                                  dictionary tablespace.
+  - normal server restart.      : Verifies existence of system and dictionary
+                                  tablespaces.
+  - in place upgrade            : Verifies existence of system tablespace and
+                                  create dictionary tablespace.
 
-  @param[in] thd               Thread context.
+  @param thd             Thread context.
+  @param dict_init_mode  mode to initialize InnoDB
+  @param version         Dictionary version.
 
   @return       Upon failure, return true, otherwise false.
 */
-bool delete_dictionary_and_cleanup(THD *thd);
-}
+bool DDSE_dict_init(THD *thd,
+                    dict_init_mode_t dict_init_mode,
+                    uint version);
+
+/**
+  Create mysql schema. Create dictionary tables inside InnoDB.
+  Create entry for dictionary tables inside dictionary tables.
+  Add hard coded data to dictionary tables.
+  Create Foreign key constraint on dictionary tables.
+
+  This function is used in both cases, new data directory initialization
+  and in place upgrade.
+
+  @param thd            Thread context.
+  @param is_dd_upgrade  Flag to indicate if it is in place upgrade.
+  @param d              Dictionary instance
+
+  @return       Upon failure, return true, otherwise false.
+
+*/
+bool initialize_dictionary(THD *thd, bool is_dd_upgrade,
+                           Dictionary_impl *d);
+
+
 }
 
+/**
+  Helper function to do rollback or commit, depending on
+  error. Also closes tables and releases transactional
+  locks, regardless of error.
+
+  @param thd   Thread
+  @param error If true, the transaction will be rolledback.
+               otherwise, it is committed.
+
+  @returns false on success, otherwise true.
+*/
+bool end_transaction(THD *thd, bool error);
+
+}
 #endif // DD__BOOTSTRAPPER_INCLUDED

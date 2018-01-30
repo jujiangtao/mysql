@@ -1,13 +1,25 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
+
+   Without limiting anything contained in the foregoing, this file,
+   which is part of C Driver for MySQL (Connector/C), is also subject to the
+   Universal FOSS Exception, version 1.0, a copy of which can be found at
+   http://oss.oracle.com/licenses/universal-foss-exception.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -26,13 +38,24 @@
 #endif
 
 #include "my_command.h"
-#include "my_inttypes.h"
+
+/*
+  We need a definition for my_socket. On the client, <mysql.h> already provides
+  it, but on the server side, we need to get it from a header.
+*/
+#ifndef my_socket_defined
 #include "my_io.h"
+#endif
+
+#ifndef MYSQL_ABI_CHECK
+#include <stdbool.h>
+#endif
 
 #define HOSTNAME_LENGTH 60
 #define SYSTEM_CHARSET_MBMAXLEN 3
 #define FILENAME_CHARSET_MBMAXLEN 5
 #define NAME_CHAR_LEN	64              /**< Field/table name length */
+#define PARTITION_EXPR_CHAR_LEN 2048 /**< Maximum expression length in chars */
 #define USERNAME_CHAR_LENGTH 32
 #define USERNAME_CHAR_LENGTH_STR "32"
 #ifndef NAME_LEN
@@ -137,6 +160,8 @@
 #define FIELD_IS_DROPPED (1<< 26)       /**< Intern: Field is being dropped */
 #define EXPLICIT_NULL_FLAG (1<< 27)     /**< Field is explicitly specified as
                                            NULL by the user */
+#define FIELD_IS_MARKED    (1 << 28)    /**< Intern: field is marked,
+                                             general purpose */
 
 #define REFRESH_GRANT		1	/**< Refresh grant tables */
 #define REFRESH_LOG		2	/**< Start on new log file */
@@ -169,10 +194,6 @@
 */
 #define REFRESH_FAST		32768
 
-/** RESET (remove all queries) from query cache */
-#define REFRESH_QUERY_CACHE	65536
-#define REFRESH_QUERY_CACHE_FREE 0x20000L /**< pack query cache */
-#define REFRESH_DES_KEY_FILE	0x40000L
 #define REFRESH_USER_RESOURCES	0x80000L
 #define REFRESH_FOR_EXPORT      0x100000L /** FLUSH TABLES ... FOR EXPORT */
 #define REFRESH_OPTIMIZER_COSTS 0x200000L /** FLUSH OPTIMIZER_COSTS */
@@ -613,6 +634,14 @@
 
   @deprecated in favor of --ssl-mode.
 */
+
+
+/**
+  The client can handle optional metadata information in the resultset.
+*/
+#define CLIENT_OPTIONAL_RESULTSET_METADATA (1UL << 25)
+
+
 #define CLIENT_SSL_VERIFY_SERVER_CERT (1UL << 30)
 /**
   Don't reset the options after an unsuccessful connect
@@ -657,6 +686,7 @@
                            | CLIENT_CAN_HANDLE_EXPIRED_PASSWORDS \
                            | CLIENT_SESSION_TRACK \
                            | CLIENT_DEPRECATE_EOF \
+                           | CLIENT_OPTIONAL_RESULTSET_METADATA \
 )
 
 /**
@@ -732,8 +762,8 @@ enum SERVER_STATUS_flags_enum
   Server status flags that must be cleared when starting
   execution of a new SQL statement.
   Flags from this set are only added to the
-  current server status by the execution engine, but 
-  never removed -- the execution engine expects them 
+  current server status by the execution engine, but
+  never removed -- the execution engine expects them
   to disappear automagically by the next command.
 */
 #define SERVER_STATUS_CLEAR_SET (SERVER_QUERY_NO_GOOD_INDEX_USED| \
@@ -759,12 +789,10 @@ enum SERVER_STATUS_flags_enum
 */
 #define ONLY_KILL_QUERY         1
 
-#ifdef __cplusplus
+#ifndef MYSQL_VIO
 struct st_vio;
 typedef struct st_vio Vio;
 #define MYSQL_VIO Vio*
-#else
-#define MYSQL_VIO void*
 #endif
 
 #define MAX_TINYINT_WIDTH       3       /**< Max width for a TINY w.o. sign */
@@ -791,17 +819,10 @@ typedef struct st_net {
   int fcntl;
   unsigned int *return_status;
   unsigned char reading_or_writing;
-  char save_char;
+  unsigned char save_char;
   bool compress;
-  /**
-    Pointer to query object in query cache, do not equal NULL (0) for
-    queries in cache that have not stored its results yet
-
-    Unused, please remove with the next incompatible ABI change.
-  */
-  unsigned char *unused;
   unsigned int last_errno;
-  unsigned char error; 
+  unsigned char error;
   /** Client library error message buffer. Actually belongs to struct MYSQL. */
   char last_error[MYSQL_ERRMSG_SIZE];
   /** Client library sqlstate buffer. Set along with the error message. */
@@ -825,7 +846,7 @@ typedef struct st_net {
   @ingroup group_cs
   @{
 */
-#define CLIENT_MULTI_QUERIES    CLIENT_MULTI_STATEMENTS    
+#define CLIENT_MULTI_QUERIES    CLIENT_MULTI_STATEMENTS
 #define FIELD_TYPE_DECIMAL     MYSQL_TYPE_DECIMAL
 #define FIELD_TYPE_NEWDECIMAL  MYSQL_TYPE_NEWDECIMAL
 #define FIELD_TYPE_TINY        MYSQL_TYPE_TINY
@@ -896,6 +917,14 @@ enum mysql_enum_shutdown_level {
 /** @}*/
 
 
+enum enum_resultset_metadata {
+  /** No metadata will be sent. */
+  RESULTSET_METADATA_NONE= 0,
+  /** The server will send all metadata. */
+  RESULTSET_METADATA_FULL= 1
+};
+
+
 enum enum_cursor_type
 {
   CURSOR_TYPE_NO_CURSOR= 0,
@@ -911,6 +940,7 @@ enum enum_mysql_set_option
   MYSQL_OPTION_MULTI_STATEMENTS_ON,
   MYSQL_OPTION_MULTI_STATEMENTS_OFF
 };
+
 
 /**
   Type of state change information that the server can include in the Ok
@@ -960,9 +990,9 @@ bool	net_write_command(NET *net,unsigned char command,
 bool net_write_packet(NET *net, const unsigned char *packet, size_t length);
 unsigned long my_net_read(NET *net);
 
-void my_net_set_write_timeout(NET *net, uint timeout);
-void my_net_set_read_timeout(NET *net, uint timeout);
-void my_net_set_retry_count(NET *net, uint retry_count);
+void my_net_set_write_timeout(NET *net, unsigned int timeout);
+void my_net_set_read_timeout(NET *net, unsigned int timeout);
+void my_net_set_retry_count(NET *net, unsigned int retry_count);
 
 struct rand_struct {
   unsigned long seed1,seed2,max_value;
@@ -973,39 +1003,8 @@ struct rand_struct {
 }
 #endif
 
-/** Used for user defined functions */
-enum Item_result {INVALID_RESULT=-1,
-                  STRING_RESULT=0, REAL_RESULT, INT_RESULT, ROW_RESULT,
-                  DECIMAL_RESULT};
-
-typedef struct st_udf_args
-{
-  unsigned int arg_count;		/**< Number of arguments */
-  enum Item_result *arg_type;		/**< Pointer to item_results */
-  char **args;				/**< Pointer to argument */
-  unsigned long *lengths;		/**< Length of string arguments */
-  char *maybe_null;			/**< Set to 1 for all maybe_null args */
-  char **attributes;                    /**< Pointer to attribute name */
-  unsigned long *attribute_lengths;     /**< Length of attribute arguments */
-  void *extension;
-} UDF_ARGS;
-
-/**
-  Information about the result of a user defined function
-
-  @todo add a notion for determinism of the UDF.
-
-  @sa Item_udf_func::update_used_tables()
-*/
-typedef struct st_udf_init
-{
-  bool maybe_null;             /** 1 if function can return NULL */
-  unsigned int decimals;       /** for real functions */
-  unsigned long max_length;    /** For string functions */
-  char *ptr;                   /** free pointer for function data */
-  bool const_item;             /** 1 if function always returns the same value */
-  void *extension;
-} UDF_INIT;
+/* Include the types here so existing UDFs can keep compiling */
+#include <mysql/udf_registration_types.h>
 
 /**
   @addtogroup group_cs_compresson_constants Constants when using compression
@@ -1050,6 +1049,10 @@ char *octet2hex(char *to, const char *str, unsigned int len);
 
 /* end of password.c */
 
+bool generate_sha256_scramble(unsigned char *dst, size_t dst_size,
+                              const char *src, size_t src_size,
+                              const char *rnd, size_t rnd_size);
+
 char *get_tty_password(const char *opt_message);
 const char *mysql_errno_to_sqlstate(unsigned int mysql_errno);
 
@@ -1059,11 +1062,12 @@ bool my_thread_init(void);
 void my_thread_end(void);
 
 #ifdef STDCALL
-ulong STDCALL net_field_length(uchar **packet);
+unsigned long STDCALL net_field_length(unsigned char **packet);
 #endif
-my_ulonglong net_field_length_ll(uchar **packet);
-uchar *net_store_length(uchar *pkg, ulonglong length);
-unsigned int net_length_size(ulonglong num);
+unsigned long long net_field_length_ll(unsigned char **packet);
+unsigned char *net_store_length(unsigned char *pkg, unsigned long long length);
+unsigned int net_length_size(unsigned long long num);
+unsigned int net_field_length_size(const unsigned char *pos);
 
 #ifdef __cplusplus
 }

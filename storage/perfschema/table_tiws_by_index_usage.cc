@@ -1,13 +1,20 @@
 /* Copyright (c) 2010, 2017, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
   along with this program; if not, write to the Free Software
@@ -24,224 +31,71 @@
 
 #include <stddef.h>
 
-#include "field.h"
 #include "my_dbug.h"
 #include "my_thread.h"
-#include "pfs_buffer_container.h"
-#include "pfs_column_types.h"
-#include "pfs_column_values.h"
-#include "pfs_global.h"
-#include "pfs_instr_class.h"
-#include "pfs_visitor.h"
+#include "sql/field.h"
+#include "storage/perfschema/pfs_buffer_container.h"
+#include "storage/perfschema/pfs_column_types.h"
+#include "storage/perfschema/pfs_column_values.h"
+#include "storage/perfschema/pfs_global.h"
+#include "storage/perfschema/pfs_instr_class.h"
+#include "storage/perfschema/pfs_visitor.h"
 
 THR_LOCK table_tiws_by_index_usage::m_table_lock;
 
-/* clang-format off */
-static const TABLE_FIELD_TYPE field_types[]=
-{
-  {
-    { C_STRING_WITH_LEN("OBJECT_TYPE") },
-    { C_STRING_WITH_LEN("varchar(64)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("OBJECT_SCHEMA") },
-    { C_STRING_WITH_LEN("varchar(64)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("OBJECT_NAME") },
-    { C_STRING_WITH_LEN("varchar(64)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("INDEX_NAME") },
-    { C_STRING_WITH_LEN("varchar(64)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("COUNT_STAR") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("SUM_TIMER_WAIT") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("MIN_TIMER_WAIT") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("AVG_TIMER_WAIT") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("MAX_TIMER_WAIT") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("COUNT_READ") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("SUM_TIMER_READ") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("MIN_TIMER_READ") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("AVG_TIMER_READ") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("MAX_TIMER_READ") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("COUNT_WRITE") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("SUM_TIMER_WRITE") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("MIN_TIMER_WRITE") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("AVG_TIMER_WRITE") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("MAX_TIMER_WRITE") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("COUNT_FETCH") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("SUM_TIMER_FETCH") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("MIN_TIMER_FETCH") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("AVG_TIMER_FETCH") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("MAX_TIMER_FETCH") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("COUNT_INSERT") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("SUM_TIMER_INSERT") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("MIN_TIMER_INSERT") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("AVG_TIMER_INSERT") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("MAX_TIMER_INSERT") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("COUNT_UPDATE") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("SUM_TIMER_UPDATE") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("MIN_TIMER_UPDATE") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("AVG_TIMER_UPDATE") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("MAX_TIMER_UPDATE") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("COUNT_DELETE") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("SUM_TIMER_DELETE") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("MIN_TIMER_DELETE") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("AVG_TIMER_DELETE") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("MAX_TIMER_DELETE") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  }
-};
-/* clang-format on */
-
-TABLE_FIELD_DEF
-table_tiws_by_index_usage::m_field_def = {39, field_types};
+Plugin_table table_tiws_by_index_usage::m_table_def(
+  /* Schema name */
+  "performance_schema",
+  /* Name */
+  "table_io_waits_summary_by_index_usage",
+  /* Definition */
+  "  OBJECT_TYPE VARCHAR(64),\n"
+  "  OBJECT_SCHEMA VARCHAR(64),\n"
+  "  OBJECT_NAME VARCHAR(64),\n"
+  "  INDEX_NAME VARCHAR(64),\n"
+  "  COUNT_STAR BIGINT unsigned not null,\n"
+  "  SUM_TIMER_WAIT BIGINT unsigned not null,\n"
+  "  MIN_TIMER_WAIT BIGINT unsigned not null,\n"
+  "  AVG_TIMER_WAIT BIGINT unsigned not null,\n"
+  "  MAX_TIMER_WAIT BIGINT unsigned not null,\n"
+  "  COUNT_READ BIGINT unsigned not null,\n"
+  "  SUM_TIMER_READ BIGINT unsigned not null,\n"
+  "  MIN_TIMER_READ BIGINT unsigned not null,\n"
+  "  AVG_TIMER_READ BIGINT unsigned not null,\n"
+  "  MAX_TIMER_READ BIGINT unsigned not null,\n"
+  "  COUNT_WRITE BIGINT unsigned not null,\n"
+  "  SUM_TIMER_WRITE BIGINT unsigned not null,\n"
+  "  MIN_TIMER_WRITE BIGINT unsigned not null,\n"
+  "  AVG_TIMER_WRITE BIGINT unsigned not null,\n"
+  "  MAX_TIMER_WRITE BIGINT unsigned not null,\n"
+  "  COUNT_FETCH BIGINT unsigned not null,\n"
+  "  SUM_TIMER_FETCH BIGINT unsigned not null,\n"
+  "  MIN_TIMER_FETCH BIGINT unsigned not null,\n"
+  "  AVG_TIMER_FETCH BIGINT unsigned not null,\n"
+  "  MAX_TIMER_FETCH BIGINT unsigned not null,\n"
+  "  COUNT_INSERT BIGINT unsigned not null,\n"
+  "  SUM_TIMER_INSERT BIGINT unsigned not null,\n"
+  "  MIN_TIMER_INSERT BIGINT unsigned not null,\n"
+  "  AVG_TIMER_INSERT BIGINT unsigned not null,\n"
+  "  MAX_TIMER_INSERT BIGINT unsigned not null,\n"
+  "  COUNT_UPDATE BIGINT unsigned not null,\n"
+  "  SUM_TIMER_UPDATE BIGINT unsigned not null,\n"
+  "  MIN_TIMER_UPDATE BIGINT unsigned not null,\n"
+  "  AVG_TIMER_UPDATE BIGINT unsigned not null,\n"
+  "  MAX_TIMER_UPDATE BIGINT unsigned not null,\n"
+  "  COUNT_DELETE BIGINT unsigned not null,\n"
+  "  SUM_TIMER_DELETE BIGINT unsigned not null,\n"
+  "  MIN_TIMER_DELETE BIGINT unsigned not null,\n"
+  "  AVG_TIMER_DELETE BIGINT unsigned not null,\n"
+  "  MAX_TIMER_DELETE BIGINT unsigned not null,\n"
+  "  UNIQUE KEY `OBJECT` (OBJECT_TYPE, OBJECT_SCHEMA, OBJECT_NAME,\n"
+  "                       INDEX_NAME) USING HASH\n",
+  /* Options */
+  " ENGINE=PERFORMANCE_SCHEMA",
+  /* Tablespace */
+  nullptr);
 
 PFS_engine_table_share table_tiws_by_index_usage::m_share = {
-  {C_STRING_WITH_LEN("table_io_waits_summary_by_index_usage")},
   &pfs_truncatable_acl,
   table_tiws_by_index_usage::create,
   NULL, /* write_row */
@@ -249,9 +103,11 @@ PFS_engine_table_share table_tiws_by_index_usage::m_share = {
   table_tiws_by_index_usage::get_row_count,
   sizeof(pos_tiws_by_index_usage),
   &m_table_lock,
-  &m_field_def,
-  false, /* checked */
-  false  /* perpetual */
+  &m_table_def,
+  false, /* perpetual */
+  PFS_engine_table_proxy(),
+  {0},
+  false /* m_in_purgatory */
 };
 
 bool
@@ -315,7 +171,7 @@ PFS_index_tiws_by_index_usage::match(PFS_table_share *share, uint index)
 }
 
 PFS_engine_table *
-table_tiws_by_index_usage::create(void)
+table_tiws_by_index_usage::create(PFS_engine_table_share *)
 {
   return new table_tiws_by_index_usage();
 }
@@ -337,6 +193,7 @@ table_tiws_by_index_usage::get_row_count(void)
 table_tiws_by_index_usage::table_tiws_by_index_usage()
   : PFS_engine_table(&m_share, &m_pos), m_pos(), m_next_pos()
 {
+  m_normalizer = time_normalizer::get_wait();
 }
 
 void
@@ -349,7 +206,6 @@ table_tiws_by_index_usage::reset_position(void)
 int
 table_tiws_by_index_usage::rnd_init(bool)
 {
-  m_normalizer = time_normalizer::get(wait_timer);
   return 0;
 }
 
@@ -365,21 +221,18 @@ table_tiws_by_index_usage::rnd_next(void)
       global_table_share_container.get(m_pos.m_index_1, &has_more_table);
     if (table_share != NULL)
     {
-      if (table_share->m_enabled)
+      uint safe_key_count = sanitize_index_count(table_share->m_key_count);
+      if (m_pos.m_index_2 < safe_key_count)
       {
-        uint safe_key_count = sanitize_index_count(table_share->m_key_count);
-        if (m_pos.m_index_2 < safe_key_count)
-        {
-          m_next_pos.set_after(&m_pos);
-          return make_row(table_share, m_pos.m_index_2);
-        }
+        m_next_pos.set_after(&m_pos);
+        return make_row(table_share, m_pos.m_index_2);
+      }
 
-        if (m_pos.m_index_2 <= MAX_INDEXES)
-        {
-          m_pos.m_index_2 = MAX_INDEXES;
-          m_next_pos.set_after(&m_pos);
-          return make_row(table_share, m_pos.m_index_2);
-        }
+      if (m_pos.m_index_2 <= MAX_INDEXES)
+      {
+        m_pos.m_index_2 = MAX_INDEXES;
+        m_next_pos.set_after(&m_pos);
+        return make_row(table_share, m_pos.m_index_2);
       }
     }
   }
@@ -397,17 +250,14 @@ table_tiws_by_index_usage::rnd_pos(const void *pos)
   table_share = global_table_share_container.get(m_pos.m_index_1);
   if (table_share != NULL)
   {
-    if (table_share->m_enabled)
+    uint safe_key_count = sanitize_index_count(table_share->m_key_count);
+    if (m_pos.m_index_2 < safe_key_count)
     {
-      uint safe_key_count = sanitize_index_count(table_share->m_key_count);
-      if (m_pos.m_index_2 < safe_key_count)
-      {
-        return make_row(table_share, m_pos.m_index_2);
-      }
-      if (m_pos.m_index_2 == MAX_INDEXES)
-      {
-        return make_row(table_share, m_pos.m_index_2);
-      }
+      return make_row(table_share, m_pos.m_index_2);
+    }
+    if (m_pos.m_index_2 == MAX_INDEXES)
+    {
+      return make_row(table_share, m_pos.m_index_2);
     }
   }
 
@@ -415,10 +265,8 @@ table_tiws_by_index_usage::rnd_pos(const void *pos)
 }
 
 int
-table_tiws_by_index_usage::index_init(uint idx, bool)
+table_tiws_by_index_usage::index_init(uint idx MY_ATTRIBUTE((unused)), bool)
 {
-  m_normalizer = time_normalizer::get(wait_timer);
-
   PFS_index_tiws_by_index_usage *result = NULL;
   DBUG_ASSERT(idx == 0);
   result = PFS_NEW(PFS_index_tiws_by_index_usage);
@@ -439,38 +287,35 @@ table_tiws_by_index_usage::index_next(void)
       global_table_share_container.get(m_pos.m_index_1, &has_more_table);
     if (table_share != NULL)
     {
-      if (table_share->m_enabled)
+      if (m_opened_index->match(table_share))
       {
-        if (m_opened_index->match(table_share))
+        uint safe_key_count = sanitize_index_count(table_share->m_key_count);
+        for (; m_pos.m_index_2 <= MAX_INDEXES; m_pos.m_index_2++)
         {
-          uint safe_key_count = sanitize_index_count(table_share->m_key_count);
-          for (; m_pos.m_index_2 <= MAX_INDEXES; m_pos.m_index_2++)
+          if (m_opened_index->match(table_share, m_pos.m_index_2))
           {
-            if (m_opened_index->match(table_share, m_pos.m_index_2))
+            if (m_pos.m_index_2 < safe_key_count)
             {
-              if (m_pos.m_index_2 < safe_key_count)
+              if (!make_row(table_share, m_pos.m_index_2))
               {
+                m_next_pos.set_after(&m_pos);
+                return 0;
+              }
+            }
+            else
+            {
+              if (m_pos.m_index_2 <= MAX_INDEXES)
+              {
+                m_pos.m_index_2 = MAX_INDEXES;
                 if (!make_row(table_share, m_pos.m_index_2))
                 {
                   m_next_pos.set_after(&m_pos);
                   return 0;
                 }
               }
-              else
-              {
-                if (m_pos.m_index_2 <= MAX_INDEXES)
-                {
-                  m_pos.m_index_2 = MAX_INDEXES;
-                  if (!make_row(table_share, m_pos.m_index_2))
-                  {
-                    m_next_pos.set_after(&m_pos);
-                    return 0;
-                  }
-                }
-              }
             }
-          } /* next index */
-        }
+          }
+        } /* next index */
       }
     }
   }

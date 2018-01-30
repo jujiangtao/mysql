@@ -1,17 +1,24 @@
 /* Copyright (c) 2008, 2017, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
-  along with this program; if not, write to the Free Software Foundation,
-  51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+  along with this program; if not, write to the Free Software
+  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef PFS_COLUMN_TYPES_H
 #define PFS_COLUMN_TYPES_H
@@ -55,13 +62,9 @@
 /** Size of the SOURCE columns. */
 #define COL_SOURCE_SIZE 64
 
-/** Size of the DIGEST columns. */
-#define COL_DIGEST_SIZE 64
-
 /**
   Enum values for the TIMER_NAME columns.
   This enum is found in the following tables:
-  - performance_schema.setup_timer (TIMER_NAME)
   - performance_schema.performance_timer (TIMER_NAME)
 */
 enum enum_timer_name
@@ -70,13 +73,12 @@ enum enum_timer_name
   TIMER_NAME_NANOSEC = 2,
   TIMER_NAME_MICROSEC = 3,
   TIMER_NAME_MILLISEC = 4,
-  TIMER_NAME_TICK = 5
 };
 
 /** Integer, first value of @sa enum_timer_name. */
 #define FIRST_TIMER_NAME (static_cast<int>(TIMER_NAME_CYCLE))
 /** Integer, last value of @sa enum_timer_name. */
-#define LAST_TIMER_NAME (static_cast<int>(TIMER_NAME_TICK))
+#define LAST_TIMER_NAME (static_cast<int>(TIMER_NAME_MILLISEC))
 /** Integer, number of values of @sa enum_timer_name. */
 #define COUNT_TIMER_NAME (LAST_TIMER_NAME - FIRST_TIMER_NAME + 1)
 
@@ -215,12 +217,16 @@ enum enum_object_type
   OBJECT_TYPE_USER_LEVEL_LOCK = 10,
   OBJECT_TYPE_TABLESPACE = 11,
   OBJECT_TYPE_LOCKING_SERVICE = 12,
-  OBJECT_TYPE_ACL_CACHE = 13
+  OBJECT_TYPE_SRID = 13,
+  OBJECT_TYPE_ACL_CACHE = 14,
+  OBJECT_TYPE_COLUMN_STATISTICS = 15,
+  OBJECT_TYPE_BACKUP_LOCK = 16,
+  OBJECT_TYPE_RESOURCE_GROUPS = 17
 };
 /** Integer, first value of @sa enum_object_type. */
 #define FIRST_OBJECT_TYPE (static_cast<int>(OBJECT_TYPE_EVENT))
 /** Integer, last value of @sa enum_object_type. */
-#define LAST_OBJECT_TYPE (static_cast<int>(OBJECT_TYPE_ACL_CACHE))
+#define LAST_OBJECT_TYPE (static_cast<int>(OBJECT_TYPE_RESOURCE_GROUPS))
 /** Integer, number of values of @sa enum_object_type. */
 #define COUNT_OBJECT_TYPE (LAST_OBJECT_TYPE - FIRST_OBJECT_TYPE + 1)
 
@@ -326,5 +332,16 @@ enum enum_transaction_mode
 #define LAST_TRANS_MODE (static_cast<int>(TRANS_MODE_READ_ONLY))
 /** Integer, number of values of @sa enum_transaction_mode. */
 #define COUNT_TRANS_MODE (LAST_TRANS_MODE - FIRST_TRANS_MODE + 1)
+
+/* Flags exposed in setup_instruments.properties */
+#define INSTR_PROPERTIES_SET_SINGLETON (1 << 0)
+#define INSTR_PROPERTIES_SET_PROGRESS (1 << 1)
+#define INSTR_PROPERTIES_SET_USER (1 << 2)
+#define INSTR_PROPERTIES_SET_GLOBAL_STAT (1 << 3)
+#define INSTR_PROPERTIES_SET_MUTABLE (1 << 4)
+
+/* Flags exposed in setup_threads.properties */
+#define THREAD_PROPERTIES_SET_SINGLETON (1 << 0)
+#define THREAD_PROPERTIES_SET_USER (1 << 1)
 
 #endif

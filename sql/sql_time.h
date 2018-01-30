@@ -1,13 +1,20 @@
 /* Copyright (c) 2006, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -19,6 +26,8 @@
 #include "my_config.h"
 
 #include <stddef.h>
+
+#include "mysql/udf_registration_types.h"
 #ifdef HAVE_SYS_TIME_H
 #include <sys/time.h>
 #endif
@@ -30,11 +39,12 @@
 #include "my_inttypes.h"
 #include "my_time.h"
 #include "mysql_time.h"                         /* timestamp_type */
-#include "sql_error.h"                          /* Sql_condition */
+#include "sql/sql_error.h"                      /* Sql_condition */
 #include "sql_string.h"
 
 class THD;
 class my_decimal;
+class Time_zone;
 
 struct Date_time_format
 {
@@ -62,6 +72,7 @@ struct Known_date_time_format
 #define WEEK_YEAR            2
 #define WEEK_FIRST_WEEKDAY   4
 
+bool valid_period(ulong period);
 ulong convert_period_to_month(ulong period);
 ulong convert_month_to_period(ulong month);
 void mix_date_and_time(MYSQL_TIME *ldate, const MYSQL_TIME *ltime);
@@ -100,7 +111,7 @@ inline void date_to_datetime(MYSQL_TIME *ltime)
 {
   ltime->time_type= MYSQL_TIMESTAMP_DATETIME;
 }
-void make_truncated_value_warning(THD *thd,
+bool make_truncated_value_warning(THD *thd,
                                   Sql_condition::enum_severity_level level,
                                   ErrConvString val,
                                   timestamp_type time_type,
@@ -160,9 +171,6 @@ bool datetime_add_nanoseconds_with_round(MYSQL_TIME *ltime,
 bool parse_date_time_format(timestamp_type format_type,
                             Date_time_format *date_time_format);
 
-extern Date_time_format global_date_format;
-extern Date_time_format global_datetime_format;
-extern Date_time_format global_time_format;
 extern Known_date_time_format known_date_time_formats[];
 extern LEX_STRING interval_type_to_name[];
 
@@ -285,4 +293,13 @@ timestamp_type field_type_to_timestamp_type(enum enum_field_types type)
   default: return MYSQL_TIMESTAMP_NONE;
   }
 }
+
+/**
+  This function gets GMT time and adds value of time_zone to get
+  the local time. This function is used when server wants a timestamp
+  value from dictionary system.
+*/
+
+ulonglong gmt_time_to_local_time(ulonglong time);
+
 #endif /* SQL_TIME_INCLUDED */

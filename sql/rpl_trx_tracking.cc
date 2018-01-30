@@ -1,21 +1,41 @@
 /* Copyright (c) 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "rpl_trx_tracking.h"
+#include "sql/rpl_trx_tracking.h"
 
-#include "mysqld.h"
+#include <algorithm>
+#include <utility>
+#include <vector>
+
+#include "binlog_event.h"
+#include "my_inttypes.h"
+#include "sql/binlog.h"
+#include "sql/current_thd.h"
+#include "sql/mysqld.h"
+#include "sql/rpl_context.h"
+#include "sql/rpl_transaction_write_set_ctx.h"
+#include "sql/sql_class.h"
+#include "sql/system_variables.h"
+#include "sql/transaction_info.h"
 
 
 Logical_clock::Logical_clock()
@@ -30,7 +50,7 @@ inline int64 Logical_clock::get_timestamp()
 {
   int64 retval= 0;
   DBUG_ENTER("Logical_clock::get_timestamp");
-  retval= my_atomic_load64(&state);
+  retval= state.load();
   DBUG_RETURN(retval);
 }
 
@@ -83,7 +103,7 @@ inline int64 Logical_clock::set_if_greater(int64 new_val)
 
   DBUG_ASSERT(new_val > 0);
 
-  while (!(cas_rc= my_atomic_cas64(&state, &old_val, new_val)) &&
+  while (!(cas_rc= atomic_compare_exchange_strong(&state, &old_val, new_val)) &&
          old_val < new_val)
   {}
 
@@ -94,6 +114,25 @@ inline int64 Logical_clock::set_if_greater(int64 new_val)
   DBUG_RETURN(cas_rc ? new_val : old_val);
 }
 
+/*
+  Admin statements release metadata lock too earlier. It breaks the rule of lock
+  based logical clock. This function recognizes the statements.
+ */
+static bool is_trx_unsafe_for_parallel_slave(const THD *thd)
+{
+  switch (thd->lex->sql_command)
+  {
+  case SQLCOM_ANALYZE:
+  case SQLCOM_REPAIR:
+  case SQLCOM_OPTIMIZE:
+    return true;
+  case SQLCOM_ALTER_TABLE:
+    return thd->lex->alter_info->flags & Alter_info::ALTER_ADMIN_PARTITION;
+  default:
+    return false;
+  }
+  return false;
+}
 
 /**
   Get the sequence_number for a transaction, and get the last_commit based
@@ -128,10 +167,15 @@ Commit_order_trx_dependency_tracker::get_dependency(THD *thd,
   sequence_number=
     trn_ctx->sequence_number - m_max_committed_transaction.get_offset();
 
-  commit_parent=
-    trn_ctx->last_committed <= m_max_committed_transaction.get_offset()
-           ? SEQ_UNINIT
-           : trn_ctx->last_committed - m_max_committed_transaction.get_offset();
+  if (trn_ctx->last_committed <= m_max_committed_transaction.get_offset())
+    commit_parent= SEQ_UNINIT;
+  else
+    commit_parent=
+      std::max(trn_ctx->last_committed, m_last_blocking_transaction) -
+      m_max_committed_transaction.get_offset();
+
+  if (is_trx_unsafe_for_parallel_slave(thd))
+    m_last_blocking_transaction= trn_ctx->sequence_number;
 }
 
 int64
@@ -179,6 +223,13 @@ Writeset_trx_dependency_tracker::get_dependency(THD *thd,
   Rpl_transaction_write_set_ctx *write_set_ctx=
     thd->get_transaction()->get_transaction_write_set_ctx();
   std::vector<uint64> *writeset= write_set_ctx->get_write_set();
+
+#ifndef DBUG_OFF
+  /* The writeset of an empty transaction must be empty. */
+  if (is_empty_transaction_in_binlog_cache(thd))
+    DBUG_ASSERT(writeset->size() == 0);
+#endif
+
   /*
     Check if this transaction has a writeset, if the writeset will overflow the
     history size, if the transaction_write_set_extraction is consistent
@@ -188,7 +239,12 @@ Writeset_trx_dependency_tracker::get_dependency(THD *thd,
   */
   bool can_use_writesets=
     // empty writeset implies DDL or similar, except if there are missing keys
-    (writeset->size() != 0 || write_set_ctx->get_has_missing_keys()) &&
+    (writeset->size() != 0 || write_set_ctx->get_has_missing_keys() ||
+     /*
+       The empty transactions do not need to clear the writeset history, since
+       they can be executed in parallel.
+     */
+     is_empty_transaction_in_binlog_cache(thd)) &&
     // hashing algorithm for the session must be the same as used by other rows in history
     (global_system_variables.transaction_write_set_extraction ==
      thd->variables.transaction_write_set_extraction) &&
@@ -364,7 +420,13 @@ void
 Transaction_dependency_tracker::rotate()
 {
   m_commit_order.rotate();
-  m_writeset.rotate(0);
+  /*
+    To make slave appliers be able to execute transactions in parallel
+    after rotation, set the minimum commit_parent to 1 after rotation.
+  */
+  m_writeset.rotate(1);
+  if (current_thd)
+    current_thd->get_transaction()->sequence_number= 2;
 }
 
 int64 Transaction_dependency_tracker::get_max_committed_timestamp()

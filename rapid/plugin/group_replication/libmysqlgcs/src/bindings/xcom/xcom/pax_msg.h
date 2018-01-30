@@ -1,13 +1,20 @@
 /* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -16,33 +23,34 @@
 #ifndef PAX_MSG_H
 #define PAX_MSG_H
 
-#include "site_struct.h"
-#include "xcom_vp.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/site_struct.h"
+#include "plugin/group_replication/libmysqlgcs/xdr_gen/xcom_vp.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-
 #if 0
-#define PAX_MSG_SANITY_CHECK(p) {                       \
-    if((p) && !(p)->a && (p)->msg_type == normal){      \
-      assert((p)->op != client_msg);                    \
-      assert((p)->op != ack_prepare_op);                \
-      assert((p)->op != accept_op);                     \
-      assert((p)->op != learn_op);                      \
-    }                                                   \
+#define PAX_MSG_SANITY_CHECK(p)                      \
+  {                                                  \
+    if ((p) && !(p)->a && (p)->msg_type == normal) { \
+      assert((p)->op != client_msg);                 \
+      assert((p)->op != ack_prepare_op);             \
+      assert((p)->op != accept_op);                  \
+      assert((p)->op != learn_op);                   \
+    }                                                \
   }
 #else
 #define PAX_MSG_SANITY_CHECK(p)
 #endif
 
-#define CLONE_PAX_MSG(target, msg) replace_pax_msg((&target), clone_pax_msg_no_app(msg))
+#define CLONE_PAX_MSG(target, msg) \
+  replace_pax_msg((&target), clone_pax_msg_no_app(msg))
 
-int	eq_ballot(ballot x, ballot y);
-int	gt_ballot(ballot x, ballot y);
-int	ref_msg(pax_msg *p);
-int	unref_msg(pax_msg **pp);
+int eq_ballot(ballot x, ballot y);
+int gt_ballot(ballot x, ballot y);
+int ref_msg(pax_msg *p);
+int unref_msg(pax_msg **pp);
 pax_msg *clone_pax_msg_no_app(pax_msg *msg);
 pax_msg *clone_pax_msg(pax_msg *msg);
 ballot *init_ballot(ballot *bal, int cnt, node_no node);
@@ -54,11 +62,14 @@ void delete_pax_msg(pax_msg *p);
 /* void replace_pax_msg(pax_msg **target, pax_msg *p); */
 void unchecked_replace_pax_msg(pax_msg **target, pax_msg *p);
 
-#define replace_pax_msg(target, p) { PAX_MSG_SANITY_CHECK(p); unchecked_replace_pax_msg(target, p);}
+#define replace_pax_msg(target, p)        \
+  {                                       \
+    PAX_MSG_SANITY_CHECK(p);              \
+    unchecked_replace_pax_msg(target, p); \
+  }
 
 #ifdef __cplusplus
 }
 #endif
 
 #endif
-

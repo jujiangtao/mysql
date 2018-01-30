@@ -1,65 +1,77 @@
 /* Copyright (c) 2010, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 
-#include "rpl_master.h"
+#include "sql/rpl_master.h"
 
 #include <fcntl.h>
 #include <string.h>
 #include <sys/types.h>
+#include <memory>
+#include <unordered_map>
+#include <utility>
 
-#include "auth_acls.h"
-#include "auth_common.h"                        // check_global_access
 #include "binary_log_types.h"
-#include "binlog.h"                             // mysql_bin_log
-#include "current_thd.h"
-#include "debug_sync.h"                         // DEBUG_SYNC
-#include "handler.h"
-#include "hash.h"                               // HASH
-#include "item.h"
-#include "item_func.h"                          // user_var_entry
-#include "log.h"                                // sql_print_information
 #include "m_ctype.h"
 #include "m_string.h"                           // strmake
+#include "map_helpers.h"
 #include "my_byteorder.h"
 #include "my_command.h"
 #include "my_dbug.h"
 #include "my_io.h"
+#include "my_loglevel.h"
+#include "my_macros.h"
 #include "my_psi_config.h"
 #include "my_sys.h"
+#include "mysql/components/services/mysql_mutex_bits.h"
+#include "mysql/components/services/psi_mutex_bits.h"
 #include "mysql/psi/mysql_file.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/psi/psi_base.h"
-#include "mysql/psi/psi_mutex.h"
+#include "mysql/service_my_snprintf.h"
 #include "mysql/service_mysql_alloc.h"
-#include "mysqld.h"                             // server_id
 #include "mysqld_error.h"
-#include "mysqld_thd_manager.h"                 // Global_THD_manager
-#include "protocol.h"
-#include "protocol_classic.h"
-#include "psi_memory_key.h"
-#include "rpl_binlog_sender.h"                  // Binlog_sender
-#include "rpl_filter.h"                         // binlog_filter
-#include "rpl_group_replication.h"              // is_group_replication_running
-#include "rpl_gtid.h"
-#include "rpl_handler.h"                        // RUN_HOOK
-#include "sql_class.h"                          // THD
-#include "sql_list.h"
+#include "sql/auth/auth_acls.h"
+#include "sql/auth/auth_common.h"               // check_global_access
+#include "sql/binlog.h"                         // mysql_bin_log
+#include "sql/current_thd.h"
+#include "sql/debug_sync.h"                     // DEBUG_SYNC
+#include "sql/item.h"
+#include "sql/item_func.h"                      // user_var_entry
+#include "sql/log.h"                            // log_*()
+#include "sql/mysqld.h"                         // server_id
+#include "sql/mysqld_thd_manager.h"             // Global_THD_manager
+#include "sql/protocol.h"
+#include "sql/protocol_classic.h"
+#include "sql/psi_memory_key.h"
+#include "sql/rpl_binlog_sender.h"              // Binlog_sender
+#include "sql/rpl_filter.h"                     // binlog_filter
+#include "sql/rpl_group_replication.h"          // is_group_replication_running
+#include "sql/rpl_gtid.h"
+#include "sql/rpl_handler.h"                    // RUN_HOOK
+#include "sql/sql_class.h"                      // THD
+#include "sql/sql_list.h"
+#include "sql/system_variables.h"
 #include "sql_string.h"
-#include "system_variables.h"
-#include "template_utils.h"
 #include "thr_mutex.h"
 #include "typelib.h"
 
@@ -67,8 +79,8 @@
 int max_binlog_dump_events = 0; // unlimited
 bool opt_sporadic_binlog_dump_fail = 0;
 
-#define SLAVE_LIST_CHUNK 128
-HASH slave_list;
+malloc_unordered_map<uint32, unique_ptr_my_free<SLAVE_INFO>>
+  slave_list{key_memory_SLAVE_INFO};
 extern TYPELIB binlog_checksum_typelib;
 
 
@@ -78,7 +90,6 @@ extern TYPELIB binlog_checksum_typelib;
   if (p >= p_end) \
   { \
     my_error(ER_MALFORMED_PACKET, MYF(0)); \
-    my_free(si); \
     return 1; \
   } \
   len= (uint)*p++;  \
@@ -92,27 +103,14 @@ extern TYPELIB binlog_checksum_typelib;
 }\
 
 
-static const uchar
-*slave_list_key(const uchar *arg, size_t *len)
-{
-  const SLAVE_INFO *si= pointer_cast<const SLAVE_INFO*>(arg);
-  *len = 4;
-  return pointer_cast<const uchar*>(&si->server_id);
-}
-
-static void slave_info_free(void *s)
-{
-  my_free(s);
-}
-
-
 static mysql_mutex_t LOCK_slave_list;
+static bool slave_list_inited= false;
 #ifdef HAVE_PSI_INTERFACE
 static PSI_mutex_key key_LOCK_slave_list;
 
 static PSI_mutex_info all_slave_list_mutexes[]=
 {
-  { &key_LOCK_slave_list, "LOCK_slave_list", PSI_FLAG_GLOBAL, 0}
+  { &key_LOCK_slave_list, "LOCK_slave_list", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME}
 };
 
 static void init_all_slave_list_mutexes(void)
@@ -130,20 +128,16 @@ void init_slave_list()
   init_all_slave_list_mutexes();
 #endif
 
-  my_hash_init(&slave_list, system_charset_info, SLAVE_LIST_CHUNK, 0,
-               slave_list_key,
-               slave_info_free, 0,
-               key_memory_SLAVE_INFO);
   mysql_mutex_init(key_LOCK_slave_list, &LOCK_slave_list, MY_MUTEX_INIT_FAST);
+  slave_list_inited= true;
 }
 
 void end_slave_list()
 {
-  /* No protection by a mutex needed as we are only called at shutdown */
-  if (my_hash_inited(&slave_list))
+  if (slave_list_inited)
   {
-    my_hash_free(&slave_list);
     mysql_mutex_destroy(&LOCK_slave_list);
+    slave_list_inited= false;
   }
 }
 
@@ -159,21 +153,22 @@ void end_slave_list()
 int register_slave(THD* thd, uchar* packet, size_t packet_length)
 {
   int res;
-  SLAVE_INFO *si;
   uchar *p= packet, *p_end= packet + packet_length;
   const char *errmsg= "Wrong parameters to function register_slave";
 
   if (check_access(thd, REPL_SLAVE_ACL, any_db, NULL, NULL, 0, 0))
     return 1;
-  if (!(si = (SLAVE_INFO*)my_malloc(key_memory_SLAVE_INFO,
-                                    sizeof(SLAVE_INFO), MYF(MY_WME))))
-    goto err2;
+
+  unique_ptr_my_free<SLAVE_INFO> si
+    ((SLAVE_INFO*)my_malloc(key_memory_SLAVE_INFO,
+                            sizeof(SLAVE_INFO), MYF(MY_WME)));
+  if (si == nullptr)
+    return 1;
 
   /* 4 bytes for the server id */
   if (p + 4 > p_end)
   {
     my_error(ER_MALFORMED_PACKET, MYF(0));
-    my_free(si);
     return 1;
   }
 
@@ -199,14 +194,12 @@ int register_slave(THD* thd, uchar* packet, size_t packet_length)
 
   mysql_mutex_lock(&LOCK_slave_list);
   unregister_slave(thd, false, false/*need_lock_slave_list=false*/);
-  res= my_hash_insert(&slave_list, (uchar*) si);
+  res= !slave_list.emplace(si->server_id, std::move(si)).second;
   mysql_mutex_unlock(&LOCK_slave_list);
   return res;
 
 err:
-  my_free(si);
   my_message(ER_UNKNOWN_ERROR, errmsg, MYF(0)); /* purecov: inspected */
-err2:
   return 1;
 }
 
@@ -219,11 +212,9 @@ void unregister_slave(THD* thd, bool only_mine, bool need_lock_slave_list)
     else
       mysql_mutex_assert_owner(&LOCK_slave_list);
 
-    SLAVE_INFO* old_si;
-    if ((old_si = (SLAVE_INFO*)my_hash_search(&slave_list,
-                                              (uchar*)&thd->server_id, 4)) &&
-	(!only_mine || old_si->thd == thd))
-    my_hash_delete(&slave_list, (uchar*)old_si);
+    auto it= slave_list.find(thd->server_id);
+    if (it != slave_list.end() && (!only_mine || it->second->thd == thd))
+      slave_list.erase(it);
 
     if (need_lock_slave_list)
       mysql_mutex_unlock(&LOCK_slave_list);
@@ -265,9 +256,9 @@ bool show_slave_hosts(THD* thd)
 
   mysql_mutex_lock(&LOCK_slave_list);
 
-  for (uint i = 0; i < slave_list.records; ++i)
+  for (const auto &key_and_value : slave_list)
   {
-    SLAVE_INFO* si = (SLAVE_INFO*) my_hash_element(&slave_list, i);
+    SLAVE_INFO* si = key_and_value.second.get();
     protocol->start_row();
     protocol->store((uint32) si->server_id);
     protocol->store(si->host, &my_charset_bin);
@@ -454,19 +445,16 @@ void mysql_binlog_send(THD* thd, char* log_ident, my_off_t pos,
 */
 String *get_slave_uuid(THD *thd, String *value)
 {
-  uchar name[]= "slave_uuid";
-
   if (value == NULL)
     return NULL;
 
   /* Protects thd->user_vars. */
   mysql_mutex_lock(&thd->LOCK_thd_data);
 
-  user_var_entry *entry=
-    (user_var_entry*) my_hash_search(&thd->user_vars, name, sizeof(name)-1);
-  if (entry && entry->length() > 0)
+  const auto it= thd->user_vars.find("slave_uuid");
+  if (it != thd->user_vars.end() && it->second->length() > 0)
   {
-    value->copy(entry->ptr(), entry->length(), NULL);
+    value->copy(it->second->ptr(), it->second->length(), NULL);
     mysql_mutex_unlock(&thd->LOCK_thd_data);
     return value;
   }
@@ -559,23 +547,19 @@ void kill_zombie_dump_threads(THD *thd)
       it will be slow because it will iterate through the list
       again. We just to do kill the thread ourselves.
     */
-    if (log_warnings > 1)
+    if (log_error_verbosity > 2)
     {
       if (slave_uuid.length())
       {
-        sql_print_information("While initializing dump thread for slave with "
-                              "UUID <%s>, found a zombie dump thread with the "
-                              "same UUID. Master is killing the zombie dump "
-                              "thread(%u).", slave_uuid.c_ptr(),
-                              tmp->thread_id());
+        LogErr(INFORMATION_LEVEL, ER_RPL_ZOMBIE_ENCOUNTERED,
+               "UUID", slave_uuid.c_ptr(), "UUID", tmp->thread_id());
       }
       else
       {
-        sql_print_information("While initializing dump thread for slave with "
-                              "server_id <%u>, found a zombie dump thread with the "
-                              "same server_id. Master is killing the zombie dump "
-                              "thread(%u).", thd->server_id,
-                              tmp->thread_id());
+        char numbuf[32];
+        my_snprintf(numbuf, sizeof(numbuf), "%u", thd->server_id);
+        LogErr(INFORMATION_LEVEL, ER_RPL_ZOMBIE_ENCOUNTERED,
+               "server_id", numbuf, "server_id", tmp->thread_id());
       }
     }
     tmp->duplicate_slave_id= true;
@@ -597,6 +581,15 @@ bool reset_master(THD* thd)
 {
   bool ret= false;
 
+  /*
+    RESET MASTER command should ignore 'read-only' and 'super_read_only'
+    options so that it can update 'mysql.gtid_executed' replication repository
+    table.
+
+    Please note that skip_readonly_check flag should be set even when binary log
+    is not enabled, as RESET MASTER command will clear 'gtid_executed' table.
+  */
+  thd->set_skip_readonly_check();
   if (is_group_replication_running())
   {
     my_error(ER_CANT_RESET_MASTER, MYF(0), "Group Replication is running");

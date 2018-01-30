@@ -1,13 +1,20 @@
 /* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -20,11 +27,12 @@
 
 #include "lex_string.h"
 #include "m_string.h"
-#include "mem_root_array.h"
 #include "my_base.h"
-#include "sql_alloc.h"
-#include "sql_list.h"
-#include "thr_malloc.h"
+#include "mysql/udf_registration_types.h"
+#include "sql/mem_root_array.h"
+#include "sql/sql_alloc.h"
+#include "sql/sql_list.h"
+#include "sql/thr_malloc.h"
 
 class Create_field;
 class THD;
@@ -159,7 +167,9 @@ class Foreign_key_spec: public Key_spec
 {
 public:
   const LEX_CSTRING ref_db;
+  const LEX_CSTRING orig_ref_db;
   const LEX_CSTRING ref_table;
+  const LEX_CSTRING orig_ref_table;
   Mem_root_array<const Key_part_spec*> ref_columns;
   const fk_option delete_opt;
   const fk_option update_opt;
@@ -169,7 +179,9 @@ public:
                    const LEX_CSTRING &name_arg,
                    List<Key_part_spec> cols,
                    const LEX_CSTRING &ref_db_arg,
+                   const LEX_CSTRING &orig_ref_db_arg,
                    const LEX_CSTRING &ref_table_arg,
+                   const LEX_CSTRING &orig_ref_table_arg,
                    List<Key_part_spec> *ref_cols,
                    fk_option delete_opt_arg,
                    fk_option update_opt_arg,
@@ -179,7 +191,9 @@ public:
               false, // We don't check for duplicate FKs.
               cols),
     ref_db(ref_db_arg),
+    orig_ref_db(orig_ref_db_arg),
     ref_table(ref_table_arg),
+    orig_ref_table(orig_ref_table_arg),
     ref_columns(mem_root),
     delete_opt(delete_opt_arg),
     update_opt(update_opt_arg),
@@ -196,8 +210,8 @@ public:
   }
 
   /**
-    Check if the foreign key options are compatible with columns
-    on which the FK is created.
+    Check if the foreign key name has valid length and its options
+    are compatible with columns on which the FK is created.
 
     @param thd                  Thread handle
     @param table_name           Table name (for error reporting)

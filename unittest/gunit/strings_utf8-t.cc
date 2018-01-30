@@ -2,26 +2,33 @@
    Copyright (c) 2013, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include <gtest/gtest.h>
-#include <m_ctype.h>
-#include <mf_wcomp.h>     // wild_compare_full, wild_one, wild_any
-#include <sql_class.h>
-
-#include "my_inttypes.h"
 #include <string>
-#include "strfunc.h"      // casedn
+
+#include "m_ctype.h"
+#include "mf_wcomp.h"     // wild_compare_full, wild_one, wild_any
+#include "my_inttypes.h"
+#include "sql/sql_class.h"
+#include "sql/strfunc.h"  // casedn
 
 namespace strings_utf8_unittest {
 
@@ -821,5 +828,35 @@ TEST(UCAWildCmpTest, UCA900WildCmpCaseSensitive)
   EXPECT_TRUE(uca_wildcmp(cs, "abdbcd", "a%cd"));
   EXPECT_FALSE(uca_wildcmp(cs, "abecd", "a%bd"));
 
+}
+
+TEST(UCAWildCmpTest, UCA900WildCmp_AS_CI)
+{
+  MY_CHARSET_LOADER loader;
+  my_charset_loader_init_mysys(&loader);
+  CHARSET_INFO *cs= my_collation_get_by_name(&loader, "utf8mb4_0900_as_ci",
+                                             MYF(0));
+  EXPECT_TRUE(uca_wildcmp(cs, "ǎḄÇ", "Ǎḅç"));
+  EXPECT_FALSE(uca_wildcmp(cs, "ÁḆĈ", "Ǎḅç"));
+  EXPECT_TRUE(uca_wildcmp(cs, "ǍBc", "_bc"));
+  EXPECT_TRUE(uca_wildcmp(cs, "Aḅc", "a_c"));
+  EXPECT_TRUE(uca_wildcmp(cs, "Abç", "ab_"));
+  EXPECT_TRUE(uca_wildcmp(cs, "Ǎḅç", "%ç"));
+  EXPECT_TRUE(uca_wildcmp(cs, "Ǎḅç", "ǎ%Ç"));
+  EXPECT_TRUE(uca_wildcmp(cs, "aḅç", "a%"));
+  EXPECT_TRUE(uca_wildcmp(cs, "Ǎḅçdef", "ǎ%d_f"));
+  EXPECT_TRUE(uca_wildcmp(cs, "Ǎḅçdefg", "ǎ%d%g"));
+  EXPECT_TRUE(uca_wildcmp(cs, "ǎ\\", "Ǎ\\"));
+  EXPECT_TRUE(uca_wildcmp(cs, "ǎa\\", "Ǎ%\\"));
+  EXPECT_FALSE(uca_wildcmp(cs, "Y", u8"\u00dd"));
+  EXPECT_FALSE(uca_wildcmp(cs, "abcd", "Ǎḅçde"));
+  EXPECT_FALSE(uca_wildcmp(cs, "abcde", "Ǎḅçd"));
+  EXPECT_FALSE(uca_wildcmp(cs, "Ǎḅçde", "a%f"));
+  EXPECT_TRUE(uca_wildcmp(cs, "Ǎḅçdef", "ǎ%%f"));
+  EXPECT_TRUE(uca_wildcmp(cs, "Ǎḅçd", "ǎ__d"));
+  EXPECT_TRUE(uca_wildcmp(cs, "Ǎḅçd", "ǎ\\ḄÇd"));
+  EXPECT_FALSE(uca_wildcmp(cs, "a\\bcd", "Ǎḅçd"));
+  EXPECT_TRUE(uca_wildcmp(cs, "Ǎḅdbçd", "ǎ%Çd"));
+  EXPECT_FALSE(uca_wildcmp(cs, "Ǎḅeçd", "a%bd"));
 }
 }

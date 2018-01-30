@@ -1,13 +1,20 @@
 /* Copyright (c) 2010, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -16,39 +23,37 @@
 #include "sql/sql_reload.h"
 
 #include <stddef.h>
+#include <atomic>
 
-#include "auth_common.h" // acl_reload, grant_reload
-#include "binlog.h"
-#include "connection_handler_impl.h"
-#include "current_thd.h" // my_thread_set_THR_THD
-#include "debug_sync.h"
-#include "des_key_file.h"
-#include "handler.h"
-#include "hostname.h"    // hostname_cache_refresh
 #include "lex_string.h"
-#include "log.h"         // query_logger
-#include "mdl.h"
+#include "map_helpers.h"
 #include "my_base.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_sys.h"
 #include "mysql_com.h"
-#include "mysqld.h"      // select_errors
 #include "mysqld_error.h"
-#include "opt_costconstantcache.h"     // reload_optimizer_cost_constants
-#include "query_options.h"
-#include "rpl_master.h"  // reset_master
-#include "rpl_slave.h"   // reset_slave
-#include "sql_admin.h"
-#include "sql_base.h"    // close_cached_tables
-#include "sql_cache.h"   // query_cache
-#include "sql_class.h"   // THD
-#include "sql_connect.h" // reset_mqh
-#include "sql_const.h"
-#include "sql_plugin_ref.h"
-#include "sql_servers.h" // servers_reload
-#include "system_variables.h"
-#include "table.h"
+#include "sql/auth/auth_common.h" // acl_reload, grant_reload
+#include "sql/binlog.h"
+#include "sql/conn_handler/connection_handler_impl.h"
+#include "sql/current_thd.h" // my_thread_set_THR_THD
+#include "sql/debug_sync.h"
+#include "sql/handler.h"
+#include "sql/hostname.h" // hostname_cache_refresh
+#include "sql/log.h"     // query_logger
+#include "sql/mdl.h"
+#include "sql/mysqld.h"  // select_errors
+#include "sql/opt_costconstantcache.h" // reload_optimizer_cost_constants
+#include "sql/query_options.h"
+#include "sql/rpl_master.h" // reset_master
+#include "sql/rpl_slave.h" // reset_slave
+#include "sql/sql_base.h" // close_cached_tables
+#include "sql/sql_class.h" // THD
+#include "sql/sql_connect.h" // reset_mqh
+#include "sql/sql_const.h"
+#include "sql/sql_servers.h" // servers_reload
+#include "sql/system_variables.h"
+#include "sql/table.h"
 
 /**
   Reload/resets privileges and the different caches.
@@ -100,6 +105,7 @@ bool reload_acl_and_cache(THD *thd, unsigned long options,
       bool reload_acl_failed= acl_reload(thd);
       bool reload_grants_failed= grant_reload(thd);
       bool reload_servers_failed= servers_reload(thd);
+      notify_flush_event(thd);
       if (reload_acl_failed || reload_grants_failed || reload_servers_failed)
       {
         result= 1;
@@ -159,8 +165,10 @@ bool reload_acl_and_cache(THD *thd, unsigned long options,
   }
 
   if (options & REFRESH_ERROR_LOG)
+  {
     if (reopen_error_log())
       result= 1;
+  }
 
   if ((options & REFRESH_SLOW_LOG) && opt_slow_log)
     query_logger.reopen_log_file(QUERY_LOG_SLOW);
@@ -208,25 +216,17 @@ bool reload_acl_and_cache(THD *thd, unsigned long options,
     {
       delete tmp_thd;
       /* Remember that we don't have a THD */
-      my_thread_set_THR_THD(NULL);
+      current_thd= nullptr;
       thd= 0;
     }
-  }
-  if (options & REFRESH_QUERY_CACHE_FREE)
-  {
-    query_cache.pack(thd);			// FLUSH QUERY CACHE
-    options &= ~REFRESH_QUERY_CACHE;    // Don't flush cache, just free memory
-  }
-  if (options & (REFRESH_TABLES | REFRESH_QUERY_CACHE))
-  {
-    query_cache.flush(thd);			// RESET QUERY CACHE
   }
 
   DBUG_ASSERT(!thd || thd->locked_tables_mode ||
               !thd->mdl_context.has_locks() ||
-              thd->handler_tables_hash.records ||
+              !thd->handler_tables_hash.empty() ||
               thd->mdl_context.has_locks(MDL_key::USER_LEVEL_LOCK) ||
               thd->mdl_context.has_locks(MDL_key::LOCKING_SERVICE) ||
+              thd->mdl_context.has_locks(MDL_key::BACKUP_LOCK) ||
               thd->global_read_lock.is_acquired());
 
   /*
@@ -345,16 +345,6 @@ bool reload_acl_and_cache(THD *thd, unsigned long options,
       result= 1;
     }
   }
-#ifdef HAVE_OPENSSL
-   if (options & REFRESH_DES_KEY_FILE)
-   {
-     if (des_key_file && load_des_key_file(des_key_file))
-     {
-       /* NOTE: my_error() has been already called by load_des_key_file(). */
-       result= 1;
-     }
-   }
-#endif
   if (options & REFRESH_OPTIMIZER_COSTS)
     reload_optimizer_cost_constants();
  if (options & REFRESH_SLAVE)

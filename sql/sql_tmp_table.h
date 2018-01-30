@@ -4,13 +4,20 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -26,18 +33,18 @@
 
 #include <sys/types.h>
 
-#include "item.h"           // Item
-#include "mem_root_array.h"
 #include "my_base.h"        // ha_rows
 #include "my_inttypes.h"
-#include "table.h"
+#include "mysql/udf_registration_types.h"
+#include "sql/item.h"       // Item
+#include "sql/mem_root_array.h"
+#include "sql/table.h"
+#include "sql/temp_table_param.h"
 
 class Create_field;
 class Field;
-class Opt_trace_context;
 class SJ_TMP_TABLE;
 class THD;
-class Temp_table_param;
 template <class T> class List;
 
 typedef struct st_columndef MI_COLUMNDEF;
@@ -51,13 +58,31 @@ typedef struct st_order ORDER;
  */
 enum enum_internal_tmp_disk_storage_engine { TMP_TABLE_MYISAM, TMP_TABLE_INNODB };
 
+/**
+  Determines the behavior of JOIN::create_intermediate_table/create_tmp_file.
+  If the tmp file step belongs to a window function, or TMP_WIN_UNCONDITIONAL is
+  given, evaluate it in this phase, else not yet or it already happened in a
+  preceding step, in which case it is now a (result) field anyway.
+*/
+enum enum_tmpfile_windowing_action {
+  TMP_WIN_NONE,
+  TMP_WIN_CONDITIONAL,
+  TMP_WIN_UNCONDITIONAL,
+  TMP_WIN_FRAME_BUFFER};
+
+enum enum_internal_tmp_mem_storage_engine { TMP_TABLE_MEMORY, TMP_TABLE_TEMPTABLE };
+
 TABLE *
 create_tmp_table(THD *thd, Temp_table_param *param, List<Item> &fields,
                  ORDER *group, bool distinct, bool save_sum_fields,
                  ulonglong select_options, ha_rows rows_limit,
-                 const char *table_alias);
+                 const char *table_alias,
+                 enum_tmpfile_windowing_action windowing);
 bool open_tmp_table(TABLE *table);
-TABLE *create_virtual_tmp_table(THD *thd, List<Create_field> &field_list);
+TABLE *create_tmp_table_from_fields(THD *thd, List<Create_field> &field_list,
+                                    bool is_virtual= true,
+                                    ulonglong select_options= 0,
+                                    const char* alias= NULL);
 bool create_ondisk_from_heap(THD *thd, TABLE *table,
                              MI_COLUMNDEF *start_recinfo,
                              MI_COLUMNDEF **recinfo, 
@@ -72,19 +97,25 @@ bool instantiate_tmp_table(THD *thd, TABLE *table, KEY *keyinfo,
                            MI_COLUMNDEF **recinfo,
                            ulonglong options, bool big_tables);
 Field *create_tmp_field(THD *thd, TABLE *table,Item *item, Item::Type type,
-                        Mem_root_array<Item *> *copy_func, Field **from_field,
+                        Func_ptr_array *copy_func, Field **from_field,
                         Field **default_field,
                         bool group, bool modify_item,
                         bool table_cant_handle_bit_fields,
-                        bool make_copy_field);
+                        bool make_copy_field,
+                        bool copy_result_field= false);
 Field* create_tmp_field_from_field(THD *thd, Field* org_field,
                                    const char *name, TABLE *table,
                                    Item_field *item);
 
+/**
+  Get the minimum of max_key_length and max_key_part_length between
+  HEAP engine and internal_tmp_disk_storage_engine.
+*/
 void get_max_key_and_part_length(uint *max_key_length,
                                  uint *max_key_part_length,
                                  uint *max_key_parts);
 void init_cache_tmp_engine_properties();
+void encode_innodb_position(uchar *rowid_bytes, uint length, ha_rows row_num);
 bool reposition_innodb_cursor(TABLE *table, ha_rows row_num);
 #endif /* SQL_TMP_TABLE_INCLUDED */
 

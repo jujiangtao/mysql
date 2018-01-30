@@ -1,19 +1,26 @@
 /* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "gcs_xcom_utils.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_xcom_utils.h"
 
 #include <assert.h>
 #include <errno.h>
@@ -28,15 +35,14 @@
 #include <set>
 #include <sstream>
 
-#include "mysql/gcs/gcs_group_identifier.h"
-#include "mysql/gcs/gcs_logging.h"
-
-#include "gcs_message_stage_lz4.h"
-#include "gcs_xcom_networking.h"
-#include "task_net.h"
-#include "task_os.h"
-#include "xcom_cfg.h"
-#include "xcom_ssl_transport.h"
+#include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/gcs_group_identifier.h"
+#include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/gcs_logging_system.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_message_stage_lz4.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_xcom_networking.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/task_net.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/task_os.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/xcom_cfg.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/xcom_ssl_transport.h"
 
 /**
   6 is the recommended value. Too large numbers
@@ -54,7 +60,7 @@ static const unsigned int WAITING_TIME= 30;
 /*
   Number of attempts to join a group.
 */
-static const unsigned int JOIN_ATTEMPTS= 3;
+static const unsigned int JOIN_ATTEMPTS= 0;
 
 /*
   Sleep time between attempts defined in seconds.
@@ -299,7 +305,8 @@ int Gcs_xcom_proxy_impl::xcom_exit(bool xcom_handlers_open)
   else if (!xcom_handlers_open)
   {
     /* The handlers were not yet open, so use basic xcom stop */
-    ::xcom_fsm(xa_exit, int_arg(0));
+    this->set_should_exit(1);
+
     res= false;
   }
 
@@ -403,8 +410,8 @@ bool Gcs_xcom_proxy_impl::xcom_open_handlers(std::string saddr, xcom_port port)
         // This is a hack. It forces a protocol negotiation in
         // the current connection with the local xcom, so that
         // it does not happen later on.
-        if ((xcom_client_enable_arbitrator(con) <= 0) ||
-            (xcom_client_disable_arbitrator(con) <= 0))
+        if ((::xcom_client_enable_arbitrator(con) <= 0) ||
+            (::xcom_client_disable_arbitrator(con) <= 0))
           success= false;
       }
 
@@ -507,20 +514,26 @@ Gcs_xcom_proxy_impl::Gcs_xcom_proxy_impl()
    m_crl_file(),
    m_crl_path(),
    m_cipher(),
-   m_tls_version()
+   m_tls_version(),
+   m_should_exit(false)
 {
   m_xcom_handlers= new Xcom_handler *[m_xcom_handlers_size];
 
   for (int i= 0; i < m_xcom_handlers_size; i++)
     m_xcom_handlers[i]= new Xcom_handler();
 
-  m_lock_xcom_cursor.init(NULL);
-  m_lock_xcom_ready.init(NULL);
-  m_cond_xcom_ready.init();
-  m_lock_xcom_comms_status.init(NULL);
-  m_cond_xcom_comms_status.init();
-  m_lock_xcom_exit.init(NULL);
-  m_cond_xcom_exit.init();
+  m_lock_xcom_cursor.init(key_GCS_MUTEX_Gcs_xcom_proxy_impl_m_lock_xcom_cursor,
+                          NULL);
+  m_lock_xcom_ready.init(key_GCS_MUTEX_Gcs_xcom_proxy_impl_m_lock_xcom_ready,
+                         NULL);
+  m_cond_xcom_ready.init(key_GCS_COND_Gcs_xcom_proxy_impl_m_cond_xcom_ready);
+  m_lock_xcom_comms_status.init(
+    key_GCS_MUTEX_Gcs_xcom_proxy_impl_m_lock_xcom_comms_status, NULL);
+  m_cond_xcom_comms_status.init(
+    key_GCS_COND_Gcs_xcom_proxy_impl_m_cond_xcom_comms_status);
+  m_lock_xcom_exit.init(key_GCS_MUTEX_Gcs_xcom_proxy_impl_m_lock_xcom_exit,
+                        NULL);
+  m_cond_xcom_exit.init(key_GCS_COND_Gcs_xcom_proxy_impl_m_cond_xcom_exit);
 
   m_socket_util= new My_xp_socket_util_impl();
 }
@@ -546,20 +559,26 @@ Gcs_xcom_proxy_impl::Gcs_xcom_proxy_impl(unsigned int wt)
    m_crl_file(),
    m_crl_path(),
    m_cipher(),
-   m_tls_version()
+   m_tls_version(),
+   m_should_exit(false)
 {
   m_xcom_handlers= new Xcom_handler *[m_xcom_handlers_size];
 
   for (int i= 0; i < m_xcom_handlers_size; i++)
     m_xcom_handlers[i]= new Xcom_handler();
 
-  m_lock_xcom_cursor.init(NULL);
-  m_lock_xcom_ready.init(NULL);
-  m_cond_xcom_ready.init();
-  m_lock_xcom_comms_status.init(NULL);
-  m_cond_xcom_comms_status.init();
-  m_lock_xcom_exit.init(NULL);
-  m_cond_xcom_exit.init();
+  m_lock_xcom_cursor.init(key_GCS_MUTEX_Gcs_xcom_proxy_impl_m_lock_xcom_cursor,
+                          NULL);
+  m_lock_xcom_ready.init(key_GCS_MUTEX_Gcs_xcom_proxy_impl_m_lock_xcom_ready,
+                         NULL);
+  m_cond_xcom_ready.init(key_GCS_COND_Gcs_xcom_proxy_impl_m_cond_xcom_ready);
+  m_lock_xcom_comms_status.init(
+    key_GCS_MUTEX_Gcs_xcom_proxy_impl_m_lock_xcom_comms_status, NULL);
+  m_cond_xcom_comms_status.init(
+    key_GCS_COND_Gcs_xcom_proxy_impl_m_cond_xcom_comms_status);
+  m_lock_xcom_exit.init(key_GCS_MUTEX_Gcs_xcom_proxy_impl_m_lock_xcom_exit,
+                        NULL);
+  m_cond_xcom_exit.init(key_GCS_COND_Gcs_xcom_proxy_impl_m_cond_xcom_exit);
 
   m_socket_util= new My_xp_socket_util_impl();
 }
@@ -592,7 +611,7 @@ site_def const *Gcs_xcom_proxy_impl::find_site_def(synode_no synode)
 Gcs_xcom_proxy_impl::Xcom_handler::Xcom_handler()
   :m_lock(), m_fd(NULL)
 {
-  m_lock.init(NULL);
+  m_lock.init(key_GCS_MUTEX_Xcom_handler_m_lock, NULL);
 }
 
 
@@ -857,6 +876,18 @@ Gcs_xcom_proxy_impl::xcom_signal_comms_status_changed(int status)
   m_lock_xcom_comms_status.unlock();
 }
 
+bool
+Gcs_xcom_proxy_impl::get_should_exit()
+{
+  return m_should_exit.load(std::memory_order_relaxed);
+}
+
+void
+Gcs_xcom_proxy_impl::set_should_exit(bool should_exit)
+{
+  m_should_exit.store(should_exit, std::memory_order_relaxed);
+}
+
 void Gcs_xcom_app_cfg::init()
 {
   ::init_cfg_app_xcom();
@@ -893,60 +924,152 @@ Gcs_xcom_proxy_impl::xcom_client_force_config(node_list *nl,
     connection_descriptor* fd= m_xcom_handlers[index]->get_fd();
 
     if (fd != NULL)
-      res= this->xcom_client_force_config(fd, nl, group_id);
+      res= ::xcom_client_force_config(fd, nl, group_id);
   }
   xcom_release_handler(index);
   return res;
 }
 
-Gcs_xcom_nodes::Gcs_xcom_nodes(const site_def *site, node_set &nodes)
-  : m_node_no(site->nodeno), m_addresses(), m_uuids(), m_statuses(),
-    m_size(nodes.node_set_len)
+
+int Gcs_xcom_proxy_base::xcom_remove_nodes(Gcs_xcom_nodes &nodes,
+                                           uint32_t group_id_hash)
 {
-  Gcs_uuid uuid;
-  for (unsigned int i= 0; i < nodes.node_set_len; ++i)
+  node_list nl;
+  int ret= 1;
+
+  if (serialize_nodes_information(nodes, nl))
   {
-    /* Get member address and save it. */
-    std::string address(site->nodes.node_list_val[i].address);
-    m_addresses.push_back(address);
-
-    /* Get member uuid and save it. */
-    assert(uuid.size ==  site->nodes.node_list_val[i].uuid.data.data_len);
-    uuid.decode(
-      reinterpret_cast<uchar *>(site->nodes.node_list_val[i].uuid.data.data_val)
+    MYSQL_GCS_LOG_DEBUG(
+      "Removing %u nodes at %p", nl.node_list_len, nl.node_list_val
     );
-    m_uuids.push_back(uuid);
-
-    /* Get member status and save it */
-    m_statuses.push_back(nodes.node_set_val[i] ? true: false);
+    ret= xcom_client_remove_node(&nl, group_id_hash);
   }
-  assert(m_size == m_addresses.size());
-  assert(m_size == m_statuses.size());
+  free_nodes_information(nl);
+
+  return ret;
 }
 
-unsigned int Gcs_xcom_nodes::get_node_no() const
+
+int Gcs_xcom_proxy_base::xcom_remove_node(const Gcs_xcom_node_information &node,
+                                          uint32_t group_id_hash)
 {
-   return m_node_no;
+  Gcs_xcom_nodes nodes_to_remove;
+  nodes_to_remove.add_node(node);
+
+  return xcom_remove_nodes(nodes_to_remove, group_id_hash);
 }
 
-const std::vector<std::string> &Gcs_xcom_nodes::get_addresses() const
+
+int Gcs_xcom_proxy_base::xcom_force_nodes(Gcs_xcom_nodes &nodes,
+                                          uint32_t group_id_hash)
 {
-  return m_addresses;
+  node_list nl;
+  int ret= 1;
+
+  if (serialize_nodes_information(nodes, nl))
+  {
+    MYSQL_GCS_LOG_DEBUG(
+      "Forcing %u nodes at %p", nl.node_list_len, nl.node_list_val
+    );
+    ret= xcom_client_force_config(&nl, group_id_hash);
+  }
+  free_nodes_information(nl);
+
+  return ret;
 }
 
-const std::vector<Gcs_uuid> &Gcs_xcom_nodes::get_uuids() const
+
+bool Gcs_xcom_proxy_base::serialize_nodes_information(Gcs_xcom_nodes &nodes,
+                                                      node_list &nl)
 {
-  return m_uuids;
+  unsigned int len= 0;
+  char **addrs= NULL;
+  blob *uuids= NULL;
+  nl.node_list_len= 0;
+
+  if (nodes.get_size() == 0)
+  {
+    MYSQL_GCS_LOG_DEBUG("There aren't nodes to be reported.");
+    return true;
+  }
+
+  if (!nodes.encode(&len, &addrs, &uuids))
+  {
+    MYSQL_GCS_LOG_DEBUG(
+     "Could not encode %llu nodes.",
+     static_cast<long long unsigned>(nodes.get_size())
+    );
+    return false;
+  }
+
+  nl.node_list_len= len;
+  nl.node_list_val= new_node_address_uuid(len, addrs, uuids);
+
+  MYSQL_GCS_LOG_DEBUG(
+    "Prepared %u nodes at %p", nl.node_list_len, nl.node_list_val
+  );
+  return true;
 }
 
-const std::vector<bool> &Gcs_xcom_nodes::get_statuses() const
+
+void Gcs_xcom_proxy_base::free_nodes_information(node_list& nl)
 {
-  return m_statuses;
+  MYSQL_GCS_LOG_DEBUG(
+    "Unprepared %u nodes at %p", nl.node_list_len,  nl.node_list_val
+  );
+  delete_node_address(nl.node_list_len, nl.node_list_val);
 }
 
-unsigned int Gcs_xcom_nodes::get_size() const
+
+int Gcs_xcom_proxy_base::xcom_boot_node(Gcs_xcom_node_information &node,
+                                        uint32_t group_id_hash)
 {
-  return m_size;
+  Gcs_xcom_nodes nodes_to_boot;
+  nodes_to_boot.add_node(node);
+  node_list nl;
+  int ret= 1;
+
+  if (serialize_nodes_information(nodes_to_boot, nl))
+  {
+    MYSQL_GCS_LOG_DEBUG(
+      "Booting up %u nodes at %p", nl.node_list_len, nl.node_list_val
+    );
+    ret= xcom_client_boot(&nl, group_id_hash);
+  }
+  free_nodes_information(nl);
+
+  return ret;
+}
+
+
+int Gcs_xcom_proxy_base::xcom_add_nodes(connection_descriptor& con,
+                                        Gcs_xcom_nodes &nodes,
+                                        uint32_t group_id_hash)
+{
+  node_list nl;
+  int ret= 1;
+
+  if (serialize_nodes_information(nodes, nl))
+  {
+    MYSQL_GCS_LOG_DEBUG(
+      "Adding up %u nodes at %p", nl.node_list_len, nl.node_list_val
+    );
+    ret= xcom_client_add_node(&con, &nl, group_id_hash);
+  }
+  free_nodes_information(nl);
+
+  return ret;
+}
+
+
+int Gcs_xcom_proxy_base::xcom_add_node(connection_descriptor& con,
+                                       const Gcs_xcom_node_information &node,
+                                       uint32_t group_id_hash)
+{
+  Gcs_xcom_nodes nodes_to_add;
+  nodes_to_add.add_node(node);
+
+  return xcom_add_nodes(con, nodes_to_add, group_id_hash);
 }
 
 bool
@@ -1112,6 +1235,10 @@ is_parameters_syntax_correct(const Gcs_interface_parameters &interface_params)
     interface_params.get_parameter("join_attempts");
   const std::string *join_sleep_time_str=
     interface_params.get_parameter("join_sleep_time");
+  const std::string *suspicions_timeout_str=
+    interface_params.get_parameter("suspicions_timeout");
+  const std::string *suspicions_processing_period_str=
+    interface_params.get_parameter("suspicions_processing_period");
 
   /*
     -----------------------------------------------------
@@ -1198,7 +1325,7 @@ is_parameters_syntax_correct(const Gcs_interface_parameters &interface_params)
     }
 
     // hostname was validated already, lets find the IP
-    if (get_ipv4_addr_from_hostname(host, ip))
+    if (resolve_ip_addr_from_hostname(host, ip))
     {
       MYSQL_GCS_LOG_ERROR("Unable to translate hostname " << host <<
                           " to IP address!");
@@ -1281,12 +1408,33 @@ is_parameters_syntax_correct(const Gcs_interface_parameters &interface_params)
     goto end;
   }
 
+  // validate suspicions parameters
+  if (suspicions_timeout_str &&
+      (suspicions_timeout_str->size() == 0 ||
+       !is_number(*suspicions_timeout_str)))
+  {
+    MYSQL_GCS_LOG_ERROR("The suspicions_timeout parameter ("
+                          << suspicions_timeout_str << ") is not valid.")
+    error= GCS_NOK;
+    goto end;
+  }
+
   if(join_sleep_time_str &&
      (join_sleep_time_str->size() == 0 ||
       !is_number(*join_sleep_time_str)))
   {
     MYSQL_GCS_LOG_ERROR("The join_sleep_time parameter ("
                         << join_sleep_time_str << ") is not valid.")
+    error= GCS_NOK;
+    goto end;
+  }
+
+  if (suspicions_processing_period_str &&
+      (suspicions_processing_period_str->size() == 0 ||
+       !is_number(*suspicions_processing_period_str)))
+  {
+    MYSQL_GCS_LOG_ERROR("The suspicions_processing_period parameter ("
+                          << suspicions_processing_period_str << ") is not valid.")
     error= GCS_NOK;
     goto end;
   }

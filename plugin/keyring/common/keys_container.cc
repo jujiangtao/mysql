@@ -1,51 +1,49 @@
 /* Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include <stddef.h>
+#include "plugin/keyring/common/keys_container.h"
 
-#include "keys_container.h"
+#include <stddef.h>
+#include <algorithm>
+
 #include "my_dbug.h"
+
+using std::string;
+using std::unique_ptr;
 
 namespace keyring {
 
 extern PSI_memory_key key_memory_KEYRING;
 
-static uchar *get_hash_key(const uchar *key, size_t *length)
-{
-  std::string *key_signature= reinterpret_cast<const IKey *>(key)->get_key_signature();
-  *length= key_signature->length();
-  return reinterpret_cast<uchar *>(const_cast<char*>(key_signature->c_str()));
-}
-
-
-static void free_hash_key(void* key)
-{
-  IKey *key_to_free= reinterpret_cast<IKey*>(key);
-  delete key_to_free;
-}
-
 Keys_container::Keys_container(ILogger *logger)
- : logger(logger)
+ : keys_hash(new Keys_container::Key_hash
+               (system_charset_info, key_memory_KEYRING))
+ , logger(logger)
  , keyring_io(NULL)
 {
-  my_hash_clear(&keys_hash);
 }
 
 Keys_container::~Keys_container()
 {
-  free_keys_hash();
   if (keyring_io != NULL)
     delete keyring_io;
 }
@@ -54,13 +52,11 @@ bool Keys_container::init(IKeyring_io* keyring_io, std::string keyring_storage_u
 {
   this->keyring_io= keyring_io;
   this->keyring_storage_url= keyring_storage_url;
-  if (my_hash_init(&keys_hash, system_charset_info, 0, 0,
-                   (hash_get_key_function) get_hash_key, free_hash_key, HASH_UNIQUE,
-                   key_memory_KEYRING) ||
-      keyring_io->init(&this->keyring_storage_url) ||
+  keys_hash->clear();
+  if (keyring_io->init(&this->keyring_storage_url) ||
       load_keys_from_keyring_storage())
   {
-    free_keys_hash();
+    keys_hash->clear();
     return TRUE;
   }
   return FALSE;
@@ -77,11 +73,25 @@ std::string Keys_container::get_keyring_storage_url()
   return keyring_storage_url;
 }
 
+void Keys_container::store_keys_metadata(IKey *key)
+{
+  /* if key metadata not present store it */
+  Key_metadata km(key->get_key_id(), key->get_user_id());
+  keys_metadata.push_back(km);
+}
+
 bool Keys_container::store_key_in_hash(IKey *key)
 {
-  if (my_hash_insert(&keys_hash, (uchar *) key))
-    return TRUE;
-  return FALSE;
+  // TODO: This can be written more succinctly with C++17's try_emplace.
+  string signature= *key->get_key_signature();
+  if (keys_hash->count(signature) != 0)
+    return true;
+  else
+  {
+    keys_hash->emplace(signature, unique_ptr<IKey>(key));
+    store_keys_metadata(key);
+    return false;
+  }
 }
 
 bool Keys_container::store_key(IKey* key)
@@ -98,9 +108,18 @@ bool Keys_container::store_key(IKey* key)
 
 IKey* Keys_container::get_key_from_hash(IKey *key)
 {
-  return reinterpret_cast<IKey*>(my_hash_search(&keys_hash,
-    reinterpret_cast<const uchar*>(key->get_key_signature()->c_str()),
-    key->get_key_signature()->length()));
+  return find_or_nullptr(*keys_hash, *key->get_key_signature());
+}
+
+void Keys_container::allocate_and_set_data_for_key(IKey *key,
+                                                   std::string *source_key_type,
+                                                   uchar *source_key_data,
+                                                   size_t source_key_data_size)
+{
+  key->set_key_type(source_key_type);
+  uchar *key_data= keyring_malloc<uchar*>(source_key_data_size);
+  memcpy(key_data, source_key_data, source_key_data_size);
+  key->set_key_data(key_data, source_key_data_size);
 }
 
 IKey*Keys_container::fetch_key(IKey *key)
@@ -115,20 +134,36 @@ IKey*Keys_container::fetch_key(IKey *key)
 
   if (fetched_key->get_key_type()->empty())
     return NULL;
-  key->set_key_type(fetched_key->get_key_type());
-  uchar *key_data= keyring_malloc<uchar*>(fetched_key->get_key_data_size());
-  memcpy(key_data, fetched_key->get_key_data(), fetched_key->get_key_data_size());
-  key->set_key_data(key_data, fetched_key->get_key_data_size());
+
+  allocate_and_set_data_for_key(key, fetched_key->get_key_type(),
+                                fetched_key->get_key_data(),
+                                fetched_key->get_key_data_size());
   return key;
+}
+
+bool Keys_container::remove_keys_metadata(IKey *key)
+{
+  Key_metadata src(key->get_key_id(), key->get_user_id());
+  auto it= std::find_if(keys_metadata.begin(), keys_metadata.end(),
+    [src](Key_metadata const& dest) { return (*src.id == *dest.id &&
+                                              *src.user == *dest.user); });
+  if (it != keys_metadata.end())
+  {
+    keys_metadata.erase(it);
+    return false;
+  }
+  return true;
 }
 
 bool Keys_container::remove_key_from_hash(IKey *key)
 {
-  bool retVal= TRUE;
-  keys_hash.free_element= NULL; //Prevent my_hash_delete from removing key from memory
-  retVal= my_hash_delete(&keys_hash, reinterpret_cast<uchar*>(key));
-  keys_hash.free_element= free_hash_key;
-  return retVal;
+  auto it= keys_hash->find(*key->get_key_signature());
+  if (it == keys_hash->end())
+    return true;
+  it->second.release();  // Prevent erase from removing key from memory
+  keys_hash->erase(it);
+  remove_keys_metadata(key);
+  return false;
 }
 
 bool Keys_container::remove_key(IKey *key)
@@ -148,12 +183,6 @@ bool Keys_container::remove_key(IKey *key)
   delete fetched_key_to_delete;
 
   return FALSE;
-}
-
-void Keys_container::free_keys_hash()
-{
-  if (my_hash_inited(&keys_hash))
-    my_hash_free(&keys_hash);
 }
 
 bool Keys_container::load_keys_from_keyring_storage()
@@ -189,7 +218,7 @@ bool Keys_container::load_keys_from_keyring_storage()
 bool Keys_container::flush_to_storage(IKey *key, Key_operation operation)
 {
   ISerialized_object *serialized_object=
-    keyring_io->get_serializer()->serialize(&keys_hash, key, operation);
+    keyring_io->get_serializer()->serialize(*keys_hash, key, operation);
 
   if (serialized_object == NULL || keyring_io->flush_to_storage(serialized_object))
   {
@@ -204,7 +233,7 @@ bool Keys_container::flush_to_storage(IKey *key, Key_operation operation)
 bool Keys_container::flush_to_backup()
 {
   ISerialized_object *serialized_object=
-    keyring_io->get_serializer()->serialize(&keys_hash, NULL, NONE);
+    keyring_io->get_serializer()->serialize(*keys_hash, NULL, NONE);
 
   if (serialized_object == NULL || keyring_io->flush_to_backup(serialized_object))
   {

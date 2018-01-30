@@ -1,7 +1,7 @@
-commit: 69ffe6a6a2083eff81307ddc3651a1b0c51fb92c
-date: 2017-03-23 05:26:01 +0100
-build-date: 2017-03-23 05:52:29 +0100
-short: 69ffe6a
-branch: mysql-8.0.1-dmr-release
+commit: 73b6cff33896a3cd0f0d02d6c30fdaed8b562cf3
+date: 2018-01-18 16:43:56 +0100
+build-date: 2018-01-18 16:53:08 +0100
+short: 73b6cff
+branch: mysql-8.0.4-rc-release
 
-MySQL source 8.0.1
+MySQL source 8.0.4

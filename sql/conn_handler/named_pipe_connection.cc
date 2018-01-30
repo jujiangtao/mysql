@@ -2,13 +2,20 @@
    Copyright (c) 2013, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -22,11 +29,11 @@
 #include "violite.h"                    // Vio
 #include "channel_info.h"               // Channel_info
 #include "connection_handler_manager.h" // Connection_handler_manager
-#include "log.h"                        // sql_print_error
-#include "mysqld.h"                     // global_system_variables
-#include "named_pipe.h"                 // create_server_named_pipe.
-#include "sql_class.h"                  // THD
 #include "init_net_server_extension.h"  // init_net_server_extension
+#include "sql/log.h"
+#include "sql/mysqld.h"                     // global_system_variables
+#include "sql/named_pipe.h"                 // create_server_named_pipe.
+#include "sql/sql_class.h"                  // THD
 
 
 ///////////////////////////////////////////////////////////////////////////
@@ -91,7 +98,7 @@ bool Named_pipe_listener::setup_listener()
   m_connect_overlapped.hEvent= CreateEvent(NULL, TRUE, FALSE, NULL);
   if (!m_connect_overlapped.hEvent)
   {
-    sql_print_error("Can't create event, last error=%u", GetLastError());
+    LogErr(ERROR_LEVEL, ER_CONN_PIP_CANT_CREATE_EVENT, GetLastError());
     return true;
   }
 
@@ -142,7 +149,7 @@ Channel_info* Named_pipe_listener::listen_for_connection_event()
                          NMPWAIT_USE_DEFAULT_WAIT,
                          &m_sa_pipe_security)) == INVALID_HANDLE_VALUE)
     {
-      sql_print_error("Can't create new named pipe!: %s", strerror(errno));
+      LogErr(ERROR_LEVEL, ER_CONN_PIP_CANT_CREATE_PIPE, strerror(errno));
       return NULL;
     }
   }
@@ -161,7 +168,7 @@ Channel_info* Named_pipe_listener::listen_for_connection_event()
                        NMPWAIT_USE_DEFAULT_WAIT,
                        &m_sa_pipe_security)) == INVALID_HANDLE_VALUE)
   {
-    sql_print_error("Can't create new named pipe!: %s", strerror(errno));
+    LogErr(ERROR_LEVEL, ER_CONN_PIP_CANT_CREATE_PIPE, strerror(errno));
     m_pipe_handle=hConnectedPipe;
     return NULL;         // We have to try again
   }

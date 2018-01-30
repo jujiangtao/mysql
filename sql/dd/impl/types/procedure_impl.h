@@ -1,42 +1,48 @@
 /* Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef DD__PROCEDURE_IMPL_INCLUDED
 #define DD__PROCEDURE_IMPL_INCLUDED
 
 #include <new>
-#include <string>
 
-#include "dd/impl/types/entity_object_impl.h"
-#include "dd/impl/types/routine_impl.h"        // dd::Routine_impl
-#include "dd/impl/types/weak_object_impl.h"
-#include "dd/object_id.h"
-#include "dd/types/object_type.h"              // dd::Object_type
-#include "dd/types/procedure.h"                // dd::Procedure
-#include "dd/types/routine.h"
-#include "dd/types/view.h"
 #include "my_inttypes.h"
+#include "sql/dd/impl/types/entity_object_impl.h"
+#include "sql/dd/impl/types/routine_impl.h"    // dd::Routine_impl
+#include "sql/dd/impl/types/weak_object_impl.h"
+#include "sql/dd/object_id.h"
+#include "sql/dd/string_type.h"
+#include "sql/dd/types/procedure.h"            // dd::Procedure
+#include "sql/dd/types/routine.h"
+#include "sql/dd/types/view.h"
 
 namespace dd {
 
 ///////////////////////////////////////////////////////////////////////////
 
-class Dictionary_object_table;
 class Open_dictionary_tables_ctx;
 class Parameter;
 class Weak_object;
+class Object_table;
 
 class Procedure_impl : public Routine_impl,
                        public Procedure
@@ -50,17 +56,17 @@ public:
 
 public:
 
-  virtual bool update_routine_name_key(name_key_type *key,
+  virtual bool update_routine_name_key(Name_key *key,
                                        Object_id schema_id,
                                        const String_type &name) const;
 
   virtual void debug_print(String_type &outb) const;
 
   // Fix "inherits ... via dominance" warnings
-  virtual Weak_object_impl *impl()
-  { return Weak_object_impl::impl(); }
-  virtual const Weak_object_impl *impl() const
-  { return Weak_object_impl::impl(); }
+  virtual Entity_object_impl *impl()
+  { return Entity_object_impl::impl(); }
+  virtual const Entity_object_impl *impl() const
+  { return Entity_object_impl::impl(); }
   virtual Object_id id() const
   { return Entity_object_impl::id(); }
   virtual bool is_persistent() const
@@ -69,7 +75,7 @@ public:
   { return Entity_object_impl::name(); }
   virtual void set_name(const String_type &name)
   { Entity_object_impl::set_name(name); }
-  virtual const Dictionary_object_table &object_table() const
+  virtual const Object_table &object_table() const
   { return Routine_impl::object_table(); }
   virtual Object_id schema_id() const
   { return Routine_impl::schema_id(); }
@@ -124,12 +130,12 @@ public:
   { return Routine_impl::schema_collation_id(); }
   virtual void set_schema_collation_id(Object_id schema_collation_id)
   { Routine_impl::set_schema_collation_id(schema_collation_id); }
-  virtual ulonglong created() const
-  { return Routine_impl::created(); }
+  virtual ulonglong created(bool convert_time) const
+  { return Routine_impl::created(convert_time); }
   virtual void set_created(ulonglong created)
   { Routine_impl::set_created(created); }
-  virtual ulonglong last_altered() const
-  { return Routine_impl::last_altered(); }
+  virtual ulonglong last_altered(bool convert_time) const
+  { return Routine_impl::last_altered(convert_time); }
   virtual void set_last_altered(ulonglong last_altered)
   { Routine_impl::set_last_altered(last_altered); }
   virtual const String_type &comment() const
@@ -140,7 +146,7 @@ public:
   { return Routine_impl::add_parameter(); }
   virtual const Parameter_collection &parameters() const
   { return Routine_impl::parameters(); }
-  virtual bool update_name_key(name_key_type *key) const
+  virtual bool update_name_key(Name_key *key) const
   { return Routine::update_name_key(key); }
 
 private:
@@ -149,17 +155,6 @@ private:
   {
     return new Procedure_impl(*this);
   }
-};
-
-///////////////////////////////////////////////////////////////////////////
-
-class Procedure_type : public Object_type
-{
-public:
-  virtual void register_tables(Open_dictionary_tables_ctx *otx) const;
-
-  virtual Weak_object *create_object() const
-  { return new (std::nothrow) Procedure_impl(); }
 };
 
 ///////////////////////////////////////////////////////////////////////////

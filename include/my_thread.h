@@ -1,17 +1,24 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA */
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 /**
   @file include/my_thread.h
@@ -25,17 +32,12 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include <mysql/components/services/my_thread_bits.h>
+
 #include "my_compiler.h"
 #include "my_config.h"
 #include "my_inttypes.h"
 #include "my_macros.h"
-
-#if defined(_WIN32)
-#include <windows.h>
-#else
-#include <pthread.h>                // IWYU pragma: export
-#include <sched.h>                  // IWYU pragma: export
-#endif
 
 #ifndef ETIME
 #define ETIME ETIMEDOUT             /* For FreeBSD */
@@ -51,14 +53,16 @@
 */
 #if defined(__sparc) && (defined(__SUNPRO_CC) || defined(__SUNPRO_C))
 #define STACK_MULTIPLIER 2UL
+#elif defined HAVE_UBSAN && SIZEOF_CHARP == 4
+#define STACK_MULTIPLIER 3UL
 #else
 #define STACK_MULTIPLIER 1UL
 #endif
 
 #if SIZEOF_CHARP > 4
-#define DEFAULT_THREAD_STACK	(STACK_MULTIPLIER * 256UL * 1024UL)
+#define DEFAULT_THREAD_STACK	(STACK_MULTIPLIER * 280UL * 1024UL)
 #else
-#define DEFAULT_THREAD_STACK	(STACK_MULTIPLIER * 192UL * 1024UL)
+#define DEFAULT_THREAD_STACK	(STACK_MULTIPLIER * 216UL * 1024UL)
 #endif
 
 #ifdef  __cplusplus
@@ -78,38 +82,14 @@ static inline int is_timeout(int e) {
 C_MODE_START
 
 #ifdef _WIN32
-typedef volatile LONG    my_thread_once_t;
-typedef DWORD            my_thread_t;
-typedef struct thread_attr
-{
-  DWORD dwStackSize;
-  int detachstate;
-} my_thread_attr_t;
 #define MY_THREAD_CREATE_JOINABLE 0
 #define MY_THREAD_CREATE_DETACHED 1
 typedef void * (__cdecl *my_start_routine)(void *);
-#define MY_THREAD_ONCE_INIT       0
-#define MY_THREAD_ONCE_INPROGRESS 1
-#define MY_THREAD_ONCE_DONE       2
 #else
-typedef pthread_once_t   my_thread_once_t;
-typedef pthread_t        my_thread_t;
-typedef pthread_attr_t   my_thread_attr_t;
 #define MY_THREAD_CREATE_JOINABLE PTHREAD_CREATE_JOINABLE
 #define MY_THREAD_CREATE_DETACHED PTHREAD_CREATE_DETACHED
 typedef void *(* my_start_routine)(void *);
-#define MY_THREAD_ONCE_INIT       PTHREAD_ONCE_INIT
 #endif
-
-typedef struct st_my_thread_handle
-{
-  my_thread_t thread;
-#ifdef _WIN32
-  HANDLE handle;
-#endif
-} my_thread_handle;
-
-int my_thread_once(my_thread_once_t *once_control, void (*init_routine)(void));
 
 static inline my_thread_t my_thread_self()
 {

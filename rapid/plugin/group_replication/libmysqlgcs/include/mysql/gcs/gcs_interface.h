@@ -1,13 +1,20 @@
-/* Copyright (c) 2014, 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -16,12 +23,14 @@
 #ifndef GCS_INTERFACE_INCLUDED
 #define GCS_INTERFACE_INCLUDED
 
-#include "gcs_logging.h"
-#include "gcs_communication_interface.h"
-#include "gcs_control_interface.h"
-#include "gcs_group_identifier.h"
-#include "gcs_statistics_interface.h"
-#include "gcs_group_management_interface.h"
+#include <string>
+
+#include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/gcs_communication_interface.h"
+#include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/gcs_control_interface.h"
+#include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/gcs_group_identifier.h"
+#include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/gcs_group_management_interface.h"
+#include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/gcs_logging.h"
+#include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/gcs_statistics_interface.h"
 
 
 /**
@@ -54,7 +63,7 @@
     }
 
     // Inject a logger if wanted
-    Ext_logger_interface *logger= new My_GCS_Ext_logger_interface();
+    Logger_interface *logger= new My_GCS_Logger_interface();
     group_if->set_logger(logger);
 
     Gcs_group_identifier *group_id= new Gcs_group_identifier("my_group");
@@ -189,7 +198,7 @@ public:
     @retval GCS_OK in case of everything goes well. Any other value of
             gcs_error in case of error
   */
-  virtual enum_gcs_error set_logger(Ext_logger_interface *logger)= 0;
+  virtual enum_gcs_error set_logger(Logger_interface *logger)= 0;
 
 
   virtual ~Gcs_interface() {}

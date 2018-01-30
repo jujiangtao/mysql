@@ -2,13 +2,20 @@
    Copyright (c) 2013, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -19,29 +26,29 @@
 
 #include <stddef.h>
 
-#include "lex_string.h"
+#include "my_compiler.h"
 #include "my_dbug.h"
-#include "my_inttypes.h"
+#include "my_psi_config.h"
+#include "mysql/components/services/psi_socket_bits.h"
+#include "mysql/components/services/psi_statement_bits.h"
 #include "mysql/psi/mysql_idle.h"       // MYSQL_SOCKET_SET_STATE,
 #include "mysql/psi/mysql_socket.h"
 #include "mysql/psi/mysql_statement.h"
-#include "mysql/psi/psi_socket.h"
-#include "mysql/psi/psi_statement.h"
 #include "mysql_com.h"
 #include "mysql_com_server.h"
+#include "sql/key.h"
                                         // MYSQL_START_IDLE_WAIT
-#include "mysqld.h"                     // stage_starting
-#include "protocol_classic.h"
-#include "sql_class.h"                  // THD
-#include "sql_plugin.h"
+#include "sql/mysqld.h"                 // stage_starting
+#include "sql/protocol_classic.h"
+#include "sql/sql_class.h"              // THD
 #include "violite.h"
 
 #ifdef HAVE_PSI_STATEMENT_INTERFACE     // TODO: << nonconformance with HAVE_PSI_INTERFACE
 PSI_statement_info stmt_info_new_packet;
 #endif
 
-#ifdef HAVE_PSI_INTERFACE
-static void net_before_header_psi(struct st_net *net, void *user_data,
+static void net_before_header_psi(struct st_net *net MY_ATTRIBUTE((unused)),
+                                  void *user_data,
                                   size_t /* unused: count */)
 {
   THD *thd;
@@ -62,7 +69,8 @@ static void net_before_header_psi(struct st_net *net, void *user_data,
   }
 }
 
-static void net_after_header_psi(struct st_net *net, void *user_data,
+static void net_after_header_psi(struct st_net *net MY_ATTRIBUTE((unused)),
+                                 void *user_data,
                                  size_t /* unused: count */, bool rc)
 {
   THD *thd;
@@ -93,6 +101,10 @@ static void net_after_header_psi(struct st_net *net, void *user_data,
                                                   thd->db().length,
                                                   thd->charset(), NULL);
 
+      /*
+        Starts a new stage in performance schema, if compiled in and enabled.
+        Also sets THD::proc_info (used by SHOW PROCESSLIST, column STATE)
+      */
       THD_STAGE_INFO(thd, stage_starting);
     }
 
@@ -112,6 +124,7 @@ void init_net_server_extension(THD *thd)
   thd->m_idle_psi= NULL;
   thd->m_statement_psi= NULL;
   thd->m_server_idle= false;
+
   /* Hook up the NET_SERVER callback in the net layer. */
   thd->m_net_server_extension.m_user_data= thd;
   thd->m_net_server_extension.m_before_header= net_before_header_psi;
@@ -121,4 +134,3 @@ void init_net_server_extension(THD *thd)
   thd->get_protocol_classic()->get_net()->extension=
     &thd->m_net_server_extension;
 }
-#endif // HAVE_PSI_INTERFACE

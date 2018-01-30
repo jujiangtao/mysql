@@ -1,17 +1,24 @@
 /* Copyright (c) 2006, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA */
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef INJECTOR_H
 #define INJECTOR_H
@@ -23,8 +30,8 @@
 #include "my_bitmap.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
-#include "sql_plugin_ref.h"
-#include "table.h"          // TABLE
+#include "mysql/udf_registration_types.h"
+#include "sql/table.h"      // TABLE
 
 class MYSQL_BIN_LOG;
 class THD;
@@ -229,7 +236,8 @@ public:
         Add an 'update row' entry to the transaction.
       */
       int update_row(server_id_type sid, table tbl, 
-                     MY_BITMAP const *cols,
+                     MY_BITMAP const *before_cols,
+                     MY_BITMAP const *after_cols,
                      record_type before, record_type after,
                      const uchar* extra_row_info);
       int update_row(server_id_type sid, table tbl,

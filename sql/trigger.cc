@@ -2,51 +2,58 @@
    Copyright (c) 2013, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "trigger.h"
+#include "sql/trigger.h"
 
-#include "derror.h"               // ER_THD
-#include "error_handler.h"        // Internal_error_handler
+#include <atomic>
+
 #include "lex_string.h"
 #include "m_string.h"
-#include "mdl.h"
 #include "my_dbug.h"
 #include "my_psi_config.h"
+#include "mysql/components/services/psi_statement_bits.h"
 #include "mysql/psi/mysql_sp.h"
 #include "mysql/psi/mysql_statement.h"
 #include "mysql/service_my_snprintf.h"
 #include "mysqld_error.h"
 #include "mysys_err.h"            // EE_OUTOFMEMORY
-#include "sp.h"                   // sp_add_used_routine
-#include "sp_head.h"              // sp_name
-#include "sql_admin.h"
-#include "sql_class.h"            // THD
-#include "sql_db.h"               // get_default_db_collation
-#include "sql_error.h"            // Sql_condition
-#include "sql_lex.h"
-#include "sql_parse.h"            // parse_sql
-#include "sql_plugin_ref.h"
-#include "sql_security_ctx.h"
-#include "sql_servers.h"
-#include "sql_show.h"             // append_identifier
+#include "sql/auth/sql_security_ctx.h"
+#include "sql/derror.h"           // ER_THD
+#include "sql/error_handler.h"    // Internal_error_handler
+#include "sql/sp.h"               // sp_add_used_routine
+#include "sql/sp_head.h"          // sp_name
+#include "sql/sql_class.h"        // THD
+#include "sql/sql_connect.h"
+#include "sql/sql_db.h"           // get_default_db_collation
+#include "sql/sql_digest_stream.h"
+#include "sql/sql_error.h"        // Sql_condition
+#include "sql/sql_lex.h"
+#include "sql/sql_parse.h"        // parse_sql
+#include "sql/sql_servers.h"
+#include "sql/sql_show.h"         // append_identifier
+#include "sql/system_variables.h"
+#include "sql/trigger_creation_ctx.h" // Trigger_creation_ctx
 #include "sql_string.h"
-#include "system_variables.h"
-#include "trigger_creation_ctx.h" // Trigger_creation_ctx
 
 class sp_rcontext;
-struct PSI_statement_locker;
-struct sql_digest_state;
 
 
 ///////////////////////////////////////////////////////////////////////////
@@ -772,10 +779,31 @@ void Trigger::add_tables_and_routines(THD *thd,
   if (has_parse_error())
     return;
 
-  MDL_key key(MDL_key::TRIGGER, m_sp->m_db.str, m_sp->m_name.str);
-
   if (sp_add_used_routine(prelocking_ctx, thd->stmt_arena,
-                          &key, table_list->belong_to_view))
+                          Sroutine_hash_entry::TRIGGER,
+                          m_sp->m_db.str, m_sp->m_db.length,
+                          m_sp->m_name.str, m_sp->m_name.length,
+                          /*
+                            Db name should be already in lower case if
+                            lower_case_table_name > 0.
+                          */
+                          false,
+                          /*
+                            Lowercase trigger name to ensure that we can use
+                            binary comparison for Sroutine_hash_entry's key.
+
+                            TODO: In 8.0 trigger names are always
+                            case-insensitive. If we decide to return
+                            to 5.7 behavior, where it is dependent on
+                            lower-case-table-name value, then we need
+                            to pass different value below.
+                            Also in 8.0 trigger names are accent-
+                            insensitive which doesn't exactly match
+                            comparison of lowercased names.
+                          */
+                          true,
+                          false, // This is not "own", directly-used routine.
+                          table_list->belong_to_view))
   {
     m_sp->add_used_tables_to_table_list(thd,
                                         &prelocking_ctx->query_tables_last,

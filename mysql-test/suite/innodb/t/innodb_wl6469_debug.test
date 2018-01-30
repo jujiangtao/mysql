@@ -9,8 +9,6 @@
 # Valgrind can hang or return spurious messages on DBUG_SUICIDE
 --source include/not_valgrind.inc
 
-# Embedded server does not support crashing
---source include/not_embedded.inc
 
 #########################################################################
 #									#
@@ -37,7 +35,7 @@ call mtr.add_suppression("Cannot create file");
 
 # In the test scenario, there can be orphaned .frm files.
 # These are expected.  So suppressing the associated warnings.
-call mtr.add_suppression("\\[ERROR\\] InnoDB: table .* does not exist "
+call mtr.add_suppression("\\[ERROR\\] \\[[^]]*\\] InnoDB: table .* does not exist "
 			 "in the InnoDB internal");
 
 #

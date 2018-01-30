@@ -1,20 +1,25 @@
 /*
- * Copyright (c) 2015, 2016 Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
  *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License as
- * published by the Free Software Foundation; version 2 of the
- * License.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License, version 2.0,
+ * as published by the Free Software Foundation.
  *
+ * This program is also distributed with certain software (including
+ * but not limited to OpenSSL) that is licensed under separate terms,
+ * as designated in a particular file or component or in included license
+ * documentation.  The authors of MySQL hereby grant you an additional
+ * permission to link the program and your derivative works with the
+ * separately licensed software that they have included with MySQL.
+ *  
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License, version 2.0, for more details.
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
- * 02110-1301  USA
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
  */
 
 #ifndef _NGS_THREAD_H_
@@ -23,15 +28,16 @@
 #ifdef NGS_STANDALONE
 # include <pthread.h>
 #else
-# include <my_thread.h>
-# include <thr_mutex.h>
-# include <thr_cond.h>
-# include <mutex_lock.h>
-# include "xpl_performance_schema.h"
+# include "mutex_lock.h"
+# include "my_thread.h"
+# include "plugin/x/src/xpl_performance_schema.h"
+# include "thr_cond.h"
+# include "thr_mutex.h"
 #endif
 
 #include <deque>
-#include "ngs_common/bind.h"
+
+#include "plugin/x/ngs/include/ngs_common/bind.h"
 
 namespace ngs
 {
@@ -230,7 +236,7 @@ namespace ngs
 
     bool is(const Variable_type value_to_check)
     {
-      Mutex_lock lock(m_mutex);
+      MUTEX_LOCK(lock, m_mutex);
 
       return value_to_check == m_value;
     }
@@ -238,7 +244,7 @@ namespace ngs
     template<std::size_t NUM_OF_ELEMENTS>
     bool is(const Variable_type (&expected_value)[NUM_OF_ELEMENTS])
     {
-      Mutex_lock lock(m_mutex);
+      MUTEX_LOCK(lock, m_mutex);
 
       const Variable_type *begin_element = expected_value;
       const Variable_type *end_element = expected_value + NUM_OF_ELEMENTS;
@@ -248,7 +254,7 @@ namespace ngs
 
     bool exchange(const Variable_type expected_value, const Variable_type new_value)
     {
-      Mutex_lock lock(m_mutex);
+      MUTEX_LOCK(lock, m_mutex);
 
       bool result = false;
 
@@ -265,7 +271,7 @@ namespace ngs
 
     void set(const Variable_type new_value)
     {
-      Mutex_lock lock(m_mutex);
+      MUTEX_LOCK(lock, m_mutex);
 
       m_value = new_value;
 
@@ -274,7 +280,7 @@ namespace ngs
 
     Variable_type set_and_return_old(const Variable_type new_value)
     {
-      Mutex_lock lock(m_mutex);
+      MUTEX_LOCK(lock, m_mutex);
 
       Variable_type old_value = m_value;
       m_value = new_value;
@@ -286,7 +292,7 @@ namespace ngs
 
     void wait_for(const Variable_type expected_value)
     {
-      Mutex_lock lock(m_mutex);
+      MUTEX_LOCK(lock, m_mutex);
 
       while (m_value != expected_value)
       {
@@ -297,7 +303,7 @@ namespace ngs
     template<std::size_t NUM_OF_ELEMENTS>
     void wait_for(const Variable_type (&expected_value)[NUM_OF_ELEMENTS])
     {
-      Mutex_lock lock(m_mutex);
+      MUTEX_LOCK(lock, m_mutex);
 
       const Variable_type *begin_element = expected_value;
       const Variable_type *end_element = expected_value + NUM_OF_ELEMENTS;
@@ -310,7 +316,7 @@ namespace ngs
     template<std::size_t NUM_OF_ELEMENTS>
     void wait_for_and_set(const Variable_type (&expected_value)[NUM_OF_ELEMENTS], const Variable_type change_to)
     {
-      Mutex_lock lock(m_mutex);
+      MUTEX_LOCK(lock, m_mutex);
 
       const Variable_type *begin_element = expected_value;
       const Variable_type *end_element = expected_value + NUM_OF_ELEMENTS;

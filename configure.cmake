@@ -1,17 +1,24 @@
 # Copyright (c) 2009, 2017, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; version 2 of the License.
-# 
+# it under the terms of the GNU General Public License, version 2.0,
+# as published by the Free Software Foundation.
+#
+# This program is also distributed with certain software (including
+# but not limited to OpenSSL) that is licensed under separate terms,
+# as designated in a particular file or component or in included license
+# documentation.  The authors of MySQL hereby grant you an additional
+# permission to link the program and your derivative works with the
+# separately licensed software that they have included with MySQL.
+#
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-# 
+# GNU General Public License, version 2.0, for more details.
+#
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
-# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 #
 
 INCLUDE (CheckCSourceCompiles)
@@ -62,130 +69,6 @@ int main()
   return 1;
 #endif
 }" HAVE_LLVM_LIBCPP)
-
-MACRO(DIRNAME IN OUT)
-  GET_FILENAME_COMPONENT(${OUT} ${IN} PATH)
-ENDMACRO()
-
-MACRO(FIND_REAL_LIBRARY SOFTLINK_NAME REALNAME)
-  # We re-distribute libstdc++.so which is a symlink.
-  # There is no 'readlink' on solaris, so we use perl to follow links:
-  SET(PERLSCRIPT
-    "my $link= $ARGV[0]; use Cwd qw(abs_path); my $file = abs_path($link); print $file;")
-  EXECUTE_PROCESS(
-    COMMAND perl -e "${PERLSCRIPT}" ${SOFTLINK_NAME}
-    RESULT_VARIABLE result
-    OUTPUT_VARIABLE real_library
-    )
-  SET(REALNAME ${real_library})
-ENDMACRO()
-
-MACRO(EXTEND_CXX_LINK_FLAGS LIBRARY_PATH)
-  # Using the $ORIGIN token with the -R option to locate the libraries
-  # on a path relative to the executable:
-  # We need an extra backslash to pass $ORIGIN to the mysql_config script...
-  SET(QUOTED_CMAKE_CXX_LINK_FLAGS
-    "${CMAKE_CXX_LINK_FLAGS} -R'\\$ORIGIN/../lib' -R${LIBRARY_PATH} ")
-  SET(CMAKE_CXX_LINK_FLAGS
-    "${CMAKE_CXX_LINK_FLAGS} -R'\$ORIGIN/../lib' -R${LIBRARY_PATH}")
-  MESSAGE(STATUS "CMAKE_CXX_LINK_FLAGS ${CMAKE_CXX_LINK_FLAGS}")
-ENDMACRO()
-
-MACRO(EXTEND_C_LINK_FLAGS LIBRARY_PATH)
-  SET(CMAKE_C_LINK_FLAGS
-    "${CMAKE_C_LINK_FLAGS} -R'\$ORIGIN/../lib' -R${LIBRARY_PATH}")
-  MESSAGE(STATUS "CMAKE_C_LINK_FLAGS ${CMAKE_C_LINK_FLAGS}")
-  SET(CMAKE_SHARED_LIBRARY_C_FLAGS
-    "${CMAKE_SHARED_LIBRARY_C_FLAGS} -R'\$ORIGIN/../lib' -R${LIBRARY_PATH}")
-ENDMACRO()
-
-# We assume that the client code is built with -std=c++11
-# Both compilers will use libstdc++.so but possibly different version.
-# Hence we install the gcc version here, for use by the server and plugins.
-IF(CMAKE_SYSTEM_NAME MATCHES "SunOS" AND CMAKE_COMPILER_IS_GNUCC)
-  DIRNAME(${CMAKE_CXX_COMPILER} CXX_PATH)
-  SET(LIB_SUFFIX "lib")
-  IF(SIZEOF_VOIDP EQUAL 8 AND CMAKE_SYSTEM_PROCESSOR MATCHES "sparc")
-    SET(LIB_SUFFIX "lib/sparcv9")
-  ENDIF()
-  IF(SIZEOF_VOIDP EQUAL 8 AND CMAKE_SYSTEM_PROCESSOR MATCHES "i386")
-    SET(LIB_SUFFIX "lib/amd64")
-  ENDIF()
-  FIND_LIBRARY(GPP_LIBRARY_NAME
-    NAMES "stdc++"
-    PATHS ${CXX_PATH}/../${LIB_SUFFIX}
-    NO_DEFAULT_PATH
-  )
-  MESSAGE(STATUS "GPP_LIBRARY_NAME ${GPP_LIBRARY_NAME}")
-  IF(GPP_LIBRARY_NAME)
-    DIRNAME(${GPP_LIBRARY_NAME} GPP_LIBRARY_PATH)
-    FIND_REAL_LIBRARY(${GPP_LIBRARY_NAME} real_library)
-    MESSAGE(STATUS "INSTALL ${GPP_LIBRARY_NAME} ${real_library}")
-    INSTALL(FILES ${GPP_LIBRARY_NAME} ${real_library}
-            DESTINATION ${INSTALL_LIBDIR} COMPONENT SharedLibraries)
-    EXTEND_CXX_LINK_FLAGS(${GPP_LIBRARY_PATH})
-    EXECUTE_PROCESS(
-      COMMAND sh -c "elfdump ${real_library} | grep SONAME"
-      RESULT_VARIABLE result
-      OUTPUT_VARIABLE sonameline
-    )
-    IF(NOT result)
-      STRING(REGEX MATCH "libstdc.*[^\n]" soname ${sonameline})
-      MESSAGE(STATUS "INSTALL ${GPP_LIBRARY_PATH}/${soname}")
-      INSTALL(FILES "${GPP_LIBRARY_PATH}/${soname}"
-              DESTINATION ${INSTALL_LIBDIR} COMPONENT SharedLibraries)
-    ENDIF()
-  ENDIF()
-  FIND_LIBRARY(GCC_LIBRARY_NAME
-    NAMES "gcc_s"
-    PATHS ${CXX_PATH}/../${LIB_SUFFIX}
-    NO_DEFAULT_PATH
-  )
-  IF(GCC_LIBRARY_NAME)
-    DIRNAME(${GCC_LIBRARY_NAME} GCC_LIBRARY_PATH)
-    FIND_REAL_LIBRARY(${GCC_LIBRARY_NAME} real_library)
-    MESSAGE(STATUS "INSTALL ${GCC_LIBRARY_NAME} ${real_library}")
-    INSTALL(FILES ${GCC_LIBRARY_NAME} ${real_library}
-            DESTINATION ${INSTALL_LIBDIR} COMPONENT SharedLibraries)
-    EXTEND_C_LINK_FLAGS(${GCC_LIBRARY_PATH})
-  ENDIF()
-ENDIF()
-
-
-# We assume that developer studio runtime libraries are installed.
-IF(CMAKE_SYSTEM_NAME MATCHES "SunOS" AND
-   CMAKE_CXX_COMPILER_ID STREQUAL "SunPro")
-  DIRNAME(${CMAKE_CXX_COMPILER} CXX_PATH)
-
-  SET(LIBRARY_SUFFIX "lib/compilers/CC-gcc/lib")
-  IF(SIZEOF_VOIDP EQUAL 8 AND CMAKE_SYSTEM_PROCESSOR MATCHES "sparc")
-    SET(LIBRARY_SUFFIX "${LIBRARY_SUFFIX}/sparcv9")
-  ENDIF()
-  IF(SIZEOF_VOIDP EQUAL 8 AND CMAKE_SYSTEM_PROCESSOR MATCHES "i386")
-    SET(LIBRARY_SUFFIX "${LIBRARY_SUFFIX}/amd64")
-  ENDIF()
-  FIND_LIBRARY(STL_LIBRARY_NAME
-    NAMES "stdc++"
-    PATHS ${CXX_PATH}/../${LIBRARY_SUFFIX}
-    NO_DEFAULT_PATH
-  )
-  MESSAGE(STATUS "STL_LIBRARY_NAME ${STL_LIBRARY_NAME}")
-  IF(STL_LIBRARY_NAME)
-    DIRNAME(${STL_LIBRARY_NAME} STL_LIBRARY_PATH)
-    SET(QUOTED_CMAKE_CXX_LINK_FLAGS
-      "${CMAKE_CXX_LINK_FLAGS} -L${STL_LIBRARY_PATH} -R${STL_LIBRARY_PATH}")
-    SET(CMAKE_CXX_LINK_FLAGS
-      "${CMAKE_CXX_LINK_FLAGS} -L${STL_LIBRARY_PATH} -R${STL_LIBRARY_PATH}")
-    SET(CMAKE_C_LINK_FLAGS
-      "${CMAKE_C_LINK_FLAGS} -L${STL_LIBRARY_PATH} -R${STL_LIBRARY_PATH}")
-  ENDIF()
-  SET(CMAKE_C_LINK_FLAGS
-    "${CMAKE_C_LINK_FLAGS} -lc")
-  SET(CMAKE_CXX_LINK_FLAGS
-    "${CMAKE_CXX_LINK_FLAGS} -lstdc++ -lgcc_s -lCrunG3 -lc")
-  SET(QUOTED_CMAKE_CXX_LINK_FLAGS
-    "${QUOTED_CMAKE_CXX_LINK_FLAGS} -lstdc++ -lgcc_s -lCrunG3 -lc ")
-ENDIF()
 
 # Same for structs, setting HAVE_STRUCT_<name> instead
 FUNCTION(MY_CHECK_STRUCT_SIZE type defbase)
@@ -353,7 +236,6 @@ CHECK_FUNCTION_EXISTS (chown HAVE_CHOWN)
 CHECK_FUNCTION_EXISTS (cuserid HAVE_CUSERID)
 CHECK_FUNCTION_EXISTS (directio HAVE_DIRECTIO)
 CHECK_FUNCTION_EXISTS (ftruncate HAVE_FTRUNCATE)
-CHECK_FUNCTION_EXISTS (crypt HAVE_CRYPT)
 CHECK_FUNCTION_EXISTS (fchmod HAVE_FCHMOD)
 CHECK_FUNCTION_EXISTS (fcntl HAVE_FCNTL)
 CHECK_FUNCTION_EXISTS (fdatasync HAVE_FDATASYNC)
@@ -361,7 +243,6 @@ CHECK_SYMBOL_EXISTS(fdatasync "unistd.h" HAVE_DECL_FDATASYNC)
 CHECK_FUNCTION_EXISTS (fedisableexcept HAVE_FEDISABLEEXCEPT)
 CHECK_FUNCTION_EXISTS (fseeko HAVE_FSEEKO)
 CHECK_FUNCTION_EXISTS (fsync HAVE_FSYNC)
-CHECK_FUNCTION_EXISTS (gethostbyaddr_r HAVE_GETHOSTBYADDR_R)
 CHECK_FUNCTION_EXISTS (gethrtime HAVE_GETHRTIME)
 CHECK_FUNCTION_EXISTS (getnameinfo HAVE_GETNAMEINFO)
 CHECK_FUNCTION_EXISTS (getpass HAVE_GETPASS)
@@ -435,8 +316,6 @@ CHECK_SYMBOL_EXISTS(lrand48 "stdlib.h" HAVE_LRAND48)
 CHECK_SYMBOL_EXISTS(TIOCGWINSZ "sys/ioctl.h" GWINSZ_IN_SYS_IOCTL)
 CHECK_SYMBOL_EXISTS(FIONREAD "sys/ioctl.h" FIONREAD_IN_SYS_IOCTL)
 CHECK_SYMBOL_EXISTS(FIONREAD "sys/filio.h" FIONREAD_IN_SYS_FILIO)
-CHECK_SYMBOL_EXISTS(SIGEV_THREAD_ID "signal.h;time.h" HAVE_SIGEV_THREAD_ID)
-CHECK_SYMBOL_EXISTS(SIGEV_PORT "signal.h;time.h;sys/siginfo.h" HAVE_SIGEV_PORT)
 
 # On Solaris, it is only visible in C99 mode
 CHECK_SYMBOL_EXISTS(isinf "math.h" HAVE_C_ISINF)
@@ -464,9 +343,7 @@ CHECK_SYMBOL_EXISTS(EVFILT_TIMER "sys/types.h;sys/event.h;sys/time.h" HAVE_EVFIL
 IF(HAVE_KQUEUE AND HAVE_EVFILT_TIMER)
   SET(HAVE_KQUEUE_TIMERS 1 CACHE INTERNAL "Have kqueue timer-related filter")
 ELSEIF(HAVE_TIMER_CREATE AND HAVE_TIMER_SETTIME)
-  IF(HAVE_SIGEV_THREAD_ID OR HAVE_SIGEV_PORT)
-    SET(HAVE_POSIX_TIMERS 1 CACHE INTERNAL "Have POSIX timer-related functions")
-  ENDIF()
+  SET(HAVE_POSIX_TIMERS 1 CACHE INTERNAL "Have POSIX timer-related functions")
 ENDIF()
 
 IF(NOT HAVE_POSIX_TIMERS AND NOT HAVE_KQUEUE_TIMERS AND NOT WIN32)
@@ -489,6 +366,11 @@ set(CMAKE_REQUIRED_DEFINITIONS ${CMAKE_REQUIRED_DEFINITIONS}
         -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS)
 
 SET(CMAKE_EXTRA_INCLUDE_FILES stdint.h stdio.h sys/types.h time.h)
+
+CHECK_TYPE_SIZE(uint8_t HAVE_UINT8_T)
+CHECK_TYPE_SIZE(uint16_t HAVE_UINT16_T)
+CHECK_TYPE_SIZE(uint32_t HAVE_UINT32_T)
+CHECK_TYPE_SIZE(uint64_t HAVE_UINT64_T)
 
 CHECK_TYPE_SIZE("void *"    SIZEOF_VOIDP)
 CHECK_TYPE_SIZE("char *"    SIZEOF_CHARP)
@@ -534,6 +416,15 @@ int main()
   struct timespec ts;
   return clock_gettime(CLOCK_MONOTONIC, &ts);
 }" HAVE_CLOCK_GETTIME)
+
+CHECK_C_SOURCE_RUNS("
+#include <time.h>
+int main()
+{
+  struct timespec ts;
+  return clock_gettime(CLOCK_REALTIME, &ts);
+}" HAVE_CLOCK_REALTIME)
+
 # For libevent
 SET(DNS_USE_CPU_CLOCK_FOR_ID CACHE ${HAVE_CLOCK_GETTIME} INTERNAL "")
 
@@ -716,18 +607,6 @@ IF(WITH_VALGRIND)
   ENDIF()
 ENDIF()
 
-# Check for SYS_thread_selfid system call
-CHECK_C_SOURCE_COMPILES("
-#include <sys/types.h>
-#include <sys/syscall.h>
-#include <unistd.h>
-int main(int ac, char **av)
-{
-  unsigned long long tid = syscall(SYS_thread_selfid);
-  return (tid != 0 ? 0 : 1);
-}"
-HAVE_SYS_THREAD_SELFID)
-
 # Check for gettid() system call
 CHECK_C_SOURCE_COMPILES("
 #include <sys/types.h>
@@ -749,6 +628,17 @@ int main(int ac, char **av)
   return (tid != 0 ? 0 : 1);
 }"
 HAVE_PTHREAD_GETTHREADID_NP)
+
+# Check for pthread_threadid_np()
+CHECK_C_SOURCE_COMPILES("
+#include <pthread.h>
+int main(int ac, char **av)
+{
+  unsigned long long tid64;
+  pthread_threadid_np(NULL, &tid64);
+  return (tid64 != 0 ? 0 : 1);
+}"
+HAVE_PTHREAD_THREADID_NP)
 
 # Check for pthread_self() returning an integer type
 CHECK_C_SOURCE_COMPILES("

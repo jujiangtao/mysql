@@ -1,17 +1,24 @@
 /* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef GROUP_REPLICATION_PRIV_INCLUDE
 #define	GROUP_REPLICATION_PRIV_INCLUDE
@@ -20,23 +27,20 @@
   @file include/mysql/group_replication_priv.h
 */
 
-#include <debug_sync.h>
-#include <log_event.h>
-#include <my_sys.h>
-#include <my_thread.h>
-#include <replication.h>
-#include <rpl_channel_service_interface.h>
-#include <rpl_gtid.h>
-#include <rpl_write_set_handler.h>
+#include "my_sys.h"
+#include "my_thread.h"
+#include "sql/debug_sync.h"
+#include "sql/log_event.h"
+#include "sql/replication.h"
+#include "sql/rpl_channel_service_interface.h"
+#include "sql/rpl_gtid.h"
+#include "sql/rpl_write_set_handler.h"
 
 
 /**
-  Server side initializations and cleanup.
+  Server side initializations.
 */
-int group_replication_init(const char* plugin_name);
-int group_replication_cleanup();
-int group_replication_start();
-int group_replication_stop();
+int group_replication_init();
 
 
 /**
@@ -48,7 +52,6 @@ int group_replication_stop();
 */
 my_thread_attr_t *get_connection_attrib();
 
-
 /**
   Returns the server hostname, port and uuid.
 
@@ -56,9 +59,12 @@ my_thread_attr_t *get_connection_attrib();
   @param[out] port
   @param[out] uuid
   @param[out] server_version
+  @param[out] server_ssl_variables
+
 */
 void get_server_parameters(char **hostname, uint *port, char **uuid,
-                           unsigned int *server_version);
+                           unsigned int *server_version,
+                           st_server_ssl_variables* server_ssl_variables);
 
 /**
   Returns the server_id.

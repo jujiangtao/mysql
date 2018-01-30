@@ -11,16 +11,24 @@ incorporated with their permission, and subject to the conditions contained in
 the file COPYING.Google.
 
 This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+the terms of the GNU General Public License, version 2.0, as published by the
+Free Software Foundation.
+
+This program is also distributed with certain software (including but not
+limited to OpenSSL) that is licensed under separate terms, as designated in a
+particular file or component or in included license documentation. The authors
+of MySQL hereby grant you an additional permission to link the program and
+your derivative works with the separately licensed software that they have
+included with MySQL.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+FOR A PARTICULAR PURPOSE. See the GNU General Public License, version 2.0,
+for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 *****************************************************************************/
 
@@ -48,29 +56,38 @@ Created 10/16/1994 Heikki Tuuri
 
 #include "my_dbug.h"
 #include "my_inttypes.h"
-#include "row0upd.h"
 #ifndef UNIV_HOTBACKUP
-#include "btr0btr.h"
-#include "btr0sea.h"
-#include "buf0lru.h"
-#include "ibuf0ibuf.h"
-#include "lob0lob.h"
-#include "lock0lock.h"
-#include "mtr0log.h"
+# include <zlib.h>
+# include "row0upd.h"
+# include "btr0btr.h"
+# include "btr0sea.h"
+# include "buf0lru.h"
+# include "ibuf0ibuf.h"
+# include "lob0lob.h"
+# include "lock0lock.h"
+# include "mtr0log.h"
+#endif /* !UNIV_HOTBACKUP */
 #include "page0page.h"
 #include "page0zip.h"
-#include "que0que.h"
+#ifndef UNIV_HOTBACKUP
+# include "que0que.h"
+#endif /* !UNIV_HOTBACKUP */
 #include "rem0cmp.h"
 #include "rem0rec.h"
 #include "row0log.h"
-#include "row0purge.h"
-#include "row0row.h"
+#ifndef UNIV_HOTBACKUP
+# include "row0purge.h"
+# include "row0row.h"
+#endif /* !UNIV_HOTBACKUP */
 #include "row0upd.h"
-#include "srv0srv.h"
+#ifndef UNIV_HOTBACKUP
+# include "srv0srv.h"
+#endif /* !UNIV_HOTBACKUP */
 #include "srv0start.h"
-#include "trx0rec.h"
-#include "trx0roll.h"
-#include "zlib.h"
+#ifndef UNIV_HOTBACKUP
+# include "trx0rec.h"
+# include "trx0roll.h"
+#endif /* !UNIV_HOTBACKUP */
 
 /** Buffered B-tree operation types, introduced as part of delete buffering. */
 enum btr_op_t {
@@ -134,7 +151,6 @@ can be released by page reorganize, then it is reorganized */
 	(((value) * static_cast<int64_t>(index->stat_n_leaf_pages) \
 	  + (sample) - 1 + (ext_size) + (not_empty)) / ((sample) + (ext_size)))
 
-#endif /* !UNIV_HOTBACKUP */
 
 #ifndef UNIV_HOTBACKUP
 /*******************************************************************//**
@@ -148,9 +164,7 @@ btr_cur_add_path_info(
 	ulint		height,		/*!< in: height of the page in tree;
 					0 means leaf node */
 	ulint		root_height);	/*!< in: root node height in tree */
-#endif /* !UNIV_HOTBACKUP */
 
-#ifndef UNIV_HOTBACKUP
 /*==================== B-TREE SEARCH =========================*/
 
 /** Latches the leaf page or pages requested.
@@ -2872,7 +2886,6 @@ btr_cur_ins_lock_and_undo(
 	ut_ad(!dict_index_is_online_ddl(index)
 	      || index->is_clustered()
 	      || (flags & BTR_CREATE_FLAG));
-	ut_ad(mtr->is_named_space(index->space));
 
 	/* Check if there is predicate or GAP lock preventing the insertion */
 	if (!(flags & BTR_NO_LOCKING_FLAG)) {
@@ -2924,7 +2937,7 @@ btr_cur_ins_lock_and_undo(
 		So pretend to be freshly inserted row. */
 		if (index->table->skip_alter_undo) {
 			ut_ad(roll_ptr == 0);
-			roll_ptr = trx_undo_build_roll_ptr(1, 0, 0, 0);
+			roll_ptr = trx_undo_build_roll_ptr(TRUE, 0, 0, 0);
 			ut_ad(roll_ptr == (1ULL << 55));
 		}
 
@@ -3043,7 +3056,8 @@ btr_cur_optimistic_insert(
 
 		/* The record is so big that we have to store some fields
 		externally on separate database pages */
-		big_rec_vec = dtuple_convert_big_rec(index, 0, entry, &n_ext);
+		big_rec_vec = dtuple_convert_big_rec(
+			index, 0, entry, &n_ext);
 
 		if (UNIV_UNLIKELY(big_rec_vec == NULL)) {
 
@@ -3340,7 +3354,8 @@ btr_cur_pessimistic_insert(
 			dtuple_convert_back_big_rec(index, entry, big_rec_vec);
 		}
 
-		big_rec_vec = dtuple_convert_big_rec(index, 0, entry, &n_ext);
+		big_rec_vec = dtuple_convert_big_rec(
+			index, 0, entry, &n_ext);
 
 		if (big_rec_vec == NULL) {
 
@@ -3441,7 +3456,6 @@ btr_cur_upd_lock_and_undo(
 	index = cursor->index;
 
 	ut_ad(rec_offs_validate(rec, index, offsets));
-	ut_ad(mtr->is_named_space(index->space));
 
 	if (!index->is_clustered()) {
 		ut_ad(dict_index_is_online_ddl(index)
@@ -4173,7 +4187,6 @@ btr_cur_pess_upd_restore_supremum(
 					     PAGE_HEAP_NO_SUPREMUM,
 					     page_rec_get_heap_no(rec));
 }
-
 /*************************************************************//**
 Performs an update of a record on a page of a tree. It is assumed
 that mtr holds an x-latch on the tree and on the cursor page. If the
@@ -4210,9 +4223,14 @@ btr_cur_pessimistic_update(
 				| BTR_CREATE_FLAG
 				| BTR_KEEP_SYS_FLAG) */
 	trx_id_t	trx_id,	/*!< in: transaction id */
+	undo_no_t	undo_no,
+				/*!< in: undo number of the transaction. This
+				is needed for rollback to savepoint of
+				partially updated LOB.*/
 	mtr_t*		mtr)	/*!< in/out: mini-transaction; must be
 				committed before latching any further pages */
 {
+	DBUG_ENTER("btr_cur_pessimistic_update");
 	big_rec_t*	big_rec_vec	= NULL;
 	big_rec_t*	dummy_big_rec;
 	dict_index_t*	index;
@@ -4286,7 +4304,7 @@ btr_cur_pessimistic_update(
 			dtuple_big_rec_free(big_rec_vec);
 		}
 
-		return(err);
+		DBUG_RETURN(err);
 	}
 
 	rec = btr_cur_get_rec(cursor);
@@ -4338,7 +4356,8 @@ btr_cur_pessimistic_update(
 		RECOVERY_CRASH(99);
 
 		lob::BtrContext ctx(mtr, nullptr, index, rec, *offsets, block);
-		ctx.free_updated_extern_fields(update, true);
+
+		ctx.free_updated_extern_fields(trx_id, undo_no, update, true);
 	}
 
 	if (page_zip_rec_needs_ext(
@@ -4347,7 +4366,8 @@ btr_cur_pessimistic_update(
 			dict_index_get_n_fields(index),
 			block->page.size)) {
 
-		big_rec_vec = dtuple_convert_big_rec(index, update, new_entry, &n_ext);
+		big_rec_vec = dtuple_convert_big_rec(
+			index, update, new_entry, &n_ext);
 		if (UNIV_UNLIKELY(big_rec_vec == NULL)) {
 
 			/* We cannot goto return_after_reservations,
@@ -4606,7 +4626,7 @@ return_after_reservations:
 
 	*big_rec = big_rec_vec;
 
-	return(err);
+	DBUG_RETURN(err);
 }
 
 /*==================== B-TREE DELETE MARK AND UNMARK ===============*/
@@ -4627,7 +4647,6 @@ btr_cur_del_mark_set_clust_rec_log(
 	byte*	log_ptr;
 
 	ut_ad(!!page_rec_is_comp(rec) == dict_table_is_comp(index->table));
-	ut_ad(mtr->is_named_space(index->space));
 
 	log_ptr = mlog_open_and_write_index(mtr, rec, index,
 					    page_rec_is_comp(rec)
@@ -4763,7 +4782,6 @@ btr_cur_del_mark_set_clust_rec(
 	ut_ad(!!page_rec_is_comp(rec) == dict_table_is_comp(index->table));
 	ut_ad(buf_block_get_frame(block) == page_align(rec));
 	ut_ad(page_is_leaf(page_align(rec)));
-	ut_ad(mtr->is_named_space(index->space));
 
 	if (rec_get_deleted_flag(rec, rec_offs_comp(offsets))) {
 		/* While cascading delete operations, this becomes possible. */
@@ -4814,7 +4832,7 @@ btr_cur_del_mark_set_clust_rec(
 			      rec_printer(rec, offsets).str().c_str()));
 
 	if (dict_index_is_online_ddl(index)) {
-		row_log_table_delete(rec, entry, index, offsets, NULL);
+		row_log_table_delete(trx, rec, entry, index, offsets, NULL);
 	}
 
 	row_upd_rec_sys_fields(rec, page_zip, index, offsets, trx, roll_ptr);
@@ -5061,7 +5079,6 @@ btr_cur_optimistic_delete_func(
 				MTR_MEMO_PAGE_X_FIX));
 	ut_ad(mtr_is_block_fix(mtr, btr_cur_get_block(cursor),
 			       MTR_MEMO_PAGE_X_FIX, cursor->index->table));
-	ut_ad(mtr->is_named_space(cursor->index->space));
 
 	/* This is intended only for leaf page deletions */
 
@@ -5161,8 +5178,19 @@ btr_cur_pessimistic_delete(
 				deleted record on function exit */
 	ulint		flags,	/*!< in: BTR_CREATE_FLAG or 0 */
 	bool		rollback,/*!< in: performing rollback? */
+	trx_id_t	trx_id,	/*!< in: the current transaction id. */
+	undo_no_t	undo_no,
+				/*!< in: the undo number within the
+				current trx, used for rollback to savepoint
+				for an LOB. */
+	ulint		rec_type,
+				/*!< in: undo record type. */
 	mtr_t*		mtr)	/*!< in: mtr */
 {
+	DBUG_ENTER("btr_cur_pessimistic_delete");
+
+	DBUG_LOG("btr", "rollback=" << rollback << ", trxid=" << trx_id);
+
 	buf_block_t*	block;
 	page_t*		page;
 	dict_index_t*	index;
@@ -5190,7 +5218,6 @@ btr_cur_pessimistic_delete(
 					| MTR_MEMO_SX_LOCK)
 	      || index->table->is_intrinsic());
 	ut_ad(mtr_is_block_fix(mtr, block, MTR_MEMO_PAGE_X_FIX, index->table));
-	ut_ad(mtr->is_named_space(index->space));
 
 	if (!has_reserved_extents) {
 		/* First reserve enough free space for the file segments
@@ -5206,7 +5233,7 @@ btr_cur_pessimistic_delete(
 		if (!success) {
 			*err = DB_OUT_OF_FILE_SPACE;
 
-			return(FALSE);
+			DBUG_RETURN(FALSE);
 		}
 	}
 
@@ -5223,7 +5250,8 @@ btr_cur_pessimistic_delete(
 
 		lob::BtrContext btr_ctx(mtr, NULL, index, rec, offsets, block);
 
-		btr_ctx.free_externally_stored_fields(rollback);
+		btr_ctx.free_externally_stored_fields(
+			trx_id, undo_no, rollback, rec_type);
 #ifdef UNIV_ZIP_DEBUG
 		ut_a(!page_zip || page_zip_validate(page_zip, page, index));
 #endif /* UNIV_ZIP_DEBUG */
@@ -5296,7 +5324,7 @@ btr_cur_pessimistic_delete(
 				*err = DB_ERROR;
 
 				mem_heap_free(heap);
-				return(FALSE);
+				DBUG_RETURN(FALSE);
 			}
 
 			ut_d(parent_latched = true);
@@ -5353,7 +5381,7 @@ return_after_reservations:
 		fil_space_release_free_extents(index->space, n_reserved);
 	}
 
-	return(ret);
+	DBUG_RETURN(ret);
 }
 
 /*******************************************************************//**

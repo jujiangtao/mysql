@@ -1,13 +1,20 @@
 /* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -17,60 +24,6 @@
 #define GCS_MEMBER_IDENTIFIER_INCLUDED
 
 #include <string>
-#include <stdint.h>
-
-#include "gcs_types.h"
-
-/*
-  Internal GCS unique identifier.
-*/
-class Gcs_uuid
-{
-public:
-  /*
-    Create a GCS unique identifier.
-  */
-
-  static Gcs_uuid create_uuid();
-
-
-  /*
-    Size of the current identifier when not serialized.
-  */
-  static const unsigned int size;
-
-
-  /*
-    Get a string representation of the uuid that can be put on
-    the wire.
-
-    @param [out] buffer storage buffer
-    @return string representation
-  */
-
-  bool encode(uchar **buffer) const;
-
-
-  /*
-    Transforms a string representation into the current format
-    whatever it is.
-
-    @param [in] buffer storage buffer
-    @return string representation
-  */
-
-  bool decode(uchar *buffer);
-
-
-  /*
-    Unique identifier which currently only accommodates 64 bits but
-    can easily be extended to 128 bits and become a truly UUID in
-    the future.
-  */
-
-  uint64_t value;
-};
-
 
 /**
   @class Gcs_member_identifier
@@ -95,17 +48,6 @@ public:
   explicit Gcs_member_identifier(const std::string &member_id);
 
 
-  /**
-    Gcs_member_identifier constructor.
-
-    @param[in] member_id the member identifier
-    @param[in] uuid the member uuid
-  */
-
-  explicit Gcs_member_identifier(const std::string &member_id,
-                                 const Gcs_uuid &uuid);
-
-
   virtual ~Gcs_member_identifier() {}
 
 
@@ -114,19 +56,6 @@ public:
   */
 
   const std::string& get_member_id() const;
-
-  /**
-    @return the member uuid
-  */
-
-  const Gcs_uuid& get_member_uuid() const;
-
-
-  /**
-    Regenerate the member uuid
-  */
-
-  void regenerate_member_uuid();
 
 
   /**
@@ -155,7 +84,5 @@ public:
 
 private:
   std::string m_member_id;
-  Gcs_uuid m_uuid;
 };
-
 #endif // GCS_MEMBER_IDENTIFIER_INCLUDED

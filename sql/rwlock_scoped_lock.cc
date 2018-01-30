@@ -1,21 +1,31 @@
-/* Copyright (c) 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
 
 This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; version 2 of the License.
+it under the terms of the GNU General Public License, version 2.0,
+as published by the Free Software Foundation.
+
+This program is also distributed with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have included with MySQL.
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
+GNU General Public License, version 2.0, for more details.
 
 You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
-Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02111-1307  USA */
+Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "rwlock_scoped_lock.h"
 
 #include <stddef.h>
+
+#include "my_compiler.h"
+#include "mysql/psi/mysql_rwlock.h"
 
 /**
   Acquires lock on specified lock object.
@@ -26,20 +36,22 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02111-1307  USA */
   @param file File in which lock acquisition is to be presented.
   @param line Line of file in which lock acquisition is to be presented.
 */
-rwlock_scoped_lock::rwlock_scoped_lock(
-  mysql_rwlock_t* lock, bool lock_for_write, const char* file, int line)
+rwlock_scoped_lock::rwlock_scoped_lock(mysql_rwlock_t* lock,
+                                       bool lock_for_write,
+                                       const char* file MY_ATTRIBUTE((unused)),
+                                       int line MY_ATTRIBUTE((unused)))
   : m_lock(lock)
 {
   if (lock_for_write)
   {
-    if (!mysql_rwlock_wrlock_indirect(lock, file, line))
+    if (!mysql_rwlock_wrlock_with_src(lock, file, line))
     {
       m_lock= lock;
     }
   }
   else
   {
-    if (!mysql_rwlock_rdlock_indirect(lock, file, line))
+    if (!mysql_rwlock_rdlock_with_src(lock, file, line))
     {
       m_lock= lock;
     }

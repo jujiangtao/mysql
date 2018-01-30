@@ -2,7 +2,6 @@
 # Test for persistent corrupt bit for corrupted index and table
 #
 --source include/no_valgrind_without_big.inc
---source include/not_embedded.inc
 # This test needs debug server
 --source include/have_debug.inc
 
@@ -96,9 +95,9 @@ select z from corrupt_bit_test_ā limit 10;
 drop table corrupt_bit_test_ā;
 
 --disable_query_log
-call mtr.add_suppression("\\[ERROR\\] InnoDB: Load table `corrupted`\\.`t[16]` failed, the table contains a corrupted clustered index");
-call mtr.add_suppression("\\[Warning\\] InnoDB: Cannot open table corrupted/t[16]");
-call mtr.add_suppression("\\[ERROR\\] InnoDB: Failed to find tablespace for table `corrupted`\\.`t[56]` in the cache");
+call mtr.add_suppression("\\[ERROR\\] \\[[^]]*\\] InnoDB: Load table `corrupted`\\.`t[16]` failed, the table contains a corrupted clustered index");
+call mtr.add_suppression("\\[Warning\\] \\[[^]]*\\] InnoDB: Cannot open table corrupted/t[16]");
+call mtr.add_suppression("\\[ERROR\\] \\[[^]]*\\] InnoDB: Failed to find tablespace for table `corrupted`\\.`t[56]` in the cache");
 --enable_query_log
 
 CREATE DATABASE corrupted;
@@ -159,7 +158,7 @@ SELECT c FROM t3 WHERE c = 'bb';
 use corrupted;
 SHOW TABLES;
 
---error ER_NO_SUCH_TABLE
+--error ER_CHECK_NO_SUCH_TABLE
 CREATE INDEX b ON t1(b);
 
 --error ER_TABLE_HAS_NO_FT
@@ -190,7 +189,7 @@ CREATE TABLE t3 (
         c CHAR(10),
         v VARCHAR(100),
         t TEXT,
-        p POINT NOT NULL);
+        p POINT NOT NULL SRID 0);
 
 CREATE INDEX idx_b ON t3(b);
 
@@ -329,7 +328,7 @@ CHECK TABLE t5;
 SELECT b FROM t5 WHERE b > 5;
 
 CHECK TABLE t6;
---error ER_NO_SUCH_TABLE
+--error ER_CHECK_NO_SUCH_TABLE
 CREATE INDEX idx_v ON t6(v);
 
 --echo # Invoke checkpoint to persist the latest corruption bits again

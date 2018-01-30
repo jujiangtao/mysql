@@ -1,33 +1,40 @@
 /* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA */
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "sql/error_handler.h"
 
 #include <errno.h>
 
-#include "key.h"
 #include "my_inttypes.h"
 #include "my_sqlcommand.h"
 #include "my_sys.h"
 #include "my_thread_local.h"
 #include "mysys_err.h"           // EE_*
-#include "sql_class.h"           // THD
-#include "sql_lex.h"
-#include "system_variables.h"
-#include "table.h"               // TABLE_LIST
-#include "transaction_info.h"
+#include "sql/key.h"
+#include "sql/sql_class.h"       // THD
+#include "sql/sql_lex.h"
+#include "sql/system_variables.h"
+#include "sql/table.h"           // TABLE_LIST
+#include "sql/transaction_info.h"
 
 
 /**
@@ -37,6 +44,7 @@
   the following warnings during DROP TABLE:
     - Some of table files are missed or invalid (the table is going to be
       deleted anyway, so why bother that something was missed).
+    - The table is using an invalid collation.
 
   @return true if the condition is handled.
 */
@@ -46,7 +54,9 @@ bool Drop_table_error_handler::handle_condition(THD*,
                                                 Sql_condition::enum_severity_level*,
                                                 const char*)
 {
-  return (sql_errno == EE_DELETE && my_errno() == ENOENT);
+  return (sql_errno == ER_UNKNOWN_COLLATION) ||
+         (sql_errno == ER_PLUGIN_IS_NOT_LOADED) ||
+         (sql_errno == EE_DELETE && my_errno() == ENOENT);
 }
 
 
@@ -280,3 +290,52 @@ private:
   bool m_handled_errors;
   bool m_unhandled_errors;
 };
+
+
+/**
+  Following are implementation of error handler to convert ER_LOCK_DEADLOCK
+  error when executing I_S.TABLES and I_S.FILES system view.
+*/
+
+Info_schema_error_handler::Info_schema_error_handler(THD *thd,
+                                                     const String *schema_name,
+                                                     const String *table_name)
+: m_can_deadlock(thd->mdl_context.has_locks()),
+  m_schema_name(schema_name),
+  m_table_name(table_name),
+  m_object_type(Mdl_object_type::TABLE)
+{}
+
+
+Info_schema_error_handler::Info_schema_error_handler(THD *thd,
+                                                     const String *tablespace_name)
+: m_can_deadlock(thd->mdl_context.has_locks()),
+  m_tablespace_name(tablespace_name),
+  m_object_type(Mdl_object_type::TABLESPACE)
+{}
+
+bool Info_schema_error_handler::handle_condition(THD*,
+                                  uint sql_errno,
+                                  const char*,
+                                  Sql_condition::enum_severity_level*,
+                                  const char*)
+{
+  if (sql_errno == ER_LOCK_DEADLOCK && m_can_deadlock)
+  {
+    // Convert error to ER_WARN_I_S_SKIPPED_TABLE.
+    if (m_object_type == Mdl_object_type::TABLE)
+    {
+      my_error(ER_WARN_I_S_SKIPPED_TABLE, MYF(0), m_schema_name->ptr(),
+               m_table_name->ptr());
+    }
+    else // Convert error to ER_WARN_I_S_SKIPPED_TABLESPACE.
+    {
+      my_error(ER_I_S_SKIPPED_TABLESPACE, MYF(0), m_tablespace_name->ptr());
+    }
+
+    m_error_handled= true;
+  }
+
+  return false;
+}
+

@@ -1,38 +1,41 @@
 /*
  * Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
  *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License as
- * published by the Free Software Foundation; version 2 of the
- * License.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License, version 2.0,
+ * as published by the Free Software Foundation.
  *
+ * This program is also distributed with certain software (including
+ * but not limited to OpenSSL) that is licensed under separate terms,
+ * as designated in a particular file or component or in included license
+ * documentation.  The authors of MySQL hereby grant you an additional
+ * permission to link the program and your derivative works with the
+ * separately licensed software that they have included with MySQL.
+ *  
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License, version 2.0, for more details.
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
- * 02110-1301  USA
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
  */
 
 #include <errno.h>
 #include <sys/types.h>
 
+#include "my_io.h"
+#include "plugin/x/ngs/include/ngs/log.h"
+#include "plugin/x/ngs/include/ngs/protocol/buffer.h"
+#include "plugin/x/ngs/include/ngs/protocol/output_buffer.h"
+#include "plugin/x/ngs/include/ngs/protocol/protocol_config.h"
+#include "plugin/x/ngs/include/ngs/protocol_encoder.h"
+#include "plugin/x/ngs/include/ngs_common/connection_vio.h"
 // "ngs_common/protocol_protobuf.h" has to come before boost includes, because of build
 // issue in Solaris (unqualified map used, which clashes with some other map defined
 // in Solaris headers)
-#include "ngs_common/protocol_protobuf.h"
-
-#include "my_io.h"
-#include "ngs/log.h"
-#include "ngs/protocol/buffer.h"
-#include "ngs/protocol/output_buffer.h"
-#include "ngs/protocol/protocol_config.h"
-#include "ngs/protocol_encoder.h"
-#include "ngs/protocol_monitor.h"
-#include "ngs_common/connection_vio.h"
+#include "plugin/x/ngs/include/ngs_common/protocol_protobuf.h"
 
 #undef ERROR // Needed to avoid conflict with ERROR in mysqlx.pb.h
 
@@ -116,7 +119,6 @@ bool Protocol_encoder::send_ok(const std::string &message)
   return send_message(Mysqlx::ServerMessages::OK, ok);
 }
 
-
 bool Protocol_encoder::send_init_error(const Error_code& error_code)
 {
   m_protocol_monitor->on_init_error_send();
@@ -130,35 +132,6 @@ bool Protocol_encoder::send_init_error(const Error_code& error_code)
 
   return send_message(Mysqlx::ServerMessages::ERROR, error);
 }
-
-
-void Protocol_encoder::send_local_notice(Notice_type type,
-                                         const std::string &data,
-                                         bool force_flush)
-{
-  get_protocol_monitor().on_notice_other_send();
-
-  send_notice(type, data, FRAME_SCOPE_LOCAL, force_flush);
-}
-
-/*
-NOTE: Commented for coverage. Uncomment when needed.
-
-void Protocol_encoder::send_global_notice(Notice_type type, const std::string &data)
-{
-  get_protocol_monitor().on_notice_other_send();
-
-  send_notice(type, data, FRAME_SCOPE_GLOBAL, true);
-}
-*/
-
-void Protocol_encoder::send_local_warning(const std::string &data, bool force_flush)
-{
-  get_protocol_monitor().on_notice_warning_send();
-
-  send_notice(k_notice_warning, data, FRAME_SCOPE_LOCAL, force_flush);
-}
-
 
 void Protocol_encoder::send_auth_ok(const std::string &data)
 {
@@ -256,7 +229,9 @@ void Protocol_encoder::log_protobuf(const char *direction_name, Request &request
 }
 
 
-void Protocol_encoder::log_protobuf(const char *direction_name, const Message *message)
+void
+Protocol_encoder::log_protobuf(const char *direction_name MY_ATTRIBUTE((unused)),
+                               const Message *message MY_ATTRIBUTE((unused)))
 {
 #ifdef USE_MYSQLX_FULL_PROTO
   std::string text_message;
@@ -282,21 +257,30 @@ void Protocol_encoder::log_protobuf(const char *direction_name, const Message *m
 }
 
 // for message sent as raw buffer only logging its type tag now
-void Protocol_encoder::log_protobuf(int8_t type)
+void Protocol_encoder::log_protobuf(int8_t type MY_ATTRIBUTE((unused)))
 {
   log_debug("SEND RAW: Type: %d", type);
 }
 
 
-void Protocol_encoder::send_notice(uint32_t type, const std::string &data,
-  Frame_scope scope, bool force_flush)
-{
-  int iscope = (scope == FRAME_SCOPE_GLOBAL) ? static_cast<int>(Mysqlx::Notice::Frame_Scope_GLOBAL) :
-    static_cast<int>(Mysqlx::Notice::Frame_Scope_LOCAL);
+void Protocol_encoder::send_notice(
+    const Frame_type type,
+    const Frame_scope scope,
+    const std::string &data,
+    const bool force_flush) {
+
+  if (Frame_type::WARNING == type)
+    get_protocol_monitor().on_notice_warning_send();
+  else
+    get_protocol_monitor().on_notice_other_send();
 
   log_raw_message_send(Mysqlx::ServerMessages::NOTICE);
 
-  m_notice_builder.encode_frame(m_buffer.get(), type, data, iscope);
+  m_notice_builder.encode_frame(
+      m_buffer.get(),
+      static_cast<int>(type),
+      data,
+      static_cast<int>(scope));
   enqueue_buffer(Mysqlx::ServerMessages::NOTICE, force_flush);
 }
 
@@ -309,31 +293,12 @@ void Protocol_encoder::send_rows_affected(uint64_t value)
   enqueue_buffer(Mysqlx::ServerMessages::NOTICE);
 }
 
-bool Protocol_encoder::send_column_metadata(const std::string &catalog,
-  const std::string &db_name,
-  const std::string &table_name, const std::string &org_table_name,
-  const std::string &col_name, const std::string &org_col_name,
-  uint64_t collation, int type, int decimals,
-  uint32_t flags, uint32_t length, uint32_t content_type)
+bool Protocol_encoder::send_column_metadata(const Encode_column_info *column_info)
 {
-  m_metadata_builder.encode_metadata(m_buffer.get(),
-    catalog, db_name, table_name, org_table_name,
-    col_name, org_col_name, collation, type, decimals,
-    flags, length, content_type);
+  m_metadata_builder.encode_metadata(m_buffer.get(), column_info);
 
   return send_raw_buffer(Mysqlx::ServerMessages::RESULTSET_COLUMN_META_DATA);
 }
-
-bool Protocol_encoder::send_column_metadata(uint64_t collation, int type, int decimals,
-  uint32_t flags, uint32_t length, uint32_t content_type)
-{
-  m_metadata_builder.encode_metadata(m_buffer.get(),
-    collation, type, decimals,
-    flags, length, content_type);
-
-  return send_raw_buffer(Mysqlx::ServerMessages::RESULTSET_COLUMN_META_DATA);
-}
-
 
 bool Protocol_encoder::flush_buffer()
 {
@@ -341,7 +306,8 @@ bool Protocol_encoder::flush_buffer()
 
   if (is_valid_socket)
   {
-    const ssize_t result = m_socket->write(m_buffer->get_buffers());
+    const ssize_t result = m_socket->write(m_buffer->get_buffers(),
+        m_write_timeout);
     if (result <= 0)
     {
       log_info("Error writing to client: %s (%i)", strerror(errno), errno);

@@ -38,9 +38,12 @@ select _utf8 0xD0B0D0B1D0B2 like concat(_utf8'%',_utf8 0xD0B1,_utf8 '%');
 # characters in case insensitive manner.
 # Case insensitive search LIKE comparison
 # was broken for multibyte characters:
+--character_set latin1
 select convert(_latin1'G�nter Andr�' using utf8) like CONVERT(_latin1'G�NTER%' USING utf8);
+--character_set koi8r
 select CONVERT(_koi8r'����' USING utf8) LIKE CONVERT(_koi8r'����' USING utf8);
 select CONVERT(_koi8r'����' USING utf8) LIKE CONVERT(_koi8r'����' USING utf8);
+--character_set utf8mb4
 
 #
 # Check the following:
@@ -120,7 +123,9 @@ set LC_TIME_NAMES='en_US';
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 set names koi8r;
 create table t1 (s1 char(1) character set utf8);
+--character_set koi8r
 insert into t1 values (_koi8r'��');
+--character_set utf8mb4
 select s1,hex(s1),char_length(s1),octet_length(s1) from t1;
 drop table t1;
 
@@ -200,14 +205,28 @@ set names utf8;
 set names utf8;
 
 # This should return TRUE
+--echo # Not supported by ICU
+--error ER_REGEXP_ILLEGAL_ARGUMENT
 select  'вася'  rlike '[[:<:]]вася[[:>:]]';
+--echo # Not supported by ICU
+--error ER_REGEXP_ILLEGAL_ARGUMENT
 select  'вася ' rlike '[[:<:]]вася[[:>:]]';
+--echo # Not supported by ICU
+--error ER_REGEXP_ILLEGAL_ARGUMENT
 select ' вася'  rlike '[[:<:]]вася[[:>:]]';
+--echo # Not supported by ICU
+--error ER_REGEXP_ILLEGAL_ARGUMENT
 select ' вася ' rlike '[[:<:]]вася[[:>:]]';
 
 # This should return FALSE
+--echo # Not supported by ICU
+--error ER_REGEXP_ILLEGAL_ARGUMENT
 select  'васяz' rlike '[[:<:]]вася[[:>:]]';
+--echo # Not supported by ICU
+--error ER_REGEXP_ILLEGAL_ARGUMENT
 select 'zвася'  rlike '[[:<:]]вася[[:>:]]';
+--echo # Not supported by ICU
+--error ER_REGEXP_ILLEGAL_ARGUMENT
 select 'zвасяz' rlike '[[:<:]]вася[[:>:]]';
 
 #
@@ -1600,15 +1619,15 @@ GROUP BY INSERT('', t2.a, t1.a, (@@global.max_binlog_size));
 DROP TABLE t1;
 
 --echo #
---echo # Bug#11764503 (Bug#57341) Query in EXPLAIN EXTENDED shows wrong characters
+--echo # Bug#11764503 (Bug#57341) Query in EXPLAIN shows wrong characters
 --echo #
 # Emulate utf8 client erroneously started with --default-character-set=latin1,
 # as in the bug report. EXPLAIN output should still be pretty readable
 SET NAMES latin1;
-EXPLAIN EXTENDED SELECT 'abcdÁÂÃÄÅ', _latin1'abcdÁÂÃÄÅ', _utf8'abcdÁÂÃÄÅ' AS u;
+EXPLAIN SELECT 'abcdÁÂÃÄÅ', _latin1'abcdÁÂÃÄÅ', _utf8'abcdÁÂÃÄÅ' AS u;
 # Test normal utf8
 SET NAMES utf8;
-EXPLAIN EXTENDED SELECT 'abcdÁÂÃÄÅ', _latin1'abcdÁÂÃÄÅ', _utf8'abcdÁÂÃÄÅ';
+EXPLAIN SELECT 'abcdÁÂÃÄÅ', _latin1'abcdÁÂÃÄÅ', _utf8'abcdÁÂÃÄÅ';
 
 --echo #
 --echo # Bug#11750518 41090: ORDER BY TRUNCATES GROUP_CONCAT RESULT

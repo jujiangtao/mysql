@@ -1,28 +1,34 @@
-/* Copyright (c) 2014, 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include <stdlib.h>
-#include <stdio.h>
 #include <assert.h>
-
-#include "mysql/gcs/gcs_message.h"
-#include "mysql/gcs/gcs_logging.h"
-#include "mysql/gcs/xplatform/byteorder.h"
-#include "mysql/gcs/xplatform/my_xp_util.h"
+#include <stdio.h>
+#include <stdlib.h>
 
 #include "my_compiler.h"
+#include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/gcs_logging_system.h"
+#include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/gcs_message.h"
+#include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/xplatform/byteorder.h"
+#include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/xplatform/my_xp_util.h"
 
 /**
   Gcs_message_data implementation
@@ -237,11 +243,12 @@ bool Gcs_message_data::encode(uchar *buffer, uint64_t *buffer_len)
   slider+= payload_len;
   assert(static_cast<uint64_t>(slider - buffer) <= *buffer_len);
 
-  MYSQL_GCS_TRACE_EXECUTE(
+  MYSQL_GCS_DEBUG_EXECUTE(
     uint64_t MY_ATTRIBUTE((unused)) encoded_header_size= get_encode_header_size();
     MYSQL_GCS_LOG_TRACE(
-      "Encoded message: (header)=" << encoded_header_size <<
-      " (payload)=" << header_len + payload_len
+      "Encoded message: (header)= %llu (payload)= %llu",
+      static_cast<unsigned long long>(encoded_header_size),
+      static_cast<unsigned long long>(header_len + payload_len)
     );
   );
 
@@ -300,9 +307,9 @@ bool Gcs_message_data::decode(const uchar *data, uint64_t data_len)
   slider+= m_payload_len;
 
   MYSQL_GCS_LOG_TRACE(
-    "Decoded message: (header)=" <<
-    static_cast<uint64_t>(m_header - m_buffer) <<
-    " and (payload)=" << (m_header_len + m_payload_len)
+    "Decoded message: (header)= %llu and (payload)= %llu",
+    static_cast<unsigned long long>(m_header - m_buffer),
+    static_cast<unsigned long long>(m_header_len + m_payload_len)
   );
 
   return false;

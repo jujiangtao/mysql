@@ -1,24 +1,32 @@
 /* Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_xcom_notification.h"
+
 #include <assert.h>
 #include <stddef.h>
 
-#include "mysql/gcs/gcs_logging.h"
-#include "gcs_xcom_notification.h"
 #include "my_compiler.h"
+#include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/gcs_logging_system.h"
 
 Finalize_notification::Finalize_notification(
   Gcs_xcom_engine *gcs_engine, xcom_finalize_functor *functor)
@@ -150,6 +158,9 @@ void *process_notification_thread(void *ptr_object)
 {
   Gcs_xcom_engine *engine= static_cast<Gcs_xcom_engine* >(ptr_object);
   engine->process();
+
+  My_xp_thread_util::exit(0);
+
   return NULL;
 }
 
@@ -158,8 +169,10 @@ Gcs_xcom_engine::Gcs_xcom_engine()
   : m_wait_for_notification_cond(), m_wait_for_notification_mutex(),
     m_notification_queue(), m_engine_thread(), m_schedule(true)
 {
-  m_wait_for_notification_cond.init();
-  m_wait_for_notification_mutex.init(NULL);
+  m_wait_for_notification_cond.init(
+    key_GCS_COND_Gcs_xcom_engine_m_wait_for_notification_cond);
+  m_wait_for_notification_mutex.init(
+    key_GCS_MUTEX_Gcs_xcom_engine_m_wait_for_notification_mutex, NULL);
 }
 
 
@@ -175,7 +188,8 @@ void Gcs_xcom_engine::initialize(
 {
   assert(m_notification_queue.empty());
   assert(m_schedule);
-  m_engine_thread.create(NULL, process_notification_thread, (void *) this);
+  m_engine_thread.create(key_GCS_THD_Gcs_xcom_engine_m_engine_thread,
+                         NULL, process_notification_thread, (void *) this);
 }
 
 
@@ -207,13 +221,12 @@ void Gcs_xcom_engine::process()
     m_wait_for_notification_mutex.unlock();
 
     MYSQL_GCS_LOG_TRACE(
-      "Started executing during regular phase: " << notification
+      "Started executing during regular phase: %p", notification
     )
     stop= (*notification)();
     MYSQL_GCS_LOG_TRACE(
-      "Finish executing during regular phase: " << notification
+      "Finish executing during regular phase: %p", notification
     )
-
     delete notification;
   }
 }
@@ -233,11 +246,11 @@ void Gcs_xcom_engine::cleanup()
     m_notification_queue.pop();
 
     MYSQL_GCS_LOG_TRACE(
-      "Started executing during clean up phase: " << notification
+      "Started executing during clean up phase: %p", notification
     )
     (*notification)();
     MYSQL_GCS_LOG_TRACE(
-      "Finished executing during clean up phase: " << notification
+      "Finished executing during clean up phase: %p", notification
     )
 
     delete notification;

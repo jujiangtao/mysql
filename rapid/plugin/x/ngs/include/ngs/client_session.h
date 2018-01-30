@@ -1,20 +1,25 @@
 /*
  * Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
  *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License as
- * published by the Free Software Foundation; version 2 of the
- * License.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License, version 2.0,
+ * as published by the Free Software Foundation.
  *
+ * This program is also distributed with certain software (including
+ * but not limited to OpenSSL) that is licensed under separate terms,
+ * as designated in a particular file or component or in included license
+ * documentation.  The authors of MySQL hereby grant you an additional
+ * permission to link the program and your derivative works with the
+ * separately licensed software that they have included with MySQL.
+ *  
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License, version 2.0, for more details.
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
- * 02110-1301  USA
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
  */
 
 #ifndef _NGS_CLIENT_SESSION_H_
@@ -22,40 +27,39 @@
 
 #include <assert.h>
 
-#include "interface/authentication_interface.h"
-#include "interface/session_interface.h"
 #include "my_inttypes.h"
-#include "ngs/protocol_encoder.h"
-#include "ngs/thread.h"
+#include "plugin/x/ngs/include/ngs/interface/authentication_interface.h"
+#include "plugin/x/ngs/include/ngs/interface/protocol_encoder_interface.h"
+#include "plugin/x/ngs/include/ngs/interface/session_interface.h"
+#include "plugin/x/ngs/include/ngs/thread.h"
 
 namespace ngs
 {
   class Client;
-  class Protocol_encoder;
 
   class Session: public Session_interface
   {
   public:
     typedef int32_t Session_id;
 
-    Session(Client_interface &client, Protocol_encoder *proto, const Session_id session_id);
-    virtual ~Session();
+    Session(Client_interface &client, Protocol_encoder_interface *proto, const Session_id session_id);
+    ~Session() override;
 
-    virtual Session_id session_id() const { return m_id; }
+    Session_id session_id() const override { return m_id; }
     virtual bool is_ready() const;
 
   public:
-    virtual void on_close(const bool update_old_state = false);
-    virtual void on_kill();
-    virtual void on_auth_success(const Authentication_interface::Response &response);
-    virtual void on_auth_failure(const Authentication_interface::Response &response);
+    void on_close(const bool update_old_state = false) override;
+    void on_kill() override;
+    void on_auth_success(const Authentication_interface::Response &response) override;
+    void on_auth_failure(const Authentication_interface::Response &response) override;
 
     // handle a single message, returns true if message was handled false if not
-    virtual bool handle_message(ngs::Request &command);
+    bool handle_message(ngs::Request &command) override;
 
-    Client_interface &client() { return m_client; }
+    Client_interface &client() override { return m_client; }
 
-    Protocol_encoder &proto() { return *m_encoder; }
+    Protocol_encoder_interface &proto() override { return *m_encoder; }
 
   protected:
     virtual bool handle_auth_message(ngs::Request &command);
@@ -64,15 +68,19 @@ namespace ngs
     void stop_auth();
 
   public:
-    State state() const { return m_state; }
-    State state_before_close() const { return m_state_before_close; }
+    State state() const override { return m_state; }
+    State state_before_close() const override { return m_state_before_close; }
+
+    bool can_authenticate_again() const;
 
   protected:
     Client_interface &m_client;
-    Protocol_encoder *m_encoder;
+    Protocol_encoder_interface *m_encoder;
     Authentication_interface_ptr m_auth_handler;
     State m_state;
     State m_state_before_close;
+    uint8_t m_failed_auth_count = 0;
+    const uint8_t k_max_auth_attempts = 3;
 
     const Session_id m_id;
     // true if a session session was already scheduled for execution in a thread

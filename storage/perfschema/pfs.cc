@@ -1,17 +1,43 @@
 /* Copyright (c) 2008, 2017, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
-  along with this program; if not, write to the Free Software Foundation,
-  51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+  along with this program; if not, write to the Free Software
+  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
+
+#define HAVE_PSI_MUTEX_INTERFACE
+#define HAVE_PSI_RWLOCK_INTERFACE
+#define HAVE_PSI_COND_INTERFACE
+#define HAVE_PSI_FILE_INTERFACE
+#define HAVE_PSI_THREAD_INTERFACE
+#define HAVE_PSI_TABLE_INTERFACE
+#define HAVE_PSI_STAGE_INTERFACE
+#define HAVE_PSI_STATEMENT_INTERFACE
+#define HAVE_PSI_SP_INTERFACE
+#define HAVE_PSI_PS_INTERFACE
+#define HAVE_PSI_STATEMENT_DIGEST_INTERFACE
+#define HAVE_PSI_TRANSACTION_INTERFACE
+#define HAVE_PSI_SOCKET_INTERFACE
+#define HAVE_PSI_MEMORY_INTERFACE
+#define HAVE_PSI_ERROR_INTERFACE
+#define HAVE_PSI_IDLE_INTERFACE
+#define HAVE_PSI_METADATA_INTERFACE
+#define HAVE_PSI_DATA_LOCK_INTERFACE
 
 #include "storage/perfschema/pfs.h"
 
@@ -19,6 +45,23 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <mysql/components/component_implementation.h>
+#include <mysql/components/service.h>
+#include <mysql/components/service_implementation.h>
+#include <mysql/components/services/psi_cond_service.h>
+#include <mysql/components/services/psi_error_service.h>
+#include <mysql/components/services/psi_file_service.h>
+#include <mysql/components/services/psi_idle_service.h>
+#include <mysql/components/services/psi_mdl_service.h>
+#include <mysql/components/services/psi_memory_service.h>
+#include <mysql/components/services/psi_mutex_service.h>
+#include <mysql/components/services/psi_rwlock_service.h>
+#include <mysql/components/services/psi_socket_service.h>
+#include <mysql/components/services/psi_stage_service.h>
+#include <mysql/components/services/psi_statement_service.h>
+#include <mysql/components/services/psi_table_service.h>
+#include <mysql/components/services/psi_thread_service.h>
+#include <mysql/components/services/psi_transaction_service.h>
 #include <sys/types.h>
 #include <time.h>
 
@@ -27,7 +70,6 @@
   The performance schema implementation of all instruments.
 */
 #include "lex_string.h"
-#include "mdl.h" /* mdl_key_init */
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
@@ -35,41 +77,47 @@
 #include "my_macros.h"
 #include "my_thread.h"
 #include "mysql/psi/mysql_thread.h"
-#include "pfs_account.h"
-#include "pfs_column_values.h"
-#include "pfs_data_lock.h"
-#include "pfs_digest.h"
-#include "pfs_error.h"
 #include "pfs_error_provider.h"
-#include "pfs_events_stages.h"
-#include "pfs_events_statements.h"
-#include "pfs_events_transactions.h"
-#include "pfs_events_waits.h"
 /* Make sure exported prototypes match the implementation. */
 #include "pfs_file_provider.h"
-#include "pfs_global.h"
-#include "pfs_host.h"
 #include "pfs_idle_provider.h"
-#include "pfs_instr.h"
-#include "pfs_instr_class.h"
 #include "pfs_memory_provider.h"
 #include "pfs_metadata_provider.h"
-#include "pfs_prepared_stmt.h"
-#include "pfs_program.h"
-#include "pfs_setup_actor.h"
-#include "pfs_setup_object.h"
 #include "pfs_socket_provider.h"
 #include "pfs_stage_provider.h"
 #include "pfs_statement_provider.h"
 #include "pfs_table_provider.h"
 #include "pfs_thread_provider.h"
-#include "pfs_timer.h"
 #include "pfs_transaction_provider.h"
-#include "pfs_user.h"
-#include "sp_head.h"
-#include "sql_const.h"
-#include "sql_error.h"
+#include "sql/mdl.h" /* mdl_key_init */
+#include "sql/sp_head.h"
+#include "sql/sql_const.h"
+#include "sql/sql_error.h"
+#include "storage/perfschema/pfs_account.h"
+#include "storage/perfschema/pfs_column_values.h"
+#include "storage/perfschema/pfs_data_lock.h"
+#include "storage/perfschema/pfs_digest.h"
+#include "storage/perfschema/pfs_error.h"
+#include "storage/perfschema/pfs_events_stages.h"
+#include "storage/perfschema/pfs_events_statements.h"
+#include "storage/perfschema/pfs_events_transactions.h"
+#include "storage/perfschema/pfs_events_waits.h"
+#include "storage/perfschema/pfs_global.h"
+#include "storage/perfschema/pfs_host.h"
+#include "storage/perfschema/pfs_instr.h"
+#include "storage/perfschema/pfs_instr_class.h"
+#include "storage/perfschema/pfs_plugin_table.h"
+#include "storage/perfschema/pfs_prepared_stmt.h"
+#include "storage/perfschema/pfs_program.h"
+#include "storage/perfschema/pfs_services.h"
+#include "storage/perfschema/pfs_setup_actor.h"
+#include "storage/perfschema/pfs_setup_object.h"
+#include "storage/perfschema/pfs_timer.h"
+#include "storage/perfschema/pfs_user.h"
+#include "storage/perfschema/service_pfs_notification.h"
 #include "thr_lock.h"
+
+using std::min;
 
 /*
   Exporting cmake compilation flags to doxygen,
@@ -133,6 +181,7 @@ report_memory_accounting_error(const char *api_name,
 }
 #endif /* PFS_PARANOID */
 
+/* clang-format off */
 /**
   @page PAGE_PFS Performance Schema
   MySQL PERFORMANCE_SCHEMA implementation.
@@ -419,6 +468,12 @@ report_memory_accounting_error(const char *api_name,
   @subpage PAGE_PFS_DATA_LOCKS
 
   @subpage PAGE_PFS_NEW_TABLE
+
+  @subpage PAGE_PFS_NOTIFICATION_SERVICE
+
+  @subpage PAGE_PFS_RESOURCE_GROUP_SERVICE
+
+  @subpage PAGE_PFS_TABLE_PLUGIN_SERVICE
 */
 
 /**
@@ -427,6 +482,16 @@ report_memory_accounting_error(const char *api_name,
 
   @section PFS_PSI_INTRO Introduction
 
+  Any code can be instrumented with the performance schema,
+  regardless of the kind of code used:
+  - code within the server implementation itself
+  - code within various plugins, including storage engines,
+    compiled and delivered with the server (aka, static plugins)
+  - code within various plugins, including storage engines,
+    compiled and delivered separately from the server (aka, dynamic plugins)
+  - code from components, either provided by MySQL or by third parties,
+    compiled and delivered separately (and loaded dynamically).
+
   The instrumentation interface consist of two layers:
   - a raw ABI (Application Binary Interface) layer, that exposes the primitive
   instrumentation functions exported by the performance schema instrumentation
@@ -434,46 +499,132 @@ report_memory_accounting_error(const char *api_name,
   that provides many helpers for a developer instrumenting some code,
   to make the instrumentation as easy as possible.
 
-  The ABI layer consists of files such as:
-@code
-#include "mysql/psi/psi_mutex.h"
-#include "mysql/psi/psi_file.h"
-@endcode
+  In each case, the API may expand into different code paths,
+  and use different ABI infrastructure, depending on how the code is built.
+  In each case, the API exposed is consistent:
+  instrumented source code is the same, regardless of where it is built.
 
-  The API layer consists of files such as:
-@code
-#include "mysql/psi/mutex_mutex.h"
-#include "mysql/psi/mutex_file.h"
-@endcode
+  The following sections details what happens technically for each type of code.
+  The same instrumentation (a mutex) is used, to illustrate.
 
-  The first helper is for mutexes,
-  the second for file I/O.
+  @section PFS_PSI_NONE Non instrumented code
 
-  The API layer exposes C macros and typedefs which will expand:
-  - either to non-instrumented code, when compiled without the performance
-  schema instrumentation
-  - or to instrumented code, that will issue the raw calls to the ABI layer
-  so that the implementation can collect data.
+  Assume some existing code using a mutex, for example for linux
 
-  Note that all the names introduced (for example, @c mysql_mutex_lock) do not
-  collide with any other namespace.
-  In particular, the macro @c mysql_mutex_lock is on purpose not named
-  @c pthread_mutex_lock.
-  This is to:
-  - avoid overloading @c pthread_mutex_lock with yet another macro,
-  which is dangerous as it can affect user code and pollute
-  the end-user namespace.
-  - allow the developer instrumenting code to selectively instrument
-  some code but not all.
+  @code
+  #include <pthread.h>
 
-  @section PRINCIPLES Design principles
+  pthread_mutex_t foo;
 
-  The ABI part is designed as a facade, that exposes basic primitives.
-  The expectation is that each primitive will be very stable over time,
-  but the list will constantly grow when more instruments are supported.
-  To support binary compatibility with plugins compiled with a different
-  version of the instrumentation, the ABI itself is versioned
-  (see @c PSI_MUTEX_VERSION_1, @c PSI_MUTEX_VERSION_2).
+  void do_something()
+  {
+    pthread_mutex_lock(&foo);
+    ...
+    pthread_mutex_unlock(&foo);
+  }
+  @endcode
+
+  MySQL already provides some wrappers,
+  to make the code platform independent, as in
+
+  @code
+  #include "thr_mutex.h"
+
+  my_mutex_t foo;
+
+  void do_something()
+  {
+    my_mutex_lock(&foo);
+    ...
+    my_mutex_unlock(&foo);
+  }
+  @endcode
+
+  Code using @c my_mutex_t is not instrumented for performance measurement.
+
+  @section PFS_PSI_SERVER Instrumentation for server code
+
+  To instrument the code, use a @c mysql_mutex_t instead.
+  All the APIs provided are meant to be used as a simple replacement.
+
+  @code
+  #include "mysql/psi/mysql_mutex.h"
+
+  mysql_mutex_t foo;
+
+  void do_something()
+  {
+    mysql_mutex_lock(&foo);
+    ...
+    mysql_mutex_unlock(&foo);
+  }
+  @endcode
+
+  The server code can be built with or without each kind of instrumentation.
+
+  If cmake is configured with @c -DDISABLE_PSI_MUTEX,
+  the mutex instrumentation is not compiled.
+  In this case, @c HAVE_PSI_MUTEX_INTERFACE is not defined,
+  so that @c mysql_mutex_lock() expands into
+
+  @code
+static inline int
+inline_mysql_mutex_lock(mysql_mutex_t *that,
+                        const char *src_file MY_ATTRIBUTE((unused)),
+                        uint src_line MY_ATTRIBUTE((unused))
+                        )
+{
+  int result;
+
+  ... Non instrumented code ...
+  result = my_mutex_lock(&that->m_mutex);
+
+  return result;
+}
+  @endcode
+
+  In other words, when not building with instrumentation, @c mysql_mutex_lock()
+  is simply replaced with the actual call to @c my_mutex_lock(),
+
+  When building with the mutex instrumentation enabled (the default),
+  @c mysql_mutex_lock() expands into this sequence.
+
+  @code
+static inline int
+inline_mysql_mutex_lock(mysql_mutex_t *that,
+                        const char *src_file,
+                        uint src_line)
+{
+  int result;
+
+#ifdef HAVE_PSI_MUTEX_INTERFACE
+  if (that->m_psi != NULL)
+  {
+    ... (a) Instrumentation start ...
+    PSI_mutex_locker *locker;
+    PSI_mutex_locker_state state;
+    locker = PSI_MUTEX_CALL(start_mutex_wait)(
+      &state, that->m_psi, PSI_MUTEX_LOCK, src_file, src_line);
+
+    ... (b) Instrumented code ...
+    result = my_mutex_lock(&that->m_mutex);
+
+    ... (c) Instrumentation end ...
+    if (locker != NULL)
+    {
+      PSI_MUTEX_CALL(end_mutex_wait)(locker, result);
+    }
+
+    return result;
+  }
+#endif
+
+  ... Non instrumented code ...
+  result = my_mutex_lock(&that->m_mutex);
+
+  return result;
+}
+  @endcode
 
   For a given instrumentation point in the API, the basic coding pattern
   used is:
@@ -487,102 +638,550 @@ report_memory_accounting_error(const char *api_name,
   This pointer helps the implementation to keep context, for performances.
 
   The following code fragment is annotated to show how in detail this pattern
-  in implemented, when the instrumentation is compiled in:
+  in implemented, when the instrumentation is compiled in statically.
+  In this case,
+  the @c PSI_MUTEX_CALL macro expands to a function call,
+  which results in
 
-@verbatim
+  @code
 static inline int
-mysql_mutex_lock(
-  mysql_mutex_t *that, const char *src_file, uint src_line)
+inline_mysql_mutex_lock(mysql_mutex_t *that,
+                        const char *src_file,
+                        uint src_line)
 {
   int result;
-  struct PSI_mutex_locker_state state;
-  struct PSI_mutex_locker *locker= NULL;
 
-  ............... (a)
-  locker= PSI_MUTEX_CALL(start_mutex_wait)(&state, that->p_psi, PSI_MUTEX_LOCK,
-                                           src_file, src_line);
+#ifdef HAVE_PSI_MUTEX_INTERFACE
+  if (that->m_psi != NULL)
+  {
+    ... (a) Instrumentation start ...
+    PSI_mutex_locker *locker;
+    PSI_mutex_locker_state state;
+    locker = pfs_start_mutex_wait_v1(
+      &state, that->m_psi, PSI_MUTEX_LOCK, src_file, src_line);
 
-  ............... (b)
-  result= pthread_mutex_lock(&that->m_mutex);
+    ... (b) Instrumented code ...
+    result = my_mutex_lock(&that->m_mutex);
 
-  ............... (c)
-  PSI_MUTEX_CALL(end_mutex_wait)(locker, result);
+    ... (c) Instrumentation end ...
+    if (locker != NULL)
+    {
+      pfs_end_mutex_wait_v1(locker, result);
+    }
+
+    return result;
+  }
+#endif
+
+  ... Non instrumented code ...
+  result = my_mutex_lock(&that->m_mutex);
 
   return result;
 }
-@endverbatim
+  @endcode
 
-  When the performance schema instrumentation is not compiled in,
-  the code becomes simply a wrapper, expanded in line by the compiler:
+  When the performance schema is disabled at runtime, the @c m_psi pointer
+  is @c NULL, so the extra overhead is one if statement.
 
+  When the performance schema is enabled at runtime, the @c m_psi pointer
+  points to the actual instrumentation added to the mutex,
+  and two extra calls are present on the code path:
+  - a call to @c pfs_start_mutex_wait_v1() before the operation
+  - a call to @c pfs_end_mutex_wait_v1() after the operation
+
+  Both these calls are static, and point directly to the
+  performance_schema implementation.
+
+  @section PFS_PSI_PLUGIN Instrumentation for a plugin
+
+  Inside a plugin, @c PSI_MUTEX_CALL expands to a call using a function pointer.
+  This is to decouple the plugin binary from the implementation,
+  to avoid having hard coded references to symbols like
+  pfs_start_mutex_wait_v1()
+  from the plugin library (either shared or static).
+
+  The plugin library, however, still depends on a symbol
+  to be provided by the server,
+  in this case @c psi_mutex_service.
+
+  @code
+static inline int
+inline_mysql_mutex_lock(mysql_mutex_t *that,
+                        const char *src_file,
+                        uint src_line)
+{
+  int result;
+
+#ifdef HAVE_PSI_MUTEX_INTERFACE
+  if (that->m_psi != NULL)
+  {
+    ... (a) Instrumentation start ...
+    PSI_mutex_locker *locker;
+    PSI_mutex_locker_state state;
+    locker = psi_mutex_service->start_mutex_wait(
+      &state, that->m_psi, PSI_MUTEX_LOCK, src_file, src_line);
+
+    ... (b) Instrumented code ...
+    result = my_mutex_lock(&that->m_mutex);
+
+    ... (c) Instrumentation end ...
+    if (locker != NULL)
+    {
+      psi_mutex_service->end_mutex_wait(locker, result);
+    }
+
+    return result;
+  }
+#endif
+
+  ... Non instrumented code ...
+  result = my_mutex_lock(&that->m_mutex);
+
+  return result;
+}
+  @endcode
+
+  This solution works overall, but has some limitations.
+
+  @section PFS_PSI_COMPONENT Instrumentation for component
+
+  The goal when compiling a component is to have zero linker dependencies
+  on the server code, and have technical dependencies described as
+  references to services instead.
+
+  Another goal is to compile code the same way, independently of the
+  technical choices affecting the implementation (pthread mutexes
+  or native windows critical sections, SAFE_MUTEX debug helpers or not, etc)
+
+  For the mutex instrumentation in particular, the pattern used
+  is to have a service that delegates all decisions to the server code.
+  For this reason, all the parameters that might or might not be needed
+  depending on the ultimate implementation
+  (such as @c __FILE__ and @c __LINE__ for @c SAFE_MUTEX)
+  are provided in all cases.
+
+  In a component, the code is instrumented using a different header file,
+  everything else is the same.
+
+  @code
+  #include "mysql/component/services/mysql_mutex.h"
+
+  mysql_mutex_t foo;
+
+  void do_something()
+  {
+    mysql_mutex_lock(&foo);
+    ...
+    mysql_mutex_unlock(&foo);
+  }
+  @endcode
+
+  The call to @c mysql_mutex_lock() expands into
+
+  @code
+  REQUIRES_SERVICE_PLACEHOLDER(mysql_mutex_v1);
+
+  mysql_service_mysql_mutex_v1->lock(M, __FILE__, __LINE__);
+  @endcode
+
+  In the component metadata, the dependency on the mutex service needs
+  to be declared explicitly, as in:
+
+  @code
+  BEGIN_COMPONENT_REQUIRES(pfs_example)
+    REQUIRES_SERVICE(mysql_mutex_v1)
+  END_COMPONENT_REQUIRES()
+  @endcode
+
+  When the component is loaded:
+  - the loader inspects the COMPONENT_REQUIRES metadata,
+    and find the service dependencies
+  - service dependencies are resolved,
+    which assigns a proper value to the @c mysql_service_mysql_mutex_v1 pointer.
+
+  From this point, code compiled in the component can be executed normally,
+  and calls to @c mysql_mutex_lock() land into the service implementation,
+  which is a simple instrumented mutex lock compiled in the server.
+
+  @code
+  int
+  impl_mysql_mutex_lock(
+    mysql_mutex_t *that,
+    const char *src_file,
+    unsigned int src_line)
+  {
+    return mysql_mutex_lock_with_src(that, src_file, src_line);
+  }
+  @endcode
+
+  @section PFS_PSI_LIST List of available instrumentation
+
+  The current list of instrumentation provided by the performance schema
+  is as follows:
+
+  <table>
+  <caption id="list_pfs_instr">%List of available instrumentation</caption>
+  <tr>
+    <th rowspan="2">Scope</th>
+    <th colspan="2">User code</th>
+    <th colspan="2">Implementation entry point</th>
+  </tr>
+  <tr>
+    <th>Server or Plugin</th>
+    <th>Component</th>
+    <th>Server or Plugin</th>
+    <th>Component</th>
+  </tr>
+
+  <tr>
+    <td>Mutex (high level)</td>
+    <td>
 @verbatim
-static inline int mysql_mutex_lock(...)
-{
-  int result;
-
-  ............... (b)
-  result= pthread_mutex_lock(&that->m_mutex);
-
-  return result;
-}
+#include "mysql/psi/mysql_mutex.h"
+mysql_mutex_lock()
 @endverbatim
-
-  When the performance schema instrumentation is compiled in,
-  and when the code compiled is internal to the server implementation,
-  PSI_MUTEX_CALL expands directly to functions calls in the performance schema,
-  to make (a) and (c) calls as efficient as possible.
-
+    </td>
+    <td>
 @verbatim
-static inline int mysql_mutex_lock(...)
-{
-  int result;
-  struct PSI_mutex_locker_state state;
-  struct PSI_mutex_locker *locker= NULL;
-
-  ............... (a)
-  locker= pfs_start_mutex_wait_v1(&state, that->p_psi, PSI_MUTEX_LOCK,
-                                  src_file, src_line);
-
-  ............... (b)
-  result= pthread_mutex_lock(&that->m_mutex);
-
-  ............... (c)
-  pfs_end_mutex_wait_v1(locker, result);
-
-  return result;
-}
+#include "mysql/components/services/mysql_mutex.h"
+mysql_mutex_lock()
 @endverbatim
+    </td>
+    <td>@ref PSI_mutex_bootstrap</td>
+    <td>@ref REQUIRES_MYSQL_MUTEX_SERVICE</td>
+  </tr>
 
-  When the performance schema instrumentation is compiled in,
-  and when the code compiled is external to the server implementation
-  (typically, a dynamic plugin),
-  PSI_MUTEX_CALL expands to dynamic calls to the underlying implementation,
-  using the PSI_server entry point.
-  This makes (a) and (c) slower, as a function pointer
-  is used instead of a static call,
-  but also independent of the implementation, for binary compatibility.
-
+  <tr>
+    <td>Rwlock (high level)</td>
+    <td>
 @verbatim
-static inline int mysql_mutex_lock(...)
-{
-  int result;
-  struct PSI_mutex_locker_state state;
-  struct PSI_mutex_locker *locker= NULL;
-
-  ............... (a)
-  locker= PSI_server->start_mutex_wait(&state, that->p_psi, PSI_MUTEX_LOCK,
-                                       src_file, src_line);
-
-  ............... (b)
-  result= pthread_mutex_lock(&that->m_mutex);
-
-  ............... (c)
-  PSI_server->end_mutex_wait(locker, result);
-
-  return result;
-}
+#include "mysql/psi/mysql_rwlock.h"
+mysql_rwlock_rdlock()
 @endverbatim
+    </td>
+    <td>
+@verbatim
+#include "mysql/components/services/mysql_rwlock.h"
+mysql_rwlock_rdlock()
+@endverbatim
+    </td>
+    <td>@ref PSI_rwlock_bootstrap</td>
+    <td>@ref REQUIRES_MYSQL_RWLOCK_SERVICE</td>
+  </tr>
 
+  <tr>
+    <td>Conditions (high level)</td>
+    <td>
+@verbatim
+#include "mysql/psi/mysql_cond.h"
+mysql_cond_wait()
+@endverbatim
+    </td>
+    <td>
+@verbatim
+#include "mysql/components/services/mysql_cond.h"
+mysql_cond_wait()
+@endverbatim
+    </td>
+    <td>@ref PSI_cond_bootstrap</td>
+    <td>@ref REQUIRES_MYSQL_COND_SERVICE</td>
+  </tr>
+
+  <tr>
+    <td>Mutex (low level)</td>
+    <td>
+@verbatim
+#include "mysql/psi/psi_mutex.h"
+PSI_MUTEX_CALL(start_mutex_wait)(...)
+PSI_MUTEX_CALL(end_mutex_wait)(...)
+@endverbatim
+    </td>
+    <td>
+@verbatim
+#include "mysql/components/services/psi_mutex.h"
+PSI_MUTEX_CALL(start_mutex_wait)(...)
+PSI_MUTEX_CALL(end_mutex_wait)(...)
+@endverbatim
+    </td>
+    <td>@ref PSI_mutex_bootstrap</td>
+    <td>@ref REQUIRES_PSI_MUTEX_SERVICE</td>
+  </tr>
+
+  <tr>
+    <td>Rwlock (low level)</td>
+    <td>
+@verbatim
+#include "mysql/psi/psi_rwlock.h"
+PSI_RWLOCK_CALL(start_rwlock_rdwait)(...)
+PSI_RWLOCK_CALL(end_rwlock_rdwait)(...)
+@endverbatim
+    </td>
+    <td>
+@verbatim
+#include "mysql/components/services/psi_rwlock.h"
+PSI_RWLOCK_CALL(start_rwlock_rdwait)(...)
+PSI_RWLOCK_CALL(end_rwlock_rdwait)(...)
+@endverbatim
+    </td>
+    <td>@ref PSI_rwlock_bootstrap</td>
+    <td>@ref REQUIRES_PSI_RWLOCK_SERVICE</td>
+  </tr>
+
+  <tr>
+    <td>Conditions (low level)</td>
+    <td>
+@verbatim
+#include "mysql/psi/mysql_cond.h"
+PSI_COND_CALL(start_cond_wait)(...)
+PSI_COND_CALL(end_cond_wait)(...)
+@endverbatim
+    </td>
+    <td>
+@verbatim
+#include "mysql/components/services/psi_cond.h"
+PSI_COND_CALL(start_cond_wait)(...)
+PSI_COND_CALL(end_cond_wait)(...)
+@endverbatim
+    </td>
+    <td>@ref PSI_cond_bootstrap</td>
+    <td>@ref REQUIRES_PSI_COND_SERVICE</td>
+  </tr>
+
+  <tr>
+    <td>Errors</td>
+    <td>
+@verbatim
+#include "mysql/psi/psi_error.h"
+PSI_ERROR_CALL(log_error)(...)
+@endverbatim
+    </td>
+    <td>
+@verbatim
+#include "mysql/components/services/psi_error.h"
+PSI_ERROR_CALL(log_error)(...)
+@endverbatim
+    </td>
+    <td>@ref PSI_error_bootstrap</td>
+    <td>@ref REQUIRES_PSI_ERROR_SERVICE</td>
+  </tr>
+
+  <tr>
+    <td>File</td>
+    <td>
+@verbatim
+#include "mysql/psi/psi_file.h"
+PSI_FILE_CALL(start_file_wait)(...)
+PSI_FILE_CALL(end_file_wait)(...)
+@endverbatim
+    </td>
+    <td>
+@verbatim
+#include "mysql/components/services/psi_file.h"
+PSI_FILE_CALL(start_file_wait)(...)
+PSI_FILE_CALL(end_file_wait)(...)
+@endverbatim
+    </td>
+    <td>@ref PSI_file_bootstrap</td>
+    <td>@ref REQUIRES_PSI_FILE_SERVICE</td>
+  </tr>
+
+  <tr>
+    <td>Idle</td>
+    <td>
+@verbatim
+#include "mysql/psi/psi_idle.h"
+PSI_IDLE_CALL(start_idle_wait)(...)
+PSI_IDLE_CALL(end_idle_wait)(...)
+@endverbatim
+    </td>
+    <td>
+@verbatim
+#include "mysql/components/services/psi_idle.h"
+PSI_IDLE_CALL(start_idle_wait)(...)
+PSI_IDLE_CALL(end_idle_wait)(...)
+@endverbatim
+    </td>
+    <td>@ref PSI_idle_bootstrap</td>
+    <td>@ref REQUIRES_PSI_IDLE_SERVICE</td>
+  </tr>
+
+  <tr>
+    <td>Metadata locks</td>
+    <td>
+@verbatim
+#include "mysql/psi/psi_mdl.h"
+PSI_METADATA_CALL(start_metadata_wait)(...)
+PSI_METADATA_CALL(end_metadata_wait)(...)
+@endverbatim
+    </td>
+    <td>
+@verbatim
+#include "mysql/components/services/psi_mdl.h"
+PSI_METADATA_CALL(start_metadata_wait)(...)
+PSI_METADATA_CALL(end_metadata_wait)(...)
+@endverbatim
+    </td>
+    <td>@ref PSI_mdl_bootstrap</td>
+    <td>@ref REQUIRES_PSI_MDL_SERVICE</td>
+  </tr>
+
+  <tr>
+    <td>Memory</td>
+    <td>
+@verbatim
+#include "mysql/psi/psi_memory.h"
+PSI_MEMORY_CALL(memory_alloc)(...)
+PSI_MEMORY_CALL(memory_free)(...)
+@endverbatim
+    </td>
+    <td>
+@verbatim
+#include "mysql/components/services/psi_memory.h"
+PSI_MEMORY_CALL(memory_alloc)(...)
+PSI_MEMORY_CALL(memory_free)(...)
+@endverbatim
+    </td>
+    <td>@ref PSI_memory_bootstrap</td>
+    <td>@ref REQUIRES_PSI_MEMORY_SERVICE</td>
+  </tr>
+
+  <tr>
+    <td>Socket</td>
+    <td>
+@verbatim
+#include "mysql/psi/psi_socket.h"
+PSI_SOCKET_CALL(start_socket_wait)(...)
+PSI_SOCKET_CALL(end_socket_wait)(...)
+@endverbatim
+    </td>
+    <td>
+@verbatim
+#include "mysql/components/services/psi_socket.h"
+PSI_SOCKET_CALL(start_socket_wait)(...)
+PSI_SOCKET_CALL(end_socket_wait)(...)
+@endverbatim
+    </td>
+    <td>@ref PSI_socket_bootstrap</td>
+    <td>@ref REQUIRES_PSI_SOCKET_SERVICE</td>
+  </tr>
+
+  <tr>
+    <td>Stage</td>
+    <td>
+@verbatim
+#include "mysql/psi/psi_stage.h"
+PSI_STAGE_CALL(start_stage)(...)
+@endverbatim
+    </td>
+    <td>
+@verbatim
+#include "mysql/components/services/psi_stage.h"
+PSI_STAGE_CALL(start_stage)(...)
+@endverbatim
+    </td>
+    <td>@ref PSI_stage_bootstrap</td>
+    <td>@ref REQUIRES_PSI_STAGE_SERVICE</td>
+  </tr>
+
+  <tr>
+    <td>Statement</td>
+    <td>
+@verbatim
+#include "mysql/psi/psi_statement.h"
+PSI_STATEMENT_CALL(start_statement)(...)
+PSI_STATEMENT_CALL(end_statement)(...)
+
+Extra helpers available:
+MYSQL_START_STATEMENT()
+MYSQL_END_STATEMENT()
+@endverbatim
+    </td>
+    <td>
+@verbatim
+#include "mysql/components/services/psi_statement.h"
+PSI_STATEMENT_CALL(start_statement)(...)
+PSI_STATEMENT_CALL(end_statement)(...)
+@endverbatim
+    </td>
+    <td>@ref PSI_statement_bootstrap</td>
+    <td>@ref REQUIRES_PSI_STATEMENT_SERVICE</td>
+  </tr>
+
+  <tr>
+    <td>%Table</td>
+    <td>
+@verbatim
+#include "mysql/psi/psi_table.h"
+PSI_TABLE_CALL(start_table_io_wait)(...)
+PSI_TABLE_CALL(end_table_io_wait)(...)
+@endverbatim
+    </td>
+    <td>
+@verbatim
+#include "mysql/components/services/psi_table.h"
+PSI_TABLE_CALL(start_table_io_wait)(...)
+PSI_TABLE_CALL(end_table_io_wait)(...)
+@endverbatim
+    </td>
+    <td>@ref PSI_table_bootstrap</td>
+    <td>@ref REQUIRES_PSI_TABLE_SERVICE</td>
+  </tr>
+
+  <tr>
+    <td>Thread</td>
+    <td>
+@verbatim
+#include "mysql/psi/psi_thread.h"
+PSI_THREAD_CALL(spawn_thread)(...)
+PSI_THREAD_CALL(delete_thread)(...)
+@endverbatim
+    </td>
+    <td>
+@verbatim
+#include "mysql/components/services/psi_thread.h"
+PSI_THREAD_CALL(spawn_thread)(...)
+PSI_THREAD_CALL(delete_thread)(...)
+@endverbatim
+    </td>
+    <td>@ref PSI_thread_bootstrap</td>
+    <td>@ref REQUIRES_PSI_THREAD_SERVICE</td>
+  </tr>
+
+  <tr>
+    <td>Transaction</td>
+    <td>
+@verbatim
+#include "mysql/psi/psi_transaction.h"
+PSI_TRANSACTION_CALL(start_transaction)(...)
+PSI_TRANSACTION_CALL(end_transaction)(...)
+@endverbatim
+    </td>
+    <td>
+@verbatim
+#include "mysql/components/services/psi_transaction.h"
+PSI_TRANSACTION_CALL(start_transaction)(...)
+PSI_TRANSACTION_CALL(end_transaction)(...)
+@endverbatim
+    </td>
+    <td>@ref PSI_transaction_bootstrap</td>
+    <td>@ref REQUIRES_PSI_TRANSACTION_SERVICE</td>
+  </tr>
+
+  <tr>
+    <td>Data locks</td>
+    <td>
+@verbatim
+#include "mysql/psi/psi_data_lock.h"
+PSI_DATA_LOCK_CALL(register_data_lock)(...)
+PSI_DATA_LOCK_CALL(unregister_data_lock)(...)
+@endverbatim
+    </td>
+    <td> Not available as a service.</td>
+    <td>@ref PSI_data_lock_bootstrap</td>
+    <td>Not available as a service.</td>
+  </tr>
+
+  </table>
 */
 
 /**
@@ -1460,6 +2059,7 @@ static inline int mysql_mutex_lock(...)
   - [E] EVENTS_ERRORS_SUMMARY_GLOBAL_BY_ERROR,
         @c table_ees_global_by_error::make_row()
 */
+/* clang-format on */
 
 /**
   @defgroup performance_schema Performance Schema
@@ -1473,33 +2073,19 @@ static inline int mysql_mutex_lock(...)
   @ingroup performance_schema_implementation
 */
 
-thread_local_key_t THR_PFS;
-thread_local_key_t THR_PFS_VG;   // global_variables
-thread_local_key_t THR_PFS_SV;   // session_variables
-thread_local_key_t THR_PFS_VBT;  // variables_by_thread
-thread_local_key_t THR_PFS_SG;   // global_status
-thread_local_key_t THR_PFS_SS;   // session_status
-thread_local_key_t THR_PFS_SBT;  // status_by_thread
-thread_local_key_t THR_PFS_SBU;  // status_by_user
-thread_local_key_t THR_PFS_SBH;  // status_by_host
-thread_local_key_t THR_PFS_SBA;  // status_by_account
-
-bool THR_PFS_initialized = false;
+thread_local PFS_thread *THR_PFS = nullptr;
+thread_local PFS_table_context *THR_PFS_contexts[THR_PFS_NUM_KEYS];
 
 static inline PFS_thread *
 my_thread_get_THR_PFS()
 {
-  DBUG_ASSERT(THR_PFS_initialized);
-  PFS_thread *thread = static_cast<PFS_thread *>(my_get_thread_local(THR_PFS));
-  DBUG_ASSERT(thread == NULL || sanitize_thread(thread) != NULL);
-  return thread;
+  return THR_PFS;
 }
 
 static inline void
 my_thread_set_THR_PFS(PFS_thread *pfs)
 {
-  DBUG_ASSERT(THR_PFS_initialized);
-  my_set_thread_local(THR_PFS, pfs);
+  THR_PFS = pfs;
 }
 
 /**
@@ -1757,7 +2343,7 @@ pfs_register_rwlock_v1(const char *category,
     DBUG_ASSERT(info->m_name != NULL);
     len = strlen(info->m_name);
 
-    if (info->m_flags & PSI_RWLOCK_FLAG_SX)
+    if (info->m_flags & PSI_FLAG_RWLOCK_SX)
     {
       full_length = sx_prefix_length + len;
       if (likely(full_length <= PFS_MAX_INFO_NAME_LENGTH))
@@ -2393,6 +2979,7 @@ pfs_spawn_thread(void *arg)
   }
   my_thread_set_THR_PFS(pfs);
 
+  pfs_notify_thread_create((PSI_thread *)pfs);
   /*
     Secondly, free the memory allocated in spawn_thread_v1().
     It is preferable to do this before invoking the user
@@ -2489,6 +3076,11 @@ pfs_new_thread_v1(PSI_thread_key key,
   else
   {
     pfs = NULL;
+  }
+
+  if (pfs)
+  {
+    pfs_notify_thread_create((PSI_thread *)pfs);
   }
 
   return reinterpret_cast<PSI_thread *>(pfs);
@@ -2633,7 +3225,8 @@ pfs_set_thread_account_v1(const char *user,
   DBUG_ASSERT((uint)user_len <= sizeof(pfs->m_username));
   DBUG_ASSERT((host != NULL) || (host_len == 0));
   DBUG_ASSERT(host_len >= 0);
-  DBUG_ASSERT((uint)host_len <= sizeof(pfs->m_hostname));
+
+  host_len = min<size_t>(host_len, sizeof(pfs->m_hostname));
 
   if (unlikely(pfs == NULL))
   {
@@ -2813,6 +3406,220 @@ pfs_set_thread_info_v1(const char *info, uint info_len)
 }
 
 /**
+  Set the resource group name for a given thread.
+  @param pfs Thread instrumentation
+  @param group_name Group name
+  @param group_name_len Length of group_name
+  @param user_data  Optional pointer to user-defined data
+  @return 0 if successful, 1 otherwise
+*/
+int
+set_thread_resource_group(PFS_thread *pfs,
+                          const char *group_name,
+                          int group_name_len,
+                          void *user_data)
+{
+  int result = 0;
+  pfs_dirty_state dirty_state;
+
+  if (unlikely(pfs == NULL || group_name_len <= 0))
+    return 1;
+
+  if ((size_t)group_name_len > sizeof(pfs->m_groupname))
+    return 1;
+
+  pfs->m_session_lock.allocated_to_dirty(&dirty_state);
+
+  memcpy(pfs->m_groupname, group_name, group_name_len);
+
+  pfs->m_groupname_length = group_name_len;
+  pfs->m_user_data = user_data;
+
+  pfs->m_session_lock.dirty_to_allocated(&dirty_state);
+  return result;
+}
+
+/**
+  Implementation of the thread instrumentation interface.
+  @sa PSI_v1::set_thread_resource_group
+*/
+int
+pfs_set_thread_resource_group_v1(const char *group_name,
+                                 int group_name_len,
+                                 void *user_data)
+{
+  PFS_thread *pfs = my_thread_get_THR_PFS();
+  return set_thread_resource_group(pfs, group_name, group_name_len, user_data);
+}
+
+/**
+  Implementation of the thread instrumentation interface.
+  @sa PSI_v1::set_thread_resource_group_by_id
+*/
+int
+pfs_set_thread_resource_group_by_id_v1(PSI_thread *thread,
+                                       ulonglong thread_id,
+                                       const char *group_name,
+                                       int group_name_len,
+                                       void *user_data)
+{
+  PFS_thread *pfs = reinterpret_cast<PFS_thread *>(thread);
+  if (pfs == NULL)
+    pfs = find_thread(thread_id);
+  return set_thread_resource_group(pfs, group_name, group_name_len, user_data);
+}
+
+/**
+  Get the system and session attributes for a given PFS_thread.
+  @param pfs thread instrumentation
+  @param current_thread true if pfs refers to the current thread
+  @param thread_attrs thread attribute structure
+  @return 0 if successful, non-zero otherwise
+*/
+int
+get_thread_attributes(PFS_thread *pfs,
+                      bool current_thread,
+                      PSI_thread_attrs *thread_attrs)
+
+{
+  int result = 0;
+  pfs_optimistic_state lock;
+  pfs_optimistic_state session_lock;
+
+  DBUG_ASSERT(thread_attrs != NULL);
+
+  static_assert(PSI_NAME_LEN == NAME_LEN, "");
+  static_assert(PSI_USERNAME_LENGTH == USERNAME_LENGTH, "");
+  static_assert(PSI_HOSTNAME_LENGTH == HOSTNAME_LENGTH, "");
+
+  if (unlikely(pfs == NULL))
+    return 1;
+
+  if (!current_thread)
+  {
+    /* Protect this reader against a thread delete. */
+    pfs->m_lock.begin_optimistic_lock(&lock);
+    /* Protect this reader against writing on session attributes */
+    pfs->m_session_lock.begin_optimistic_lock(&session_lock);
+  }
+
+  thread_attrs->m_thread_internal_id = pfs->m_thread_internal_id;
+  thread_attrs->m_processlist_id = pfs->m_processlist_id;
+  thread_attrs->m_thread_os_id = pfs->m_thread_os_id;
+  thread_attrs->m_user_data = pfs->m_user_data;
+  thread_attrs->m_system_thread = pfs->m_system_thread;
+
+  DBUG_ASSERT(pfs->m_sock_addr_len <= sizeof(PSI_thread_attrs::m_sock_addr));
+  thread_attrs->m_sock_addr_length = pfs->m_sock_addr_len;
+  if (thread_attrs->m_sock_addr_length > 0)
+    memcpy(&thread_attrs->m_sock_addr, &pfs->m_sock_addr, pfs->m_sock_addr_len);
+
+  DBUG_ASSERT(pfs->m_username_length <= sizeof(PSI_thread_attrs::m_username));
+  thread_attrs->m_username_length = pfs->m_username_length;
+  if (pfs->m_username_length > 0)
+    memcpy(thread_attrs->m_username, pfs->m_username, pfs->m_username_length);
+
+  DBUG_ASSERT(pfs->m_hostname_length <= sizeof(PSI_thread_attrs::m_hostname));
+  thread_attrs->m_hostname_length = pfs->m_hostname_length;
+  if (pfs->m_hostname_length > 0)
+    memcpy(thread_attrs->m_hostname, pfs->m_hostname, pfs->m_hostname_length);
+
+  DBUG_ASSERT(pfs->m_groupname_length <= sizeof(PSI_thread_attrs::m_groupname));
+  thread_attrs->m_groupname_length = pfs->m_groupname_length;
+  if (pfs->m_groupname_length > 0)
+    memcpy(
+      thread_attrs->m_groupname, pfs->m_groupname, pfs->m_groupname_length);
+
+  if (!current_thread)
+  {
+    if (!pfs->m_session_lock.end_optimistic_lock(&session_lock))
+      result = 1;
+
+    if (!pfs->m_lock.end_optimistic_lock(&lock))
+      result = 1;
+  }
+
+  return result;
+}
+
+/**
+  Implementation of the thread instrumentation interface.
+  @sa PSI_v1::get_thread_system_attrs.
+*/
+int
+pfs_get_thread_system_attrs_v1(PSI_thread_attrs *thread_attrs)
+{
+  PFS_thread *pfs = my_thread_get_THR_PFS();
+  return get_thread_attributes(pfs, true, thread_attrs);
+}
+
+/**
+  Implementation of the thread instrumentation interface.
+  @sa PSI_v1::get_thread_system_attrs_by_id.
+*/
+int
+pfs_get_thread_system_attrs_by_id_v1(PSI_thread *thread,
+                                     ulonglong thread_id,
+                                     PSI_thread_attrs *thread_attrs)
+{
+  PFS_thread *pfs = reinterpret_cast<PFS_thread *>(thread);
+  if (pfs == NULL)
+    pfs = find_thread(thread_id);
+  return get_thread_attributes(pfs, false, thread_attrs);
+}
+
+/**
+  Implementation of the thread instrumentation interface.
+  @sa PSI_v1::register_notification.
+*/
+int
+pfs_register_notification_v1(const PSI_notification *callbacks,
+                             bool with_ref_count)
+{
+  return pfs_register_notification(callbacks, with_ref_count);
+}
+
+/**
+  Implementation of the thread instrumentation interface.
+  @sa PSI_v1::unregister_notification.
+*/
+int
+pfs_unregister_notification_v1(int handle)
+{
+  return pfs_unregister_notification(handle);
+}
+
+/**
+  Implementation of the thread instrumentation interface.
+  @sa PSI_v1::notify_session_connect.
+*/
+void
+pfs_notify_session_connect_v1(PSI_thread *thread MY_ATTRIBUTE((unused)))
+{
+  pfs_notify_session_connect(thread);
+}
+
+/**
+  Implementation of the thread instrumentation interface.
+  @sa PSI_v1::notify_session_disconnect.
+*/
+void
+pfs_notify_session_disconnect_v1(PSI_thread *thread MY_ATTRIBUTE((unused)))
+{
+  pfs_notify_session_disconnect(thread);
+}
+
+/**
+  Implementation of the thread instrumentation interface.
+  @sa PSI_v1::notify_session_change_user.
+*/
+void
+pfs_notify_session_change_user_v1(PSI_thread *thread MY_ATTRIBUTE((unused)))
+{
+  pfs_notify_session_change_user(thread);
+}
+
+/**
   Implementation of the thread instrumentation interface.
   @sa PSI_v1::set_thread.
 */
@@ -2835,6 +3642,7 @@ pfs_delete_current_thread_v1(void)
   {
     aggregate_thread(thread, thread->m_account, thread->m_user, thread->m_host);
     my_thread_set_THR_PFS(NULL);
+    pfs_notify_thread_destroy((PSI_thread *)thread);
     destroy_thread(thread);
   }
 }
@@ -2851,6 +3659,7 @@ pfs_delete_thread_v1(PSI_thread *thread)
   if (pfs != NULL)
   {
     aggregate_thread(pfs, pfs->m_account, pfs->m_user, pfs->m_host);
+    pfs_notify_thread_destroy(thread);
     destroy_thread(pfs);
   }
 }
@@ -2898,8 +3707,7 @@ pfs_start_mutex_wait_v1(PSI_mutex_locker_state *state,
 
     if (pfs_mutex->m_timed)
     {
-      timer_start =
-        get_timer_raw_value_and_function(wait_timer, &state->m_timer);
+      timer_start = get_wait_timer();
       state->m_timer_start = timer_start;
       flags |= STATE_FLAG_TIMED;
     }
@@ -2940,8 +3748,7 @@ pfs_start_mutex_wait_v1(PSI_mutex_locker_state *state,
   {
     if (pfs_mutex->m_timed)
     {
-      timer_start =
-        get_timer_raw_value_and_function(wait_timer, &state->m_timer);
+      timer_start = get_wait_timer();
       state->m_timer_start = timer_start;
       flags = STATE_FLAG_TIMED;
       state->m_thread = NULL;
@@ -3021,8 +3828,7 @@ pfs_start_rwlock_wait_v1(PSI_rwlock_locker_state *state,
 
     if (pfs_rwlock->m_timed)
     {
-      timer_start =
-        get_timer_raw_value_and_function(wait_timer, &state->m_timer);
+      timer_start = get_wait_timer();
       state->m_timer_start = timer_start;
       flags |= STATE_FLAG_TIMED;
     }
@@ -3063,8 +3869,7 @@ pfs_start_rwlock_wait_v1(PSI_rwlock_locker_state *state,
   {
     if (pfs_rwlock->m_timed)
     {
-      timer_start =
-        get_timer_raw_value_and_function(wait_timer, &state->m_timer);
+      timer_start = get_wait_timer();
       state->m_timer_start = timer_start;
       flags = STATE_FLAG_TIMED;
       state->m_thread = NULL;
@@ -3170,8 +3975,7 @@ pfs_start_cond_wait_v1(PSI_cond_locker_state *state,
 
     if (pfs_cond->m_timed)
     {
-      timer_start =
-        get_timer_raw_value_and_function(wait_timer, &state->m_timer);
+      timer_start = get_wait_timer();
       state->m_timer_start = timer_start;
       flags |= STATE_FLAG_TIMED;
     }
@@ -3212,8 +4016,7 @@ pfs_start_cond_wait_v1(PSI_cond_locker_state *state,
   {
     if (pfs_cond->m_timed)
     {
-      timer_start =
-        get_timer_raw_value_and_function(wait_timer, &state->m_timer);
+      timer_start = get_wait_timer();
       state->m_timer_start = timer_start;
       flags = STATE_FLAG_TIMED;
     }
@@ -3323,8 +4126,7 @@ pfs_start_table_io_wait_v1(PSI_table_locker_state *state,
 
     if (pfs_table->m_io_timed)
     {
-      timer_start =
-        get_timer_raw_value_and_function(wait_timer, &state->m_timer);
+      timer_start = get_wait_timer();
       state->m_timer_start = timer_start;
       flags |= STATE_FLAG_TIMED;
     }
@@ -3371,8 +4173,7 @@ pfs_start_table_io_wait_v1(PSI_table_locker_state *state,
   {
     if (pfs_table->m_io_timed)
     {
-      timer_start =
-        get_timer_raw_value_and_function(wait_timer, &state->m_timer);
+      timer_start = get_wait_timer();
       state->m_timer_start = timer_start;
       flags = STATE_FLAG_TIMED;
     }
@@ -3463,8 +4264,7 @@ pfs_start_table_lock_wait_v1(PSI_table_locker_state *state,
 
     if (pfs_table->m_lock_timed)
     {
-      timer_start =
-        get_timer_raw_value_and_function(wait_timer, &state->m_timer);
+      timer_start = get_wait_timer();
       state->m_timer_start = timer_start;
       flags |= STATE_FLAG_TIMED;
     }
@@ -3511,8 +4311,7 @@ pfs_start_table_lock_wait_v1(PSI_table_locker_state *state,
   {
     if (pfs_table->m_lock_timed)
     {
-      timer_start =
-        get_timer_raw_value_and_function(wait_timer, &state->m_timer);
+      timer_start = get_wait_timer();
       state->m_timer_start = timer_start;
       flags = STATE_FLAG_TIMED;
     }
@@ -3898,8 +4697,7 @@ pfs_start_socket_wait_v1(PSI_socket_locker_state *state,
 
     if (pfs_socket->m_timed)
     {
-      timer_start =
-        get_timer_raw_value_and_function(wait_timer, &state->m_timer);
+      timer_start = get_wait_timer();
       state->m_timer_start = timer_start;
       flags |= STATE_FLAG_TIMED;
     }
@@ -3942,8 +4740,7 @@ pfs_start_socket_wait_v1(PSI_socket_locker_state *state,
   {
     if (pfs_socket->m_timed)
     {
-      timer_start =
-        get_timer_raw_value_and_function(wait_timer, &state->m_timer);
+      timer_start = get_wait_timer();
       state->m_timer_start = timer_start;
       flags = STATE_FLAG_TIMED;
     }
@@ -4017,7 +4814,7 @@ pfs_unlock_mutex_v1(PSI_mutex *mutex)
   }
 
   ulonglong locked_time;
-  locked_time = get_timer_pico_value(wait_timer) - pfs_mutex->m_last_locked;
+  locked_time = get_wait_timer() - pfs_mutex->m_last_locked;
   pfs_mutex->m_mutex_stat.m_lock_stat.aggregate_value(locked_time);
 #endif
 }
@@ -4093,12 +4890,12 @@ pfs_unlock_rwlock_v1(PSI_rwlock *rwlock)
   ulonglong locked_time;
   if (last_writer)
   {
-    locked_time = get_timer_pico_value(wait_timer) - pfs_rwlock->m_last_written;
+    locked_time = get_wait_timer() - pfs_rwlock->m_last_written;
     pfs_rwlock->m_rwlock_stat.m_write_lock_stat.aggregate_value(locked_time);
   }
   else if (last_reader)
   {
-    locked_time = get_timer_pico_value(wait_timer) - pfs_rwlock->m_last_read;
+    locked_time = get_wait_timer() - pfs_rwlock->m_last_read;
     pfs_rwlock->m_rwlock_stat.m_read_lock_stat.aggregate_value(locked_time);
   }
 #else
@@ -4181,8 +4978,7 @@ pfs_start_idle_wait_v1(PSI_idle_locker_state *state,
 
     if (global_idle_class.m_timed)
     {
-      timer_start =
-        get_timer_raw_value_and_function(idle_timer, &state->m_timer);
+      timer_start = get_idle_timer();
       state->m_timer_start = timer_start;
       flags |= STATE_FLAG_TIMED;
     }
@@ -4226,8 +5022,7 @@ pfs_start_idle_wait_v1(PSI_idle_locker_state *state,
   {
     if (global_idle_class.m_timed)
     {
-      timer_start =
-        get_timer_raw_value_and_function(idle_timer, &state->m_timer);
+      timer_start = get_idle_timer();
       state->m_timer_start = timer_start;
       flags = STATE_FLAG_TIMED;
     }
@@ -4254,7 +5049,7 @@ pfs_end_idle_wait_v1(PSI_idle_locker *locker)
 
   if (flags & STATE_FLAG_TIMED)
   {
-    timer_end = state->m_timer();
+    timer_end = get_idle_timer();
     wait_time = timer_end - state->m_timer_start;
   }
 
@@ -4331,7 +5126,7 @@ pfs_end_mutex_wait_v1(PSI_mutex_locker *locker, int rc)
 
   if (flags & STATE_FLAG_TIMED)
   {
-    timer_end = state->m_timer();
+    timer_end = get_wait_timer();
     wait_time = timer_end - state->m_timer_start;
     /* Aggregate to EVENTS_WAITS_SUMMARY_BY_INSTANCE (timed) */
     mutex->m_mutex_stat.m_wait_stat.aggregate_value(wait_time);
@@ -4410,7 +5205,7 @@ pfs_end_rwlock_rdwait_v1(PSI_rwlock_locker *locker, int rc)
 
   if (state->m_flags & STATE_FLAG_TIMED)
   {
-    timer_end = state->m_timer();
+    timer_end = get_wait_timer();
     wait_time = timer_end - state->m_timer_start;
     /* Aggregate to EVENTS_WAITS_SUMMARY_BY_INSTANCE (timed) */
     rwlock->m_rwlock_stat.m_wait_stat.aggregate_value(wait_time);
@@ -4501,7 +5296,7 @@ pfs_end_rwlock_wrwait_v1(PSI_rwlock_locker *locker, int rc)
 
   if (state->m_flags & STATE_FLAG_TIMED)
   {
-    timer_end = state->m_timer();
+    timer_end = get_wait_timer();
     wait_time = timer_end - state->m_timer_start;
     /* Aggregate to EVENTS_WAITS_SUMMARY_BY_INSTANCE (timed) */
     rwlock->m_rwlock_stat.m_wait_stat.aggregate_value(wait_time);
@@ -4586,7 +5381,7 @@ pfs_end_cond_wait_v1(PSI_cond_locker *locker, int)
 
   if (state->m_flags & STATE_FLAG_TIMED)
   {
-    timer_end = state->m_timer();
+    timer_end = get_wait_timer();
     wait_time = timer_end - state->m_timer_start;
     /* Aggregate to EVENTS_WAITS_SUMMARY_BY_INSTANCE (timed) */
     cond->m_cond_stat.m_wait_stat.aggregate_value(wait_time);
@@ -4690,7 +5485,7 @@ pfs_end_table_io_wait_v1(PSI_table_locker *locker, ulonglong numrows)
 
   if (flags & STATE_FLAG_TIMED)
   {
-    timer_end = state->m_timer();
+    timer_end = get_wait_timer();
     wait_time = timer_end - state->m_timer_start;
     stat->aggregate_many_value(wait_time, numrows);
   }
@@ -4771,7 +5566,7 @@ pfs_end_table_lock_wait_v1(PSI_table_locker *locker)
 
   if (flags & STATE_FLAG_TIMED)
   {
-    timer_end = state->m_timer();
+    timer_end = get_wait_timer();
     wait_time = timer_end - state->m_timer_start;
     stat->aggregate_value(wait_time);
   }
@@ -4975,7 +5770,7 @@ pfs_start_file_wait_v1(PSI_file_locker *locker,
 
   if (flags & STATE_FLAG_TIMED)
   {
-    timer_start = get_timer_raw_value_and_function(wait_timer, &state->m_timer);
+    timer_start = get_wait_timer();
     state->m_timer_start = timer_start;
   }
 
@@ -5060,7 +5855,7 @@ pfs_end_file_wait_v1(PSI_file_locker *locker, size_t byte_count)
   /* Aggregation for EVENTS_WAITS_SUMMARY_BY_INSTANCE */
   if (flags & STATE_FLAG_TIMED)
   {
-    timer_end = state->m_timer();
+    timer_end = get_wait_timer();
     wait_time = timer_end - state->m_timer_start;
     /* Aggregate to EVENTS_WAITS_SUMMARY_BY_INSTANCE (timed) */
     byte_stat->aggregate(wait_time, bytes);
@@ -5212,6 +6007,31 @@ pfs_end_file_close_wait_v1(PSI_file_locker *locker, int rc)
   return;
 }
 
+/**
+  Implementation of the file instrumentation interface.
+  @sa PSI_v1::end_file_rename_wait.
+*/
+void pfs_end_file_rename_wait_v1(PSI_file_locker *locker, const char *old_name,
+                                 const char *new_name, int rc)
+{
+  PSI_file_locker_state *state= reinterpret_cast<PSI_file_locker_state*> (locker);
+  DBUG_ASSERT(state != NULL);
+  DBUG_ASSERT(state->m_operation == PSI_FILE_RENAME);
+
+  if (rc == 0)
+  {
+    PFS_thread *thread= reinterpret_cast<PFS_thread *> (state->m_thread);
+
+    uint old_len= (uint)strlen(old_name);
+    uint new_len= (uint)strlen(new_name);
+
+    find_and_rename_file(thread, old_name, old_len, new_name, new_len);
+  }
+
+  pfs_end_file_wait_v1(locker, 0);
+  return;
+}
+
 PSI_stage_progress *
 pfs_start_stage_v1(PSI_stage_key key, const char *src_file, int src_line)
 {
@@ -5252,8 +6072,7 @@ pfs_start_stage_v1(PSI_stage_key key, const char *src_file, int src_line)
     /* Finish old event */
     if (old_class->m_timed)
     {
-      timer_value = get_timer_raw_value(stage_timer);
-      ;
+      timer_value = get_stage_timer();
       pfs->m_timer_end = timer_value;
 
       /* Aggregate to EVENTS_STAGES_SUMMARY_BY_THREAD_BY_EVENT_NAME (timed) */
@@ -5310,7 +6129,7 @@ pfs_start_stage_v1(PSI_stage_key key, const char *src_file, int src_line)
     */
     if (timer_value == 0)
     {
-      timer_value = get_timer_raw_value(stage_timer);
+      timer_value = get_stage_timer();
     }
     pfs->m_timer_start = timer_value;
   }
@@ -5391,8 +6210,7 @@ pfs_end_stage_v1()
     /* Finish old event */
     if (old_class->m_timed)
     {
-      timer_value = get_timer_raw_value(stage_timer);
-      ;
+      timer_value = get_stage_timer();
       pfs->m_timer_end = timer_value;
 
       /* Aggregate to EVENTS_STAGES_SUMMARY_BY_THREAD_BY_EVENT_NAME (timed) */
@@ -5639,6 +6457,10 @@ pfs_get_thread_statement_locker_v1(PSI_statement_locker_state *state,
   state->m_parent_sp_share = sp_share;
   state->m_parent_prepared_stmt = NULL;
 
+  state->m_query_sample = nullptr;
+  state->m_query_sample_length = 0;
+  state->m_query_sample_truncated = false;
+
   return reinterpret_cast<PSI_statement_locker *>(state);
 }
 
@@ -5713,8 +6535,7 @@ pfs_start_statement_v1(PSI_statement_locker *locker,
 
   if (flags & STATE_FLAG_TIMED)
   {
-    timer_start =
-      get_timer_raw_value_and_function(statement_timer, &state->m_timer);
+    timer_start = get_statement_timer();
     state->m_timer_start = timer_start;
   }
 
@@ -5744,6 +6565,10 @@ pfs_start_statement_v1(PSI_statement_locker *locker,
     }
     pfs->m_current_schema_name_length = db_len;
   }
+
+  state->m_query_sample = nullptr;
+  state->m_query_sample_length = 0;
+  state->m_query_sample_truncated = false;
 }
 
 void
@@ -5760,22 +6585,28 @@ pfs_set_statement_text_v1(PSI_statement_locker *locker,
     return;
   }
 
+  if (text_len > pfs_max_sqltext)
+  {
+    text_len = (uint)pfs_max_sqltext;
+    state->m_query_sample_truncated = true;
+  }
+  state->m_query_sample = text;
+  state->m_query_sample_length = text_len;
+
   if (state->m_flags & STATE_FLAG_EVENT)
   {
     PFS_events_statements *pfs =
       reinterpret_cast<PFS_events_statements *>(state->m_statement);
     DBUG_ASSERT(pfs != NULL);
-    if (text_len > pfs_max_sqltext)
-    {
-      text_len = (uint)pfs_max_sqltext;
-      pfs->m_sqltext_truncated = true;
-    }
+
+    pfs->m_sqltext_length = text_len;
+    pfs->m_sqltext_truncated = state->m_query_sample_truncated;
+    pfs->m_sqltext_cs_number = state->m_cs_number;
     if (text_len)
     {
+      DBUG_ASSERT(pfs->m_sqltext != NULL);
       memcpy(pfs->m_sqltext, text, text_len);
     }
-    pfs->m_sqltext_length = text_len;
-    pfs->m_sqltext_cs_number = state->m_cs_number;
   }
 
   return;
@@ -5949,7 +6780,7 @@ pfs_end_statement_v1(PSI_statement_locker *locker, void *stmt_da)
 
   if (flags & STATE_FLAG_TIMED)
   {
-    timer_end = state->m_timer();
+    timer_end = get_statement_timer();
     wait_time = timer_end - state->m_timer_start;
   }
 
@@ -6104,13 +6935,20 @@ pfs_end_statement_v1(PSI_statement_locker *locker, void *stmt_da)
 
   if (digest_stat != NULL)
   {
+    bool new_max_wait = false;
+
     digest_stat->m_stat.mark_used();
 
     if (flags & STATE_FLAG_TIMED)
     {
       digest_stat->m_stat.aggregate_value(wait_time);
 
-      time_normalizer *normalizer = time_normalizer::get(wait_timer);
+      /* Update the digest sample if it's a new maximum. */
+      if (wait_time > digest_stat->get_sample_timer_wait())
+      {
+        new_max_wait = true;
+      }
+      time_normalizer *normalizer = time_normalizer::get_statement();
       ulong bucket_index = normalizer->bucket_index(wait_time);
 
       /* Update digest histogram. */
@@ -6122,6 +6960,52 @@ pfs_end_statement_v1(PSI_statement_locker *locker, void *stmt_da)
     else
     {
       digest_stat->m_stat.aggregate_counted();
+    }
+
+    if (state->m_query_sample_length != 0)
+    {
+      /* Get a new query sample if:
+         - This is the first query sample, or
+         - The wait time is a new maximum, or
+         - The last query sample age exceeds the maximum age.
+      */
+      bool get_sample_query = (digest_stat->m_query_sample_length == 0);
+
+      if (!get_sample_query)
+      {
+        get_sample_query = new_max_wait;
+
+        if (!get_sample_query)
+        {
+          /* Check the query sample age. */
+          if (pfs_param.m_max_digest_sample_age > 0)
+          {
+            /* Comparison in micro seconds. */
+            get_sample_query = (digest_stat->get_sample_age() >
+                                pfs_param.m_max_digest_sample_age * 1000000);
+          }
+        }
+      }
+
+      /* Update the query sample. */
+      if (get_sample_query)
+      {
+        /* Get exclusive access otherwise abort. */
+        if (digest_stat->inc_sample_ref() == 0)
+        {
+          digest_stat->set_sample_timer_wait(wait_time);
+          DBUG_ASSERT(digest_stat->m_query_sample != NULL);
+          memcpy(digest_stat->m_query_sample,
+                 state->m_query_sample,
+                 state->m_query_sample_length);
+          digest_stat->m_query_sample_length = state->m_query_sample_length;
+          digest_stat->m_query_sample_cs_number = state->m_cs_number;
+          digest_stat->m_query_sample_truncated =
+            state->m_query_sample_truncated;
+          digest_stat->m_query_sample_seen = digest_stat->m_last_seen;
+        }
+        digest_stat->dec_sample_ref();
+      }
     }
 
     digest_stat->m_stat.m_lock_time += state->m_lock_time;
@@ -6147,7 +7031,7 @@ pfs_end_statement_v1(PSI_statement_locker *locker, void *stmt_da)
   {
     if (flags & STATE_FLAG_TIMED)
     {
-      time_normalizer *normalizer = time_normalizer::get(wait_timer);
+      time_normalizer *normalizer = time_normalizer::get_statement();
       ulong bucket_index = normalizer->bucket_index(wait_time);
 
       /* Update global histogram. */
@@ -6247,6 +7131,9 @@ pfs_end_statement_v1(PSI_statement_locker *locker, void *stmt_da)
       }
     }
   }
+
+  state->m_query_sample_length = 0;
+  state->m_query_sample = nullptr;
 
   PFS_statement_stat *sub_stmt_stat = NULL;
   if (pfs_program != NULL)
@@ -6420,9 +7307,8 @@ pfs_start_sp_v1(PSI_sp_locker_state *state, PSI_sp_share *sp_share)
 
   if (pfs_program->m_timed)
   {
+    state->m_timer_start = get_statement_timer();
     state->m_flags |= STATE_FLAG_TIMED;
-    state->m_timer_start =
-      get_timer_raw_value_and_function(statement_timer, &state->m_timer);
   }
 
   state->m_sp_share = sp_share;
@@ -6444,7 +7330,7 @@ pfs_end_sp_v1(PSI_sp_locker *locker)
 
   if (state->m_flags & STATE_FLAG_TIMED)
   {
-    timer_end = state->m_timer();
+    timer_end = get_statement_timer();
     wait_time = timer_end - state->m_timer_start;
 
     /* Now use this timer_end and wait_time for timing information. */
@@ -6608,8 +7494,7 @@ pfs_start_transaction_v1(PSI_transaction_locker *locker,
 
   if (flags & STATE_FLAG_TIMED)
   {
-    timer_start =
-      get_timer_raw_value_and_function(transaction_timer, &state->m_timer);
+    timer_start = get_transaction_timer();
     state->m_timer_start = timer_start;
   }
 
@@ -6764,7 +7649,7 @@ pfs_end_transaction_v1(PSI_transaction_locker *locker, bool commit)
 
   if (flags & STATE_FLAG_TIMED)
   {
-    timer_end = state->m_timer();
+    timer_end = get_transaction_timer();
     wait_time = timer_end - state->m_timer_start;
   }
 
@@ -6905,7 +7790,7 @@ pfs_end_socket_wait_v1(PSI_socket_locker *locker, size_t byte_count)
   /* Aggregation for EVENTS_WAITS_SUMMARY_BY_INSTANCE */
   if (flags & STATE_FLAG_TIMED)
   {
-    timer_end = state->m_timer();
+    timer_end = get_wait_timer();
     wait_time = timer_end - state->m_timer_start;
 
     /* Aggregate to the socket instrument for now (timed) */
@@ -6998,7 +7883,19 @@ pfs_set_socket_thread_owner_v1(PSI_socket *socket)
 {
   PFS_socket *pfs_socket = reinterpret_cast<PFS_socket *>(socket);
   DBUG_ASSERT(pfs_socket != NULL);
-  pfs_socket->m_thread_owner = my_thread_get_THR_PFS();
+  PFS_thread *pfs_thread = my_thread_get_THR_PFS();
+  pfs_socket->m_thread_owner = pfs_thread;
+
+  if (pfs_thread)  // TODO use set_thread_ip_addr()
+  {
+    pfs_thread->m_sock_addr_len = pfs_socket->m_addr_len;
+    if (pfs_thread->m_sock_addr_len > 0)
+    {
+      memcpy(&pfs_thread->m_sock_addr,
+             &pfs_socket->m_sock_addr,
+             pfs_socket->m_addr_len);
+    }
+  }
 }
 
 struct PSI_digest_locker *
@@ -7040,8 +7937,8 @@ pfs_digest_end_v1(PSI_digest_locker *locker, const sql_digest_storage *digest)
     sql_digest_storage *update_digest =
       const_cast<sql_digest_storage *>(digest);
 
-    /* Compute MD5 Hash of the tokens received. */
-    compute_digest_md5(digest, update_digest->m_md5);
+    /* Compute digest hash of the tokens received. */
+    compute_digest_hash(digest, update_digest->m_hash);
 
     state->m_digest = digest;
 
@@ -7146,6 +8043,27 @@ pfs_reprepare_prepared_stmt_v1(PSI_prepared_stmt *prepared_stmt)
   {
     prepared_stmt_stat->aggregate_counted();
   }
+  return;
+}
+
+void
+pfs_set_prepared_stmt_text_v1(PSI_prepared_stmt *prepared_stmt,
+                              const char *text,
+                              uint text_len)
+{
+  PFS_prepared_stmt *pfs_prepared_stmt =
+    reinterpret_cast<PFS_prepared_stmt *>(prepared_stmt);
+  DBUG_ASSERT(pfs_prepared_stmt != NULL);
+
+  uint max_len = COL_INFO_SIZE;
+  if (text_len > max_len)
+  {
+    text_len = max_len;
+  }
+
+  memcpy(pfs_prepared_stmt->m_sqltext, text, text_len);
+  pfs_prepared_stmt->m_sqltext_length = text_len;
+
   return;
 }
 
@@ -7649,8 +8567,7 @@ pfs_start_metadata_wait_v1(PSI_metadata_locker_state *state,
 
     if (pfs_lock->m_timed)
     {
-      timer_start =
-        get_timer_raw_value_and_function(wait_timer, &state->m_timer);
+      timer_start = get_wait_timer();
       state->m_timer_start = timer_start;
       flags |= STATE_FLAG_TIMED;
     }
@@ -7693,8 +8610,7 @@ pfs_start_metadata_wait_v1(PSI_metadata_locker_state *state,
   {
     if (pfs_lock->m_timed)
     {
-      timer_start =
-        get_timer_raw_value_and_function(wait_timer, &state->m_timer);
+      timer_start = get_wait_timer();
       state->m_timer_start = timer_start;
       flags = STATE_FLAG_TIMED;
       state->m_thread = NULL;
@@ -7731,7 +8647,7 @@ pfs_end_metadata_wait_v1(PSI_metadata_locker *locker, int)
 
   if (flags & STATE_FLAG_TIMED)
   {
-    timer_end = state->m_timer();
+    timer_end = get_wait_timer();
     wait_time = timer_end - state->m_timer_start;
   }
 
@@ -7882,35 +8798,90 @@ pfs_unregister_data_lock_v1(PSI_engine_data_lock_inspector * /* inspector */)
   Implementation of the instrumentation interface.
   @sa PSI_thread_service_v1
 */
-PSI_thread_service_v1 pfs_thread_service_v1 = {pfs_register_thread_v1,
-                                               pfs_spawn_thread_v1,
-                                               pfs_new_thread_v1,
-                                               pfs_set_thread_id_v1,
-                                               pfs_set_thread_THD_v1,
-                                               pfs_set_thread_os_id_v1,
-                                               pfs_get_thread_v1,
-                                               pfs_set_thread_user_v1,
-                                               pfs_set_thread_account_v1,
-                                               pfs_set_thread_db_v1,
-                                               pfs_set_thread_command_v1,
-                                               pfs_set_connection_type_v1,
-                                               pfs_set_thread_start_time_v1,
-                                               pfs_set_thread_state_v1,
-                                               pfs_set_thread_info_v1,
-                                               pfs_set_thread_v1,
-                                               pfs_delete_current_thread_v1,
-                                               pfs_delete_thread_v1,
-                                               pfs_set_thread_connect_attrs_v1,
-                                               pfs_get_thread_event_id_v1};
+PSI_thread_service_v1 pfs_thread_service_v1 = {
+  /* Old interface, for plugins. */
+  pfs_register_thread_v1,
+  pfs_spawn_thread_v1,
+  pfs_new_thread_v1,
+  pfs_set_thread_id_v1,
+  pfs_set_thread_THD_v1,
+  pfs_set_thread_os_id_v1,
+  pfs_get_thread_v1,
+  pfs_set_thread_user_v1,
+  pfs_set_thread_account_v1,
+  pfs_set_thread_db_v1,
+  pfs_set_thread_command_v1,
+  pfs_set_connection_type_v1,
+  pfs_set_thread_start_time_v1,
+  pfs_set_thread_state_v1,
+  pfs_set_thread_info_v1,
+  pfs_set_thread_resource_group_v1,
+  pfs_set_thread_resource_group_by_id_v1,
+  pfs_set_thread_v1,
+  pfs_delete_current_thread_v1,
+  pfs_delete_thread_v1,
+  pfs_set_thread_connect_attrs_v1,
+  pfs_get_thread_event_id_v1,
+  pfs_get_thread_system_attrs_v1,
+  pfs_get_thread_system_attrs_by_id_v1,
+  pfs_register_notification_v1,
+  pfs_unregister_notification_v1,
+  pfs_notify_session_connect_v1,
+  pfs_notify_session_disconnect_v1,
+  pfs_notify_session_change_user_v1};
 
-PSI_mutex_service_v1 pfs_mutex_service_v1 = {pfs_register_mutex_v1,
-                                             pfs_init_mutex_v1,
-                                             pfs_destroy_mutex_v1,
-                                             pfs_start_mutex_wait_v1,
-                                             pfs_end_mutex_wait_v1,
-                                             pfs_unlock_mutex_v1};
+SERVICE_TYPE(psi_thread_v1)
+SERVICE_IMPLEMENTATION(performance_schema, psi_thread_v1) = {
+  /* New interface, for components. */
+  pfs_register_thread_v1,
+  pfs_spawn_thread_v1,
+  pfs_new_thread_v1,
+  pfs_set_thread_id_v1,
+  pfs_set_thread_THD_v1,
+  pfs_set_thread_os_id_v1,
+  pfs_get_thread_v1,
+  pfs_set_thread_user_v1,
+  pfs_set_thread_account_v1,
+  pfs_set_thread_db_v1,
+  pfs_set_thread_command_v1,
+  pfs_set_connection_type_v1,
+  pfs_set_thread_start_time_v1,
+  pfs_set_thread_state_v1,
+  pfs_set_thread_info_v1,
+  pfs_set_thread_v1,
+  pfs_delete_current_thread_v1,
+  pfs_delete_thread_v1,
+  pfs_set_thread_connect_attrs_v1,
+  pfs_get_thread_event_id_v1,
+  pfs_get_thread_system_attrs_v1,
+  pfs_get_thread_system_attrs_by_id_v1,
+  pfs_register_notification_v1,
+  pfs_unregister_notification_v1,
+  pfs_notify_session_connect_v1,
+  pfs_notify_session_disconnect_v1,
+  pfs_notify_session_change_user_v1};
+
+PSI_mutex_service_v1 pfs_mutex_service_v1 = {
+  /* Old interface, for plugins. */
+  pfs_register_mutex_v1,
+  pfs_init_mutex_v1,
+  pfs_destroy_mutex_v1,
+  pfs_start_mutex_wait_v1,
+  pfs_end_mutex_wait_v1,
+  pfs_unlock_mutex_v1};
+
+SERVICE_TYPE(psi_mutex_v1)
+SERVICE_IMPLEMENTATION(performance_schema, psi_mutex_v1) = {
+  /* New interface, for components. */
+  pfs_register_mutex_v1,
+  pfs_init_mutex_v1,
+  pfs_destroy_mutex_v1,
+  pfs_start_mutex_wait_v1,
+  pfs_end_mutex_wait_v1,
+  pfs_unlock_mutex_v1};
 
 PSI_rwlock_service_v1 pfs_rwlock_service_v1 = {
+  /* Old interface, for plugins. */
   pfs_register_rwlock_v1,
   pfs_init_rwlock_v1,
   pfs_destroy_rwlock_v1,
@@ -7918,18 +8889,43 @@ PSI_rwlock_service_v1 pfs_rwlock_service_v1 = {
   pfs_end_rwlock_rdwait_v1,
   pfs_start_rwlock_wrwait_v1,
   pfs_end_rwlock_wrwait_v1,
-  pfs_unlock_rwlock_v1,
-};
+  pfs_unlock_rwlock_v1};
 
-PSI_cond_service_v1 pfs_cond_service_v1 = {pfs_register_cond_v1,
-                                           pfs_init_cond_v1,
-                                           pfs_destroy_cond_v1,
-                                           pfs_signal_cond_v1,
-                                           pfs_broadcast_cond_v1,
-                                           pfs_start_cond_wait_v1,
-                                           pfs_end_cond_wait_v1};
+SERVICE_TYPE(psi_rwlock_v1)
+SERVICE_IMPLEMENTATION(performance_schema, psi_rwlock_v1) = {
+  /* New interface, for components. */
+  pfs_register_rwlock_v1,
+  pfs_init_rwlock_v1,
+  pfs_destroy_rwlock_v1,
+  pfs_start_rwlock_rdwait_v1,
+  pfs_end_rwlock_rdwait_v1,
+  pfs_start_rwlock_wrwait_v1,
+  pfs_end_rwlock_wrwait_v1,
+  pfs_unlock_rwlock_v1};
+
+PSI_cond_service_v1 pfs_cond_service_v1 = {
+  /* Old interface, for plugins. */
+  pfs_register_cond_v1,
+  pfs_init_cond_v1,
+  pfs_destroy_cond_v1,
+  pfs_signal_cond_v1,
+  pfs_broadcast_cond_v1,
+  pfs_start_cond_wait_v1,
+  pfs_end_cond_wait_v1};
+
+SERVICE_TYPE(psi_cond_v1)
+SERVICE_IMPLEMENTATION(performance_schema, psi_cond_v1) = {
+  /* New interface, for components. */
+  pfs_register_cond_v1,
+  pfs_init_cond_v1,
+  pfs_destroy_cond_v1,
+  pfs_signal_cond_v1,
+  pfs_broadcast_cond_v1,
+  pfs_start_cond_wait_v1,
+  pfs_end_cond_wait_v1};
 
 PSI_file_service_v1 pfs_file_service_v1 = {
+  /* Old interface, for plugins. */
   pfs_register_file_v1,
   pfs_create_file_v1,
   pfs_get_thread_file_name_locker_v1,
@@ -7942,45 +8938,126 @@ PSI_file_service_v1 pfs_file_service_v1 = {
   pfs_start_file_wait_v1,
   pfs_end_file_wait_v1,
   pfs_start_file_close_wait_v1,
-  pfs_end_file_close_wait_v1};
+  pfs_end_file_close_wait_v1,
+  pfs_end_file_rename_wait_v1};
 
-PSI_socket_service_v1 pfs_socket_service_v1 = {pfs_register_socket_v1,
-                                               pfs_init_socket_v1,
-                                               pfs_destroy_socket_v1,
-                                               pfs_start_socket_wait_v1,
-                                               pfs_end_socket_wait_v1,
-                                               pfs_set_socket_state_v1,
-                                               pfs_set_socket_info_v1,
-                                               pfs_set_socket_thread_owner_v1};
+SERVICE_TYPE(psi_file_v1)
+SERVICE_IMPLEMENTATION(performance_schema, psi_file_v1) = {
+  /* New interface, for components. */
+  pfs_register_file_v1,
+  pfs_create_file_v1,
+  pfs_get_thread_file_name_locker_v1,
+  pfs_get_thread_file_stream_locker_v1,
+  pfs_get_thread_file_descriptor_locker_v1,
+  pfs_start_file_open_wait_v1,
+  pfs_end_file_open_wait_v1,
+  pfs_end_file_open_wait_and_bind_to_descriptor_v1,
+  pfs_end_temp_file_open_wait_and_bind_to_descriptor_v1,
+  pfs_start_file_wait_v1,
+  pfs_end_file_wait_v1,
+  pfs_start_file_close_wait_v1,
+  pfs_end_file_close_wait_v1,
+  pfs_end_file_rename_wait_v1};
 
-PSI_table_service_v1 pfs_table_service_v1 = {pfs_get_table_share_v1,
-                                             pfs_release_table_share_v1,
-                                             pfs_drop_table_share_v1,
-                                             pfs_open_table_v1,
-                                             pfs_unbind_table_v1,
-                                             pfs_rebind_table_v1,
-                                             pfs_close_table_v1,
-                                             pfs_start_table_io_wait_v1,
-                                             pfs_end_table_io_wait_v1,
-                                             pfs_start_table_lock_wait_v1,
-                                             pfs_end_table_lock_wait_v1,
-                                             pfs_unlock_table_v1};
+PSI_socket_service_v1 pfs_socket_service_v1 = {
+  /* Old interface, for plugins. */
+  pfs_register_socket_v1,
+  pfs_init_socket_v1,
+  pfs_destroy_socket_v1,
+  pfs_start_socket_wait_v1,
+  pfs_end_socket_wait_v1,
+  pfs_set_socket_state_v1,
+  pfs_set_socket_info_v1,
+  pfs_set_socket_thread_owner_v1};
 
-PSI_mdl_service_v1 pfs_mdl_service_v1 = {pfs_create_metadata_lock_v1,
-                                         pfs_set_metadata_lock_status_v1,
-                                         pfs_destroy_metadata_lock_v1,
-                                         pfs_start_metadata_wait_v1,
-                                         pfs_end_metadata_wait_v1};
+SERVICE_TYPE(psi_socket_v1)
+SERVICE_IMPLEMENTATION(performance_schema, psi_socket_v1) = {
+  /* New interface, for components. */
+  pfs_register_socket_v1,
+  pfs_init_socket_v1,
+  pfs_destroy_socket_v1,
+  pfs_start_socket_wait_v1,
+  pfs_end_socket_wait_v1,
+  pfs_set_socket_state_v1,
+  pfs_set_socket_info_v1,
+  pfs_set_socket_thread_owner_v1};
 
-PSI_idle_service_v1 pfs_idle_service_v1 = {pfs_start_idle_wait_v1,
-                                           pfs_end_idle_wait_v1};
+PSI_table_service_v1 pfs_table_service_v1 = {
+  /* Old interface, for plugins. */
+  pfs_get_table_share_v1,
+  pfs_release_table_share_v1,
+  pfs_drop_table_share_v1,
+  pfs_open_table_v1,
+  pfs_unbind_table_v1,
+  pfs_rebind_table_v1,
+  pfs_close_table_v1,
+  pfs_start_table_io_wait_v1,
+  pfs_end_table_io_wait_v1,
+  pfs_start_table_lock_wait_v1,
+  pfs_end_table_lock_wait_v1,
+  pfs_unlock_table_v1};
 
-PSI_stage_service_v1 pfs_stage_service_v1 = {pfs_register_stage_v1,
-                                             pfs_start_stage_v1,
-                                             pfs_get_current_stage_progress_v1,
-                                             pfs_end_stage_v1};
+SERVICE_TYPE(psi_table_v1)
+SERVICE_IMPLEMENTATION(performance_schema, psi_table_v1) = {
+  /* New interface, for components. */
+  pfs_get_table_share_v1,
+  pfs_release_table_share_v1,
+  pfs_drop_table_share_v1,
+  pfs_open_table_v1,
+  pfs_unbind_table_v1,
+  pfs_rebind_table_v1,
+  pfs_close_table_v1,
+  pfs_start_table_io_wait_v1,
+  pfs_end_table_io_wait_v1,
+  pfs_start_table_lock_wait_v1,
+  pfs_end_table_lock_wait_v1,
+  pfs_unlock_table_v1};
+
+PSI_mdl_service_v1 pfs_mdl_service_v1 = {
+  /* Old interface, for plugins. */
+  pfs_create_metadata_lock_v1,
+  pfs_set_metadata_lock_status_v1,
+  pfs_destroy_metadata_lock_v1,
+  pfs_start_metadata_wait_v1,
+  pfs_end_metadata_wait_v1};
+
+SERVICE_TYPE(psi_mdl_v1)
+SERVICE_IMPLEMENTATION(performance_schema, psi_mdl_v1) = {
+  /* New interface, for components. */
+  pfs_create_metadata_lock_v1,
+  pfs_set_metadata_lock_status_v1,
+  pfs_destroy_metadata_lock_v1,
+  pfs_start_metadata_wait_v1,
+  pfs_end_metadata_wait_v1};
+
+PSI_idle_service_v1 pfs_idle_service_v1 = {
+  /* Old interface, for plugins. */
+  pfs_start_idle_wait_v1,
+  pfs_end_idle_wait_v1};
+
+SERVICE_TYPE(psi_idle_v1)
+SERVICE_IMPLEMENTATION(performance_schema, psi_idle_v1) = {
+  /* New interface, for components. */
+  pfs_start_idle_wait_v1,
+  pfs_end_idle_wait_v1};
+
+PSI_stage_service_v1 pfs_stage_service_v1 = {
+  /* Old interface, for plugins. */
+  pfs_register_stage_v1,
+  pfs_start_stage_v1,
+  pfs_get_current_stage_progress_v1,
+  pfs_end_stage_v1};
+
+SERVICE_TYPE(psi_stage_v1)
+SERVICE_IMPLEMENTATION(performance_schema, psi_stage_v1) = {
+  /* New interface, for components. */
+  pfs_register_stage_v1,
+  pfs_start_stage_v1,
+  pfs_get_current_stage_progress_v1,
+  pfs_end_stage_v1};
 
 PSI_statement_service_v1 pfs_statement_service_v1 = {
+  /* Old interface, for plugins. */
   pfs_register_statement_v1,
   pfs_get_thread_statement_locker_v1,
   pfs_refine_statement_v1,
@@ -8007,6 +9084,45 @@ PSI_statement_service_v1 pfs_statement_service_v1 = {
   pfs_destroy_prepared_stmt_v1,
   pfs_reprepare_prepared_stmt_v1,
   pfs_execute_prepared_stmt_v1,
+  pfs_set_prepared_stmt_text_v1,
+  pfs_digest_start_v1,
+  pfs_digest_end_v1,
+  pfs_get_sp_share_v1,
+  pfs_release_sp_share_v1,
+  pfs_start_sp_v1,
+  pfs_end_sp_v1,
+  pfs_drop_sp_v1};
+
+SERVICE_TYPE(psi_statement_v1)
+SERVICE_IMPLEMENTATION(performance_schema, psi_statement_v1) = {
+  /* New interface, for components. */
+  pfs_register_statement_v1,
+  pfs_get_thread_statement_locker_v1,
+  pfs_refine_statement_v1,
+  pfs_start_statement_v1,
+  pfs_set_statement_text_v1,
+  pfs_set_statement_lock_time_v1,
+  pfs_set_statement_rows_sent_v1,
+  pfs_set_statement_rows_examined_v1,
+  pfs_inc_statement_created_tmp_disk_tables_v1,
+  pfs_inc_statement_created_tmp_tables_v1,
+  pfs_inc_statement_select_full_join_v1,
+  pfs_inc_statement_select_full_range_join_v1,
+  pfs_inc_statement_select_range_v1,
+  pfs_inc_statement_select_range_check_v1,
+  pfs_inc_statement_select_scan_v1,
+  pfs_inc_statement_sort_merge_passes_v1,
+  pfs_inc_statement_sort_range_v1,
+  pfs_inc_statement_sort_rows_v1,
+  pfs_inc_statement_sort_scan_v1,
+  pfs_set_statement_no_index_used_v1,
+  pfs_set_statement_no_good_index_used_v1,
+  pfs_end_statement_v1,
+  pfs_create_prepared_stmt_v1,
+  pfs_destroy_prepared_stmt_v1,
+  pfs_reprepare_prepared_stmt_v1,
+  pfs_execute_prepared_stmt_v1,
+  pfs_set_prepared_stmt_text_v1,
   pfs_digest_start_v1,
   pfs_digest_end_v1,
   pfs_get_sp_share_v1,
@@ -8016,6 +9132,7 @@ PSI_statement_service_v1 pfs_statement_service_v1 = {
   pfs_drop_sp_v1};
 
 PSI_transaction_service_v1 pfs_transaction_service_v1 = {
+  /* Old interface, for plugins. */
   pfs_get_thread_transaction_locker_v1,
   pfs_start_transaction_v1,
   pfs_set_transaction_xid_v1,
@@ -8027,16 +9144,50 @@ PSI_transaction_service_v1 pfs_transaction_service_v1 = {
   pfs_inc_transaction_release_savepoint_v1,
   pfs_end_transaction_v1};
 
-PSI_memory_service_v1 pfs_memory_service_v1 = {pfs_register_memory_v1,
-                                               pfs_memory_alloc_v1,
-                                               pfs_memory_realloc_v1,
-                                               pfs_memory_claim_v1,
-                                               pfs_memory_free_v1};
+SERVICE_TYPE(psi_transaction_v1)
+SERVICE_IMPLEMENTATION(performance_schema, psi_transaction_v1) = {
+  /* New interface, for components. */
+  pfs_get_thread_transaction_locker_v1,
+  pfs_start_transaction_v1,
+  pfs_set_transaction_xid_v1,
+  pfs_set_transaction_xa_state_v1,
+  pfs_set_transaction_gtid_v1,
+  pfs_set_transaction_trxid_v1,
+  pfs_inc_transaction_savepoints_v1,
+  pfs_inc_transaction_rollback_to_savepoint_v1,
+  pfs_inc_transaction_release_savepoint_v1,
+  pfs_end_transaction_v1};
 
-PSI_error_service_v1 pfs_error_service_v1 = {pfs_log_error_v1};
+PSI_memory_service_v1 pfs_memory_service_v1 = {
+  /* Old interface, for plugins. */
+  pfs_register_memory_v1,
+  pfs_memory_alloc_v1,
+  pfs_memory_realloc_v1,
+  pfs_memory_claim_v1,
+  pfs_memory_free_v1};
+
+SERVICE_TYPE(psi_memory_v1)
+SERVICE_IMPLEMENTATION(performance_schema, psi_memory_v1) = {
+  /* New interface, for components. */
+  pfs_register_memory_v1,
+  pfs_memory_alloc_v1,
+  pfs_memory_realloc_v1,
+  pfs_memory_claim_v1,
+  pfs_memory_free_v1};
+
+PSI_error_service_v1 pfs_error_service_v1 = {
+  /* Old interface, for plugins. */
+  pfs_log_error_v1};
+
+SERVICE_TYPE(psi_error_v1)
+SERVICE_IMPLEMENTATION(performance_schema, psi_error_v1) = {
+  /* New interface, for components. */
+  pfs_log_error_v1};
 
 PSI_data_lock_service_v1 pfs_data_lock_service_v1 = {
-  pfs_register_data_lock_v1, pfs_unregister_data_lock_v1};
+  /* Old interface, for plugins. */
+  pfs_register_data_lock_v1,
+  pfs_unregister_data_lock_v1};
 
 static void *
 get_thread_interface(int version)
@@ -8256,3 +9407,80 @@ struct PSI_data_lock_bootstrap pfs_data_lock_bootstrap = {
 PSI_engine_data_lock_inspector *g_data_lock_inspector[COUNT_DATA_LOCK_ENGINES] =
   {NULL};
 unsigned int g_data_lock_inspector_count = 0;
+
+/* clang-format off */
+BEGIN_COMPONENT_PROVIDES(performance_schema)
+  PROVIDES_SERVICE(performance_schema, psi_cond_v1)
+  PROVIDES_SERVICE(performance_schema, psi_error_v1)
+  PROVIDES_SERVICE(performance_schema, psi_file_v1)
+  PROVIDES_SERVICE(performance_schema, psi_idle_v1)
+  PROVIDES_SERVICE(performance_schema, psi_mdl_v1)
+  PROVIDES_SERVICE(performance_schema, psi_memory_v1)
+  PROVIDES_SERVICE(performance_schema, psi_mutex_v1)
+  PROVIDES_SERVICE(performance_schema, psi_rwlock_v1)
+  PROVIDES_SERVICE(performance_schema, psi_socket_v1)
+  PROVIDES_SERVICE(performance_schema, psi_stage_v1)
+  PROVIDES_SERVICE(performance_schema, psi_statement_v1)
+  PROVIDES_SERVICE(performance_schema, psi_table_v1)
+  PROVIDES_SERVICE(performance_schema, psi_thread_v1)
+  PROVIDES_SERVICE(performance_schema, psi_transaction_v1)
+  PROVIDES_SERVICE(performance_schema, pfs_plugin_table)
+END_COMPONENT_PROVIDES()
+
+static BEGIN_COMPONENT_REQUIRES(performance_schema)
+END_COMPONENT_REQUIRES()
+
+BEGIN_COMPONENT_METADATA(performance_schema)
+  METADATA("mysql.author", "Oracle Corporation")
+  METADATA("mysql.license", "GPL")
+END_COMPONENT_METADATA()
+
+DECLARE_COMPONENT(performance_schema, "mysql:pfs")
+  /* There are no initialization/deinitialization functions, they will not be
+     called as this component is not a regular one. */
+  NULL,
+  NULL
+END_DECLARE_COMPONENT()
+  /* clang-format on */
+
+  bool pfs_init_services(SERVICE_TYPE(registry_registration) * reg)
+{
+  int inx = 0;
+
+  for (;;)
+  {
+    my_h_service pfs_service;
+    pfs_service = reinterpret_cast<my_h_service>(
+      mysql_component_performance_schema.provides[inx].implementation);
+
+    if (pfs_service == NULL)
+    {
+      break;
+    }
+
+    if (reg->register_service(
+          mysql_component_performance_schema.provides[inx].name, pfs_service))
+    {
+      return true;
+    }
+
+    inx++;
+  }
+
+  return false;
+}
+
+bool pfs_deinit_services(SERVICE_TYPE(registry_registration) * reg)
+{
+  for (int inx = 0;
+       mysql_component_performance_schema.provides[inx].name != NULL;
+       inx++)
+  {
+    if (reg->unregister(mysql_component_performance_schema.provides[inx].name))
+    {
+      return true;
+    }
+  }
+
+  return false;
+}

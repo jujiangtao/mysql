@@ -1,13 +1,20 @@
 /* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -19,13 +26,16 @@
 
 #include <fcntl.h>
 #include <string.h>
+
+#include "m_string.h"
+#include "mysql/components/services/mysql_cond_bits.h"
+#include "mysql/components/services/mysql_mutex_bits.h"
+#include "mysql/components/services/psi_stage_bits.h"
+#include "pfs_thread_provider.h"
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
 
-#include "binlog.h"               // mysql_bin_log
-#include "current_thd.h"          // current_thd
-#include "lex_string.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
@@ -33,29 +43,26 @@
 #include "my_macros.h"
 #include "my_psi_config.h"
 #include "my_sys.h"
-#include "mysql/psi/mysql_cond.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/psi/mysql_socket.h"
-#include "mysql/psi/mysql_thread.h"
-#include "mysql/psi/psi_stage.h"
-#include "mysql/psi/psi_thread.h"
 #include "mysql/thread_type.h"
-#include "mysqld.h"
-#include "mysqld_thd_manager.h"   // Global_THD_manager
-#include "protocol_classic.h"
-#include "query_options.h"
-#include "rpl_filter.h"           // binlog_filter
-#include "sql_class.h"            // THD
-#include "sql_lex.h"
-#include "sql_parse.h"            // sqlcom_can_generate_row_events
-#include "sql_plugin.h"
-#include "system_variables.h"
-#include "transaction_info.h"
+#include "sql/binlog.h"           // mysql_bin_log
+#include "sql/current_thd.h"      // current_thd
+#include "sql/mysqld.h"
+#include "sql/mysqld_thd_manager.h" // Global_THD_manager
+#include "sql/protocol_classic.h"
+#include "sql/query_options.h"
+#include "sql/rpl_filter.h"       // binlog_filter
+#include "sql/sql_class.h"        // THD
+#include "sql/sql_lex.h"
+#include "sql/sql_parse.h"        // sqlcom_can_generate_row_events
+#include "sql/system_variables.h"
+#include "sql/transaction_info.h"
 #include "violite.h"
 
-struct PSI_thread;
-
-int thd_init(THD *thd, char *stack_start, bool bound, PSI_thread_key psi_key)
+int thd_init(THD *thd, char *stack_start,
+             bool bound MY_ATTRIBUTE((unused)),
+             PSI_thread_key psi_key MY_ATTRIBUTE((unused)))
 {
   DBUG_ENTER("thd_init");
   // TODO: Purge threads currently terminate too late for them to be added.
@@ -68,7 +75,7 @@ int thd_init(THD *thd, char *stack_start, bool bound, PSI_thread_key psi_key)
     Global_THD_manager *thd_manager= Global_THD_manager::get_instance();
     thd_manager->add_thd(thd);
   }
-#ifdef HAVE_PSI_INTERFACE
+#ifdef HAVE_PSI_THREAD_INTERFACE
   PSI_thread *psi;
   psi= PSI_THREAD_CALL(new_thread)(psi_key, thd, thd->thread_id());
   if (bound)
@@ -76,7 +83,7 @@ int thd_init(THD *thd, char *stack_start, bool bound, PSI_thread_key psi_key)
     PSI_THREAD_CALL(set_thread_os_id)(psi);
   }
   thd->set_psi(psi);
-#endif
+#endif /* HAVE_PSI_THREAD_INTERFACE */
 
   if (!thd->system_thread)
   {
@@ -144,6 +151,30 @@ void thd_exit_cond(void *opaque_thd, const PSI_stage_info *stage,
     thd= current_thd;
 
   thd->exit_cond(stage, src_function, src_file, src_line);
+}
+
+
+extern "C"
+void thd_enter_stage(void *opaque_thd, const PSI_stage_info *new_stage,
+                     PSI_stage_info *old_stage,
+                     const char *src_function, const char *src_file,
+                     int src_line)
+{
+  THD *thd= static_cast<THD*>(opaque_thd);
+  if (!thd)
+    thd= current_thd;
+
+  thd->enter_stage(new_stage, old_stage, src_function, src_file, src_line);
+}
+
+extern "C"
+void thd_set_waiting_for_disk_space(void *opaque_thd, const bool waiting)
+{
+  THD *thd= static_cast<THD*>(opaque_thd);
+  if (!thd)
+    thd= current_thd;
+
+  thd->set_waiting_for_disk_space(waiting);
 }
 
 
@@ -260,6 +291,11 @@ bool thd_is_strict_mode(const THD *thd)
   return thd->is_strict_mode();
 }
 
+bool thd_is_error(const THD *thd)
+{
+  return thd->is_error();
+}
+
 bool is_mysql_datadir_path(const char *path)
 {
   if (path == NULL || strlen(path) >= FN_REFLEN)
@@ -302,4 +338,30 @@ int mysql_tmpfile_path(const char *path, const char *prefix)
     unlink(filename);
 
   return fd;
+}
+
+
+bool thd_is_bootstrap_thread(THD *thd)
+{
+  DBUG_ASSERT(thd);
+  return thd->is_bootstrap_system_thread();
+}
+
+
+bool thd_is_dd_update_stmt(const THD *thd)
+{
+  DBUG_ASSERT(thd != nullptr);
+
+  /*
+    OPTION_DD_UPDATE_CONTEXT flag is set when thread switches context to
+    update data dictionary tables for the
+      * DDL statements.
+      * Administration statements as ANALYZE TABLE.
+      * Event threads for next activation time of a event and to update status.
+      * SDI import.
+      ...
+    So verifying OPTION_DD_UPDATE_CONTEXT flag value to check if thread is
+    updating the data dictionary tables.
+  */
+  return (thd->variables.option_bits & OPTION_DD_UPDATE_CONTEXT);
 }

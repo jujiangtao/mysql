@@ -1,13 +1,20 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -19,55 +26,56 @@
   Multi-table deletes were introduced by Monty and Sinisa
 */
 
-#include "sql_delete.h"
+#include "sql/sql_delete.h"
 
 #include <limits.h>
 #include <string.h>
+#include <atomic>
 
-#include "auth_acls.h"
-#include "auth_common.h"              // check_table_access
-#include "binlog.h"                   // mysql_bin_log
-#include "debug_sync.h"               // DEBUG_SYNC
-#include "filesort.h"                 // Filesort
-#include "handler.h"
-#include "item.h"
-#include "key.h"
-#include "mem_root_array.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_sys.h"
 #include "mysql/service_mysql_alloc.h"
+#include "mysql/udf_registration_types.h"
 #include "mysql_com.h"
-#include "mysqld.h"                   // stage_...
 #include "mysqld_error.h"
-#include "opt_explain.h"              // Modification_plan
-#include "opt_explain_format.h"
-#include "opt_range.h"                // prune_partitions
-#include "opt_trace.h"                // Opt_trace_object
-#include "psi_memory_key.h"
-#include "query_options.h"
-#include "records.h"                  // READ_RECORD
-#include "session_tracker.h"
-#include "sql_base.h"                 // update_non_unique_table_error
-#include "sql_bitmap.h"
-#include "sql_cache.h"                // query_cache
-#include "sql_class.h"
-#include "sql_const.h"
-#include "sql_executor.h"
-#include "sql_list.h"
-#include "sql_optimizer.h"            // optimize_cond, substitute_gc
-#include "sql_resolver.h"             // setup_order
-#include "sql_select.h"
-#include "sql_sort.h"
+#include "sql/auth/auth_acls.h"
+#include "sql/auth/auth_common.h"     // check_table_access
+#include "sql/binlog.h"               // mysql_bin_log
+#include "sql/debug_sync.h"           // DEBUG_SYNC
+#include "sql/filesort.h"             // Filesort
+#include "sql/handler.h"
+#include "sql/item.h"
+#include "sql/key.h"
+#include "sql/key_spec.h"
+#include "sql/mem_root_array.h"
+#include "sql/mysqld.h"               // stage_...
+#include "sql/opt_explain.h"          // Modification_plan
+#include "sql/opt_explain_format.h"
+#include "sql/opt_range.h"            // prune_partitions
+#include "sql/opt_trace.h"            // Opt_trace_object
+#include "sql/psi_memory_key.h"
+#include "sql/query_options.h"
+#include "sql/records.h"              // READ_RECORD
+#include "sql/sql_base.h"             // update_non_unique_table_error
+#include "sql/sql_bitmap.h"
+#include "sql/sql_class.h"
+#include "sql/sql_const.h"
+#include "sql/sql_executor.h"
+#include "sql/sql_list.h"
+#include "sql/sql_optimizer.h"        // optimize_cond, substitute_gc
+#include "sql/sql_resolver.h"         // setup_order
+#include "sql/sql_select.h"
+#include "sql/sql_sort.h"
+#include "sql/sql_view.h"             // check_key_in_view
+#include "sql/system_variables.h"
+#include "sql/table.h"
+#include "sql/table_trigger_dispatcher.h" // Table_trigger_dispatcher
+#include "sql/thr_malloc.h"
+#include "sql/transaction_info.h"
+#include "sql/trigger_def.h"
+#include "sql/uniques.h"              // Unique
 #include "sql_string.h"
-#include "sql_view.h"                 // check_key_in_view
-#include "system_variables.h"
-#include "table.h"
-#include "table_trigger_dispatcher.h" // Table_trigger_dispatcher
-#include "thr_malloc.h"
-#include "transaction_info.h"
-#include "trigger_def.h"
-#include "uniques.h"                  // Unique
 
 class COND_EQUAL;
 class Item_exists_subselect;
@@ -83,9 +91,6 @@ bool Sql_cmd_delete::precheck(THD *thd)
   {
     if (check_one_table_access(thd, DELETE_ACL, tables))
       DBUG_RETURN(true);
-
-    // Set desired privilege for the columns of the WHERE clause
-    tables->set_want_privilege(SELECT_ACL);
   }
   else
   {
@@ -202,7 +207,7 @@ bool Sql_cmd_delete::delete_from_single_table(THD *thd)
     */
     no_rows= true;
 
-    if (lex->describe)
+    if (lex->is_explain())
     {
       Modification_plan plan(thd, MT_DELETE, table,
                              "No matching rows after partition pruning",
@@ -259,7 +264,7 @@ bool Sql_cmd_delete::delete_from_single_table(THD *thd)
 
     Modification_plan plan(thd, MT_DELETE, table,
                            "Deleting all rows", false, maybe_deleted);
-    if (lex->describe)
+    if (lex->is_explain())
     {
       bool err= explain_single_table_modification(thd, &plan, select_lex);
       DBUG_RETURN(err);
@@ -299,7 +304,7 @@ bool Sql_cmd_delete::delete_from_single_table(THD *thd)
     {
       no_rows= true;
 
-      if (lex->describe)
+      if (lex->is_explain())
       {
         Modification_plan plan(thd, MT_DELETE, table,
                                "Impossible WHERE", true, 0);
@@ -335,7 +340,7 @@ bool Sql_cmd_delete::delete_from_single_table(THD *thd)
   if (table->all_partitions_pruned_away)
   {
     /* No matching records */
-    if (lex->describe)
+    if (lex->is_explain())
     {
       Modification_plan plan(thd, MT_DELETE, table,
                              "No matching rows after partition pruning",
@@ -368,7 +373,7 @@ bool Sql_cmd_delete::delete_from_single_table(THD *thd)
 
     if (no_rows)
     {
-      if (lex->describe)
+      if (lex->is_explain())
       {
         Modification_plan plan(thd, MT_DELETE, table,
                                "Impossible WHERE", true, 0);
@@ -394,7 +399,8 @@ bool Sql_cmd_delete::delete_from_single_table(THD *thd)
 
   if (order)
   {
-    table->update_const_key_parts(conds);
+    if (table->update_const_key_parts(conds))
+      DBUG_RETURN(true);
     order= simple_remove_const(order, conds);
     ORDER_with_src order_src(order, ESC_ORDER_BY);
     usable_index= get_index_for_order(&order_src, &qep_tab, limit,
@@ -422,7 +428,7 @@ bool Sql_cmd_delete::delete_from_single_table(THD *thd)
                            false, rows);
     DEBUG_SYNC(thd, "planned_single_delete");
 
-    if (lex->describe)
+    if (lex->is_explain())
     {
       bool err= explain_single_table_modification(thd, &plan, select_lex);
       DBUG_RETURN(err);
@@ -598,13 +604,7 @@ bool Sql_cmd_delete::delete_from_single_table(THD *thd)
   } // End of scope for Modification_plan
 
 cleanup:
-  DBUG_ASSERT(!lex->describe);
-  /*
-    Invalidate the table in the query cache if something changed. This must
-    be before binlog writing and ha_autocommit_...
-  */
-  if (deleted_rows > 0)
-    query_cache.invalidate_single(thd, delete_table_ref, true);
+  DBUG_ASSERT(!lex->is_explain());
 
   if (!transactional_table && deleted_rows > 0)
     thd->get_transaction()->mark_modified_non_trans_table(
@@ -681,7 +681,7 @@ bool Sql_cmd_delete::prepare_inner(THD *thd)
       propagate_nullability(&select->top_join_list, false);
 
     Prepared_stmt_arena_holder ps_holder(thd);
-    result= new Query_result_delete(thd);
+    result= new (*THR_MALLOC) Query_result_delete(thd);
     if (result == NULL)
       DBUG_RETURN(true);            /* purecov: inspected */
 
@@ -703,9 +703,14 @@ bool Sql_cmd_delete::prepare_inner(THD *thd)
   if (select->setup_tables(thd, table_list, false))
     DBUG_RETURN(true);            /* purecov: inspected */
 
-  if (select->derived_table_count)
+  ulong want_privilege_saved= thd->want_privilege;
+  thd->want_privilege= SELECT_ACL;
+  enum enum_mark_columns mark_used_columns_saved= thd->mark_used_columns;
+  thd->mark_used_columns= MARK_COLUMNS_READ;
+
+  if (select->derived_table_count || select->table_func_count)
   {
-    if (select->resolve_derived(thd, apply_semijoin))
+    if (select->resolve_placeholder_tables(thd, apply_semijoin))
       DBUG_RETURN(true);
 
     if (select->check_view_privileges(thd, DELETE_ACL, SELECT_ACL))
@@ -773,11 +778,6 @@ bool Sql_cmd_delete::prepare_inner(THD *thd)
 
   lex->allow_sum_func= 0;
 
-  ulong want_privilege_saved= thd->want_privilege;
-  thd->want_privilege= SELECT_ACL;
-  enum enum_mark_columns mark_used_columns_saved= thd->mark_used_columns;
-  thd->mark_used_columns= MARK_COLUMNS_READ;
-
   if (select->setup_conds(thd))
     DBUG_RETURN(true);
 
@@ -810,7 +810,7 @@ bool Sql_cmd_delete::prepare_inner(THD *thd)
   thd->want_privilege= want_privilege_saved;
   thd->mark_used_columns= mark_used_columns_saved;
 
-  if (select->has_ft_funcs() && setup_ftfuncs(select))
+  if (select->has_ft_funcs() && setup_ftfuncs(thd, select))
     DBUG_RETURN(true);                       /* purecov: inspected */
 
   /*
@@ -1010,10 +1010,10 @@ bool Query_result_delete::optimize()
       continue;
 
     TABLE *const table= join->best_ref[i]->table();
-    if (!(*tempfile++= new Unique(refpos_order_cmp,
-                                  (void *) table->file,
-                                  table->file->ref_length,
-                                  thd->variables.sortbuff_size)))
+    if (!(*tempfile++= new (*THR_MALLOC) Unique(refpos_order_cmp,
+                                                (void *) table->file,
+                                                table->file->ref_length,
+                                                thd->variables.sortbuff_size)))
       DBUG_RETURN(true);                     /* purecov: inspected */
     *(table_ptr++)= table;
   }
@@ -1150,24 +1150,6 @@ void Query_result_delete::send_error(uint errcode,const char *err)
 }
 
 
-/**
-  Wrapper function for query cache invalidation.
-
-  @param thd         THD pointer
-  @param leaf_tables Pointer to list of tables to invalidate cache for.
-                     Skip tables without "updating" state
-*/
-
-static void invalidate_delete_tables(THD *thd, TABLE_LIST *leaf_tables)
-{
-  for (TABLE_LIST *tl= leaf_tables; tl != NULL; tl= tl->next_leaf)
-  {
-    if (tl->updating)
-      query_cache.invalidate_single(thd, tl, 1);
-  }
-}
-
-
 void Query_result_delete::abort_result_set()
 {
   DBUG_ENTER("Query_result_delete::abort_result_set");
@@ -1177,10 +1159,6 @@ void Query_result_delete::abort_result_set()
       (!thd->get_transaction()->cannot_safely_rollback(
         Transaction_ctx::STMT) && deleted_rows == 0))
     DBUG_VOID_RETURN;
-
-  /* Something already deleted so we have to invalidate cache */
-  if (deleted_rows > 0)
-    invalidate_delete_tables(thd, unit->first_select()->leaf_tables);
 
   /*
     If rows from the first table only has been deleted and it is
@@ -1372,15 +1350,8 @@ bool Query_result_delete::send_eof()
 
   /* compute a total error to know if something failed */
   local_error= local_error || error;
-  killed_status= (local_error == 0)? THD::NOT_KILLED : thd->killed;
+  killed_status= (local_error == 0)? THD::NOT_KILLED : thd->killed.load();
   /* reset used flags */
-
-  /*
-    We must invalidate the query cache before binlog writing and
-    ha_autocommit_...
-  */
-  if (deleted_rows > 0)
-    invalidate_delete_tables(thd, unit->first_select()->leaf_tables);
 
   if ((local_error == 0) ||
       thd->get_transaction()->cannot_safely_rollback(Transaction_ctx::STMT))

@@ -1,7 +1,7 @@
---source include/not_embedded.inc
 #
 # only global
 #
+--source include/have_log_bin.inc
 select @@global.log_slave_updates;
 --error ER_INCORRECT_GLOBAL_LOCAL_VAR
 select @@session.log_slave_updates;

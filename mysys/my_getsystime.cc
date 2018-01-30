@@ -1,17 +1,29 @@
-/* Copyright (c) 2004, 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2004, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
+
+   Without limiting anything contained in the foregoing, this file,
+   which is part of C Driver for MySQL (Connector/C), is also subject to the
+   Universal FOSS Exception, version 1.0, a copy of which can be found at
+   http://oss.oracle.com/licenses/universal-foss-exception.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA */
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 /**
   @file mysys/my_getsystime.cc
@@ -20,18 +32,50 @@
   with the highest possible resolution
 */
 
+#include "my_config.h"
+
 #include <time.h>
 
-#include "my_config.h"
 #include "my_inttypes.h"
 #include "my_sys.h"
 #if HAVE_SYS_TIME_H
 #include <sys/time.h>
 #endif
 #if defined(_WIN32)
-#include "my_static.h"
+#include "mysys/my_static.h"
 #endif
 
+#if defined(_WIN32)
+typedef VOID(WINAPI *time_fn)(_Out_ LPFILETIME);
+static time_fn my_get_system_time_as_file_time= GetSystemTimeAsFileTime;
+
+/**
+  Initialise highest available time resolution API on Windows
+  @return Initialization result
+    @retval FALSE Success
+    @retval TRUE  Error. Couldn't initialize environment
+  */
+bool win_init_get_system_time_as_file_time()
+{
+  HMODULE h= LoadLibrary("kernel32.dll");
+  if (h != nullptr)
+  {
+    auto pfn = reinterpret_cast<time_fn>(
+      GetProcAddress(h, "GetSystemTimePreciseAsFileTime"));
+    if (pfn)
+      my_get_system_time_as_file_time= pfn;
+
+    return false;
+  }
+
+  DWORD error= GetLastError();
+  my_message_local(ERROR_LEVEL, 
+    "LoadLibrary(\"kernel32.dll\") failed: GetLastError returns %lu",
+    error);
+
+  return true;
+}
+#endif
 /**
   Get high-resolution time.
 
@@ -95,58 +139,31 @@ time_t my_time(myf flags)
   Return time in microseconds.
 
   @remark This function is to be used to measure performance in
-          micro seconds. Note that this value will be affected by NTP on Linux,
-          and is subject to drift of approx 1 second per day on Windows.
-          It cannot be used for timestamps that may be compared in different
-          servers as Windows' QueryPerformanceCounter() generates timestamps
-          that are only accurately comparable when produced by the same process.
+          micro seconds.
 
   @retval Number of microseconds since the Epoch, 1970-01-01 00:00:00 +0000 (UTC)
 */
-
-ulonglong my_micro_time()
-{
-#ifdef _WIN32
-  LARGE_INTEGER t_cnt;
-  QueryPerformanceCounter(&t_cnt);
-  return ((t_cnt.QuadPart / query_performance_frequency * 1000000) +
-          ((t_cnt.QuadPart % query_performance_frequency) * 1000000 /
-           query_performance_frequency) + query_performance_offset_micros);
-#else
-  return my_micro_time_ntp();
-#endif
-}
-
-
 #ifdef _WIN32
 #define OFFSET_TO_EPOCH 116444736000000000ULL
 #endif
 
-/**
-  Return time in microseconds. The timestamps returned by this function are
-  guaranteed to be comparable between different servers as they are synchronized
-  to an external time reference (NTP).
-  However, they may not be monotonic and, in Windows, their resolution may vary.
-
-  @retval Number of microseconds since the Epoch, 1970-01-01 00:00:00 +0000 (UTC)
-*/
-
-ulonglong my_micro_time_ntp()
+ulonglong my_micro_time()
 {
 #ifdef _WIN32
   ulonglong newtime;
-  GetSystemTimeAsFileTime((FILETIME*)&newtime);
-  newtime-= OFFSET_TO_EPOCH;
-  return (newtime/10);
+  my_get_system_time_as_file_time((FILETIME*)&newtime);
+  newtime -= OFFSET_TO_EPOCH;
+  return (newtime / 10);
 #else
   ulonglong newtime;
   struct timeval t;
   /*
-    The following loop is here because gettimeofday may fail on some systems
+  The following loop is here because gettimeofday may fail on some systems
   */
   while (gettimeofday(&t, NULL) != 0)
-  {}
-  newtime= (ulonglong)t.tv_sec * 1000000 + t.tv_usec;
+  {
+  }
+  newtime = (ulonglong)t.tv_sec * 1000000 + t.tv_usec;
   return newtime;
 #endif
 }

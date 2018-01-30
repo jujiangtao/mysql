@@ -2,7 +2,6 @@
 # WL#6205 - A series of tests to show the correct behavior for
 # CREATE TABLESPACE and associated SQL statements for 8k page size.
 #
---source include/not_embedded.inc
 
 --echo #
 --echo # CREATE TABLESPACE related tests for 8k page sizes.
@@ -475,6 +474,9 @@ ALTER TABLE `t_zip4k_remote_in_s_4k` TABLESPACE=`innodb_file_per_table`, DATA DI
 DROP TABLE `t_zip1k_to_file_per_table`;
 DROP TABLE `t_zip2k_to_file_per_table`;
 DROP TABLE `t_zip4k_to_file_per_table`;
+
+call mtr.add_suppression("\\[ERROR\\].*InnoDB: '.*s_.k.ibd' read failed! - attempted to read 4 bytes, read only 0 bytes at offset 8226");
+call mtr.add_suppression("\\[Warning\\].*InnoDB: Ignoring '.*s_.k.ibd' invalid tablespace ID in the header");
 
 --echo #
 --echo # Clean-up.

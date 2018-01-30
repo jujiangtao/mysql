@@ -1,17 +1,24 @@
 /* Copyright (c) 2011, 2017, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
-  along with this program; if not, write to the Free Software Foundation,
-  51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+  along with this program; if not, write to the Free Software
+  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 /**
   @file storage/perfschema/table_accounts.cc
@@ -22,49 +29,35 @@
 
 #include <stddef.h>
 
-#include "field.h"
 #include "my_dbug.h"
 #include "my_thread.h"
-#include "pfs_account.h"
-#include "pfs_instr.h"
-#include "pfs_instr_class.h"
-#include "pfs_memory.h"
-#include "pfs_status.h"
-#include "pfs_visitor.h"
+#include "sql/field.h"
+#include "storage/perfschema/pfs_account.h"
+#include "storage/perfschema/pfs_instr.h"
+#include "storage/perfschema/pfs_instr_class.h"
+#include "storage/perfschema/pfs_memory.h"
+#include "storage/perfschema/pfs_status.h"
+#include "storage/perfschema/pfs_visitor.h"
 
 THR_LOCK table_accounts::m_table_lock;
 
-/* clang-format off */
-static const TABLE_FIELD_TYPE field_types[]=
-{
-  {
-    { C_STRING_WITH_LEN("USER") },
-    { C_STRING_WITH_LEN("char(" USERNAME_CHAR_LENGTH_STR ")") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("HOST") },
-    { C_STRING_WITH_LEN("char(60)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("CURRENT_CONNECTIONS") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("TOTAL_CONNECTIONS") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  }
-};
-/* clang-format on */
-
-TABLE_FIELD_DEF
-table_accounts::m_field_def = {4, field_types};
+Plugin_table table_accounts::m_table_def(
+  /* Schema name */
+  "performance_schema",
+  /* Name */
+  "accounts",
+  /* Definition */
+  "  USER CHAR(32) collate utf8_bin default null,\n"
+  "  HOST CHAR(60) collate utf8_bin default null,\n"
+  "  CURRENT_CONNECTIONS bigint not null,\n"
+  "  TOTAL_CONNECTIONS bigint not null,\n"
+  "  UNIQUE KEY `ACCOUNT` (USER, HOST) USING HASH\n",
+  /* Options */
+  " ENGINE=PERFORMANCE_SCHEMA",
+  /* Tablespace */
+  nullptr);
 
 PFS_engine_table_share table_accounts::m_share = {
-  {C_STRING_WITH_LEN("accounts")},
   &pfs_truncatable_acl,
   table_accounts::create,
   NULL, /* write_row */
@@ -72,9 +65,11 @@ PFS_engine_table_share table_accounts::m_share = {
   cursor_by_account::get_row_count,
   sizeof(PFS_simple_index), /* ref length */
   &m_table_lock,
-  &m_field_def,
-  false, /* checked */
-  false  /* perpetual */
+  &m_table_def,
+  false /* perpetual */,
+  PFS_engine_table_proxy(),
+  {0},
+  false /* m_in_purgatory */
 };
 
 bool
@@ -100,7 +95,7 @@ PFS_index_accounts_by_user_host::match(PFS_account *pfs)
 }
 
 PFS_engine_table *
-table_accounts::create()
+table_accounts::create(PFS_engine_table_share *)
 {
   return new table_accounts();
 }

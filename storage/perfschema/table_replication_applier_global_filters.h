@@ -2,18 +2,24 @@
   Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
   along with this program; if not, write to the Free Software
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
-
 
 #ifndef TABLE_REPLICATION_APPLIER_DEFAULT_FILTERS_H
 #define TABLE_REPLICATION_APPLIER_DEFAULT_FILTERS_H
@@ -27,15 +33,16 @@
 
 #include "my_io.h"
 #include "mysql_com.h"
-#include "pfs_column_types.h"
-#include "pfs_engine_table.h"
-#include "rpl_info.h" /* CHANNEL_NAME_LENGTH*/
-#include "rpl_mi.h"
-#include "rpl_msr.h"
-#include "table_helper.h"
+#include "sql/rpl_info.h" /* CHANNEL_NAME_LENGTH*/
+#include "sql/rpl_mi.h"
+#include "sql/rpl_msr.h"
+#include "storage/perfschema/pfs_column_types.h"
+#include "storage/perfschema/pfs_engine_table.h"
+#include "storage/perfschema/table_helper.h"
 
 /** A row in the table */
-struct st_row_applier_global_filters {
+struct st_row_applier_global_filters
+{
   /*
     REPLICATE_DO_DB, REPLICATE_IGNORE_DB, REPLICATE_DO_TABLE,
     REPLICATE_IGNORE_TABLE, REPLICATE_WILD_DO_TABLE,
@@ -64,7 +71,7 @@ struct st_row_applier_global_filters {
 };
 
 /** Table PERFORMANCE_SCHEMA.replication_applier_global_filters */
-class table_replication_applier_global_filters: public PFS_engine_table
+class table_replication_applier_global_filters : public PFS_engine_table
 {
 private:
   /**
@@ -72,12 +79,13 @@ private:
 
     @param rpl_pfs_filter a pointer to a Rpl_pfs_filter object.
   */
-  void make_row(Rpl_pfs_filter* rpl_pfs_filter);
+  void make_row(Rpl_pfs_filter *rpl_pfs_filter);
 
   /** Table share lock. */
   static THR_LOCK m_table_lock;
-  /** Fields definition. */
-  static TABLE_FIELD_DEF m_field_def;
+  /** Table definition. */
+  static Plugin_table m_table_def;
+
   /** Current row */
   st_row_applier_global_filters m_row;
   /** True is the current row exists. */
@@ -109,7 +117,7 @@ public:
 
   /** Table share. */
   static PFS_engine_table_share m_share;
-  static PFS_engine_table* create();
+  static PFS_engine_table *create(PFS_engine_table_share *);
   /**
     Get the table count.
 

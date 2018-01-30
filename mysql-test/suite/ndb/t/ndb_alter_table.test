@@ -1,8 +1,3 @@
-# The include statement below is a temp one for tests that are yet to
-#be ported to run with InnoDB,
-#but needs to be kept for tests that would need MyISAM in future.
---source include/force_myisam_default.inc
-
 -- source include/have_multi_ndb.inc
 
 --disable_warnings
@@ -551,11 +546,9 @@ ALTER TABLE t1 TABLESPACE ts1, MODIFY c CHAR(20) STORAGE DISK;
 DROP TABLE t1;
 
 ALTER TABLESPACE ts1
-DROP DATAFILE 'datafile.dat'
-ENGINE = ndb;
+DROP DATAFILE 'datafile.dat';
 
-DROP TABLESPACE ts1
-ENGINE ndb;
+DROP TABLESPACE ts1;
 
 DROP LOGFILE GROUP lg1
 ENGINE = ndb;

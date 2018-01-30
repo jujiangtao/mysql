@@ -1,29 +1,39 @@
 /* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef DD__SDI_FILE_INCLUDED
 #define DD__SDI_FILE_INCLUDED
 
+#include <stddef.h>
 #include <utility>
 
-#include "dd/string_type.h"     // dd::String_type
 #include "prealloced_array.h"   // Prealloced_array
+#include "sql/dd/impl/sdi.h"    // dd::Sdi_type
+#include "sql/dd/object_id.h"   // dd::Object_id
+#include "sql/dd/string_type.h" // dd::String_type
 
 class THD;
-struct st_mysql_const_lex_string;
 struct handlerton;
+struct st_mysql_const_lex_string;
 
 namespace dd {
 class Entity_object;
@@ -31,17 +41,61 @@ class Schema;
 class Table;
 
 namespace sdi_file {
+/** Number of character (not bytes) of a tablename which will
+    contrubute to the sdi file name. The whole name is not needed as
+    the Object_id is added so that uniqueness is ensured */
 const size_t FILENAME_PREFIX_CHARS= 16;
-String_type sdi_filename(const dd::Entity_object *eo,
+
+/** File name extension for sdi files. */
+const String_type EXT= ".sdi";
+
+
+/**
+  Formats an sdi filename according to the mysql conventions for an entity
+  name and schema name, where the schema may be "".
+
+  @param id object id if dd object
+  @param entity_name name (as returned by dd::Entity_object::name())
+         of dd obejct.
+  @param schema name of schema, or "" for schemaless entites (schemata).
+  @retval filename to use for sdi file
+ */
+String_type sdi_filename(Object_id id, const String_type &entity_name,
                          const String_type &schema);
-bool store(THD *thd, const st_mysql_const_lex_string &sdi,
-           const dd::Schema *schema);
-bool store(THD *thd, handlerton*, const st_mysql_const_lex_string &sdi,
-           const dd::Table *table, const dd::Schema *schema);
+
+
+/**
+  Stores sdi for table in a file.
+
+  @param sdi json string to store
+  @param table dd object from which sdi was generated
+  @param schema object which table belongs to
+  @retval true if an error occurs
+  @retval false otherwise
+*/
+bool store_tbl_sdi(const Sdi_type &sdi, const dd::Table &table,
+                   const dd::Schema &schema);
+
+/**
+  Remove a file name from the file system.
+
+  @param fname file name to remove from file system.
+  @retval true if an error occurs
+  @retval false otherwise
+*/
 bool remove(const String_type &fname);
-bool remove(THD *thd, const dd::Schema *schema);
-bool remove(THD *thd, handlerton*, const dd::Table *table,
-            const dd::Schema *schema);
+
+
+/**
+  Removes sdi file for a table.
+
+  @param table dd object for which to remove sdi
+  @param schema object which table belongs to
+  @retval true if an error occurs
+  @retval false otherwise
+*/
+bool drop_tbl_sdi(const dd::Table &table, const dd::Schema &schema);
+
 
 /**
   Read an sdi file from disk and store in a buffer.

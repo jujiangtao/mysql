@@ -1,34 +1,42 @@
 /* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA */
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 // First include (the generated) my_config.h, to get correct platform defines.
 #include "my_config.h"
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include <m_ctype.h>
 #include <sys/types.h>
 #include <cstring>
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <utility>
 
-#include "json_dom.h"
-#include "json_path.h"
+#include "m_ctype.h"
+#include "sql/json_dom.h"
+#include "sql/json_path.h"
 #include "sql_string.h"
-#include "test_utils.h"
+#include "unittest/gunit/test_utils.h"
 
 /**
  Test json path abstraction.
@@ -47,10 +55,6 @@ protected:
                         const std::string &expected, bool expected_null) const;
   void vet_wrapper_seek(const char *json_text, const char *path_text,
                         const std::string &expected, bool expected_null) const;
-  void vet_remove(Json_dom *parent, const Json_path &path,
-                  const std::string &expected, bool expect_match) const;
-  void vet_remove(const char *json_text, const char *path_text,
-                  const std::string& expected, bool expect_match) const;
 };
 
 /**
@@ -182,9 +186,7 @@ void good_path_common(bool begins_with_column_id, const char *path_expression,
                           json_path,
                           &bad_idx));
 
-  EXPECT_EQ(0U, bad_idx) <<
-    "Parse pointer for " << path_expression <<
-    " should have been 0\n";
+  EXPECT_EQ(0U, bad_idx) << "bad_idx != 0 for " << path_expression;
 }
 
 /** Verify that a good path parses correctly */
@@ -196,7 +198,20 @@ void good_path(bool begins_with_column_id, bool check_path,
   if (check_path)
   {
     String str;
-    EXPECT_EQ(0, json_path.to_string(&str));
+    EXPECT_FALSE(json_path.to_string(&str));
+    EXPECT_EQ(expected_path, std::string(str.ptr(), str.length()));
+
+    // Move-construct a new path and verify that it's the same.
+    Json_path path2{std::move(json_path)};
+    str.length(0);
+    EXPECT_FALSE(path2.to_string(&str));
+    EXPECT_EQ(expected_path, std::string(str.ptr(), str.length()));
+
+    // Move-assign to a new path and verify that it's the same.
+    Json_path path3;
+    path3= std::move(path2);
+    str.length(0);
+    EXPECT_FALSE(path3.to_string(&str));
     EXPECT_EQ(expected_path, std::string(str.ptr(), str.length()));
   }
 }
@@ -208,18 +223,18 @@ void good_path(bool begins_with_column_id, const char *path_expression,
 }
 
 /** Shorter form of good_path() */
-void good_path(bool begins_with_column_id, const char *path_expression)
+void good_path(bool, const char *path_expression)
 {
   good_path(false, false, path_expression, "");
 }
 
-/** Verify whether the path contains a wildcard or ellipsis token */
-void contains_wildcard(bool begins_with_column_id, char *path_expression,
+/** Verify whether the path contains a wildcard, ellipsis or range token. */
+void contains_wildcard(bool begins_with_column_id, const char *path_expression,
                        bool expected_answer)
 {
   Json_path json_path;
   good_path_common(begins_with_column_id, path_expression, &json_path);
-  EXPECT_EQ(expected_answer, json_path.contains_wildcard_or_ellipsis());
+  EXPECT_EQ(expected_answer, json_path.can_match_many());
 }
 
 /** Verify that the leg at the given offset looks good */
@@ -230,15 +245,11 @@ void good_leg_at(bool begins_with_column_id, char *path_expression,
   Json_path json_path;
   good_path_common(begins_with_column_id, path_expression, &json_path);
 
-  const Json_path_leg *actual_leg= json_path.get_leg_at(leg_index);
-  EXPECT_EQ((expected_leg.size() == 0), (actual_leg == NULL));
-  if (actual_leg != NULL)
-  {
-    String str;
-    EXPECT_EQ(0, actual_leg->to_string(&str));
-    EXPECT_EQ(expected_leg, std::string(str.ptr(), str.length()));
-    EXPECT_EQ(expected_leg_type, actual_leg->get_type());
-  }
+  const Json_path_leg *actual_leg= *(json_path.begin() + leg_index);
+  String str;
+  EXPECT_FALSE(actual_leg->to_string(&str));
+  EXPECT_EQ(expected_leg, std::string(str.ptr(), str.length()));
+  EXPECT_EQ(expected_leg_type, actual_leg->get_type());
 }
 
 
@@ -259,9 +270,10 @@ void compare_paths(Json_path &left, Json_path_clone &right)
 {
   EXPECT_EQ(left.leg_count(), right.leg_count());
 
-  for (size_t idx= 0; idx < left.leg_count(); idx++)
+  Json_path_iterator right_it= right.begin();
+  for (const Json_path_leg *left_leg : left)
   {
-    compare_legs(left.get_leg_at(idx), right.get_leg_at(idx));
+    compare_legs(left_leg, *right_it++);
   }
 }
 
@@ -271,16 +283,19 @@ void verify_clone(bool begins_with_column_id,
                   const char *path_expression_1,
                   const char *path_expression_2)
 {
-  Json_path_clone cloned_path;
-
   Json_path real_path1;
   good_path_common(begins_with_column_id, path_expression_1, &real_path1);
-  EXPECT_FALSE(cloned_path.set(&real_path1));
+
+  Json_path_clone cloned_path;
+  for (const Json_path_leg *leg : real_path1)
+    cloned_path.append(leg);
   compare_paths(real_path1, cloned_path);
 
   Json_path real_path2;
   good_path_common(begins_with_column_id, path_expression_2, &real_path2);
-  EXPECT_FALSE(cloned_path.set(&real_path2));
+  cloned_path.clear();
+  for (const Json_path_leg *leg : real_path2)
+    cloned_path.append(leg);
   compare_paths(real_path2, cloned_path);
 }
 
@@ -294,10 +309,10 @@ void good_leg_types(bool begins_with_column_id, char *path_expression,
   good_path_common(begins_with_column_id, path_expression, &json_path);
 
   EXPECT_EQ(length, json_path.leg_count());
+  Json_path_iterator it= json_path.begin();
   for (size_t idx= 0; idx < length; idx++)
   {
-    const Json_path_leg *leg= json_path.get_leg_at(idx);
-    EXPECT_EQ(expected_leg_types[idx], leg->get_type());
+    EXPECT_EQ(expected_leg_types[idx], (*it++)->get_type());
   }
 }
 
@@ -313,7 +328,8 @@ void bad_path(bool begins_with_column_id, const char *path_expression,
                          &json_path,
                          &actual_index))
     << "Unexpectedly parsed " << path_expression;
-  EXPECT_EQ(expected_index, actual_index);
+  EXPECT_EQ(expected_index, actual_index)
+    << "Unexpected index for " << path_expression;
 }
 
 /** Bad identifiers are ok as membern names if they are double-quoted */
@@ -341,7 +357,7 @@ void JsonPathTest::vet_wrapper_seek(Json_wrapper *wrapper,
                                     bool expected_null) const
 {
   Json_wrapper_vector hits(PSI_NOT_INSTRUMENTED);
-  wrapper->seek(path, &hits, true, false);
+  wrapper->seek(path, path.leg_count(), &hits, true, false);
   String result_buffer;
 
   if (hits.size() == 1)
@@ -392,18 +408,16 @@ void JsonPathTest::vet_wrapper_seek(const char *json_text,
                                     const std::string &expected,
                                     bool expected_null) const
 {
-  const char *msg;
-  size_t msg_offset;
-
-  Json_dom *dom= Json_dom::parse(json_text, std::strlen(json_text),
-                                 &msg, &msg_offset);
-  Json_wrapper dom_wrapper(dom);
+  Json_dom_ptr dom= Json_dom::parse(json_text, std::strlen(json_text),
+                                    nullptr, nullptr);
 
   String  serialized_form;
-  EXPECT_FALSE(json_binary::serialize(thd(), dom, &serialized_form));
+  EXPECT_FALSE(json_binary::serialize(thd(), dom.get(), &serialized_form));
   json_binary::Value binary=
     json_binary::parse_binary(serialized_form.ptr(),
                               serialized_form.length());
+
+  Json_wrapper dom_wrapper(std::move(dom));
   Json_wrapper binary_wrapper(binary);
 
   Json_path path;
@@ -415,16 +429,13 @@ void JsonPathTest::vet_wrapper_seek(const char *json_text,
 void vet_dom_location(bool begins_with_column_id,
                       const char *json_text, const char *path_text)
 {
-  const char *msg;
-  size_t msg_offset;
-  Json_dom *dom= Json_dom::parse(json_text, std::strlen(json_text),
-                                 &msg, &msg_offset);
-  Json_wrapper dom_wrapper(dom);
+  Json_dom_ptr dom= Json_dom::parse(json_text, std::strlen(json_text),
+                                    nullptr, nullptr);
   Json_path path;
   good_path_common(begins_with_column_id, path_text, &path);
   Json_dom_vector hits(PSI_NOT_INSTRUMENTED);
 
-  dom->seek(path, &hits, true, false);
+  dom->seek(path, path.leg_count(), &hits, true, false);
   EXPECT_EQ(1U, hits.size());
   if (hits.size() > 0)
   {
@@ -449,12 +460,12 @@ void vet_only_needs_one(Json_wrapper &wrapper, const Json_path &path,
                         uint expected_hits)
 {
   Json_wrapper_vector all_hits(PSI_NOT_INSTRUMENTED);
-  wrapper.seek(path, &all_hits, true, false);
+  wrapper.seek(path, path.leg_count(), &all_hits, true, false);
 
   EXPECT_EQ(expected_hits, all_hits.size());
 
   Json_wrapper_vector only_needs_one_hits(PSI_NOT_INSTRUMENTED);
-  wrapper.seek(path, &only_needs_one_hits, true, true);
+  wrapper.seek(path, path.leg_count(), &only_needs_one_hits, true, true);
   uint expected_onoh_hits= (expected_hits == 0) ? 0 : 1;
   EXPECT_EQ(expected_onoh_hits, only_needs_one_hits.size());
 }
@@ -474,18 +485,16 @@ void vet_only_needs_one(bool begins_with_column_id,
                         const char *json_text, const char *path_text,
                         uint expected_hits, const THD *thd)
 {
-  const char *msg;
-  size_t msg_offset;
-
-  Json_dom *dom= Json_dom::parse(json_text, std::strlen(json_text),
-                                 &msg, &msg_offset);
-  Json_wrapper dom_wrapper(dom);
+  Json_dom_ptr dom= Json_dom::parse(json_text, std::strlen(json_text),
+                                    nullptr, nullptr);
 
   String  serialized_form;
-  EXPECT_FALSE(json_binary::serialize(thd, dom, &serialized_form));
+  EXPECT_FALSE(json_binary::serialize(thd, dom.get(), &serialized_form));
   json_binary::Value binary=
     json_binary::parse_binary(serialized_form.ptr(),
                               serialized_form.length());
+
+  Json_wrapper dom_wrapper(std::move(dom));
   Json_wrapper binary_wrapper(binary);
 
   Json_path path;
@@ -516,72 +525,6 @@ std::string format(Json_dom *dom)
   return std::string(buffer.ptr(), buffer.length());
 }
 
-void JsonPathTest::vet_remove(Json_dom *parent,
-                              const Json_path &path,
-                              const std::string &expected,
-                              bool expect_match) const
-{
-  Json_dom_vector hits(PSI_NOT_INSTRUMENTED);
-
-  parent->seek(path, &hits, true, false);
-
-  if (expect_match)
-  {
-    EXPECT_EQ(1U, hits.size());
-
-    if (hits.size() > 0)
-    {
-      const Json_dom *child= hits[0];
-
-      bool was_removed= false;
-      if (parent->json_type() == enum_json_type::J_OBJECT)
-      {
-        Json_object *object= (Json_object *) parent;
-        was_removed= object->remove(child);
-      }
-      else
-      {
-        Json_array *array= (Json_array *) parent;
-        was_removed= array->remove(child);
-      }
-
-      EXPECT_TRUE(was_removed);
-    }
-  }
-  else
-  {
-    EXPECT_EQ(0U, hits.size());
-  }
-
-  EXPECT_EQ(expected, format(parent));
-}
-
-
-void JsonPathTest::vet_remove(const char *json_text, const char *path_text,
-                              const std::string& expected, bool expect_match)
-  const
-{
-  const char *msg;
-  size_t msg_offset;
-
-  Json_dom *parent= Json_dom::parse(json_text, std::strlen(json_text),
-                                    &msg, &msg_offset);
-  Json_path path;
-  good_path_common(false, path_text, &path);
-  String  serialized_form;
-  EXPECT_FALSE(json_binary::serialize(thd(), parent, &serialized_form));
-  json_binary::Value parent_binary=
-    json_binary::parse_binary(
-                              serialized_form.ptr(), serialized_form.length());
-  Json_dom *reparsed_parent= Json_dom::parse(thd(), parent_binary);
-
-  vet_remove(parent, path, expected, expect_match);
-  vet_remove(reparsed_parent, path, expected, expect_match);
-
-  delete parent;
-  delete reparsed_parent;
-}
-
 /*
   Tests
 */
@@ -603,6 +546,16 @@ static const Good_path good_paths_no_column_scope[]=
   { false, "$[ 456 ]", "$[456]" },
   { false, " $[ 456 ] ", "$[456]" },
   { false, " $ [  456   ] ", "$[456]" },
+
+  { false, "$[last]", "$[last]" },
+  { false, "$[ last]", "$[last]" },
+  { false, "$[last ]", "$[last]" },
+  { false, "$[last-1]", "$[last-1]" },
+  { false, "$[last -1]", "$[last-1]" },
+  { false, "$[last- 1]", "$[last-1]" },
+
+  { false, "$[4294967295]", "$[4294967295]" },
+  { false, "$[last-4294967295]", "$[last-4294967295]" },
 
   { false, "$.a", "$.a" },
   { false, "$ .a", "$.a" },
@@ -657,6 +610,17 @@ static const Good_path good_paths_no_column_scope[]=
   { false, "$.abc.\"\"", "$.abc.\"\"" },
   { false, "$.abc.\"\".def", "$.abc.\"\".def" },
   { false, "$.\"abc\".\"\".def", "$.abc.\"\".def" },
+
+  { false, "$[0 to 0]", "$[0 to 0]" },
+  { false, "$[1 to 1]", "$[1 to 1]" },
+  { false, "$[1 to 3]", "$[1 to 3]" },
+  { false, "$[  1  to  3  ]", "$[1 to 3]" },
+  { false, "$[0 to 4294967295]", "$[0 to 4294967295]" },
+  { false, "$[last to last]", "$[last to last]" },
+  { false, "$[last-0 to last - 0]", "$[last to last]" },
+  { false, "$[last-1 to last-1]", "$[last-1 to last-1]" },
+  { false, "$[last to 1]", "$[last to 1]" },
+  { false, "$[1 to last]", "$[1 to last]" },
 };
 
 /** Test good paths without column scope */
@@ -707,7 +671,7 @@ TEST_F(JsonPathTest, LegTypes)
   {
     SCOPED_TRACE("");
     enum_json_path_leg_type leg_types6[]= { jpl_member, jpl_array_cell };
-    good_leg_types(false, (char *) "$.foo[9876543210]", leg_types6, 2);
+    good_leg_types(false, (char *) "$.foo[987654321]", leg_types6, 2);
   }
 
   {
@@ -751,14 +715,6 @@ TEST_F(JsonPathTest, Accessors)
     SCOPED_TRACE("");
     good_leg_at(false, (char *) "$.abc**.def", 1, "**",
                 jpl_ellipsis);
-  }
-  {
-    SCOPED_TRACE("");
-    good_leg_at(false, (char *) "$.abc**.def", 3, "", jpl_member);
-  }
-  {
-    SCOPED_TRACE("");
-    good_leg_at(false, (char *) "$", 0, "", jpl_member);
   }
 }
 
@@ -825,6 +781,14 @@ TEST_F(JsonPathTest, WildcardDetection)
     SCOPED_TRACE("");
     contains_wildcard(false, (char *) "$**[5]", true);
   }
+  {
+    SCOPED_TRACE("");
+    contains_wildcard(false, "$[1 to 2]", true);
+  }
+  {
+    SCOPED_TRACE("");
+    contains_wildcard(false, "$.a[1 to 2].b", true);
+  }
 }
 
 TEST_P(JsonBadPathTestP, BadPaths)
@@ -846,13 +810,42 @@ static const Bad_path bad_paths_no_column_scope[]=
   { false, "$foo", 1 },
   { false, "$[5]foo", 4 },
 
-  // array index not a number
+  // array index not a number or a valid range
   { false, "$[a]", 2 },
   { false, "$[5].foo[b]", 9 },
+  { false, "$[]", 2 },
+  { false, "$[1.2]", 4 },
+  { false, "$[1,2]", 4 },
+  { false, "$[1,]", 4 },
+  { false, "$[1 TO 3]", 5},
+  { false, "$[1 tO 3]", 5},
+  { false, "$[1 To 3]", 5},
+  { false, "$[1 to]", 5 },
+  { false, "$[1to]", 4 },
+  { false, "$[1to 2]", 4 },
+  { false, "$[1 to2]", 5 },
+  { false, "$[1 ti 2]", 5 },
+  { false, "$[1 t", 5 },
+  { false, "$[1 to ", 5 },
+  { false, "$[1 to 2,]", 9 },
+  { false, "$[4 to 3]", 8 },
+  { false, "$[0 tolast]", 5 },
+  { false, "$[lastto 2]", 7 },
+  { false, "$[lastto to 2]", 7 },
+  { false, "$[last+0]", 7 },
+  { false, "$[last+1]", 7 },
+  { false, "$[LAST]", 2 },
 
-  // absurdly large array index
+  // absurdly large array index, largest supported array index is 2^32-1
   { false, "$[9999999999999999999999999999999999999999"
-    "999999999999999999999999999]", 69 },
+    "999999999999999999999999999]", 2 },
+  { false, "$[4294967296]", 2 },
+  { false, "$[18446744073709551616]", 2 },
+  { false, "$[9223372036854775808]", 2 },
+  { false, "$[4294967296 to 2]", 2 },
+  { false, "$[0 to 4294967296]", 7 },
+  { false, "$[0 to 4294967297]", 7 },
+  { false, "$[last-4294967296]", 7 },
 
   // period not followed by member name
   { false, "$.", 2 },
@@ -892,6 +885,17 @@ static const Bad_path bad_paths_no_column_scope[]=
 
   // backslash in front of a quote, and no end quote
   { false, "$.\"\\\"", 5 },
+
+  // reject plus in front of array index
+  { false, "$[+1]", 2 },
+
+  // negative array indexes are rejected
+  { false, "$[-0]", 2 },
+  { false, "$[-1]", 2},
+  { false, "$[0 to -1]", 7},
+  { false, "$[-1 to 0]", 2},
+  { false, "$[- 1]", 2 },
+  { false, "$[-]", 2 },
 };
 
 INSTANTIATE_TEST_CASE_P(NegativeNoColumnScope, JsonBadPathTestP,
@@ -1355,20 +1359,25 @@ TEST_F(JsonPathTest, WrapperSeekTest)
 
 TEST_F(JsonPathTest, RemoveDomTest)
 {
-  // successful removes
   {
     SCOPED_TRACE("");
-    vet_remove("[100, 200, 300]",
-               "$[1]",
-               "[100, 300]",
-               true);
-  }
-  {
-    SCOPED_TRACE("");
-    vet_remove("{\"a\": 100, \"b\": 200, \"c\": 300}",
-               "$.b",
-               "{\"a\": 100, \"c\": 300}",
-               true);
+    std::string json_text= "[100, 200, 300]";
+    Json_dom_ptr dom= Json_dom::parse(json_text.data(), json_text.length(),
+                                      nullptr, nullptr);
+    auto array= static_cast<Json_array*>(dom.get());
+    EXPECT_TRUE(array->remove(1));
+    EXPECT_EQ("[100, 300]", format(array));
+    EXPECT_FALSE(array->remove(2));
+    EXPECT_EQ("[100, 300]", format(array));
+
+    json_text= "{\"a\": 100, \"b\": 200, \"c\": 300}";
+    dom= Json_dom::parse(json_text.data(), json_text.length(),
+                         nullptr, nullptr);
+    auto object= static_cast<Json_object*>(dom.get());
+    EXPECT_TRUE(object->remove("b"));
+    EXPECT_EQ("{\"a\": 100, \"c\": 300}", format(object));
+    EXPECT_FALSE(object->remove("d"));
+    EXPECT_EQ("{\"a\": 100, \"c\": 300}", format(object));
   }
 
   /*
@@ -1390,10 +1399,10 @@ TEST_F(JsonPathTest, RemoveDomTest)
   EXPECT_EQ((char *) "{\"a\": true, \"b\": false, \"c\": null}",
             format(&object1));
   SCOPED_TRACE("");
-  EXPECT_TRUE(object1.remove(null_literal1));
+  EXPECT_TRUE(object1.remove("c"));
   EXPECT_EQ((char *) "{\"a\": true, \"b\": false}",
             format(&object1));
-  EXPECT_FALSE(object1.remove(null_literal1));
+  EXPECT_FALSE(object1.remove("c"));
   EXPECT_EQ((char *) "{\"a\": true, \"b\": false}",
             format(&object1));
 
@@ -1425,9 +1434,9 @@ TEST_F(JsonPathTest, RemoveDomTest)
   array.append_alias(true_literal3);
   EXPECT_EQ((char *) "[true, false, null, true]", format(&array));
   EXPECT_EQ(&array, true_literal3->parent());
-  EXPECT_TRUE(array.remove(true_literal3));
+  EXPECT_TRUE(array.remove(3));
   EXPECT_EQ((char *) "[true, false, null]", format(&array));
-  EXPECT_FALSE(array.remove(true_literal3));
+  EXPECT_FALSE(array.remove(3));
   EXPECT_EQ((char *) "[true, false, null]", format(&array));
 
   // Json_array.insert_clone()
@@ -1441,12 +1450,12 @@ TEST_F(JsonPathTest, RemoveDomTest)
   // Json_array.insert_alias()
 
   Json_boolean *false_literal3= new (std::nothrow) Json_boolean(false);
-  array.insert_alias(3, false_literal3);
+  array.insert_alias(3, Json_dom_ptr(false_literal3));
   EXPECT_EQ((char *) "[true, false, true, false, null]", format(&array));
   EXPECT_EQ(&array, false_literal3->parent());
-  EXPECT_TRUE(array.remove(false_literal3));
+  EXPECT_TRUE(array.remove(3));
   EXPECT_EQ((char *) "[true, false, true, null]", format(&array));
-  EXPECT_FALSE(array.remove(false_literal3));
+  EXPECT_FALSE(array.remove(4));
   EXPECT_EQ((char *) "[true, false, true, null]", format(&array));
 
   // Json_array.insert_clone()
@@ -1457,19 +1466,18 @@ TEST_F(JsonPathTest, RemoveDomTest)
 
   // Json_array.insert_alias()
   Json_boolean *false_literal4= new (std::nothrow) Json_boolean(false);
-  array.insert_alias(7, false_literal4);
+  array.insert_alias(7, Json_dom_ptr(false_literal4));
   EXPECT_EQ((char *) "[true, false, true, null, true, false]",
             format(&array));
   EXPECT_EQ(&array, false_literal4->parent());
   EXPECT_EQ(&array, array[5]->parent());
-  EXPECT_TRUE(array.remove(false_literal4));
+  EXPECT_TRUE(array.remove(5));
   EXPECT_EQ((char *) "[true, false, true, null, true]",
             format(&array));
-  EXPECT_FALSE(array.remove(false_literal4));
+  EXPECT_FALSE(array.remove(5));
   EXPECT_EQ((char *) "[true, false, true, null, true]",
             format(&array));
 }
-
 
 // Tuples for the test of Json_dom.get_location()
 static const Location_tuple location_tuples[]=
@@ -1543,5 +1551,66 @@ TEST_P(JsonGoodCloneTestP, GoodClone)
 INSTANTIATE_TEST_CASE_P(CloneTesting, JsonGoodCloneTestP,
                         ::testing::ValuesIn(clone_tuples));
 
+/**
+  A class used for parameterized test cases for the
+  Json_path_leg::is_autowrap() function.
+*/
+class JsonPathLegAutowrapP :
+  public ::testing::TestWithParam<std::pair<std::string, bool>>
+{};
+
+TEST_P(JsonPathLegAutowrapP, Autowrap)
+{
+  const auto param= GetParam();
+  const std::string path_text= "$" + param.first + ".a";
+  const bool expected_result= param.second;
+
+  Json_path path;
+  size_t idx= 0;
+  EXPECT_FALSE(parse_path(false, path_text.length(), path_text.data(),
+                          &path, &idx));
+  EXPECT_EQ(0U, idx);
+  EXPECT_EQ(2U, path.leg_count());
+  EXPECT_EQ(expected_result, (*path.begin())->is_autowrap());
+}
+
+static const std::pair<std::string, bool> autowrap_tuples[]=
+{
+  // These should match non-arrays due to auto-wrapping.
+  { "[0]", true },
+  { "[last]", true },
+  { "[last-0]", true },
+  { "[0 to last]", true },
+  { "[0 to last-0]", true },
+  { "[0 to 0]", true },
+  { "[0 to 1]", true },
+  { "[0 to 100]", true },
+  { "[last to 0]", true },
+  { "[last to 1]", true },
+  { "[last-0 to 1]", true },
+  { "[last to 100]", true },
+  { "[last to last]", true },
+  { "[last-1 to last]", true },
+  { "[last-100 to last]", true },
+  { "[last-1 to 0]", true },
+  { "[last-1 to 1]", true },
+
+  // These should not match non-arrays.
+  { "[*]", false },
+  { ".*", false },
+  { "**", false },
+  { ".name", false },
+  { ".\"0\"", false },
+  { "[1]", false },
+  { "[100]", false },
+  { "[last-1]", false },
+  { "[last-100]", false },
+  { "[0 to last-1]", false },
+  { "[1 to last]", false },
+  { "[last-2 to last-1]", false },
+};
+
+INSTANTIATE_TEST_CASE_P(AutowrapTesting, JsonPathLegAutowrapP,
+                        ::testing::ValuesIn(autowrap_tuples));
 
 } // end namespace json_path_unittest

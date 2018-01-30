@@ -2,13 +2,20 @@
   Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
   along with this program; if not, write to the Free Software
@@ -16,16 +23,16 @@
 */
 
 #ifndef UNITTEST_OBJECT_FILTER_PARSER
-#include "object_filter.h"
+#include "client/dump/object_filter.h"
 
-#include "database.h"
-#include "event_scheduler_event.h"
-#include "mysql_function.h"
-#include "pattern_matcher.h"
-#include "privilege.h"
-#include "stored_procedure.h"
-#include "table.h"
-#include "trigger.h"
+#include "client/dump/database.h"
+#include "client/dump/event_scheduler_event.h"
+#include "client/dump/mysql_function.h"
+#include "client/dump/pattern_matcher.h"
+#include "client/dump/privilege.h"
+#include "client/dump/stored_procedure.h"
+#include "client/dump/table.h"
+#include "client/dump/trigger.h"
 #endif
 #include <boost/algorithm/string.hpp>
 #include <boost/tokenizer.hpp>
@@ -181,11 +188,10 @@ bool Object_filter::is_user_included_by_lists(
   std::vector<std::pair<std::string, std::string> >* include_list,
   std::vector<std::pair<std::string, std::string> >* exclude_list)
 {
-  std::vector<std::string> user_host;
-  boost::split(user_host, user_name,
-        boost::is_any_of("@"), boost::token_compress_on);
-  return is_object_included_by_lists(user_host[0],
-          user_host[1], include_list, exclude_list);
+  size_t separator_idx= user_name.find('@');
+  return is_object_included_by_lists(user_name.substr(0, separator_idx),
+                                     user_name.substr(separator_idx + 1),
+                                     include_list, exclude_list);
 }
 
 bool Object_filter::is_object_included_by_lists(

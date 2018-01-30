@@ -21,8 +21,6 @@
 # See mysql-test/t/no_binlog_gtid_next_partially_failed_stmts_error.test
 #
 
-# Test is not required to run against embedded server
---source include/not_embedded.inc
 # Should be tested against "binlog disabled" server
 --source include/not_log_bin.inc
 # Requires debug server to simulate failure to drop table in SE
@@ -68,19 +66,6 @@ DROP USER u1@h, u2@h;
 --echo # When binlog is disabled, verify that we can set
 --echo # GTID_NEXT to 'ANONYMOUS' after the failed DROP USER
 --echo # statement  did not consumed its 'ANONYMOUS' gtid.
---echo #
-SET GTID_NEXT = 'ANONYMOUS';
-
-CREATE VIEW v1 as SELECT 1;
-
-# Check-3: DROP VIEW
-SET GTID_NEXT = 'ANONYMOUS';
---error ER_BAD_TABLE_ERROR
-DROP VIEW v1, v2;
---echo #
---echo # When binlog is disabled, verify that we can set
---echo # GTID_NEXT to 'ANONYMOUS' after the partially failed
---echo # DROP USER statement consumed its 'ANONYMOUS' gtid.
 --echo #
 SET GTID_NEXT = 'ANONYMOUS';
 

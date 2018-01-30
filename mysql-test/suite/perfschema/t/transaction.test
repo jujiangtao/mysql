@@ -9,6 +9,7 @@
 
 # Test requires: sp-protocol/ps-protocol/view-protocol/cursor-protocol disabled
 --source include/no_protocol.inc
+--source include/have_log_bin.inc
 --disable_query_log
 --source ../include/transaction_setup.inc
 --enable_query_log
@@ -97,9 +98,9 @@ CALL clear_transaction_tables();
 --echo ========================================================================
 --echo
 --connection con1
-SELECT @@global.tx_isolation;
+SELECT @@global.transaction_isolation;
 SELECT @@global.autocommit;
-SELECT @@tx_isolation;
+SELECT @@transaction_isolation;
 SELECT @@autocommit;
 
 --echo
@@ -156,9 +157,9 @@ START TRANSACTION;
 INSERT INTO t1 VALUES (302, 'REPEATABLE READ');
 COMMIT;
 
-## NOTE - InnoDB requires binlog_format = ROW for READ COMMITTED/UNCOMMITTED
+## NOTE - InnoDB requires binlog_format = 'ROW' for READ COMMITTED/UNCOMMITTED
 SELECT @@binlog_format INTO @binlog_save;
-SET SESSION BINLOG_FORMAT=ROW;
+SET SESSION BINLOG_FORMAT='ROW';
 SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED;
 START TRANSACTION;
 INSERT INTO t1 VALUES (303, 'READ COMMITTED');
@@ -424,7 +425,7 @@ CALL clear_transaction_tables();
 
 --connection con1
 SET SESSION AUTOCOMMIT = 0;
-SELECT * FROM performance_schema.events_transactions_current ORDER BY event_id;
+SELECT COUNT(*) FROM performance_schema.events_transactions_current ORDER BY event_id;
 
 --echo
 --echo #

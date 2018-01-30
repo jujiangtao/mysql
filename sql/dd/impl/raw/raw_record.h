@@ -1,34 +1,42 @@
 /* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef DD__RAW_RECORD_INCLUDED
 #define DD__RAW_RECORD_INCLUDED
 
 #include "my_config.h"
+
 #include "my_inttypes.h"
-#include "my_io.h"  // Win32 needs winsock.h for timeval, so IWYU pragma: keep
+#include "my_io.h"  // IWYU pragma: keep
 
 #if HAVE_SYS_TIME_H
 #include <sys/time.h>
 #endif
 #include <sys/types.h>
-#include <string>
 
-#include "dd/object_id.h"      // dd::Object_id
-#include "dd/string_type.h"    // dd::String_type
+#include "sql/dd/object_id.h"  // dd::Object_id
+#include "sql/dd/string_type.h" // dd::String_type
 
+class Json_wrapper;
 class Field;
 struct TABLE;
 
@@ -39,7 +47,6 @@ namespace dd {
 ///////////////////////////////////////////////////////////////////////////
 
 class Properties;
-class Transaction;
 
 ///////////////////////////////////////////////////////////////////////////
 
@@ -85,6 +92,7 @@ public:
 
   bool store_timestamp(int field_no, const timeval &tv);
 
+  bool store_json(int field_no, const Json_wrapper &json);
 
 public:
   bool is_null(int field_no) const;
@@ -119,7 +127,7 @@ public:
 
   timeval read_timestamp(int field_no) const;
 
-
+  bool read_json(int field_no, Json_wrapper *json_wrapper) const;
 protected:
   void set_null(int field_no, bool is_null);
 

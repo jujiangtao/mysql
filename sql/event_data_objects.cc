@@ -1,69 +1,79 @@
 /* Copyright (c) 2005, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "event_data_objects.h"
+#include "sql/event_data_objects.h"
 
 #include <string.h>
 
-#include "auth_acls.h"
-                                               // struct Time_zone
-#include "auth_common.h"                       // EVENT_ACL, SUPER_ACL
-#include "dd/dd_event.h"                       // dd::get_old_interval_type
-#include "dd/dd_schema.h"                      // dd::get_schema_name
-#include "dd/string_type.h"
-#include "dd/types/event.h"
-#include "derror.h"
-#include "event_parse_data.h"
-#include "events.h"
 #include "lex_string.h"
-                                               // append_identifier
-#include "log.h"
 #include "m_ctype.h"
 #include "m_string.h"
 #include "my_dbug.h"
-#include "my_decimal.h"
+#include "my_loglevel.h"
 #include "my_sys.h"
+#include "mysqld.h"
 #include "mysql/psi/mysql_sp.h"
 #include "mysql/psi/mysql_statement.h"
 #include "mysql/service_mysql_alloc.h"
+#include "mysql/udf_registration_types.h"
 #include "mysqld_error.h"
-#include "psi_memory_key.h"
-#include "sp_head.h"
-#include "sql_alloc.h"
-#include "sql_class.h"
-#include "sql_const.h"
-#include "sql_error.h"
-#include "sql_lex.h"
-#include "sql_list.h"
-#include "sql_parse.h"                         // parse_sql
-#include "sql_plugin.h"
-#include "sql_security_ctx.h"
-#include "sql_servers.h"
-#include "sql_show.h"                          // append_definer,
-#include "sql_string.h"
-#include "sql_time.h"                          // interval_type_to_name
-#include "system_variables.h"
-#include "table.h"
-#include "thr_malloc.h"
+#include "sql/auth/auth_acls.h"
+                                               // struct Time_zone
+#include "sql/auth/auth_common.h"              // EVENT_ACL, SUPER_ACL
+#include "sql/auth/sql_security_ctx.h"
+#include "sql/dd/dd_event.h"                   // dd::get_old_interval_type
+#include "sql/dd/string_type.h"
+#include "sql/dd/types/event.h"
+#include "sql/derror.h"
+#include "sql/event_parse_data.h"
+#include "sql/events.h"
+#include "sql/histograms/value_map.h"
+#include "sql/key.h"
+                                               // append_identifier
+#include "sql/log.h"
+#include "sql/psi_memory_key.h"
+#include "sql/session_tracker.h"
+#include "sql/sp_head.h"
+#include "sql/sql_alloc.h"
+#include "sql/sql_class.h"
+#include "sql/sql_const.h"
+#include "sql/sql_digest_stream.h"
+#include "sql/sql_error.h"
+#include "sql/sql_lex.h"
+#include "sql/sql_list.h"
+#include "sql/sql_parse.h"                     // parse_sql
+#include "sql/sql_servers.h"
+#include "sql/sql_show.h"                      // append_definer,
+#include "sql/sql_time.h"                      // interval_type_to_name
+#include "sql/system_variables.h"
+#include "sql/table.h"
+#include "sql/transaction.h"
+#include "sql/thr_malloc.h"
                                                // date_add_interval,
                                                // calc_time_diff.
-#include "tztime.h"                            // my_tz_find, my_tz_OFFSET0
+#include "sql/tztime.h"                        // my_tz_find, my_tz_OFFSET0
+#include "sql_string.h"
 
 class Item;
-struct PSI_statement_locker;
-struct sql_digest_state;
 
 /**
   @addtogroup Event_Scheduler
@@ -78,7 +88,7 @@ void init_scheduler_psi_keys()
 }
 
 PSI_statement_info Event_queue_element_for_exec::psi_info=
-{ 0, "event", 0};
+{ 0, "event", 0, PSI_DOCUMENT_ME};
 #endif
 
 
@@ -177,7 +187,7 @@ Event_creation_ctx::create_event_creation_ctx(const dd::Event &event_obj,
                         (event_obj.schema_collation_id()));
 
   // Create the context.
-  *ctx = new Event_creation_ctx(client_cs, connection_cl, db_cl);
+  *ctx = new (*THR_MALLOC) Event_creation_ctx(client_cs, connection_cl, db_cl);
 
   return invalid_creation_ctx;
 }
@@ -488,8 +498,8 @@ Event_timed::fill_event_info(THD *thd, const dd::Event &event_obj,
   m_definer_user= make_lex_cstring(&mem_root, event_obj.definer_user());
   m_definer_host= make_lex_cstring(&mem_root, event_obj.definer_host());
 
-  m_created= event_obj.created();
-  m_modified= event_obj.last_altered();
+  m_created= event_obj.created(true);
+  m_modified= event_obj.last_altered(true);
 
   m_comment=make_lex_string(&mem_root, event_obj.comment());
   m_sql_mode= event_obj.sql_mode();
@@ -1133,36 +1143,6 @@ Event_job_data::construct_sp_sql(THD *thd, String *sp_sql)
 
 
 /**
-  Get DROP EVENT statement to binlog the drop of ON COMPLETION NOT
-  PRESERVE event.
-*/
-
-bool
-Event_job_data::construct_drop_event_sql(THD *thd, String *sp_sql)
-{
-  LEX_STRING buffer;
-  const uint STATIC_SQL_LENGTH= 14;
-
-  DBUG_ENTER("Event_job_data::construct_drop_event_sql");
-
-  buffer.length= STATIC_SQL_LENGTH + m_event_name.length*2 + 
-                 m_schema_name.length*2;
-  if (! (buffer.str= (char*) thd->alloc(buffer.length)))
-    DBUG_RETURN(true);
-
-  sp_sql->set(buffer.str, buffer.length, system_charset_info);
-  sp_sql->length(0);
-
-  sp_sql->append(C_STRING_WITH_LEN("DROP EVENT "));
-  append_identifier(thd, sp_sql, m_schema_name.str, m_schema_name.length);
-  sp_sql->append('.');
-  append_identifier(thd, sp_sql, m_event_name.str, 
-                    m_event_name.length);
-
-  DBUG_RETURN(thd->is_fatal_error);
-}
-
-/**
   Compiles and executes the event (the underlying sp_head object)
 
   @retval true  error (reported to the error log)
@@ -1207,11 +1187,9 @@ Event_job_data::execute(THD *thd, bool drop)
                                          m_definer_user, m_definer_host,
                                          &m_schema_name, &save_sctx))
   {
-    sql_print_error("Event Scheduler: "
-                    "[%s].[%s.%s] execution failed, "
-                    "failed to authenticate the user.",
-                    m_definer.str, m_schema_name.str,
-                    m_event_name.str);
+    LogErr(ERROR_LEVEL, ER_EVENT_EXECUTION_FAILED_CANT_AUTHENTICATE_USER,
+           m_definer.str, m_schema_name.str,
+           m_event_name.str);
     goto end;
   }
 
@@ -1223,11 +1201,9 @@ Event_job_data::execute(THD *thd, bool drop)
       privilege is revoked from trigger definer,
       triggers are not executed.
     */
-    sql_print_error("Event Scheduler: "
-                    "[%s].[%s.%s] execution failed, "
-                    "user no longer has EVENT privilege.",
-                    m_definer.str, m_schema_name.str, 
-                    m_event_name.str);
+    LogErr(ERROR_LEVEL, ER_EVENT_EXECUTION_FAILED_USER_LOST_EVEN_PRIVILEGE,
+           m_definer.str, m_schema_name.str, 
+           m_event_name.str);
     goto end;
   }
 
@@ -1257,11 +1233,10 @@ Event_job_data::execute(THD *thd, bool drop)
     thd->m_statement_psi= NULL;
     if (parse_sql(thd, & parser_state, m_creation_ctx))
     {
-      sql_print_error("Event Scheduler: "
-                      "%serror during compilation of %s.%s",
-                      thd->is_fatal_error ? "fatal " : "",
-                      m_schema_name.str,
-                      m_event_name.str);
+      LogErr(ERROR_LEVEL, ER_EVENT_ERROR_DURING_COMPILATION,
+             thd->is_fatal_error ? "fatal " : "",
+             m_schema_name.str,
+             m_event_name.str);
       thd->m_digest= parent_digest;
       thd->m_statement_psi= parent_locker;
       goto end;
@@ -1305,20 +1280,29 @@ end:
       We must do it here since here we're under the right authentication
       ID of the event definer.
     */
-    sql_print_information("Event Scheduler: Dropping %s.%s",
-                          m_schema_name.str,
-                          m_event_name.str);
+    LogErr(INFORMATION_LEVEL, ER_EVENT_DROPPING,
+           m_schema_name.str,
+           m_event_name.str);
     /*
       Construct a query for the binary log, to ensure the event is dropped
       on the slave
     */
-    if (construct_drop_event_sql(thd, &sp_sql))
+    if (construct_drop_event_sql(thd, &sp_sql, m_schema_name, m_event_name))
       ret= 1;
     else
     {
       ulong saved_master_access;
 
       thd->set_query(sp_sql.c_ptr_safe(), sp_sql.length());
+      /*
+        Drop should be executed as a separate transaction.
+        Commit any open transaction before executing the drop event.
+      */
+      ret= trans_commit_stmt(thd) || trans_commit(thd);
+
+      // Prevent InnoDB from automatically committing the InnoDB transaction
+      // after updating the data-dictionary table.
+      Disable_autocommit_guard autocommit_guard(thd);
 
       /*
         NOTE: even if we run in read-only mode, we should be able to lock
@@ -1352,6 +1336,39 @@ end:
   DBUG_PRINT("info", ("EXECUTED %s.%s  ret: %d", m_schema_name.str, 
                      m_event_name.str, ret));
 
+  DBUG_RETURN(ret);
+}
+
+/**
+  Get DROP EVENT statement to binlog the drop of ON COMPLETION NOT
+  PRESERVE event.
+*/
+bool construct_drop_event_sql(THD *thd, String *sp_sql,
+                              const LEX_STRING &schema_name,
+                              const LEX_STRING &event_name)
+{
+  LEX_STRING buffer;
+  const uint STATIC_SQL_LENGTH= 14;
+  int ret= 0;
+
+  DBUG_ENTER("construct_drop_event_sql");
+
+  buffer.length= STATIC_SQL_LENGTH + event_name.length*2 +
+                 schema_name.length * 2;
+  if (! (buffer.str= (char*) thd->alloc(buffer.length)))
+    DBUG_RETURN(true);
+
+  sp_sql->set(buffer.str, buffer.length, system_charset_info);
+  sp_sql->length(0);
+
+  ret|= sp_sql->append(C_STRING_WITH_LEN("DROP EVENT IF EXISTS"));
+  append_identifier(thd, sp_sql, schema_name.str, schema_name.length);
+  ret|= sp_sql->append('.');
+  append_identifier(thd, sp_sql, event_name.str,
+                    event_name.length);
+
+  // Set query id for DROP EVENT constructed by the Event Scheduler..
+  thd->set_query_id(next_query_id());
   DBUG_RETURN(ret);
 }
 

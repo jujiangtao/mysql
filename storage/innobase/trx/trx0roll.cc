@@ -3,16 +3,24 @@
 Copyright (c) 1996, 2017, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+the terms of the GNU General Public License, version 2.0, as published by the
+Free Software Foundation.
+
+This program is also distributed with certain software (including but not
+limited to OpenSSL) that is licensed under separate terms, as designated in a
+particular file or component or in included license documentation. The authors
+of MySQL hereby grant you an additional permission to link the program and
+your derivative works with the separately licensed software that they have
+included with MySQL.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+FOR A PARTICULAR PURPOSE. See the GNU General Public License, version 2.0,
+for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 *****************************************************************************/
 
@@ -37,6 +45,7 @@ Created 3/26/1996 Heikki Tuuri
 #include "read0read.h"
 #include "row0mysql.h"
 #include "row0undo.h"
+#include "sql_thd_internal_api.h"
 #include "srv0mon.h"
 #include "srv0start.h"
 #include "trx0rec.h"
@@ -46,13 +55,16 @@ Created 3/26/1996 Heikki Tuuri
 #include "trx0trx.h"
 #include "trx0undo.h"
 #include "usr0sess.h"
+#include "os0thread-create.h"
+#include <current_thd.h>
+#include "dict0dd.h"
 
 /** This many pages must be undone before a truncate is tried within
 rollback */
 static const ulint TRX_ROLL_TRUNC_THRESHOLD = 1;
 
 /** true if trx_rollback_or_clean_all_recovered() thread is active */
-bool			trx_rollback_or_clean_is_active;
+bool                    trx_rollback_or_clean_is_active;
 
 /** In crash recovery, the current trx to be rolled back; NULL otherwise */
 static const trx_t*	trx_roll_crash_recv_trx	= NULL;
@@ -219,11 +231,13 @@ trx_rollback_low(
 			so that if the system gets killed,
 			recovery will perform the rollback. */
 			trx_undo_ptr_t*	undo_ptr = &trx->rsegs.m_redo;
+
 			mtr_t		mtr;
+
 			mtr.start();
-			mtr.set_undo_space(trx->rsegs.m_redo.rseg->space_id);
 
 			mutex_enter(&trx->rsegs.m_redo.rseg->mutex);
+
 			if (undo_ptr->insert_undo != NULL) {
 				trx_undo_set_state_at_prepare(
 					trx, undo_ptr->insert_undo,
@@ -625,10 +639,8 @@ trx_rollback_active(
 	que_fork_t*	fork;
 	que_thr_t*	thr;
 	roll_node_t*	roll_node;
-	dict_table_t*	table;
 	int64_t		rows_to_undo;
 	const char*	unit		= "";
-	ibool		dictionary_locked = FALSE;
 
 	heap = mem_heap_create(512);
 
@@ -668,11 +680,6 @@ trx_rollback_active(
 	ib::info() << "Rolling back trx with id " << trx_id << ", "
 		<< rows_to_undo << unit << " rows to undo";
 
-	if (trx_get_dict_operation(trx) != TRX_DICT_OP_NONE) {
-		row_mysql_lock_data_dictionary(trx);
-		dictionary_locked = TRUE;
-	}
-
 	que_run_threads(thr);
 	ut_a(roll_node->undo_thr != NULL);
 
@@ -685,33 +692,6 @@ trx_rollback_active(
 			       roll_node->undo_thr->common.parent));
 
 	ut_a(trx->lock.que_state == TRX_QUE_RUNNING);
-
-	if (trx_get_dict_operation(trx) != TRX_DICT_OP_NONE
-	    && trx->table_id != 0) {
-
-		ut_ad(dictionary_locked);
-
-		/* If the transaction was for a dictionary operation,
-		we drop the relevant table only if it is not flagged
-		as DISCARDED. If it still exists. */
-
-		table = dict_table_open_on_id(
-			trx->table_id, TRUE, DICT_TABLE_OP_NORMAL);
-
-		if (table && !dict_table_is_discarded(table)) {
-			ib::warn() << "Dropping table '" << table->name
-				<< "', with id " << trx->table_id
-				<< " in recovery";
-
-			dict_table_close_and_drop(trx, table);
-
-			trx_commit_for_mysql(trx);
-		}
-	}
-
-	if (dictionary_locked) {
-		row_mysql_unlock_data_dictionary(trx);
-	}
 
 	ib::info() << "Rollback of trx with id " << trx_id << " completed";
 
@@ -760,7 +740,7 @@ trx_rollback_resurrected(
 		trx_free_resurrected(trx);
 		return(TRUE);
 	case TRX_STATE_ACTIVE:
-		if (all || trx_get_dict_operation(trx) != TRX_DICT_OP_NONE) {
+		if (all || trx->ddl_operation) {
 			trx_sys_mutex_exit();
 			trx_rollback_active(trx);
 			trx_free_for_background(trx);
@@ -846,13 +826,22 @@ Note: this is done in a background thread. */
 void
 trx_recovery_rollback_thread()
 {
+#ifdef UNIV_PFS_THREAD
+	THD*	thd = create_thd(
+		false, true, true, trx_recovery_rollback_thread_key.m_value);
+#else
+	THD*	thd = create_thd(false, true, true, 0);
+#endif /* UNIV_PFS_THREAD */
+
 	my_thread_init();
 
 	ut_ad(!srv_read_only_mode);
 
 	trx_rollback_or_clean_recovered(TRUE);
 
-	trx_rollback_or_clean_is_active = false;
+        trx_rollback_or_clean_is_active = false;
+
+	destroy_thd(thd);
 
 	my_thread_end();
 }
@@ -987,7 +976,8 @@ trx_roll_pop_top_rec_of_trx_low(
 	is_insert = (undo == ins_undo);
 
 	*roll_ptr = trx_undo_build_roll_ptr(
-		is_insert, undo->rseg->id, undo->top_page_no, undo->top_offset);
+		is_insert, undo->rseg->space_id,
+		undo->top_page_no, undo->top_offset);
 
 	mtr_start(&mtr);
 

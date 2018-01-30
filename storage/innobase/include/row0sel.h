@@ -3,16 +3,24 @@
 Copyright (c) 1997, 2017, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+the terms of the GNU General Public License, version 2.0, as published by the
+Free Software Foundation.
+
+This program is also distributed with certain software (including but not
+limited to OpenSSL) that is licensed under separate terms, as designated in a
+particular file or component or in included license documentation. The authors
+of MySQL hereby grant you an additional permission to link the program and
+your derivative works with the separately licensed software that they have
+included with MySQL.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+FOR A PARTICULAR PURPOSE. See the GNU General Public License, version 2.0,
+for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 *****************************************************************************/
 
@@ -38,6 +46,7 @@ Created 12/19/1997 Heikki Tuuri
 #include "row0mysql.h"
 #include "row0types.h"
 #include "trx0types.h"
+#include "dict0stats.h"
 #include "univ.i"
 
 /*********************************************************************//**
@@ -236,16 +245,6 @@ row_count_rtree_recs(
 	ulint*		n_rows);	/*!< out: number of entries
 					seen in the consistent read */
 
-/*******************************************************************//**
-Checks if MySQL at the moment is allowed for this table to retrieve a
-consistent read result, or store it to the query cache.
-@return TRUE if storing or retrieving from the query cache is permitted */
-ibool
-row_search_check_if_query_cache_permitted(
-/*======================================*/
-	trx_t*		trx,		/*!< in: transaction object */
-	const char*	norm_name);	/*!< in: concatenation of database name,
-					'/' char, table name */
 /*******************************************************************//**
 Read the max AUTOINC value from an index.
 @return DB_SUCCESS if all OK else error code */
@@ -502,6 +501,36 @@ row_sel_field_store_in_mysql_format_func(
 	,ulint				sec_field
 #endif /* UNIV_DEBUG */
 	);
+
+
+/** Search the record present in innodb_table_stats table using
+db_name, table_name and fill it in table stats structure.
+@param[in]	db_name		database name
+@param[in]	tbl_name	table name
+@param[out]	table_stats	stats table structure.
+@return true if successful else false. */
+bool
+row_search_table_stats(
+	const char*		db_name,
+	const char*		tbl_name,
+	TableStatsRecord&	table_stats);
+
+/** Search the record present in innodb_index_stats using
+db_name, table name and index_name and fill the
+cardinality for the each column.
+@param[in]	db_name		database name
+@param[in]	tbl_name	table name
+@param[in]	index_name	index name
+@param[in]	col_offset	offset of the column in the index
+@param[out]	cardinality	cardinality of the column.
+@return true if successful else false. */
+bool
+row_search_index_stats(
+	const char*	db_name,
+	const char*	tbl_name,
+	const char*	index_name,
+	ulint		col_offset,
+	ulonglong*	cardinality);
 
 #include "row0sel.ic"
 

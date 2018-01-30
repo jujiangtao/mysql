@@ -1,13 +1,20 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -51,31 +58,31 @@
 #include <stddef.h>
 #include <sys/types.h>
 
-#include "field.h"
 #include "ft_global.h"
-#include "handler.h"
-#include "item.h"
-#include "item_cmpfunc.h"
-#include "item_func.h"
-#include "item_sum.h"                           // Item_sum
-#include "key.h"                                // key_cmp_if_same
 #include "my_base.h"
 #include "my_bitmap.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
-#include "my_macros.h"
 #include "my_sys.h"
 #include "my_table_map.h"
+#include "mysql/udf_registration_types.h"
 #include "mysql_com.h"
-#include "sql_bitmap.h"
-#include "sql_class.h"
-#include "sql_const.h"
-#include "sql_error.h"
-#include "sql_lex.h"
-#include "sql_list.h"
-#include "sql_opt_exec_shared.h"
-#include "sql_select.h"
-#include "table.h"
+#include "sql/field.h"
+#include "sql/handler.h"
+#include "sql/item.h"
+#include "sql/item_cmpfunc.h"
+#include "sql/item_func.h"
+#include "sql/item_sum.h"                       // Item_sum
+#include "sql/key.h"                            // key_cmp_if_same
+#include "sql/sql_bitmap.h"
+#include "sql/sql_class.h"
+#include "sql/sql_const.h"
+#include "sql/sql_error.h"
+#include "sql/sql_lex.h"
+#include "sql/sql_list.h"
+#include "sql/sql_opt_exec_shared.h"
+#include "sql/sql_select.h"
+#include "sql/table.h"
 
 static bool find_key_for_maxmin(bool max_fl, TABLE_REF *ref,
                                 Item_field *item_field, Item *cond,
@@ -332,9 +339,8 @@ int opt_sum_query(THD *thd,
     }
     else
     {
-      maybe_exact_count&= MY_TEST(table_filled &&
-                                  (tl->table->file->ha_table_flags() &
-                                   HA_HAS_RECORDS));
+      maybe_exact_count&= (table_filled &&
+                           (tl->table->file->ha_table_flags() & HA_HAS_RECORDS));
       is_exact_count= FALSE;
       count= 1;                                 // ensure count != 0
       force_index|= tl->table->force_index;
@@ -348,7 +354,7 @@ int opt_sum_query(THD *thd,
 
   while ((item= it++))
   {
-    if (item->type() == Item::SUM_FUNC_ITEM)
+    if (item->type() == Item::SUM_FUNC_ITEM && !item->m_is_window_function)
     {
       if (item->used_tables() & OUTER_REF_TABLE_BIT)
       {
@@ -379,7 +385,7 @@ int opt_sum_query(THD *thd,
               done in this function from showing in EXPLAIN, that's ok as
               real query will be executed faster than one shown by EXPLAIN.
             */
-            if (!thd->lex->describe &&
+            if (!thd->lex->is_explain() &&
                 (count= get_exact_record_count(tables)) == ULLONG_MAX)
             {
               /* Error from handler in counting rows. Don't optimize count() */
@@ -418,7 +424,8 @@ int opt_sum_query(THD *thd,
           const_result= 0;
 
         // See comment above for get_exact_record_count()
-        if (!thd->lex->describe && const_result == 1) {
+        if (!thd->lex->is_explain() && const_result == 1)
+        {
           ((Item_sum_count*) item)->make_const((longlong) count);
           recalc_const_item= true;
         }
@@ -427,7 +434,7 @@ int opt_sum_query(THD *thd,
       case Item_sum::MIN_FUNC:
       case Item_sum::MAX_FUNC:
       {
-        int is_max= MY_TEST(item_sum->sum_func() == Item_sum::MAX_FUNC);
+        int is_max= (item_sum->sum_func() == Item_sum::MAX_FUNC);
         /*
           If MIN/MAX(expr) is the first part of a key or if all previous
           parts of the key is found in the COND, then we can use
@@ -497,13 +504,15 @@ int opt_sum_query(THD *thd,
                  get_index_min_value(table, &ref, item_field, range_fl,
                                      prefix_len);
 
+
           /*
-            Set table row status to "not started" since original and
-            real read_set are different, i.e. some field values
-            from original read set could be unread.
+            Set table row status to "not started" unconditionally.  This will
+            prepare the table for regular access in the join execution
+            machinery if the opt_sum_query() optimization is aborted and cannot
+            be used.  The row status does not affect column values read into
+            record[0].
           */
-          if (!bitmap_is_subset(&table->def_read_set, &table->tmp_set))
-            table->set_not_started();
+          table->set_not_started();
 
           table->read_set= &table->def_read_set;
           bitmap_clear_all(&table->tmp_set);
@@ -906,7 +915,7 @@ static bool matching_cond(bool max_fl, TABLE_REF *ref, KEY *keyinfo,
         DBUG_RETURN(false);
 
       if (part->null_bit) 
-        *key_ptr++= (uchar) MY_TEST(part->field->is_null());
+        *key_ptr++= (uchar) (part->field->is_null());
       part->field->get_key_image(key_ptr, part->length, Field::itRAW);
     }
     if (is_field_part)
@@ -926,7 +935,7 @@ static bool matching_cond(bool max_fl, TABLE_REF *ref, KEY *keyinfo,
   else if (eq_type)
   {
     if ((!is_null && !cond->val_int()) ||
-        (is_null && !MY_TEST(part->field->is_null())))
+        (is_null && !part->field->is_null()))
      DBUG_RETURN(FALSE);                       // Impossible test
   }
   else if (is_field_part)
@@ -1140,6 +1149,7 @@ static bool maxmin_in_range(bool max_fl, Item_field *item_field, Item *cond)
   case Item_func::LT_FUNC:
   case Item_func::LE_FUNC:
     less_fl= true;
+    // Fall through
   case Item_func::GT_FUNC:
   case Item_func::GE_FUNC:
   {

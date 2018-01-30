@@ -4,13 +4,20 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -24,18 +31,14 @@
 
 #include "binary_log_types.h"
 #include "decimal.h"
-#include "enum_query_type.h"
-#include "field.h"
 #include "ft_global.h"
-#include "handler.h"
-#include "item.h"       // Item_result_field
 #include "lex_string.h"
 #include "m_ctype.h"
+#include "my_alloc.h"
 #include "my_base.h"
 #include "my_byteorder.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
-#include "my_decimal.h" // string2my_decimal
 #include "my_inttypes.h"
 #include "my_pointer_arithmetic.h"
 #include "my_sys.h"
@@ -43,17 +46,23 @@
 #include "my_thread_local.h"
 #include "my_time.h"
 #include "mysql/service_mysql_alloc.h"
+#include "mysql/udf_registration_types.h"
 #include "mysql_com.h"
 #include "mysqld_error.h"
-#include "parse_tree_node_base.h"
-#include "set_var.h"    // enum_var_type
-#include "sql_const.h"
+#include "sql/enum_query_type.h"
+#include "sql/field.h"
+#include "sql/handler.h"
+#include "sql/item.h"   // Item_result_field
+#include "sql/my_decimal.h" // string2my_decimal
+#include "sql/parse_tree_node_base.h"
+#include "sql/set_var.h" // enum_var_type
+#include "sql/sql_const.h"
+#include "sql/sql_udf.h" // udf_handler
+#include "sql/system_variables.h"
+#include "sql/table.h"
+#include "sql/thr_malloc.h"
 #include "sql_string.h"
-#include "sql_udf.h"    // udf_handler
-#include "system_variables.h"
-#include "table.h"
 #include "template_utils.h"
-#include "thr_malloc.h"
 
 class Json_wrapper;
 class PT_item_list;
@@ -62,6 +71,7 @@ class SELECT_LEX;
 class THD;
 class sp_rcontext;
 template <class T> class List;
+class Table_function_result;
 
 /* Function items used by mysql */
 
@@ -75,22 +85,38 @@ class Item_func :public Item_result_field
   typedef Item_result_field super;
 protected:
   Item **args, *tmp_arg[2];
-  /// Value used in calculation of result of const_item()
-  bool const_item_cache;
+  /**
+    Affects how to determine that NULL argument implies a NULL function return.
+    Default behaviour in this class is:
+    - if true, any NULL argument means the function returns NULL.
+    - if false, no such assumption is made and not_null_tables_cache is thus
+      set to 0.
+    null_on_null is true for all Item_func derived classes, except Item_func_sp,
+    all CASE derived functions and a few other functions.
+    RETURNS NULL ON NULL INPUT can be implemented for stored functions by
+    modifying this member in class Item_func_sp.
+  */
+  bool null_on_null = true;
   /*
     Allowed numbers of columns in result (usually 1, which means scalar value)
     0 means get this number from first argument
   */
-  uint allowed_arg_cols;
+  uint allowed_arg_cols = 1;
   /// Value used in calculation of result of used_tables()
   table_map used_tables_cache;
   /// Value used in calculation of result of not_null_tables()
   table_map not_null_tables_cache;
 public:
   uint arg_count;
-  //bool const_item_cache;
-  // When updating Functype with new spatial functions,
-  // is_spatial_operator() should also be updated.
+  /*
+    When updating Functype with new spatial functions,
+    is_spatial_operator() should also be updated.
+
+    DD_INTERNAL_FUNC:
+      Some of the internal functions introduced for the INFORMATION_SCHEMA views
+      opens data-dictionary tables. DD_INTERNAL_FUNC is used for the such type
+      of functions.
+  */
   enum Functype { UNKNOWN_FUNC,EQ_FUNC,EQUAL_FUNC,NE_FUNC,LT_FUNC,LE_FUNC,
 		  GE_FUNC,GT_FUNC,FT_FUNC,
 		  LIKE_FUNC,ISNULL_FUNC,ISNOTNULL_FUNC,
@@ -107,66 +133,71 @@ public:
                   NOW_FUNC, TRIG_COND_FUNC,
                   SUSERVAR_FUNC, GUSERVAR_FUNC, COLLATE_FUNC,
                   EXTRACT_FUNC, TYPECAST_FUNC, FUNC_SP, UDF_FUNC,
-                  NEG_FUNC, GSYSVAR_FUNC, GROUPING_FUNC };
+                  NEG_FUNC, GSYSVAR_FUNC, GROUPING_FUNC, TABLE_FUNC,
+                  DD_INTERNAL_FUNC};
   enum optimize_type { OPTIMIZE_NONE,OPTIMIZE_KEY,OPTIMIZE_OP, OPTIMIZE_NULL,
                        OPTIMIZE_EQUAL };
   enum Type type() const override { return FUNC_ITEM; }
   virtual enum Functype functype() const   { return UNKNOWN_FUNC; }
-  Item_func():
-    allowed_arg_cols(1), arg_count(0)
+  Item_func()
+    : arg_count(0)
   {
     args= tmp_arg;
-    with_sum_func= 0;
   }
 
   explicit Item_func(const POS &pos)
-    : super(pos), allowed_arg_cols(1), arg_count(0)
+    : super(pos), arg_count(0)
   {
     args= tmp_arg;
   }
 
-  Item_func(Item *a):
-    allowed_arg_cols(1), arg_count(1)
+  Item_func(Item *a)
+    : arg_count(1)
   {
     args= tmp_arg;
     args[0]= a;
-    with_sum_func= a->with_sum_func;
+    set_accum_properties(a);
   }
-  Item_func(const POS &pos, Item *a): super(pos),
-    allowed_arg_cols(1), arg_count(1)
+  Item_func(const POS &pos, Item *a)
+    : super(pos), arg_count(1)
   {
     args= tmp_arg;
     args[0]= a;
   }
 
-  Item_func(Item *a,Item *b):
-    allowed_arg_cols(1), arg_count(2)
+  Item_func(Item *a,Item *b)
+    : arg_count(2)
   {
     args= tmp_arg;
     args[0]= a; args[1]= b;
-    with_sum_func= a->with_sum_func || b->with_sum_func;
+    m_accum_properties= 0;
+    add_accum_properties(a);
+    add_accum_properties(b);
   }
-  Item_func(const POS &pos, Item *a,Item *b): super(pos),
-    allowed_arg_cols(1), arg_count(2)
+  Item_func(const POS &pos, Item *a,Item *b)
+    : super(pos), arg_count(2)
   {
     args= tmp_arg;
     args[0]= a; args[1]= b;
   }
 
-  Item_func(Item *a,Item *b,Item *c):
-    allowed_arg_cols(1), arg_count(3)
+  Item_func(Item *a,Item *b,Item *c)
+    : arg_count(3)
   {
     if ((args= (Item**) sql_alloc(sizeof(Item*)*3)))
     {
       args[0]= a; args[1]= b; args[2]= c;
-      with_sum_func= a->with_sum_func || b->with_sum_func || c->with_sum_func;
+      m_accum_properties= 0;
+      add_accum_properties(a);
+      add_accum_properties(b);
+      add_accum_properties(c);
     }
     else
       arg_count= 0; // OOM
   }
 
-  Item_func(const POS &pos, Item *a,Item *b,Item *c): super(pos),
-    allowed_arg_cols(1), arg_count(3)
+  Item_func(const POS &pos, Item *a,Item *b,Item *c)
+    : super(pos), arg_count(3)
   {
     if ((args= (Item**) sql_alloc(sizeof(Item*)*3)))
     {
@@ -176,20 +207,23 @@ public:
       arg_count= 0; // OOM
   }
 
-  Item_func(Item *a,Item *b,Item *c,Item *d):
-    allowed_arg_cols(1), arg_count(4)
+  Item_func(Item *a,Item *b,Item *c,Item *d)
+    : arg_count(4)
   {
     if ((args= (Item**) sql_alloc(sizeof(Item*)*4)))
     {
       args[0]= a; args[1]= b; args[2]= c; args[3]= d;
-      with_sum_func= a->with_sum_func || b->with_sum_func ||
-	c->with_sum_func || d->with_sum_func;
+      m_accum_properties= 0;
+      add_accum_properties(a);
+      add_accum_properties(b);
+      add_accum_properties(c);
+      add_accum_properties(d);
     }
     else
       arg_count= 0; // OOM
   }
-  Item_func(const POS &pos, Item *a,Item *b,Item *c,Item *d): super(pos),
-    allowed_arg_cols(1), arg_count(4)
+  Item_func(const POS &pos, Item *a,Item *b,Item *c,Item *d)
+    : super(pos), arg_count(4)
   {
     if ((args= (Item**) sql_alloc(sizeof(Item*)*4)))
     {
@@ -199,20 +233,24 @@ public:
       arg_count= 0; // OOM
   }
 
-  Item_func(Item *a,Item *b,Item *c,Item *d,Item* e):
-    allowed_arg_cols(1), arg_count(5)
+  Item_func(Item *a,Item *b,Item *c,Item *d,Item* e)
+    : arg_count(5)
   {
     if ((args= (Item**) sql_alloc(sizeof(Item*)*5)))
     {
       args[0]= a; args[1]= b; args[2]= c; args[3]= d; args[4]= e;
-      with_sum_func= a->with_sum_func || b->with_sum_func ||
-	c->with_sum_func || d->with_sum_func || e->with_sum_func ;
+      m_accum_properties= 0;
+      add_accum_properties(a);
+      add_accum_properties(b);
+      add_accum_properties(c);
+      add_accum_properties(d);
+      add_accum_properties(e);
     }
     else
       arg_count= 0; // OOM
   }
   Item_func(const POS &pos, Item *a, Item *b, Item *c, Item *d, Item* e)
-    : super(pos), allowed_arg_cols(1), arg_count(5)
+    : super(pos), arg_count(5)
   {
     if ((args= (Item**) sql_alloc(sizeof(Item*)*5)))
     {
@@ -221,8 +259,11 @@ public:
     else
       arg_count= 0; // OOM
   }
+  Item_func(List<Item> &list)
+  {
+    set_arguments(list, false);
+  }
 
-  Item_func(List<Item> &list);
   Item_func(const POS &pos, PT_item_list *opt_list);
 
   // Constructor used for Item_cond_and/or (see Item comment)
@@ -234,22 +275,26 @@ public:
   bool fix_func_arg(THD *, Item **arg);
   void fix_after_pullout(SELECT_LEX *parent_select,
                          SELECT_LEX *removed_select) override;
-  table_map used_tables() const override;
   /**
      Returns the pseudo tables depended upon in order to evaluate this
      function expression. The default implementation returns the empty
      set.
   */
   virtual table_map get_initial_pseudo_tables() const { return 0; }
-  table_map not_null_tables() const override;
+  table_map used_tables() const override
+  {
+    return used_tables_cache;
+  }
+  table_map not_null_tables() const override
+  {
+    return not_null_tables_cache;
+  }
   void update_used_tables() override;
   void set_used_tables(table_map map) { used_tables_cache= map; }
-  void set_not_null_tables(table_map map) { not_null_tables_cache= map; }
   bool eq(const Item *item, bool binary_cmp) const override;
   virtual optimize_type select_optimize() const { return OPTIMIZE_NONE; }
   virtual bool have_rev_func() const { return 0; }
   virtual Item *key_item() const { return args[0]; }
-  bool const_item() const override { return const_item_cache; }
   inline Item **arguments() const
   { DBUG_ASSERT(argument_count() > 0); return args; }
   /**
@@ -268,12 +313,7 @@ public:
   void print_op(String *str, enum_query_type query_type);
   void print_args(String *str, uint from, enum_query_type query_type);
   virtual void fix_num_length_and_dec();
-  void count_only_length(Item **item, uint nitems);
-  void count_real_length(Item **item, uint nitems);
-  void count_decimal_length(Item **item, uint nitems);
-  void count_datetime_length(Item **item, uint nitems);
-  bool count_string_result_length(enum_field_types field_type,
-                                  Item **item, uint nitems);
+  virtual bool is_deprecated() const { return false; }
   bool get_arg0_date(MYSQL_TIME *ltime, my_time_flags_t fuzzy_date)
   {
     return (null_value=args[0]->get_date(ltime, fuzzy_date));
@@ -283,7 +323,11 @@ public:
     return (null_value= args[0]->get_time(ltime));
   }
   bool is_null() override {
-    update_null_value();
+    /*
+      TODO : Implement error handling for this function as
+      update_null_value() can return error.
+    */
+    (void )update_null_value();
     return null_value;
   }
   void signal_divide_by_null();
@@ -713,7 +757,15 @@ public:
   */
   virtual bool date_op(MYSQL_TIME *ltime, my_time_flags_t fuzzydate)= 0;
   virtual bool time_op(MYSQL_TIME *ltime)= 0;
-  bool is_null() override { update_null_value(); return null_value; }
+  bool is_null() override
+  {
+    /*
+      TODO : Implement error handling for this function as
+      update_null_value() can return error.
+    */
+    (void) update_null_value();
+    return null_value;
+  }
 };
 
 /* function where type of result detected by first argument */
@@ -1258,7 +1310,6 @@ public:
   bool itemize(Parse_context *pc, Item **res) override;
   double val_real() override;
   const char *func_name() const override { return "rand"; }
-  bool const_item() const override { return false; }
   /**
     This function is non-deterministic and hence depends on the
     'RAND' pseudo-table.
@@ -1299,54 +1350,75 @@ public:
 };
 
 
-class Item_func_min_max :public Item_func
+class Item_func_min_max : public Item_func_numhybrid
 {
-  Item_result cmp_type;
-  String tmp_value;
+  // Comparison sign: -1 = GREATEST, 1 = LEAST
   const int cmp_sign;
-  /* TRUE <=> arguments should be compared in the DATETIME context. */
-  bool compare_as_dates;
-  /* An item used for issuing warnings while string to DATETIME conversion. */
-  Item *datetime_item;
+  /*
+    Used for determining whether one of the arguments is of temporal type and
+    for converting arguments to a common output format if arguments are
+    compared as dates and result type is character string. For example,
+    LEAST('95-05-05', date '10-10-10') should return '1995-05-05', not
+    '95-05-05'.
+  */
+  Item *temporal_item;
 protected:
-  uint cmp_datetimes(longlong *value);
-  uint cmp_times(longlong *value);
+  /**
+    Compare arguments as datetime values.
+
+    @param value Pointer to which the datetime value of the winning argument
+    is written.
+
+    @return true if error, false otherwise.
+  */
+  bool cmp_datetimes(longlong *value);
+
+  /**
+    Compare arguments as time values.
+
+    @param value Pointer to which the time value of the winning argument is
+    written.
+
+    @return true if error, false otherwise.
+  */
+  bool cmp_times(longlong *value);
 public:
-  Item_func_min_max(List<Item> &list,int cmp_sign_arg) :Item_func(list), // TODO: remove
-    cmp_type(INT_RESULT), cmp_sign(cmp_sign_arg), compare_as_dates(FALSE),
-    datetime_item(0) {}
   Item_func_min_max(const POS &pos, PT_item_list *opt_list, int cmp_sign_arg)
-    :Item_func(pos, opt_list),
-    cmp_type(INT_RESULT), cmp_sign(cmp_sign_arg), compare_as_dates(FALSE),
-    datetime_item(0)
+    :Item_func_numhybrid(pos, opt_list),
+    cmp_sign(cmp_sign_arg), temporal_item(nullptr)
   {}
-  double val_real() override;
+
   longlong val_int() override;
-  String *val_str(String *) override;
+  double val_real() override;
   my_decimal *val_decimal(my_decimal *) override;
-  bool get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate) override;
-  bool get_time(MYSQL_TIME *ltime) override;
-  bool resolve_type(THD *thd) override;
-  enum Item_result result_type() const override
-  {
-    /*
-      If we compare as dates, then:
-      - data type is MYSQL_TYPE_VARSTRING, MYSQL_TYPE_DATETIME
-        or MYSQL_TYPE_DATE.
-      - cmp_type is INT_RESULT or DECIMAL_RESULT,
-        depending on the amount of fractional digits.
-      We need to return STRING_RESULT in this case instead of cmp_type.
-    */
-    return compare_as_dates ? STRING_RESULT : cmp_type;
-  }
+  longlong int_op() override;
+  double real_op() override;
+  my_decimal *decimal_op(my_decimal *) override;
+  String *str_op(String *) override;
+  bool date_op(MYSQL_TIME *ltime, my_time_flags_t fuzzydate) override;
+  bool time_op(MYSQL_TIME *ltime) override;
+  bool resolve_type(THD *) override;
+  void set_numeric_type() override {}
+  enum Item_result result_type() const override { return hybrid_type; }
+
+  /**
+    Make CAST(LEAST_OR_GREATEST(datetime_expr, varchar_expr))
+    return a number in format YYMMDDhhmmss.
+  */
   enum Item_result cast_to_int_type() const override
   {
-    /*
-      make CAST(LEAST_OR_GREATEST(datetime_expr, varchar_expr))
-      return a number in format "YYYMMDDhhmmss".
-    */
-    return compare_as_dates ? INT_RESULT : result_type();
+    return compare_as_dates() ? INT_RESULT : result_type();
   }
+
+  /// Returns true if arguments to this function should be compared as dates.
+  bool compare_as_dates() const
+  {
+    return temporal_item != nullptr &&
+           is_temporal_type_with_date(temporal_item->data_type());
+  }
+
+  /// Returns true if at least one of the arguments was of temporal type.
+  bool has_temporal_arg() const { return temporal_item; }
 };
 
 class Item_func_min final : public Item_func_min_max
@@ -1370,7 +1442,11 @@ public:
 
 /* 
   Objects of this class are used for ROLLUP queries to wrap up 
-  each constant item referred to in GROUP BY list. 
+  each constant item referred to in GROUP BY list.
+
+  Before grouping the wrapped item could be considered constant, but after
+  grouping it is not, as rollup adds NULL values, which can affect later
+  phases like DISTINCT or windowing.
 */
 
 class Item_func_rollup_const final : public Item_func
@@ -1394,7 +1470,14 @@ public:
     return (null_value= args[0]->get_time(ltime));
   }
   const char *func_name() const override { return "rollup_const"; }
-  bool const_item() const override { return false; }
+  table_map used_tables() const override
+  {
+    /*
+      If underlying item is non-constant, return its used_tables value.
+      Otherwise ensure it is non-constant by returning RAND_TABLE_BIT.
+    */
+    return args[0]->used_tables() ? args[0]->used_tables() : RAND_TABLE_BIT;
+  }
   Item_result result_type() const override { return args[0]->result_type(); }
   bool resolve_type(THD *) override
   {
@@ -1448,7 +1531,10 @@ public:
 class Item_func_coercibility final : public Item_int_func
 {
 public:
-  Item_func_coercibility(const POS &pos, Item *a) :Item_int_func(pos, a) {}
+  Item_func_coercibility(const POS &pos, Item *a) :Item_int_func(pos, a)
+  {
+    null_on_null= false;
+  }
   longlong val_int() override;
   const char *func_name() const override { return "coercibility"; }
   bool resolve_type(THD *) override
@@ -1457,7 +1543,6 @@ public:
     maybe_null= false;
     return false;
   }
-  table_map not_null_tables() const override { return 0; }
 };
 
 class Item_func_locate : public Item_int_func
@@ -1780,6 +1865,9 @@ public:
     :Item_int_func(pos, count_expr, expr)
   {}
 
+  /// Ensure that "benchmark()" is never optimized away
+  table_map get_initial_pseudo_tables() const override {return RAND_TABLE_BIT;}
+
   bool itemize(Parse_context *pc, Item **res) override;
   longlong val_int() override;
   const char *func_name() const override { return "benchmark"; }
@@ -1804,7 +1892,6 @@ public:
   Item_func_sleep(const POS &pos, Item *a) :Item_int_func(pos, a) {}
 
   bool itemize(Parse_context *pc, Item **res) override;
-  bool const_item() const override { return 0; }
   const char *func_name() const override { return "sleep"; }
   /**
     This function is non-deterministic and hence depends on the
@@ -1827,7 +1914,9 @@ protected:
 public:
   Item_udf_func(const POS &pos, udf_func *udf_arg, PT_item_list *opt_list)
     :Item_func(pos, opt_list), udf(udf_arg)
-  {}
+  {
+    null_on_null= false;
+  }
 
   bool itemize(Parse_context *pc, Item **res) override;
   const char *func_name() const override { return udf.name(); }
@@ -1837,8 +1926,7 @@ public:
     DBUG_ASSERT(fixed == 0);
     bool res= udf.fix_fields(thd, this, arg_count, args);
     used_tables_cache= udf.used_tables_cache;
-    const_item_cache= udf.const_item_cache;
-    fixed= 1;
+    fixed= true;
     return res;
   }
   void update_used_tables() override
@@ -1884,15 +1972,10 @@ public:
     */  
     if ((used_tables_cache & ~PSEUDO_TABLE_BITS) && 
         !(used_tables_cache & RAND_TABLE_BIT))
-    {
       Item_func::update_used_tables();
-      if (!const_item_cache && !used_tables_cache)
-        used_tables_cache= RAND_TABLE_BIT;
-    }
   }
   void cleanup() override;
   Item_result result_type() const override { return udf.result_type(); }
-  table_map not_null_tables() const override { return 0; }
   bool is_expensive() override { return true; }
   void print(String *str, enum_query_type query_type) override;
 
@@ -2215,7 +2298,6 @@ public:
   const char *func_name() const override { return "can_access_database"; }
   bool resolve_type(THD *) override
   {
-    max_length= 21;
     maybe_null= true;
     return false;
   }
@@ -2231,7 +2313,6 @@ public:
   const char *func_name() const override { return "can_access_table"; }
   bool resolve_type(THD *) override
   {
-    max_length= 21;
     maybe_null= true;
     return false;
   }
@@ -2280,7 +2361,22 @@ public:
   const char *func_name() const { return "can_access_event"; }
   bool resolve_type(THD*)
   {
-    max_length= 21;
+    maybe_null= true;
+    return false;
+  }
+};
+
+class Item_func_can_access_resource_group : public Item_int_func
+{
+public:
+  Item_func_can_access_resource_group(const POS &pos, Item *a)
+    : Item_int_func(pos, a)
+  {}
+  longlong val_int();
+  const char *func_name() const { return "can_access_resource_group"; }
+  bool resolve_type(THD *)
+  {
+    max_length= 1; // Function can return 0 or 1.
     maybe_null= true;
     return false;
   }
@@ -2296,7 +2392,6 @@ public:
   const char *func_name() const override { return "can_access_view"; }
   bool resolve_type(THD *) override
   {
-    max_length= 21;
     maybe_null= true;
     return false;
   }
@@ -2312,7 +2407,25 @@ public:
   const char *func_name() const override { return "can_access_column"; }
   bool resolve_type(THD *) override
   {
-    max_length= 21;
+    maybe_null= true;
+    return false;
+  }
+};
+
+class Item_func_is_visible_dd_object : public Item_int_func
+{
+public:
+  Item_func_is_visible_dd_object(const POS &pos, Item *a)
+    : Item_int_func(pos, a)
+  {}
+  Item_func_is_visible_dd_object(const POS &pos, Item *a, Item *b)
+    : Item_int_func(pos, a, b)
+  {}
+  longlong val_int();
+  const char *func_name() const { return "is_visible_dd_object"; }
+  bool resolve_type(THD*)
+  {
+    max_length= 1;
     maybe_null= true;
     return false;
   }
@@ -2321,16 +2434,18 @@ public:
 class Item_func_internal_table_rows : public Item_int_func
 {
 public:
-  Item_func_internal_table_rows(const POS &pos,
-                                 Item *a, Item *b, Item *c, Item *d)
-    : Item_int_func(pos, a, b, c, d)
+  Item_func_internal_table_rows(
+    const POS &pos, PT_item_list *list)
+    : Item_int_func(pos, list)
   {}
+  enum Functype functype() const override { return DD_INTERNAL_FUNC; }
   longlong val_int() override;
   const char *func_name() const override { return "internal_table_rows"; }
   bool resolve_type(THD *) override
   {
-    max_length= 21;
     maybe_null= true;
+    unsigned_flag= true;
+    null_on_null= false;
     return false;
   }
 };
@@ -2338,16 +2453,18 @@ public:
 class Item_func_internal_avg_row_length : public Item_int_func
 {
 public:
-  Item_func_internal_avg_row_length(const POS &pos,
-                                    Item *a, Item *b, Item *c, Item *d)
-    : Item_int_func(pos, a, b, c, d)
+  Item_func_internal_avg_row_length(
+    const POS &pos, PT_item_list *list)
+    : Item_int_func(pos, list)
   {}
+  enum Functype functype() const override { return DD_INTERNAL_FUNC; }
   longlong val_int() override;
   const char *func_name() const override { return "internal_avg_row_length"; }
   bool resolve_type(THD *) override
   {
-    max_length= 21;
     maybe_null= true;
+    unsigned_flag= true;
+    null_on_null= false;
     return false;
   }
 };
@@ -2355,16 +2472,18 @@ public:
 class Item_func_internal_data_length : public Item_int_func
 {
 public:
-  Item_func_internal_data_length(const POS &pos,
-                                 Item *a, Item *b, Item *c, Item *d)
-    : Item_int_func(pos, a, b, c, d)
+  Item_func_internal_data_length(
+    const POS &pos, PT_item_list *list)
+    : Item_int_func(pos, list)
   {}
+  enum Functype functype() const override { return DD_INTERNAL_FUNC; }
   longlong val_int() override;
   const char *func_name() const override { return "internal_data_length"; }
   bool resolve_type(THD *) override
   {
-    max_length= 21;
     maybe_null= true;
+    unsigned_flag= true;
+    null_on_null= false;
     return false;
   }
 };
@@ -2372,16 +2491,18 @@ public:
 class Item_func_internal_max_data_length : public Item_int_func
 {
 public:
-  Item_func_internal_max_data_length(const POS &pos,
-                                     Item *a, Item *b, Item *c, Item *d)
-    : Item_int_func(pos, a, b, c, d)
+  Item_func_internal_max_data_length(
+    const POS &pos, PT_item_list *list)
+    : Item_int_func(pos, list)
   {}
+  enum Functype functype() const override { return DD_INTERNAL_FUNC; }
   longlong val_int() override;
   const char *func_name() const override { return "internal_max_data_length"; }
   bool resolve_type(THD *) override
   {
-    max_length= 21;
     maybe_null= true;
+    unsigned_flag= true;
+    null_on_null= false;
     return false;
   }
 };
@@ -2389,16 +2510,18 @@ public:
 class Item_func_internal_index_length : public Item_int_func
 {
 public:
-  Item_func_internal_index_length(const POS &pos,
-                                  Item *a, Item *b, Item *c, Item *d)
-    : Item_int_func(pos, a, b, c, d)
+  Item_func_internal_index_length(
+    const POS &pos, PT_item_list *list)
+    : Item_int_func(pos, list)
   {}
+  enum Functype functype() const override { return DD_INTERNAL_FUNC; }
   longlong val_int() override;
   const char *func_name() const override { return "internal_index_length"; }
   bool resolve_type(THD *) override
   {
-    max_length= 21;
     maybe_null= true;
+    unsigned_flag= true;
+    null_on_null= false;
     return false;
   }
 };
@@ -2406,16 +2529,18 @@ public:
 class Item_func_internal_data_free : public Item_int_func
 {
 public:
-  Item_func_internal_data_free(const POS &pos,
-                               Item *a, Item *b, Item *c, Item *d)
-    : Item_int_func(pos, a, b, c, d)
+  Item_func_internal_data_free(
+    const POS &pos, PT_item_list *list)
+    : Item_int_func(pos, list)
   {}
+  enum Functype functype() const override { return DD_INTERNAL_FUNC; }
   longlong val_int() override;
   const char *func_name() const override { return "internal_data_free"; }
   bool resolve_type(THD *) override
   {
-    max_length= 21;
     maybe_null= true;
+    unsigned_flag= true;
+    null_on_null= false;
     return false;
   }
 };
@@ -2423,16 +2548,18 @@ public:
 class Item_func_internal_auto_increment : public Item_int_func
 {
 public:
-  Item_func_internal_auto_increment(const POS &pos,
-                                    Item *a, Item *b, Item *c, Item *d)
-    : Item_int_func(pos, a, b, c, d)
+  Item_func_internal_auto_increment(
+    const POS &pos, PT_item_list *list)
+    : Item_int_func(pos, list)
   {}
+  enum Functype functype() const override { return DD_INTERNAL_FUNC; }
   longlong val_int() override;
   const char *func_name() const override { return "internal_auto_increment"; }
   bool resolve_type(THD *) override
   {
-    max_length= 21;
     maybe_null= true;
+    unsigned_flag= true;
+    null_on_null= false;
     return false;
   }
 };
@@ -2440,16 +2567,17 @@ public:
 class Item_func_internal_checksum : public Item_int_func
 {
 public:
-  Item_func_internal_checksum(const POS &pos,
-                              Item *a, Item *b, Item *c, Item *d)
-    : Item_int_func(pos, a, b, c, d)
+  Item_func_internal_checksum(
+    const POS &pos, PT_item_list *list)
+    : Item_int_func(pos, list)
   {}
+  enum Functype functype() const override { return DD_INTERNAL_FUNC; }
   longlong val_int() override;
   const char *func_name() const override { return "internal_checksum"; }
   bool resolve_type(THD *) override
   {
-    max_length= 21;
     maybe_null= true;
+    null_on_null= false;
     return false;
   }
 };
@@ -2464,8 +2592,8 @@ public:
   const char *func_name() const override { return "internal_keys_disabled"; }
   bool resolve_type(THD *) override
   {
-    max_length= 21;
     maybe_null= false;
+    null_on_null= false;
     return false;
   }
 };
@@ -2477,13 +2605,14 @@ public:
     const POS &pos, PT_item_list *list)
     : Item_int_func(pos, list)
   {}
+  enum Functype functype() const override { return DD_INTERNAL_FUNC; }
   longlong val_int() override;
   const char *func_name() const override
   { return "internal_index_column_cardinality"; }
   bool resolve_type(THD *) override
   {
-    max_length= 21;
     maybe_null= true;
+    null_on_null= false;
     return false;
   }
 };
@@ -2499,8 +2628,8 @@ public:
   const char *func_name() const override { return "internal_dd_char_length"; }
   bool resolve_type(THD *) override
   {
-    max_length= 21;
     maybe_null= true;
+    null_on_null= false;
     return false;
   }
 };
@@ -2519,9 +2648,208 @@ public:
   {
     max_length= 1;
     maybe_null= false;
+    null_on_null= false;
     return false;
   }
 };
+
+class Item_func_get_dd_index_sub_part_length final : public Item_int_func
+{
+public:
+  Item_func_get_dd_index_sub_part_length(const POS &pos, PT_item_list *list)
+    :Item_int_func(pos, list)
+  {}
+  longlong val_int() override;
+  bool resolve_type(THD *) override
+  {
+    maybe_null= true;
+    null_on_null= false;
+    return false;
+  }
+  const char *func_name() const override
+  { return "get_dd_index_sub_part_length"; }
+};
+
+
+class Item_func_internal_tablespace_id : public Item_int_func
+{
+public:
+  Item_func_internal_tablespace_id(const POS &pos, Item *a, Item *b,
+                                   Item *c, Item *d)
+    :Item_int_func(pos, a, b, c, d)
+  {}
+  enum Functype functype() const override { return DD_INTERNAL_FUNC; }
+  longlong val_int() override;
+  const char *func_name() const override { return "internal_tablespace_id"; }
+  bool resolve_type(THD *) override
+  {
+    maybe_null= true;
+    null_on_null= false;
+    return false;
+  }
+};
+
+
+class Item_func_internal_tablespace_free_extents : public Item_int_func
+{
+public:
+  Item_func_internal_tablespace_free_extents(const POS &pos, Item *a,
+                                             Item *b, Item *c, Item *d)
+    :Item_int_func(pos, a, b, c, d)
+  {}
+
+  enum Functype functype() const override { return DD_INTERNAL_FUNC; }
+  longlong val_int() override;
+
+  const char *func_name() const override
+  { return "internal_tablespace_free_extents"; }
+
+  bool resolve_type(THD *) override
+  {
+    maybe_null= true;
+    null_on_null= false;
+    return false;
+  }
+};
+
+
+class Item_func_internal_tablespace_total_extents : public Item_int_func
+{
+public:
+  Item_func_internal_tablespace_total_extents(const POS &pos, Item *a,
+                                             Item *b, Item *c, Item *d)
+    :Item_int_func(pos, a, b, c, d)
+  {}
+
+  enum Functype functype() const override { return DD_INTERNAL_FUNC; }
+  longlong val_int() override;
+
+  const char *func_name() const override
+  { return "internal_tablespace_total_extents"; }
+
+  bool resolve_type(THD *) override
+  {
+    maybe_null= true;
+    null_on_null= false;
+    return false;
+  }
+};
+
+
+class Item_func_internal_tablespace_extent_size : public Item_int_func
+{
+public:
+  Item_func_internal_tablespace_extent_size(const POS &pos, Item *a,
+                                            Item *b, Item *c, Item *d)
+    :Item_int_func(pos, a, b, c, d)
+  {}
+
+  enum Functype functype() const override { return DD_INTERNAL_FUNC; }
+  longlong val_int() override;
+
+  const char *func_name() const override
+  { return "internal_tablespace_extent_size"; }
+
+  bool resolve_type(THD *) override
+  {
+    maybe_null= true;
+    null_on_null= false;
+    return false;
+  }
+};
+
+
+class Item_func_internal_tablespace_initial_size : public Item_int_func
+{
+public:
+  Item_func_internal_tablespace_initial_size(const POS &pos, Item *a,
+                                             Item *b, Item *c, Item *d)
+    :Item_int_func(pos, a, b, c, d)
+  {}
+
+  enum Functype functype() const override { return DD_INTERNAL_FUNC; }
+  longlong val_int() override;
+
+  const char *func_name() const override
+  { return "internal_tablespace_initial_size"; }
+
+  bool resolve_type(THD *) override
+  {
+    maybe_null= true;
+    null_on_null= false;
+    return false;
+  }
+};
+
+
+class Item_func_internal_tablespace_maximum_size : public Item_int_func
+{
+public:
+  Item_func_internal_tablespace_maximum_size(const POS &pos, Item *a,
+                                             Item *b, Item *c, Item *d)
+    :Item_int_func(pos, a, b, c, d)
+  {}
+
+  enum Functype functype() const override { return DD_INTERNAL_FUNC; }
+  longlong val_int() override;
+
+  const char *func_name() const override
+  { return "internal_tablespace_maximum_size"; }
+
+  bool resolve_type(THD *) override
+  {
+    maybe_null= true;
+    null_on_null= false;
+    return false;
+  }
+};
+
+
+class Item_func_internal_tablespace_autoextend_size : public Item_int_func
+{
+public:
+  Item_func_internal_tablespace_autoextend_size(const POS &pos, Item *a,
+                                                Item *b, Item *c, Item *d)
+    :Item_int_func(pos, a, b, c, d)
+  {}
+
+  enum Functype functype() const override { return DD_INTERNAL_FUNC; }
+  longlong val_int() override;
+
+  const char *func_name() const override
+  { return "internal_tablespace_autoextend_size"; }
+
+  bool resolve_type(THD *) override
+  {
+    maybe_null= true;
+    null_on_null= false;
+    return false;
+  }
+};
+
+
+class Item_func_internal_tablespace_data_free : public Item_int_func
+{
+public:
+  Item_func_internal_tablespace_data_free(const POS &pos, Item *a,
+                                                Item *b, Item *c, Item *d)
+    :Item_int_func(pos, a, b, c, d)
+  {}
+
+  enum Functype functype() const override { return DD_INTERNAL_FUNC; }
+  longlong val_int() override;
+
+  const char *func_name() const override
+  { return "internal_tablespace_data_free"; }
+
+  bool resolve_type(THD *) override
+  {
+    maybe_null= true;
+    null_on_null= false;
+    return false;
+  }
+};
+
 
 /**
   Common class for:
@@ -2800,12 +3128,6 @@ public:
   longlong val_int() override;
   String *val_str(String *str) override;
   my_decimal *val_decimal(my_decimal *) override;
-  double val_result() override;
-  longlong val_int_result() override;
-  bool val_bool_result() override;
-  String *str_result(String *str) override;
-  my_decimal *val_decimal_result(my_decimal *) override;
-  bool is_null_result() override;
   bool update_hash(const void *ptr, uint length, enum Item_result type,
   		   const CHARSET_INFO *cs, Derivation dv, bool unsigned_arg);
   bool send(Protocol *protocol, String *str_arg) override;
@@ -2855,6 +3177,8 @@ public:
   my_decimal *val_decimal(my_decimal *) override;
   String *val_str(String *str) override;
   bool resolve_type(THD *) override;
+  void update_used_tables() override
+  {} // Keep existing used tables
   void print(String *str, enum_query_type query_type) override;
   enum Item_result result_type() const override;
   /*
@@ -2862,9 +3186,6 @@ public:
     select @t1:=1,@t1,@t:="hello",@t from foo where (@t1:= t2.b)
   */
   const char *func_name() const override { return "get_user_var"; }
-  bool const_item() const override;
-  table_map used_tables() const override
-  { return const_item() ? 0 : RAND_TABLE_BIT; }
   bool eq(const Item *item, bool binary_cmp) const override;
 private:
   bool set_value(THD *thd, sp_rcontext *ctx, Item **it) override;
@@ -2891,7 +3212,7 @@ class Item_user_var_as_out_param :public Item
   Name_string name;
   user_var_entry *entry;
 public:
-  Item_user_var_as_out_param(Name_string a) :name(a)
+  Item_user_var_as_out_param(const POS &pos, Name_string a) : Item(pos), name(a)
   { item_name.copy(a); }
   /* We should return something different from FIELD_ITEM here */
   enum Type type() const override { return STRING_ITEM;}
@@ -2924,6 +3245,40 @@ public:
 #define GET_SYS_VAR_CACHE_DOUBLE   2
 #define GET_SYS_VAR_CACHE_STRING   4
 
+class Item_func_get_system_var;
+
+/** Class to log audit event MYSQL_AUDIT_GLOBAL_VARIABLE_GET. */
+class Audit_global_variable_get_event
+{
+public:
+  Audit_global_variable_get_event(THD *thd, Item_func_get_system_var *item,
+                                  uchar cache_type);
+  ~Audit_global_variable_get_event();
+private:
+  // Thread handle.
+  THD *m_thd;
+
+  // Item_func_get_system_var instance.
+  Item_func_get_system_var *m_item;
+
+  /*
+    Value conversion type.
+    Depending on the value conversion type GET_SYS_VAR_CACHE_* is stored in this
+    member while creating the object. While converting value if there are any
+    intermediate conversions in the same query then this member is used to avoid
+    auditing more than once.
+  */
+  uchar m_val_type;
+
+  /*
+    To indicate event auditing is required or not. Event is not audited if
+      * scope of the variable is *not* GLOBAL.
+      * or the event is already audited for global variable for the same query.
+  */
+  bool m_audit_event;
+};
+
+
 class Item_func_get_system_var final : public Item_var_func
 {
   sys_var *var;
@@ -2939,6 +3294,8 @@ class Item_func_get_system_var final : public Item_var_func
   template <typename T>
   longlong get_sys_var_safe(THD *thd);
 
+  friend class Audit_global_variable_get_event;
+
 public:
   Item_func_get_system_var(sys_var *var_arg, enum_var_type var_type_arg,
                            LEX_STRING *component_arg, const char *name_arg,
@@ -2946,7 +3303,6 @@ public:
   enum Functype functype() const override { return GSYSVAR_FUNC; }
   bool resolve_type(THD *) override;
   void print(String *str, enum_query_type query_type) override;
-  bool const_item() const override { return true; }
   table_map used_tables() const override { return 0; }
   enum Item_result result_type() const override;
   double val_real() override;
@@ -3008,7 +3364,9 @@ public:
     join_key(false),
     ft_handler(NULL), table_ref(NULL),
     master(NULL), concat_ws(NULL), hints(NULL), simple_expression(false)
-  {}
+  {
+    null_on_null= false;
+  }
 
   bool itemize(Parse_context *pc, Item **res) override;
 
@@ -3019,7 +3377,7 @@ public:
     if (!master && ft_handler)
     {
       ft_handler->please->close_search(ft_handler);
-      delete hints;
+      destroy(hints);
     }
     ft_handler= NULL;
     concat_ws= NULL;
@@ -3031,7 +3389,6 @@ public:
   enum Functype functype() const override { return FT_FUNC; }
   const char *func_name() const override { return "match"; }
   void update_used_tables() override {}
-  table_map not_null_tables() const override { return 0; }
   bool fix_fields(THD *thd, Item **ref) override;
   bool eq(const Item *, bool binary_cmp) const override;
   /* The following should be safe, even if we compare doubles */
@@ -3040,7 +3397,7 @@ public:
   double val_real() override;
   void print(String *str, enum_query_type query_type) override;
 
-  bool fix_index();
+  bool fix_index(const THD *thd);
   bool init_search(THD *thd);
   bool check_gcol_func_processor(uchar *) override
   // TODO: consider adding in support for the MATCH-based generated columns
@@ -3099,7 +3456,7 @@ public:
       FTS_DOCID_IN_RESULT;
   }
 
-  float get_filtering_effect(table_map filter_for_table,
+  float get_filtering_effect(THD *thd, table_map filter_for_table,
                              table_map read_tables,
                              const MY_BITMAP *fields_to_ignore,
                              double rows_in_table) override;
@@ -3440,7 +3797,6 @@ public:
   {
     return sp_result_field;
   }
-
 };
 
 
@@ -3501,6 +3857,8 @@ double my_double_round(double value, longlong dec, bool dec_unsigned,
                        bool truncate);
 bool eval_const_cond(THD *thd, Item *cond, bool *value);
 Item_field *get_gc_for_expr(Item_func **func, Field *fld, Item_result type);
+
+void retrieve_tablespace_statistics(THD *thd, Item** args, bool *null_value);
 
 extern bool volatile  mqh_used;
 

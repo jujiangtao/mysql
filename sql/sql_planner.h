@@ -4,13 +4,20 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -210,6 +217,13 @@ void get_partial_join_cost(JOIN *join, uint n_tables, double *cost_arg,
   @param is_join_buffering  Whether or not condition filtering is about
                       to be calculated for an access method using join
                       buffering.
+  @param write_to_trace Wheter we should print the filtering effect calculated
+                      by histogram statistics and the final aggregated filtering
+                      effect to optimizer trace.
+  @param parent_trace The parent trace object where the final aggregated
+                      filtering effect will be printed if "write_to_trace" is
+                      set to true.
+
   @return  the 'post read filtering' effect (between 0 and 1) of 
            JOIN::conds
 */
@@ -217,5 +231,7 @@ float calculate_condition_filter(const JOIN_TAB *const tab,
                                  const Key_use *const keyuse,
                                  table_map used_tables,
                                  double fanout,
-                                 bool is_join_buffering);
+                                 bool is_join_buffering,
+                                 bool write_to_trace,
+                                 Opt_trace_object &parent_trace);
 #endif /* SQL_PLANNER_INCLUDED */

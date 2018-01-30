@@ -97,31 +97,31 @@ EXECUTE p4;
 JSON_ARRAYAGG(b)
 ["alfa", null, "doi", "unu", "trei", null, null, "one"]
 deallocate prepare p4;
-SELECT JSON_MERGE(JSON_ARRAYAGG(b), '[true, false]') FROM t1;
-JSON_MERGE(JSON_ARRAYAGG(b), '[true, false]')
+SELECT JSON_MERGE_PRESERVE(JSON_ARRAYAGG(b), '[true, false]') FROM t1;
+JSON_MERGE_PRESERVE(JSON_ARRAYAGG(b), '[true, false]')
 ["alfa", null, "doi", "unu", "trei", null, null, "one", true, false]
 PREPARE p1 FROM
-"SELECT a, JSON_MERGE(JSON_ARRAYAGG(b), '[true, false]') FROM t1 GROUP BY a";
+"SELECT a, JSON_MERGE_PRESERVE(JSON_ARRAYAGG(b), '[true, false]') FROM t1 GROUP BY a";
 EXECUTE p1;
-a	JSON_MERGE(JSON_ARRAYAGG(b), '[true, false]')
+a	JSON_MERGE_PRESERVE(JSON_ARRAYAGG(b), '[true, false]')
 1	["alfa", null, "unu", "one", true, false]
 2	["doi", true, false]
 3	["trei", true, false]
 4	[null, null, true, false]
 EXECUTE p1;
-a	JSON_MERGE(JSON_ARRAYAGG(b), '[true, false]')
+a	JSON_MERGE_PRESERVE(JSON_ARRAYAGG(b), '[true, false]')
 1	["alfa", null, "unu", "one", true, false]
 2	["doi", true, false]
 3	["trei", true, false]
 4	[null, null, true, false]
 deallocate prepare p1;
 PREPARE p4 FROM
-"SELECT JSON_MERGE(JSON_ARRAYAGG(b), '[true, false]') FROM t1";
+"SELECT JSON_MERGE_PRESERVE(JSON_ARRAYAGG(b), '[true, false]') FROM t1";
 EXECUTE p4;
-JSON_MERGE(JSON_ARRAYAGG(b), '[true, false]')
+JSON_MERGE_PRESERVE(JSON_ARRAYAGG(b), '[true, false]')
 ["alfa", null, "doi", "unu", "trei", null, null, "one", true, false]
 EXECUTE p4;
-JSON_MERGE(JSON_ARRAYAGG(b), '[true, false]')
+JSON_MERGE_PRESERVE(JSON_ARRAYAGG(b), '[true, false]')
 ["alfa", null, "doi", "unu", "trei", null, null, "one", true, false]
 deallocate prepare p4;
 ANALYZE TABLE t1;
@@ -455,39 +455,39 @@ EXECUTE p4;
 JSON_OBJECTAGG(k, b)
 {"1": "alfa", "2": null, "3": "doi", "4": "unu", "5": "trei", "6": null, "7": null, "8": "one"}
 deallocate prepare p4;
-SELECT a, JSON_MERGE(JSON_OBJECTAGG(k, b), '[true, false]') FROM t1 GROUP BY a;
-a	JSON_MERGE(JSON_OBJECTAGG(k, b), '[true, false]')
+SELECT a, JSON_MERGE_PRESERVE(JSON_OBJECTAGG(k, b), '[true, false]') FROM t1 GROUP BY a;
+a	JSON_MERGE_PRESERVE(JSON_OBJECTAGG(k, b), '[true, false]')
 1	[{"1": "alfa", "2": null, "4": "unu", "8": "one"}, true, false]
 2	[{"3": "doi"}, true, false]
 3	[{"5": "trei"}, true, false]
 4	[{"6": null, "7": null}, true, false]
-SELECT JSON_MERGE(JSON_OBJECTAGG(k, b), '[true, false]') FROM t1;
-JSON_MERGE(JSON_OBJECTAGG(k, b), '[true, false]')
+SELECT JSON_MERGE_PRESERVE(JSON_OBJECTAGG(k, b), '[true, false]') FROM t1;
+JSON_MERGE_PRESERVE(JSON_OBJECTAGG(k, b), '[true, false]')
 [{"1": "alfa", "2": null, "3": "doi", "4": "unu", "5": "trei", "6": null, "7": null, "8": "one"}, true, false]
 PREPARE p1 FROM
-"SELECT a, JSON_MERGE(JSON_OBJECTAGG(k, b), '[true, false]')
+"SELECT a, JSON_MERGE_PRESERVE(JSON_OBJECTAGG(k, b), '[true, false]')
 FROM t1
 GROUP BY a";
 EXECUTE p1;
-a	JSON_MERGE(JSON_OBJECTAGG(k, b), '[true, false]')
+a	JSON_MERGE_PRESERVE(JSON_OBJECTAGG(k, b), '[true, false]')
 1	[{"1": "alfa", "2": null, "4": "unu", "8": "one"}, true, false]
 2	[{"3": "doi"}, true, false]
 3	[{"5": "trei"}, true, false]
 4	[{"6": null, "7": null}, true, false]
 EXECUTE p1;
-a	JSON_MERGE(JSON_OBJECTAGG(k, b), '[true, false]')
+a	JSON_MERGE_PRESERVE(JSON_OBJECTAGG(k, b), '[true, false]')
 1	[{"1": "alfa", "2": null, "4": "unu", "8": "one"}, true, false]
 2	[{"3": "doi"}, true, false]
 3	[{"5": "trei"}, true, false]
 4	[{"6": null, "7": null}, true, false]
 deallocate prepare p1;
 PREPARE p4 FROM
-"SELECT JSON_MERGE(JSON_OBJECTAGG(k, b), '[true, false]') FROM t1";
+"SELECT JSON_MERGE_PRESERVE(JSON_OBJECTAGG(k, b), '[true, false]') FROM t1";
 EXECUTE p4;
-JSON_MERGE(JSON_OBJECTAGG(k, b), '[true, false]')
+JSON_MERGE_PRESERVE(JSON_OBJECTAGG(k, b), '[true, false]')
 [{"1": "alfa", "2": null, "3": "doi", "4": "unu", "5": "trei", "6": null, "7": null, "8": "one"}, true, false]
 EXECUTE p4;
-JSON_MERGE(JSON_OBJECTAGG(k, b), '[true, false]')
+JSON_MERGE_PRESERVE(JSON_OBJECTAGG(k, b), '[true, false]')
 [{"1": "alfa", "2": null, "3": "doi", "4": "unu", "5": "trei", "6": null, "7": null, "8": "one"}, true, false]
 deallocate prepare p4;
 ANALYZE TABLE t1;
@@ -688,7 +688,7 @@ ERROR 21000: Operand should contain 1 column(s)
 #
 CREATE TABLE t2(gid int, a int);
 SELECT JSON_ARRAYAGG(ST_PointFromText('POINT(10 10)')) FROM t2;
-ERROR HY000: Incorrect arguments to json_arrayagg(
+ERROR HY000: Incorrect arguments to json_arrayagg
 #
 # Coverage test for fix_fields: check_sum_func.
 #
@@ -721,26 +721,26 @@ SELECT JSON_ARRAYAGG(x) FROM t;
 JSON_ARRAYAGG(x)
 NULL
 Warnings:
-Warning	1301	Result of json_arrayagg(() was larger than max_allowed_packet (1024) - truncated
+Warning	1301	Result of json_arrayagg() was larger than max_allowed_packet (1024) - truncated
 SELECT JSON_OBJECTAGG(id, x) FROM t;
 JSON_OBJECTAGG(id, x)
 NULL
 Warnings:
-Warning	1301	Result of json_objectagg(() was larger than max_allowed_packet (1024) - truncated
+Warning	1301	Result of json_objectagg() was larger than max_allowed_packet (1024) - truncated
 SELECT id % 2 AS i, JSON_ARRAYAGG(x) FROM t GROUP BY i;
 i	JSON_ARRAYAGG(x)
 0	NULL
 1	NULL
 Warnings:
-Warning	1301	Result of json_arrayagg(() was larger than max_allowed_packet (1024) - truncated
-Warning	1301	Result of json_arrayagg(() was larger than max_allowed_packet (1024) - truncated
+Warning	1301	Result of json_arrayagg() was larger than max_allowed_packet (1024) - truncated
+Warning	1301	Result of json_arrayagg() was larger than max_allowed_packet (1024) - truncated
 SELECT id % 2 AS i, JSON_OBJECTAGG(id, x) FROM t GROUP BY i;
 i	JSON_OBJECTAGG(id, x)
 0	NULL
 1	NULL
 Warnings:
-Warning	1301	Result of json_objectagg(() was larger than max_allowed_packet (1024) - truncated
-Warning	1301	Result of json_objectagg(() was larger than max_allowed_packet (1024) - truncated
+Warning	1301	Result of json_objectagg() was larger than max_allowed_packet (1024) - truncated
+Warning	1301	Result of json_objectagg() was larger than max_allowed_packet (1024) - truncated
 SET GLOBAL max_allowed_packet = default;
 SET GLOBAL net_buffer_length = default;
 DROP TABLE t;
@@ -984,8 +984,8 @@ INSERT INTO t1 VALUES
 (2, 2, "2.3");
 SELECT a, JSON_OBJECTAGG(k, b) FROM t1 GROUP BY a;
 a	JSON_OBJECTAGG(k, b)
-1	{"1": "1.1"}
-2	{"2": "2.1"}
+1	{"1": "1.3"}
+2	{"2": "2.3"}
 SELECT a, JSON_ARRAYAGG(b) FROM t1 GROUP BY a;
 a	JSON_ARRAYAGG(b)
 1	["1.1", "1.2", "1.3"]
@@ -1115,38 +1115,38 @@ gid	1.0 * JSON_ARRAYAGG(a)
 1	0
 2	0
 Warnings:
-Warning	3156	Invalid JSON value for CAST to DOUBLE from column json_arrayagg( at row 3
-Warning	3156	Invalid JSON value for CAST to DOUBLE from column json_arrayagg( at row 5
+Warning	3156	Invalid JSON value for CAST to DOUBLE from column json_arrayagg at row 3
+Warning	3156	Invalid JSON value for CAST to DOUBLE from column json_arrayagg at row 5
 SELECT gid, 0x30 << JSON_ARRAYAGG(a) FROM t2 GROUP BY gid;
 gid	0x30 << JSON_ARRAYAGG(a)
 1	48
 2	48
 Warnings:
-Warning	3156	Invalid JSON value for CAST to INTEGER from column json_arrayagg( at row 3
-Warning	3156	Invalid JSON value for CAST to INTEGER from column json_arrayagg( at row 5
+Warning	3156	Invalid JSON value for CAST to INTEGER from column json_arrayagg at row 3
+Warning	3156	Invalid JSON value for CAST to INTEGER from column json_arrayagg at row 5
 SELECT gid, DATE_ADD(JSON_ARRAYAGG(a), INTERVAL 31 DAY)
 FROM t2 GROUP BY gid;
 gid	DATE_ADD(JSON_ARRAYAGG(a), INTERVAL 31 DAY)
 1	NULL
 2	NULL
 Warnings:
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column json_arrayagg( at row 3
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column json_arrayagg( at row 5
+Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column json_arrayagg at row 3
+Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column json_arrayagg at row 5
 SELECT gid, ADDTIME(JSON_ARRAYAGG(a), '02:00:00.999998')
 FROM t2 GROUP BY gid;
 gid	ADDTIME(JSON_ARRAYAGG(a), '02:00:00.999998')
 1	NULL
 2	NULL
 Warnings:
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column json_arrayagg( at row 3
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column json_arrayagg( at row 5
+Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column json_arrayagg at row 3
+Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column json_arrayagg at row 5
 SELECT gid, SEC_TO_TIME(JSON_ARRAYAGG(a)) FROM t2 GROUP BY gid;
 gid	SEC_TO_TIME(JSON_ARRAYAGG(a))
 1	00:00:00.000000
 2	00:00:00.000000
 Warnings:
-Warning	3156	Invalid JSON value for CAST to DECIMAL from column json_arrayagg( at row 3
-Warning	3156	Invalid JSON value for CAST to DECIMAL from column json_arrayagg( at row 5
+Warning	3156	Invalid JSON value for CAST to DECIMAL from column json_arrayagg at row 3
+Warning	3156	Invalid JSON value for CAST to DECIMAL from column json_arrayagg at row 5
 TRUNCATE TABLE t2;
 SELECT 1.0 * JSON_ARRAYAGG(a) FROM t2;
 1.0 * JSON_ARRAYAGG(a)

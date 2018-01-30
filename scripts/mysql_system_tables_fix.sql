@@ -1,13 +1,20 @@
 -- Copyright (c) 2003, 2017, Oracle and/or its affiliates. All rights reserved.
 --
 -- This program is free software; you can redistribute it and/or modify
--- it under the terms of the GNU General Public License as published by
--- the Free Software Foundation; version 2 of the License.
+-- it under the terms of the GNU General Public License, version 2.0,
+-- as published by the Free Software Foundation.
+--
+-- This program is also distributed with certain software (including
+-- but not limited to OpenSSL) that is licensed under separate terms,
+-- as designated in a particular file or component or in included license
+-- documentation.  The authors of MySQL hereby grant you an additional
+-- permission to link the program and your derivative works with the
+-- separately licensed software that they have included with MySQL.
 --
 -- This program is distributed in the hope that it will be useful,
 -- but WITHOUT ANY WARRANTY; without even the implied warranty of
 -- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
--- GNU General Public License for more details.
+-- GNU General Public License, version 2.0, for more details.
 --
 -- You should have received a copy of the GNU General Public License
 -- along with this program; if not, write to the Free Software
@@ -24,7 +31,20 @@
 # adding a 'SHOW WARNINGS' after the statement.
 
 set sql_mode='';
-set default_storage_engine=MyISAM;
+set default_storage_engine=InnoDB;
+
+# Create a user mysql.infoschema@localhost as the owner of views in information_schema.
+# That user should be created at the beginning of the script, because a query against a
+# view from information_schema leads to check for presence of a user specified in view's DEFINER clause.
+# If the user mysql.infoschema@localhost hadn't been created at the beginning of the script,
+# the query from information_schema.tables below would have failed with the error
+# ERROR 1449 (HY000): The user specified as a definer ('mysql.infoschema'@'localhost') does not exist.
+
+INSERT IGNORE INTO mysql.user
+(host, user, select_priv, plugin, authentication_string, ssl_cipher, x509_issuer, x509_subject)
+VALUES ('localhost','mysql.infoschema','Y','mysql_native_password','*THISISNOTAVALIDPASSWORDTHATCANBEUSEDHERE','','','');
+
+FLUSH PRIVILEGES;
 
 # Move distributed grant tables to default engine during upgrade, remember
 # which tables was moved so they can be moved back after upgrade
@@ -32,7 +52,7 @@ SET @had_distributed_user =
   (SELECT COUNT(table_name) FROM information_schema.tables
      WHERE table_schema = 'mysql' AND table_name = 'user' AND
            table_type = 'BASE TABLE' AND engine = 'NDBCLUSTER');
-SET @cmd="ALTER TABLE mysql.user ENGINE=MyISAM";
+SET @cmd="ALTER TABLE mysql.user ENGINE=InnoDB";
 SET @str = IF(@had_distributed_user > 0, @cmd, "SET @dummy = 0");
 PREPARE stmt FROM @str;
 EXECUTE stmt;
@@ -42,7 +62,7 @@ SET @had_distributed_db =
   (SELECT COUNT(table_name) FROM information_schema.tables
      WHERE table_schema = 'mysql' AND table_name = 'db' AND
            table_type = 'BASE TABLE' AND engine = 'NDBCLUSTER');
-SET @cmd="ALTER TABLE mysql.db ENGINE=MyISAM";
+SET @cmd="ALTER TABLE mysql.db ENGINE=InnoDB";
 SET @str = IF(@had_distributed_db > 0, @cmd, "SET @dummy = 0");
 PREPARE stmt FROM @str;
 EXECUTE stmt;
@@ -52,7 +72,7 @@ SET @had_distributed_tables_priv =
   (SELECT COUNT(table_name) FROM information_schema.tables
      WHERE table_schema = 'mysql' AND table_name = 'tables_priv' AND
            table_type = 'BASE TABLE' AND engine = 'NDBCLUSTER');
-SET @cmd="ALTER TABLE mysql.tables_priv ENGINE=MyISAM";
+SET @cmd="ALTER TABLE mysql.tables_priv ENGINE=InnoDB";
 SET @str = IF(@had_distributed_tables_priv > 0, @cmd, "SET @dummy = 0");
 PREPARE stmt FROM @str;
 EXECUTE stmt;
@@ -62,7 +82,7 @@ SET @had_distributed_columns_priv =
   (SELECT COUNT(table_name) FROM information_schema.tables
      WHERE table_schema = 'mysql' AND table_name = 'columns_priv' AND
            table_type = 'BASE TABLE' AND engine = 'NDBCLUSTER');
-SET @cmd="ALTER TABLE mysql.columns_priv ENGINE=MyISAM";
+SET @cmd="ALTER TABLE mysql.columns_priv ENGINE=InnoDB";
 SET @str = IF(@had_distributed_columns_priv > 0, @cmd, "SET @dummy = 0");
 PREPARE stmt FROM @str;
 EXECUTE stmt;
@@ -72,7 +92,7 @@ SET @had_distributed_procs_priv =
   (SELECT COUNT(table_name) FROM information_schema.tables
      WHERE table_schema = 'mysql' AND table_name = 'procs_priv' AND
            table_type = 'BASE TABLE' AND engine = 'NDBCLUSTER');
-SET @cmd="ALTER TABLE mysql.procs_priv ENGINE=MyISAM";
+SET @cmd="ALTER TABLE mysql.procs_priv ENGINE=InnoDB";
 SET @str = IF(@had_distributed_procs_priv > 0, @cmd, "SET @dummy = 0");
 PREPARE stmt FROM @str;
 EXECUTE stmt;
@@ -82,7 +102,7 @@ SET @had_distributed_proxies_priv =
   (SELECT COUNT(table_name) FROM information_schema.tables
      WHERE table_schema = 'mysql' AND table_name = 'proxies_priv' AND
            table_type = 'BASE TABLE' AND engine = 'NDBCLUSTER' );
-SET @cmd="ALTER TABLE mysql.proxies_priv ENGINE=MyISAM";
+SET @cmd="ALTER TABLE mysql.proxies_priv ENGINE=InnoDB";
 SET @str = IF(@had_distributed_proxies_priv > 0, @cmd, "SET @dummy = 0");
 PREPARE stmt FROM @str;
 EXECUTE stmt;
@@ -486,9 +506,10 @@ DROP PREPARE stmt;
 drop procedure mysql.die;
 SET GLOBAL automatic_sp_privileges = @global_automatic_sp_privileges;
 
-ALTER TABLE user ADD plugin char(64) DEFAULT 'mysql_native_password' NOT NULL,  ADD authentication_string TEXT;
-ALTER TABLE user MODIFY plugin char(64) DEFAULT 'mysql_native_password' NOT NULL;
-UPDATE user SET plugin=IF((length(password) = 41) OR (length(password) = 0), 'mysql_native_password', '') WHERE plugin = '';
+ALTER TABLE user ADD plugin char(64) DEFAULT 'caching_sha2_password' NOT NULL,  ADD authentication_string TEXT;
+ALTER TABLE user MODIFY plugin char(64) DEFAULT 'caching_sha2_password' NOT NULL;
+UPDATE user SET plugin=IF((length(password) = 41), 'mysql_native_password', '') WHERE plugin = '';
+UPDATE user SET plugin=IF((length(password) = 0), 'caching_sha2_password', '') WHERE plugin = '';
 ALTER TABLE user MODIFY authentication_string TEXT;
 
 -- establish if the field is already there.
@@ -503,11 +524,11 @@ ALTER TABLE user MODIFY password_expired ENUM('N', 'Y') COLLATE utf8_general_ci 
 
 -- Need to pre-fill mysql.proxies_priv with access for root even when upgrading from
 -- older versions
-
-CREATE TEMPORARY TABLE tmp_proxies_priv LIKE proxies_priv;
-INSERT INTO tmp_proxies_priv VALUES ('localhost', 'root', '', '', TRUE, '', now());
-INSERT INTO proxies_priv SELECT * FROM tmp_proxies_priv WHERE @had_proxies_priv_table=0;
-DROP TABLE tmp_proxies_priv;
+SET @cmd="INSERT INTO proxies_priv VALUES ('localhost', 'root', '', '', TRUE, '', now())";
+SET @str = IF(@had_proxies_priv_table = 0, @cmd, "SET @dummy = 0");
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
 
 -- Checking for any duplicate hostname and username combination are exists.
 -- If exits we will throw error.
@@ -618,6 +639,8 @@ UPDATE user SET account_locked = 'N' WHERE @hadAccountLocked=0;
 -- need to compensate for the ALTER TABLE user .. CONVERT TO CHARACTER SET above
 ALTER TABLE user MODIFY account_locked ENUM('N', 'Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL;
 
+UPDATE user SET account_locked ='Y' WHERE host = 'localhost' AND user = 'mysql.infoschema';
+
 --
 -- Drop password column
 --
@@ -634,6 +657,27 @@ SET @str=IF(@have_password <> 0, "ALTER TABLE user DROP password", "SET @dummy =
 PREPARE stmt FROM @str;
 EXECUTE stmt;
 DROP PREPARE stmt;
+
+-- Add the privilege XA_RECOVER_ADMIN for every user who has the privilege SUPER
+-- provided that there isn't a user who already has the privilige XA_RECOVER_ADMIN.
+SET @hadXARecoverAdminPriv = (SELECT COUNT(*) FROM global_grants WHERE priv = 'XA_RECOVER_ADMIN');
+INSERT INTO global_grants SELECT user, host, 'XA_RECOVER_ADMIN', IF(grant_priv = 'Y', 'Y', 'N')
+FROM mysql.user WHERE super_priv = 'Y' AND @hadXARecoverAdminPriv = 0;
+COMMIT;
+
+-- Add the privilege BACKUP_ADMIN for every user who has the privilege RELOAD
+-- provided that there isn't a user who already has the privilege BACKUP_ADMIN.
+SET @hadBackupAdminPriv = (SELECT COUNT(*) FROM global_grants WHERE priv = 'BACKUP_ADMIN');
+INSERT INTO global_grants SELECT user, host, 'BACKUP_ADMIN', IF(grant_priv = 'Y', 'Y', 'N')
+FROM mysql.user WHERE Reload_priv = 'Y' AND @hadBackupAdminPriv = 0;
+COMMIT;
+
+-- Add the privilege RESOURCE_GROUP_ADMIN for every user who has the privilege SUPER
+-- provided that there isn't a user who already has the privilege RESOURCE_GROUP_ADMIN.
+SET @hadResourceGroupAdminPriv = (SELECT COUNT(*) FROM global_grants WHERE priv = 'RESOURCE_GROUP_ADMIN');
+INSERT INTO global_grants SELECT user, host, 'RESOURCE_GROUP_ADMIN',
+IF(grant_priv = 'Y', 'Y', 'N') FROM mysql.user WHERE super_priv = 'Y' AND @hadResourceGroupAdminPriv = 0;
+COMMIT;
 
 # Activate the new, possible modified privilege tables
 # This should not be needed, but gives us some extra testing that the above
@@ -675,6 +719,21 @@ ALTER TABLE slave_master_info ADD Tls_version TEXT CHARACTER SET utf8 COLLATE ut
 ALTER TABLE slave_master_info
   MODIFY COLUMN Tls_version TEXT CHARACTER SET utf8 COLLATE utf8_bin COMMENT 'Tls version'
   AFTER Channel_name;
+
+# The Public_key_path field at slave_master_info should be added after the Tls_version field
+ALTER TABLE slave_master_info ADD Public_key_path TEXT CHARACTER SET utf8 COLLATE utf8_bin COMMENT 'The file containing public key of master server.';
+
+# The Get_public_key field at slave_master_info should be added after the slave_master_info field
+ALTER TABLE slave_master_info ADD Get_public_key BOOLEAN NOT NULL COMMENT 'Preference to get public key from master.';
+
+# If the order of column Public_key_path, Get_public_key is wrong, this will correct the order in
+# slave_master_info table.
+ALTER TABLE slave_master_info
+  MODIFY COLUMN Public_key_path TEXT CHARACTER SET utf8 COLLATE utf8_bin COMMENT 'The file containing public key of master server.'
+  AFTER Tls_version;
+ALTER TABLE slave_master_info
+  MODIFY COLUMN Get_public_key BOOLEAN NOT NULL COMMENT 'Preference to get public key from master.'
+  AFTER Public_key_path;
 
 SET @have_innodb= (SELECT COUNT(engine) FROM information_schema.engines WHERE engine='InnoDB' AND support != 'NO');
 SET @str=IF(@have_innodb <> 0, "ALTER TABLE innodb_table_stats STATS_PERSISTENT=0", "SET @dummy = 0");
@@ -824,6 +883,12 @@ ALTER TABLE user MODIFY Drop_role_priv enum('N','Y') COLLATE utf8_general_ci DEF
 UPDATE user SET Create_role_priv= 'Y', Drop_role_priv= 'Y' WHERE Create_user_priv = 'Y';
 
 --
+-- Password_reuse_history and Password_reuse_time
+--
+ALTER TABLE user ADD Password_reuse_history smallint unsigned NULL DEFAULT NULL AFTER Drop_role_priv;
+ALTER TABLE user ADD Password_reuse_time smallint unsigned NULL DEFAULT NULL AFTER Password_reuse_history;
+
+--
 -- Change engine of the firewall tables to InnoDB
 --
 SET @had_firewall_whitelist =
@@ -914,3 +979,86 @@ PREPARE stmt FROM @str;
 EXECUTE stmt;
 DROP PREPARE stmt;
 
+#
+# SQL commands for creating the user in MySQL Server which can be used by the
+# internal server session service
+# Notes:
+# This user is disabled for login
+# This user has super privileges and select privileges into performance schema
+# tables the mysql.user table.
+#
+
+INSERT IGNORE INTO mysql.user VALUES ('localhost','mysql.session','N','N','N','N','N','N','N','N','N','N','N','N','N','N','N','Y','N','N','N','N','N','N','N','N','N','N','N','N','N','','','','',0,0,0,0,'mysql_native_password','*THISISNOTAVALIDPASSWORDTHATCANBEUSEDHERE','N',CURRENT_TIMESTAMP,NULL,'Y', 'N', 'N', NULL, NULL);
+
+UPDATE user SET Create_role_priv= 'N', Drop_role_priv= 'N' WHERE User= 'mysql.session';
+
+INSERT IGNORE INTO mysql.tables_priv VALUES ('localhost', 'mysql', 'mysql.session', 'user', 'root\@localhost', CURRENT_TIMESTAMP, 'Select', '');
+
+INSERT IGNORE INTO mysql.db VALUES ('localhost', 'performance_schema', 'mysql.session','Y','N','N','N','N','N','N','N','N','N','N','N','N','N','N','N','N','N','N');
+
+FLUSH PRIVILEGES;
+
+# Move all system tables with InnoDB storage engine to mysql tablespace.
+# Move privilege tables to InnoDB only if they were not in NDB.
+SET @cmd="ALTER TABLE mysql.db TABLESPACE = mysql";
+SET @str = IF(@had_distributed_db > 0, "SET @dummy = 0", @cmd);
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+SET @cmd="ALTER TABLE mysql.user TABLESPACE = mysql";
+SET @str = IF(@had_distributed_user > 0, "SET @dummy = 0", @cmd);
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+SET @cmd="ALTER TABLE mysql.tables_priv TABLESPACE = mysql";
+SET @str = IF(@had_distributed_tables_priv > 0, "SET @dummy = 0", @cmd);
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+
+SET @cmd="ALTER TABLE mysql.columns_priv TABLESPACE = mysql";
+SET @str = IF(@had_distributed_columns_priv > 0, "SET @dummy = 0", @cmd);
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+SET @cmd="ALTER TABLE mysql.procs_priv TABLESPACE = mysql";
+SET @str = IF(@had_distributed_procs_priv > 0, "SET @dummy = 0", @cmd);
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+SET @cmd="ALTER TABLE mysql.proxies_priv TABLESPACE = mysql";
+SET @str = IF(@had_distributed_proxies_priv > 0, "SET @dummy = 0", @cmd);
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+# Alter mysql.ndb_binlog_index only if it exists already.
+SET @cmd="ALTER TABLE ndb_binlog_index TABLESPACE = mysql";
+SET @str = IF(@have_ndb_binlog_index = 1, @cmd, 'SET @dummy = 0');
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+ALTER TABLE mysql.func TABLESPACE = mysql;
+ALTER TABLE mysql.plugin TABLESPACE = mysql;
+ALTER TABLE mysql.servers TABLESPACE = mysql;
+ALTER TABLE mysql.help_topic TABLESPACE = mysql;
+ALTER TABLE mysql.help_category TABLESPACE = mysql;
+ALTER TABLE mysql.help_relation TABLESPACE = mysql;
+ALTER TABLE mysql.help_keyword TABLESPACE = mysql;
+ALTER TABLE mysql.time_zone_name TABLESPACE = mysql;
+ALTER TABLE mysql.time_zone TABLESPACE = mysql;
+ALTER TABLE mysql.time_zone_transition TABLESPACE = mysql;
+ALTER TABLE mysql.time_zone_transition_type TABLESPACE = mysql;
+ALTER TABLE mysql.time_zone_leap_second TABLESPACE = mysql;
+ALTER TABLE mysql.slave_relay_log_info TABLESPACE = mysql;
+ALTER TABLE mysql.slave_master_info TABLESPACE = mysql;
+ALTER TABLE mysql.slave_worker_info TABLESPACE = mysql;
+ALTER TABLE mysql.gtid_executed TABLESPACE = mysql;
+ALTER TABLE mysql.server_cost TABLESPACE = mysql;
+ALTER TABLE mysql.engine_cost TABLESPACE = mysql;

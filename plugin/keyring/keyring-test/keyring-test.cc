@@ -1,19 +1,27 @@
 /* Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #undef HAVE_PSI_INTERFACE
+#include <atomic>
 #include <iostream>
 #include <sql_plugin_ref.h>
 #include <time.h>
@@ -22,10 +30,10 @@
 bool random_keys= FALSE;
 bool verbose;
 bool generate_random_keys_data= FALSE;
-int number_of_keys_added= 0;
+std::atomic<int> number_of_keys_added{0};
 int number_of_keys_fetched= 0;
 int number_of_keys_removed= 0;
-int number_of_keys_generated= 0;
+std::atomic<int> number_of_keys_generated{0};
 int max_generated_key_length= 0;
 int number_of_keys_to_generate= 0;
 
@@ -53,7 +61,7 @@ void* generate(void *arg)
     if((result= mysql_key_generate(reinterpret_cast<const char*>(key_id),
                                    reinterpret_cast<const char*>(key_type),
                                    reinterpret_cast<const char*>(user), key_len)) == FALSE)
-      my_atomic_add32(&number_of_keys_generated,1);
+      ++number_of_keys_generated;
 
     if (verbose)
     {
@@ -106,7 +114,7 @@ void* store(void *arg)
     if((result= mysql_key_store(reinterpret_cast<const char*>(key_id),
                                 reinterpret_cast<const char*>(key_type),
                                 reinterpret_cast<const char*>(user), key, key_len)) == FALSE)
-      my_atomic_add32(&number_of_keys_added,1);
+      ++number_of_keys_added;
 
     if (generate_random_keys_data)
       my_free(key);
@@ -151,7 +159,7 @@ void* fetch(void *arg)
                                 reinterpret_cast<const char*>(user), &key_data,
                                 &key_len)) == FALSE && key_data != NULL)
     {
-      my_atomic_add32(&number_of_keys_fetched,1);
+      ++number_of_keys_fetched;
       if (generate_random_keys_data == FALSE && number_of_keys_to_generate == 0)
       {
         assert(key_len == strlen(key)+1);
@@ -199,7 +207,7 @@ void* remove(void *arg)
 
     if((result= mysql_key_remove(reinterpret_cast<const char*>(key_id),
                                  reinterpret_cast<const char*>(user))) == FALSE)
-      my_atomic_add32(&number_of_keys_removed,1);
+      ++number_of_keys_removed;
 
     if (verbose)
     {

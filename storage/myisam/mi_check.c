@@ -2,13 +2,20 @@
    Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -47,25 +54,25 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
-#include <m_ctype.h>
-#include <my_getopt.h>
 #include <stdarg.h>
 #include <sys/types.h>
 #include <time.h>
 
-#include "ftdefs.h"
+#include "m_ctype.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_double2ulonglong.h"
+#include "my_getopt.h"
 #include "my_inttypes.h"
 #include "my_io.h"
 #include "my_macros.h"
 #include "my_pointer_arithmetic.h"
-#include "myisam_sys.h"
+#include "storage/myisam/ftdefs.h"
+#include "storage/myisam/myisam_sys.h"
 #ifdef HAVE_SYS_MMAN_H
 #include <sys/mman.h>
 #endif
-#include "rt_index.h"
+#include "storage/myisam/rt_index.h"
 
 	/* Functions defined in this file */
 
@@ -1180,7 +1187,7 @@ int chk_data_link(MI_CHECK *param, MI_INFO *info,int extend)
 	  if (param->testflag & (T_EXTEND | T_MEDIUM | T_VERBOSE))
 	  {
 	    if (_mi_rec_check(info,record, info->rec_buff,block_info.rec_len,
-                              MY_TEST(info->s->calc_checksum)))
+                              info->s->calc_checksum))
 	    {
 	      mi_check_print_error(param,"Found wrong packed record at %s",
 			  llstr(start_recpos,llbuff));
@@ -2160,10 +2167,10 @@ int change_to_newfile(const char * filename, const char * old_ext,
 	/* Locks a whole file */
 	/* Gives an error-message if file can't be locked */
 
-int lock_file(MI_CHECK *param, File file, my_off_t start, int lock_type,
+int lock_file(MI_CHECK *param, File file, int lock_type,
 	      const char *filetype, const char *filename)
 {
-  if (my_lock(file,lock_type,start,F_TO_EOF,
+  if (my_lock(file,lock_type,
 	      param->testflag & T_WAIT_FOREVER ? MYF(MY_SEEK_NOT_DONE) :
 	      MYF(MY_SEEK_NOT_DONE |  MY_DONT_WAIT)))
   {
@@ -2396,7 +2403,7 @@ int mi_repair_by_sort(MI_CHECK *param, MI_INFO *info,
       if (keyseg[i].flag & HA_SPACE_PACK)
 	sort_param.key_length+=get_pack_length(keyseg[i].length);
       if (keyseg[i].flag & (HA_BLOB_PART | HA_VAR_LENGTH_PART))
-	sort_param.key_length+=2 + MY_TEST(keyseg[i].length >= 127);
+	sort_param.key_length+=2 + (keyseg[i].length >= 127);
       if (keyseg[i].flag & HA_NULL_PART)
 	sort_param.key_length++;
     }
@@ -2890,7 +2897,7 @@ int mi_repair_parallel(MI_CHECK *param, MI_INFO *info,
       if (keyseg->flag & HA_SPACE_PACK)
         sort_param[i].key_length+=get_pack_length(keyseg->length);
       if (keyseg->flag & (HA_BLOB_PART | HA_VAR_LENGTH_PART))
-        sort_param[i].key_length+=2 + MY_TEST(keyseg->length >= 127);
+        sort_param[i].key_length+=2 + (keyseg->length >= 127);
       if (keyseg->flag & HA_NULL_PART)
         sort_param[i].key_length++;
     }
@@ -2908,7 +2915,7 @@ int mi_repair_parallel(MI_CHECK *param, MI_INFO *info,
   sort_info.total_keys=i;
   sort_param[0].master= 1;
   sort_param[0].fix_datafile= (bool)(! rep_quick);
-  sort_param[0].calc_checksum= MY_TEST(param->testflag & T_CALC_CHECKSUM);
+  sort_param[0].calc_checksum= (param->testflag & T_CALC_CHECKSUM);
 
   if (!ftparser_alloc_param(info))
     goto err;
@@ -3559,7 +3566,7 @@ static int sort_get_next_record(MI_SORT_PARAM *sort_param)
                             sort_param->find_length,
                             (param->testflag & T_QUICK) &&
                             sort_param->calc_checksum &&
-                            MY_TEST(info->s->calc_checksum)))
+                            info->s->calc_checksum))
 	  {
 	    mi_check_print_info(param,"Found wrong packed record at %s",
 				llstr(sort_param->start_recpos,llbuff));
@@ -3718,7 +3725,7 @@ int sort_write_record(MI_SORT_PARAM *sort_param)
 
       do
       {
-	block_length=reclength+ 3 + MY_TEST(reclength >= (65520-3));
+	block_length=reclength+ 3 + reclength >= (65520-3);
 	if (block_length < share->base.min_block_length)
 	  block_length=share->base.min_block_length;
 	info->update|=HA_STATE_WRITE_AT_END;
@@ -4638,8 +4645,10 @@ static ha_checksum mi_byte_checksum(const uchar *buf, uint length)
   ha_checksum crc;
   const uchar *end=buf+length;
   for (crc=0; buf != end; buf++)
-    crc=((crc << 1) + *((uchar*) buf)) +
-      MY_TEST(crc & (((ha_checksum) 1) << (8*sizeof(ha_checksum)-1)));
+  {
+    crc= (crc << 1) | (crc >> (8*sizeof(ha_checksum)-1));
+    crc+= *buf;
+  }
   return crc;
 }
 

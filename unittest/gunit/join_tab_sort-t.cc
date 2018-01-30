@@ -1,26 +1,33 @@
 /* Copyright (c) 2012, 2017, Oracle and/or its affiliates. All rights reserved. 
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA */
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include <gtest/gtest.h>
 #include <sys/types.h>
 #include <vector>
 
-#include "merge_sort.h"
 #include "my_inttypes.h"
-#include "sql_select.h"
-#include "test_utils.h"
+#include "sql/merge_sort.h"
+#include "sql/sql_select.h"
+#include "unittest/gunit/test_utils.h"
 
 namespace join_tab_sort_unittest {
 
@@ -95,7 +102,7 @@ TEST_F(JTSortTest, SortFoundRecordsTest)
   MOCK_JOIN_TAB *arr[num_tables];
 
   for (int i= 0; i < num_tables; i++)
-    arr[i]= new MOCK_JOIN_TAB(i, 0);
+    arr[i]= new (*THR_MALLOC) MOCK_JOIN_TAB(i, 0);
 
   // MERGE SORT
   std::random_shuffle(arr, arr + 50);
@@ -111,7 +118,7 @@ TEST_F(JTSortTest, SortFoundRecordsTest)
 
   for (int i= 0; i < num_tables; i++)
   {
-    delete arr[i];
+    destroy(arr[i]);
   }
 }
 
@@ -127,7 +134,7 @@ TEST_F(JTSortTest, SortDependsTest)
   */
   for (int i= 0; i < num_tables; i++)
   {
-    arr[i]= new MOCK_JOIN_TAB(i, i);
+    arr[i]= new (*THR_MALLOC) MOCK_JOIN_TAB(i, i);
     for (int j= i+1; j < num_tables; j++)
       arr[i]->dependent|= 1ULL << j;
   }
@@ -148,7 +155,7 @@ TEST_F(JTSortTest, SortDependsTest)
 
   for (int i= 0; i < num_tables; i++)
   {
-    delete arr[i];
+    destroy(arr[i]);
   }
 }
 
@@ -165,7 +172,7 @@ TEST_F(JTSortTest, SortKeyDependsTest)
   */
   for (int i= 0; i < num_tables; i++)
   {
-    arr[i]= new MOCK_JOIN_TAB(i, i);
+    arr[i]= new (*THR_MALLOC) MOCK_JOIN_TAB(i, i);
     for (int j= i+1; j < num_tables; j++)
       arr[i]->key_dependent|= 1ULL << j;
   }
@@ -183,7 +190,7 @@ TEST_F(JTSortTest, SortKeyDependsTest)
     EXPECT_TRUE(arr[i]->found_records < arr[i-1]->found_records);
 
   for (int i= 0; i < num_tables; i++)
-    delete arr[i];
+    destroy(arr[i]);
 }
 
 /*

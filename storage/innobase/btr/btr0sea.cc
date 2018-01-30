@@ -10,16 +10,24 @@ incorporated with their permission, and subject to the conditions contained in
 the file COPYING.Google.
 
 This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+the terms of the GNU General Public License, version 2.0, as published by the
+Free Software Foundation.
+
+This program is also distributed with certain software (including but not
+limited to OpenSSL) that is licensed under separate terms, as designated in a
+particular file or component or in included license documentation. The authors
+of MySQL hereby grant you an additional permission to link the program and
+your derivative works with the separately licensed software that they have
+included with MySQL.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+FOR A PARTICULAR PURPOSE. See the GNU General Public License, version 2.0,
+for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 *****************************************************************************/
 
@@ -397,6 +405,8 @@ void
 btr_search_enable()
 {
 	os_rmb;
+	/* Don't allow enabling AHI if buffer pool resize is hapenning.
+	Ignore it sliently.  */
 	if (srv_buf_pool_old_size != srv_buf_pool_size)
 		return;
 
@@ -1266,11 +1276,11 @@ retry:
 		not be any adaptive hash index entries), or it was
 		completed and then flagged aborted in
 		rollback_inplace_alter_table(). */
-		break;
 	case ONLINE_INDEX_ABORTED_DROPPED:
-		/* The index should have been dropped from the tablespace
-		already, and the adaptive hash index entries should have
-		been dropped as well. */
+		/* Since dropping the indexes are delayed to post_ddl,
+		this status is similar to ONLINE_INDEX_ABORTED. */
+		break;
+	default:
 		ut_error;
 	}
 #endif /* UNIV_DEBUG */
@@ -1423,6 +1433,164 @@ btr_search_drop_page_hash_when_freed(
 	}
 
 	mtr_commit(&mtr);
+}
+
+/** Drop any adaptive hash index entries for a table.
+@param[in,out]	table	to drop indexes of this table */
+void
+btr_drop_ahi_for_table(dict_table_t* table)
+{
+	const ulint     len = UT_LIST_GET_LEN(table->indexes);
+
+	if (len == 0) {
+		return;
+	}
+
+	const dict_index_t*	indexes[MAX_INDEXES];
+	static constexpr unsigned DROP_BATCH = 1024;
+
+	page_id_t		drop[DROP_BATCH];
+	const page_size_t	page_size(dict_table_page_size(table));
+
+	for (;;) {
+		ulint			ref_count	= 0;
+		const dict_index_t**	end		= indexes;
+
+		for (dict_index_t* index = table->first_index();
+		     index != nullptr; index = index->next()) {
+			if (ulint n_refs = index->search_info->ref_count) {
+				ut_ad(!index->disable_ahi);
+				ut_ad(index->is_committed());
+				ref_count += n_refs;
+				ut_ad(indexes + len > end);
+				*end++ = index;
+			}
+		}
+
+		ut_ad((indexes == end) == (ref_count == 0));
+
+		if (ref_count == 0) {
+			return;
+		}
+
+		for (ulint i = 0; i < srv_buf_pool_instances; ++i) {
+			unsigned n_drop = 0;
+
+			buf_pool_t*     buf_pool = buf_pool_from_array(i);
+			mutex_enter(&buf_pool->LRU_list_mutex);
+			const buf_page_t* prev;
+
+			for (const buf_page_t* bpage
+				     = UT_LIST_GET_LAST(buf_pool->LRU);
+			     bpage != nullptr; bpage = prev) {
+				prev = UT_LIST_GET_PREV(LRU, bpage);
+
+				ut_a(buf_page_in_file(bpage));
+
+				if (buf_page_get_state(bpage)
+				    != BUF_BLOCK_FILE_PAGE
+				    || (bpage->io_fix != BUF_IO_NONE
+					&& bpage->io_fix != BUF_IO_WRITE)
+				    || bpage->buf_fix_count > 0) {
+					continue;
+				}
+
+				const dict_index_t* index
+					= reinterpret_cast<const buf_block_t*>(
+						bpage)->index;
+				if (index == nullptr) {
+					continue;
+				}
+
+				if (std::search_n(indexes, end, 1, index)
+				    != end) {
+					drop[n_drop].copy_from(bpage->id);
+					if (++n_drop == DROP_BATCH) {
+						break;
+					}
+				}
+			}
+
+			mutex_exit(&buf_pool->LRU_list_mutex);
+
+			for (unsigned i = 0; i < n_drop; ++i) {
+				btr_search_drop_page_hash_when_freed(
+					drop[i], page_size);
+			}
+		}
+
+		os_thread_yield();
+	}
+}
+
+/** Drop any adaptive hash index entries for a index.
+@param[in,out]	index	to drop hash indexes for this index */
+void
+btr_drop_ahi_for_index(dict_index_t* index)
+{
+	ut_ad(index->is_committed());
+
+	if (index->disable_ahi || index->search_info->ref_count == 0) {
+		return;
+	}
+
+	static constexpr unsigned	DROP_BATCH = 1024;
+
+	const dict_table_t*		table = index->table;
+	page_id_t			drop[DROP_BATCH];
+	const page_size_t		page_size(dict_table_page_size(table));
+
+	while (true) {
+		if (index->search_info->ref_count == 0) {
+			return;
+		}
+
+		for (ulint i = 0; i < srv_buf_pool_instances; ++i) {
+			unsigned n_drop = 0;
+
+			buf_pool_t*	buf_pool = buf_pool_from_array(i);
+			mutex_enter(&buf_pool->LRU_list_mutex);
+			const buf_page_t* prev;
+
+			for (const buf_page_t* bpage
+				= UT_LIST_GET_LAST(buf_pool->LRU);
+			     bpage != nullptr; bpage = prev) {
+				prev = UT_LIST_GET_PREV(LRU, bpage);
+
+				ut_a(buf_page_in_file(bpage));
+
+				if (buf_page_get_state(bpage)
+				    != BUF_BLOCK_FILE_PAGE
+				    || (bpage->io_fix != BUF_IO_NONE
+					&& bpage->io_fix != BUF_IO_WRITE)
+				    || bpage->buf_fix_count > 0) {
+					continue;
+				}
+
+				const dict_index_t* block_index
+					= reinterpret_cast<const buf_block_t*>(
+						bpage)->index;
+				if (block_index == nullptr
+				    || block_index != index) {
+					continue;
+				}
+
+				drop[n_drop].copy_from(bpage->id);
+				if (++n_drop == DROP_BATCH) {
+					break;
+				}
+			}
+
+			mutex_exit(&buf_pool->LRU_list_mutex);
+
+			for (unsigned i = 0; i < n_drop; ++i) {
+				btr_search_drop_page_hash_when_freed(
+					drop[i], page_size);
+			}
+		}
+
+		os_thread_yield();
+	}
 }
 
 /** Build a hash index on a page with the given parameters. If the page already

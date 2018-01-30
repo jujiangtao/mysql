@@ -1,38 +1,43 @@
 /* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
-   This program is free software; you can redistribute it and/or
-   modify it under the terms of the GNU General Public License as
-   published by the Free Software Foundation; version 2 of the
-   License.
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
 
-   This program is distributed in the hope that it will be useful, but
-   WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
-   General Public License for more details.
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
-   02110-1301 USA */
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "sql/rpl_table_access.h"
 
 #include <stddef.h>
 
-#include "current_thd.h" // my_thread_set_THR_THD
-#include "handler.h"     // ha_rollback_trans
 #include "lex_string.h"
-#include "log.h"         // sql_print_warning
 #include "my_dbug.h"
 #include "my_inttypes.h"
+#include "my_loglevel.h"
 #include "my_sys.h"
 #include "mysqld_error.h"
-#include "sql_base.h"    // close_thread_tables
-#include "sql_class.h"   // THD
-#include "sql_error.h"
-#include "sql_lex.h"     // Query_tables_list
-#include "sql_security_ctx.h"
-#include "table.h"       // TABLE_LIST
+#include "sql/auth/sql_security_ctx.h"
+#include "sql/current_thd.h" // my_thread_set_THR_THD
+#include "sql/handler.h" // ha_rollback_trans
+#include "sql/log.h"
+#include "sql/sql_base.h" // close_thread_tables
+#include "sql/sql_class.h" // THD
+#include "sql/sql_lex.h" // Query_tables_list
+#include "sql/table.h"   // TABLE_LIST
 
 
 bool System_table_access::open_table(THD* thd, const LEX_STRING dbstr,
@@ -72,8 +77,7 @@ bool System_table_access::open_table(THD* thd, const LEX_STRING dbstr,
     thd->restore_backup_open_tables_state(backup);
     thd->lex->restore_backup_query_tables_list(&query_tables_list_backup);
     if (thd->is_operating_gtid_table_implicitly)
-      sql_print_warning("Gtid table is not ready to be used. Table '%s.%s' "
-                        "cannot be opened.", dbstr.str, tbstr.str);
+      LogErr(WARNING_LEVEL, ER_RPL_GTID_TABLE_CANNOT_OPEN, dbstr.str, tbstr.str);
     else
       my_error(ER_NO_SUCH_TABLE, MYF(0), dbstr.str, tbstr.str);
     DBUG_RETURN(true);
@@ -103,37 +107,38 @@ bool System_table_access::open_table(THD* thd, const LEX_STRING dbstr,
 }
 
 
-void System_table_access::close_table(THD *thd, TABLE* table,
+bool System_table_access::close_table(THD *thd, TABLE* table,
                                       Open_tables_backup *backup,
                                       bool error, bool need_commit)
 {
   Query_tables_list query_tables_list_backup;
+  bool res= false;
 
   DBUG_ENTER("System_table_access::close_table");
 
   if (table)
   {
     if (error)
-      ha_rollback_trans(thd, false);
+      res= ha_rollback_trans(thd, false);
     else
     {
       /*
         To make the commit not to block with global read lock set
         "ignore_global_read_lock" flag to true.
        */
-      ha_commit_trans(thd, false, true);
+      res= ha_commit_trans(thd, false, true);
     }
     if (need_commit)
     {
       if (error)
-        ha_rollback_trans(thd, true);
+        res= ha_rollback_trans(thd, true);
       else
       {
         /*
           To make the commit not to block with global read lock set
           "ignore_global_read_lock" flag to true.
          */
-        ha_commit_trans(thd, true, true);
+        res= ha_commit_trans(thd, true, true);
       }
     }
     /*
@@ -147,7 +152,8 @@ void System_table_access::close_table(THD *thd, TABLE* table,
     thd->restore_backup_open_tables_state(backup);
   }
 
-  DBUG_VOID_RETURN;
+  DBUG_EXECUTE_IF("simulate_flush_commit_error", {res= true;});
+  DBUG_RETURN(res);
 }
 
 
@@ -168,7 +174,7 @@ void System_table_access::drop_thd(THD *thd)
   DBUG_ENTER("System_table_access::drop_thd");
 
   delete thd;
-  my_thread_set_THR_THD(NULL);
+  current_thd= nullptr;
 
   DBUG_VOID_RETURN;
 }

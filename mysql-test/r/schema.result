@@ -161,3 +161,158 @@ connection default;
 SET DEBUG_SYNC= 'RESET';
 DROP SCHEMA testdb;
 SET @@session.lock_wait_timeout= @start_session_value;
+CREATE SCHEMA s;
+SHOW CREATE SCHEMA s;
+Database	Create Database
+s	CREATE DATABASE `s` /*!40100 DEFAULT CHARACTER SET utf8mb4 */
+USE s;
+ALTER SCHEMA s DEFAULT COLLATE= utf8_general_ci;
+SHOW CREATE SCHEMA s;
+Database	Create Database
+s	CREATE DATABASE `s` /*!40100 DEFAULT CHARACTER SET utf8 */
+DROP SCHEMA s;
+ERROR HY000: Schema directory './s/' does not exist
+DROP SCHEMA s;
+CREATE SCHEMA s;
+CREATE VIEW s.v AS SELECT * FROM mysql.time_zone;
+DROP SCHEMA s;
+CREATE SCHEMA s;
+CREATE TABLE s.t (pk INTEGER PRIMARY KEY) ENGINE= MyISAM;
+Got one of the listed errors
+CREATE TABLE s.t (pk INTEGER PRIMARY KEY) ENGINE= InnoDB;
+t.ibd
+DROP SCHEMA s;
+CREATE SCHEMA s;
+CREATE TABLE s.t_myisam (pk INTEGER PRIMARY KEY) ENGINE= MyISAM;
+CREATE TABLE s.t_innodb (pk INTEGER PRIMARY KEY) ENGINE= InnoDB;
+ALTER TABLE s.t_myisam ADD COLUMN c INTEGER;
+ERROR HY000: Can't find file: 't_myisam' (errno: 2 - No such file or directory)
+ALTER TABLE s.t_innodb ADD COLUMN c INTEGER;
+Got one of the listed errors
+DROP SCHEMA s;
+CREATE SCHEMA s;
+CREATE TABLE s.t_myisam (pk INTEGER PRIMARY KEY) ENGINE= MyISAM;
+CREATE TABLE s.t_innodb (pk INTEGER PRIMARY KEY) ENGINE= InnoDB;
+SHOW CREATE TABLE s.t_myisam;
+ERROR HY000: Can't find file: 't_myisam' (errno: 2 - No such file or directory)
+DROP SCHEMA s;
+CREATE SCHEMA s;
+CREATE TABLE s.t_myisam (pk INTEGER PRIMARY KEY) ENGINE= MyISAM;
+CREATE TABLE s.t_innodb (pk INTEGER PRIMARY KEY) ENGINE= InnoDB;
+DROP TABLE s.t_myisam;
+ERROR HY000: Storage engine can't drop table 's.t_myisam' because it is missing. Use DROP TABLE IF EXISTS to remove it from data-dictionary.
+DROP TABLE s.t_innodb;
+DROP SCHEMA s;
+#
+# Bug#24732194: "USE DB_NAME" AND "SELECT SCHEMA()"
+#               WORK FOR NON-EXISTING DATABASES
+#
+USE s;
+ERROR 42000: Unknown database 's'
+#
+# WL#7743 "New data dictionary: changes to DDL-related parts of SE API"
+#
+# Additional test coverage for changes in DROP DATABASE implementation.
+# Check what happens when we fail to remove database directory during
+# the last step of DROP DATABASE, when statement is already committed.
+CREATE DATABASE db1;
+CREATE FUNCTION db1.f1() RETURNS INT RETURN 0;
+connect  con1, localhost, root,,;
+# Acquire S lock on db1.f1(), so upcoming DROP DATABASE will get
+# blocked.
+BEGIN;
+SELECT db1.f1();
+db1.f1()
+0
+connection default;
+# Send:
+DROP DATABASE db1;
+connection con1;
+# Wait until the above DROP DATABASE is blocked because of S lock.
+# Replace database directory with an empty file.
+# Unblock DROP DATABASE by releasing S lock.
+COMMIT;
+disconnect con1;
+connection default;
+# Reap DROP DATABASE. Statement should succeed, but send warnings
+# about problems with removing database directory to user ...
+Warnings:
+Warning	3607	Problem while dropping database. Can't remove database directory (Error dropping database (can't rmdir './db1', errno: ## - ...). Please remove it manually.
+# ... and error log too. Let's check that.
+Pattern "Problem while dropping database. Can't remove database directory .* Please remove it manually." found
+# Clean-up.
+#
+# Bug#24510948: ALTER TABLE+INSERT+DROP DB HANG
+#
+CREATE DATABASE db1;
+CREATE TABLE db1.t1(id INT, title VARCHAR(100),
+FULLTEXT fidx(title), PRIMARY KEY(id));
+# Con1 will attempt insert and block holding open_in_progress on share
+SET DEBUG_SYNC= 'get_share_before_open SIGNAL wait_share WAIT_FOR continue_insert';
+SET SESSION lock_wait_timeout= 5;
+INSERT INTO db1.t1 VALUES(1, 'mysql database');
+# Con2 will attempt alter and block before waiting on COND_open
+SET DEBUG_SYNC= 'now WAIT_FOR wait_share';
+SET DEBUG_SYNC= 'get_share_before_COND_open_wait SIGNAL wait_cond WAIT_FOR continue_alter';
+ALTER TABLE db1.t1 DROP INDEX fidx;
+# Con3 will wait until the other connections are waiting for signals,
+# then attempt to drop schema, which requires X-MDL
+SET DEBUG_SYNC= 'now WAIT_FOR wait_cond';
+DROP DATABASE db1;
+# Con3 is now waiting for MDL on schema. Waking the other connections
+# should let them continue (before fix con1 and con2 would deadlock
+# on schema MDL and LOCK_open (protecting share->open_in_progress)
+# until con1 aborts with lock timeout
+SET DEBUG_SYNC= 'now SIGNAL continue_insert';
+SET DEBUG_SYNC= 'now SIGNAL continue_alter';
+# Reaping connection con1
+# Reaping connection con2
+# Reaping connection con3
+#
+# Bug#26043994: CREATE DATABASE/DIRECTORY INCONSISTENCY
+#
+# Dropping a non-existing schema fails
+DROP SCHEMA s1;
+ERROR HY000: Can't drop database 's1'; database doesn't exist
+# but drop succeeds (with a warning) when using IF EXISTS
+DROP SCHEMA IF EXISTS s1;
+Warnings:
+Note	1008	Can't drop database 's1'; database doesn't exist
+# Verify that schema can be created successfully
+CREATE SCHEMA s1;
+# Verify that trying to create it again fails
+CREATE SCHEMA s1;
+ERROR HY000: Can't create database 's1'; database exists
+# but create succeds (with a warning) when using IF NOT EXITSTS
+CREATE SCHEMA IF NOT EXISTS s1;
+Warnings:
+Note	1007	Can't create database 's1'; database exists
+DROP SCHEMA s1;
+# Create a directory in datadir manually
+# Creating a schema with the same name as directory in datadir fails
+# but with new error message
+CREATE SCHEMA bogus__;
+ERROR HY000: Schema directory './bogus__' already exists. This must be resolved manually (e.g. by moving the schema directory to another location).
+# Creating a schema with the same name as a directory in datadir
+# with IF NOT EXISTS fails.
+CREATE SCHEMA IF NOT EXISTS bogus__;
+ERROR HY000: Schema directory './bogus__' already exists. This must be resolved manually (e.g. by moving the schema directory to another location).
+# Drop a non-existent schema with the same name as a directory in
+# datadir fails.
+DROP SCHEMA bogus__;
+ERROR HY000: Schema 'bogus__' does not exist, but schema directory './bogus__/' was found. This must be resolved manually (e.g. by moving the schema directory to another location).
+# Drop a non-existent schema with the same name as a directory in
+# datadir with IF EXISTS fails.
+DROP SCHEMA IF EXISTS bogus__;
+ERROR HY000: Schema 'bogus__' does not exist, but schema directory './bogus__/' was found. This must be resolved manually (e.g. by moving the schema directory to another location).
+CREATE SCHEMA broken;
+# Remove the schema directory for an existing schema
+# Drop then fails with new error message
+DROP SCHEMA broken;
+ERROR HY000: Schema directory './broken/' does not exist
+# but drop succeeds (with warning) when adding IF EXISTS
+# Suppress output since it is not stable across platforms
+DROP SCHEMA IF EXISTS broken;
+# Create and drop schema again to make sure nothing is left behind
+CREATE SCHEMA broken;
+DROP SCHEMA broken;

@@ -1,27 +1,36 @@
-/* Copyright (c) 2014, 2016 Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
+
+#include "sql/dd/impl/types/table_stat_impl.h" // Table_stat_impl
 
 #include <ostream>
+#include <string>
 
-#include "dd/impl/raw/object_keys.h"
-#include "dd/impl/raw/raw_record.h"        // Raw_record
-#include "dd/impl/tables/table_stats.h"    // Table_stats
-#include "dd/impl/transaction_impl.h"      // Open_dictionary_tables_ctx
-#include "dd/impl/types/table_stat_impl.h" // Table_stat_impl
 #include "my_sys.h"
 #include "mysqld_error.h"
+#include "sql/dd/impl/raw/object_keys.h"
+#include "sql/dd/impl/raw/raw_record.h"    // Raw_record
+#include "sql/dd/impl/tables/table_stats.h" // Table_stats
+#include "sql/dd/impl/transaction_impl.h"  // Open_dictionary_tables_ctx
 
 namespace dd {
 class Object_key;
@@ -36,30 +45,13 @@ namespace dd {
 // Table_stat implementation.
 ///////////////////////////////////////////////////////////////////////////
 
-const Dictionary_object_table &Table_stat::OBJECT_TABLE()
-{
-  return Table_stats::instance();
-}
-
-///////////////////////////////////////////////////////////////////////////
-
-const Object_type &Table_stat::TYPE()
-{
-  static Table_stat_type s_instance;
-  return s_instance;
-}
-
-///////////////////////////////////////////////////////////////////////////
-// Table_stat_impl implementation.
-///////////////////////////////////////////////////////////////////////////
-
 bool Table_stat_impl::validate() const
 {
   if (schema_name().empty() || table_name().empty())
   {
     my_error(ER_INVALID_DD_OBJECT,
              MYF(0),
-             Table_stat_impl::OBJECT_TABLE().name().c_str(),
+             DD_table::instance().name().c_str(),
              "schema name or table name not supplied.");
     return true;
   }
@@ -84,6 +76,7 @@ bool Table_stat_impl::restore_attributes(const Raw_record &r)
   m_checksum=       r.read_int(Table_stats::FIELD_CHECKSUM);
   m_update_time=    r.read_int(Table_stats::FIELD_UPDATE_TIME);
   m_check_time=     r.read_int(Table_stats::FIELD_CHECK_TIME);
+  m_cached_time=    r.read_int(Table_stats::FIELD_CACHED_TIME);
 
   return false;
 }
@@ -109,7 +102,9 @@ bool Table_stat_impl::store_attributes(Raw_record *r)
                     m_update_time == 0) ||
            r->store(Table_stats::FIELD_CHECK_TIME,
                     m_check_time,
-                    m_check_time == 0);
+                    m_check_time == 0) ||
+           r->store(Table_stats::FIELD_CACHED_TIME,
+                    m_cached_time);
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -130,7 +125,8 @@ void Table_stat_impl::debug_print(String_type &outb) const
     << "m_auto_increment: " <<  m_auto_increment << "; "
     << "m_checksum: " <<  m_checksum << "; "
     << "m_update_time: " <<  m_update_time << "; "
-    << "m_check_time: " <<  m_check_time;
+    << "m_check_time: " <<  m_check_time << "; "
+    << "m_cached_time: " <<  m_cached_time;
 
   ss << " }";
   outb= ss.str();
@@ -169,10 +165,15 @@ bool Table_stat_impl::has_new_primary_key() const
 }
 
 ///////////////////////////////////////////////////////////////////////////
-// Table_stat_type implementation.
+
+const Object_table &Table_stat_impl::object_table() const
+{
+  return DD_table::instance();
+}
+
 ///////////////////////////////////////////////////////////////////////////
 
-void Table_stat_type::register_tables(Open_dictionary_tables_ctx *otx) const
+void Table_stat_impl::register_tables(Open_dictionary_tables_ctx *otx)
 {
   /**
     The requirement is that we should be able to update

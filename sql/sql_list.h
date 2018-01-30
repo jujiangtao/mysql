@@ -3,28 +3,36 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include <stddef.h>
 #include <sys/types.h>
 #include <algorithm>
 #include <type_traits>
 
+#include "my_alloc.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_sharedlib.h"
-#include "sql_alloc.h"         // Sql_alloc
-#include "thr_malloc.h"
+#include "sql/sql_alloc.h"     // Sql_alloc
+#include "sql/thr_malloc.h"
 
 
 /**
@@ -190,7 +198,7 @@ public:
   base_list(const base_list &rhs, MEM_ROOT *mem_root);
   inline bool push_back(void *info)
   {
-    if (((*last)=new list_node(info, &end_of_list)))
+    if (((*last)=new (*THR_MALLOC) list_node(info, &end_of_list)))
     {
       last= &(*last)->next;
       elements++;
@@ -210,7 +218,7 @@ public:
   }
   inline bool push_front(void *info)
   {
-    list_node *node=new list_node(info,first);
+    list_node *node=new (*THR_MALLOC) list_node(info,first);
     if (node)
     {
       if (last == &first)
@@ -242,7 +250,7 @@ public:
       last= &first;
     else if (last == &(*prev)->next)
       last= prev;
-    delete *prev;
+    destroy(*prev);
     *prev=node;
   }
   inline void concat(base_list *list)
@@ -278,11 +286,13 @@ public:
     *prev= *last;
     last= prev;
   }
-  inline void prepand(base_list *list)
+  inline void prepend(base_list *list)
   {
     if (!list->is_empty())
     {
       *list->last= first;
+      if (is_empty())
+        last= list->last;
       first= list->first;
       elements+= list->elements;
     }
@@ -391,7 +401,7 @@ public:
 protected:
   void after(void *info,list_node *node)
   {
-    list_node *new_node=new list_node(info,node->next);
+    list_node *new_node=new (*THR_MALLOC) list_node(info,node->next);
     node->next=new_node;
     elements++;
     if (last == &(node->next))
@@ -558,7 +568,7 @@ public:
   inline T* pop()  {return (T*) base_list::pop(); }
   inline void concat(List<T> *list) { base_list::concat(list); }
   inline void disjoin(List<T> *list) { base_list::disjoin(list); }
-  inline void prepand(List<T> *list) { base_list::prepand(list); }
+  inline void prepend(List<T> *list) { base_list::prepend(list); }
   void delete_elements(void)
   {
     list_node *element,*next;
@@ -579,6 +589,38 @@ public:
     return static_cast<T*>(current->info);
   }
 
+  void replace(uint index, T *new_value)
+  {
+    DBUG_ASSERT(index < elements);
+    list_node *current= first;
+    for (uint i= 0; i < index; ++i)
+      current= current->next;
+    current->info= new_value;
+  }
+
+  bool swap_elts(uint index1, uint index2)
+  {
+    if (index1 == index2)
+      return false;
+
+    if (index1 >= elements || index2 >= elements)
+      return true; //error
+
+    if (index2 < index1)
+      std::swap(index1, index2);
+
+    list_node *current1= first;
+    for (uint i= 0; i < index1; ++i)
+      current1= current1->next;
+
+    list_node *current2= current1;
+    for (uint i= 0; i < index2 - index1; ++i)
+      current2= current2->next;
+
+    std::swap(current1->info, current2->info);
+    
+    return false;
+  }
   using base_list::sort;
 };
 

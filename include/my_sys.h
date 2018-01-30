@@ -1,13 +1,20 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -45,6 +52,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <time.h>
 
 #include "mysql/psi/mysql_cond.h"       /* mysql_cond_t */
@@ -73,12 +81,15 @@ C_MODE_START
 # include <valgrind/memcheck.h>
 
 # define MEM_UNDEFINED(a,len) VALGRIND_MAKE_MEM_UNDEFINED(a,len)
+# define MEM_DEFINED_IF_ADDRESSABLE(a,len) \
+    VALGRIND_MAKE_MEM_DEFINED_IF_ADDRESSABLE(a,len)
 # define MEM_NOACCESS(a,len) VALGRIND_MAKE_MEM_NOACCESS(a,len)
 # define MEM_CHECK_ADDRESSABLE(a,len) VALGRIND_CHECK_MEM_IS_ADDRESSABLE(a,len)
 #else /* HAVE_VALGRIND */
 # define MEM_MALLOCLIKE_BLOCK(p1, p2, p3, p4) do {} while (0)
 # define MEM_FREELIKE_BLOCK(p1, p2) do {} while (0)
 # define MEM_UNDEFINED(a,len) ((void) 0)
+# define MEM_DEFINED_IF_ADDRESSABLE(a,len) ((void) 0)
 # define MEM_NOACCESS(a,len) ((void) 0)
 # define MEM_CHECK_ADDRESSABLE(a,len) ((void) 0)
 #endif /* HAVE_VALGRIND */
@@ -108,7 +119,7 @@ C_MODE_START
 #define MY_WAIT_IF_FULL 32	/* Wait and try again if disk full error */
 #define MY_IGNORE_BADFD 32      /* my_sync: ignore 'bad descriptor' errors */
 #define MY_SYNC_DIR     8192    /* my_create/delete/rename: sync directory */
-#define MY_UNUSED       64      /* Unused (was support for RAID) */
+#define MY_REPORT_WAITING_IF_FULL 64 /* my_write: set status as waiting */
 #define MY_FULL_IO     512      /* For my_read - loop intil I/O is complete */
 #define MY_DONT_CHECK_FILESIZE 128 /* Option to init_io_cache() */
 #define MY_LINK_WARNING 32	/* my_redel() gives warning if links */
@@ -174,6 +185,8 @@ C_MODE_START
 #define GETDATE_HHMMSSTIME	4
 #define GETDATE_GMT		8
 #define GETDATE_FIXEDLENGTH	16
+#define GETDATE_T_DELIMITER 32
+#define GETDATE_SHORT_DATE_FULL_YEAR 64
 
 	/* defines when allocating data */
 extern void *my_multi_malloc(PSI_memory_key key, myf flags, ...);
@@ -264,6 +277,18 @@ extern void (*exit_cond_hook)(void *opaque_thd,
                               const char *src_file,
                               int src_line);
 
+extern void (*enter_stage_hook)(void *opaque_thd,
+                                const PSI_stage_info *new_stage,
+                                PSI_stage_info *old_stage,
+                                const char *src_function,
+                                const char *src_file,
+                                int src_line);
+
+/*
+  Hook for setting THD waiting_for_disk_space flag.
+*/
+extern void (*set_waiting_for_disk_space_hook)(void *opaque_thd,
+                                               bool waiting);
 /*
   Hook for checking if the thread has been killed.
 */
@@ -469,7 +494,8 @@ typedef struct st_io_cache		/* Used when cacheing files */
     "hard" error, and the actual number of I/O-ed bytes if the read/write was
     partial.
   */
-  int	seek_not_done,error;
+  bool seek_not_done;
+  int error;
   /* buffer_length is memory size allocated for buffer or write_buffer */
   size_t	buffer_length;
   /* read_length is the same as buffer_length except when we use async io */
@@ -486,6 +512,16 @@ typedef struct st_io_cache		/* Used when cacheing files */
 
 typedef int (*qsort_cmp)(const void *,const void *);
 typedef int (*qsort2_cmp)(const void *, const void *, const void *);
+
+/*
+  Subset of struct stat fields filled by stat/lstat/fstat that uniquely
+  identify a file
+*/
+typedef struct st_file_id
+{
+  dev_t st_dev;
+  ino_t st_ino;
+} ST_FILE_ID;
 
 typedef void (*my_error_reporter)(enum loglevel level, const char *format, ...)
   MY_ATTRIBUTE((format(printf, 2, 3)));
@@ -555,8 +591,9 @@ extern File my_create(const char *FileName,int CreateFlags,
 extern int my_close(File Filedes,myf MyFlags);
 extern int my_mkdir(const char *dir, int Flags, myf MyFlags);
 extern int my_readlink(char *to, const char *filename, myf MyFlags);
-extern int my_is_symlink(const char *filename);
+extern int my_is_symlink(const char *filename, ST_FILE_ID *file_id);
 extern int my_realpath(char *to, const char *filename, myf MyFlags);
+extern int my_is_same_file(File file, const ST_FILE_ID *file_id);
 extern File my_create_with_symlink(const char *linkname, const char *filename,
 				   int createflags, int access_flags,
 				   myf MyFlags);
@@ -635,6 +672,7 @@ extern FILE *my_freopen(const char *path, const char *mode, FILE *stream);
 extern int my_fclose(FILE *fd,myf MyFlags);
 extern File my_fileno(FILE *fd);
 extern int my_chsize(File fd,my_off_t newlength, int filler, myf MyFlags);
+extern int my_fallocator(File fd, my_off_t newlength, int filler, myf MyFlags);
 extern void thr_set_sync_wait_callback(void (*before_sync)(void),
                                        void (*after_sync)(void));
 extern int my_sync(File fd, myf my_flags);
@@ -700,13 +738,6 @@ extern bool array_append_string_unique(const char *str,
                                           const char **array, size_t size);
 extern void get_date(char * to,int timeflag,time_t use_time);
 
-extern bool radixsort_is_appliccable(uint n_items, size_t size_of_element);
-extern void radixsort_for_str_ptr(uchar* base[], uint number_of_elements,
-				  size_t size_of_element,uchar *buffer[]);
-extern void my_qsort(void *base_ptr, size_t total_elems, size_t size,
-                     qsort_cmp cmp);
-extern void my_qsort2(void *base_ptr, size_t total_elems, size_t size,
-                      qsort2_cmp cmp, const void *cmp_argument);
 void my_store_ptr(uchar *buff, size_t pack_length, my_off_t pos);
 my_off_t my_get_ptr(uchar *ptr, size_t pack_length);
 extern int init_io_cache_ext(IO_CACHE *info,File file,size_t cachesize,
@@ -833,7 +864,6 @@ void my_free_open_file_info(void);
 
 extern time_t my_time(myf flags);
 extern ulonglong my_micro_time();
-extern ulonglong my_micro_time_ntp();
 extern bool my_gethwaddr(uchar *to);
 
 #ifdef HAVE_SYS_MMAN_H
@@ -908,7 +938,6 @@ extern bool resolve_charset(const char *cs_name,
 extern bool resolve_collation(const char *cl_name,
                               const CHARSET_INFO *default_cl,
                               const CHARSET_INFO **cl);
-extern void free_charsets(void);
 extern char *get_charsets_dir(char *buf);
 extern bool my_charset_same(const CHARSET_INFO *cs1,
                             const CHARSET_INFO *cs2);
@@ -917,6 +946,7 @@ extern void add_compiled_collation(CHARSET_INFO *cs);
 extern size_t escape_string_for_mysql(const CHARSET_INFO *charset_info,
                                       char *to, size_t to_length,
                                       const char *from, size_t length);
+extern void charset_uninit();
 #ifdef _WIN32
 /* File system character set */
 extern CHARSET_INFO *fs_character_set(void);
@@ -947,39 +977,37 @@ int my_win_translate_command_line_args(const CHARSET_INFO *cs, int *ac, char ***
 
 #ifdef HAVE_PSI_INTERFACE
 void my_init_mysys_psi_keys(void);
-#endif /* HAVE_PSI_INTERFACE */
 
-#ifdef HAVE_PSI_INTERFACE
-extern MYSQL_PLUGIN_IMPORT struct PSI_thread_bootstrap *psi_thread_hook;
-extern void set_psi_thread_service(PSI_thread_service_t *psi);
-extern MYSQL_PLUGIN_IMPORT struct PSI_mutex_bootstrap *psi_mutex_hook;
-extern void set_psi_mutex_service(PSI_mutex_service_t *psi);
-extern MYSQL_PLUGIN_IMPORT struct PSI_rwlock_bootstrap *psi_rwlock_hook;
-extern void set_psi_rwlock_service(PSI_rwlock_service_t *psi);
-extern MYSQL_PLUGIN_IMPORT struct PSI_cond_bootstrap *psi_cond_hook;
-extern void set_psi_cond_service(PSI_cond_service_t *psi);
-extern MYSQL_PLUGIN_IMPORT struct PSI_file_bootstrap *psi_file_hook;
-extern void set_psi_file_service(PSI_file_service_t *psi);
-extern MYSQL_PLUGIN_IMPORT struct PSI_socket_bootstrap *psi_socket_hook;
-extern void set_psi_socket_service(PSI_socket_service_t *psi);
-extern MYSQL_PLUGIN_IMPORT struct PSI_table_bootstrap *psi_table_hook;
-extern void set_psi_table_service(PSI_table_service_t *psi);
-extern MYSQL_PLUGIN_IMPORT struct PSI_mdl_bootstrap *psi_mdl_hook;
-extern void set_psi_mdl_service(PSI_mdl_service_t *psi);
-extern MYSQL_PLUGIN_IMPORT struct PSI_idle_bootstrap *psi_idle_hook;
-extern void set_psi_idle_service(PSI_idle_service_t *psi);
-extern MYSQL_PLUGIN_IMPORT struct PSI_stage_bootstrap *psi_stage_hook;
-extern void set_psi_stage_service(PSI_stage_service_t *psi);
-extern MYSQL_PLUGIN_IMPORT struct PSI_statement_bootstrap *psi_statement_hook;
-extern void set_psi_statement_service(PSI_statement_service_t *psi);
-extern MYSQL_PLUGIN_IMPORT struct PSI_transaction_bootstrap *psi_transaction_hook;
-extern void set_psi_transaction_service(PSI_transaction_service_t *psi);
-extern MYSQL_PLUGIN_IMPORT struct PSI_memory_bootstrap *psi_memory_hook;
-extern void set_psi_memory_service(PSI_memory_service_t *psi);
-extern MYSQL_PLUGIN_IMPORT struct PSI_error_bootstrap *psi_error_hook;
-extern void set_psi_error_service(PSI_error_service_t *psi);
-extern MYSQL_PLUGIN_IMPORT struct PSI_data_lock_bootstrap *psi_data_lock_hook;
-extern void set_psi_data_lock_service(PSI_data_lock_service_t *psi);
+extern MYSQL_PLUGIN_IMPORT PSI_thread_bootstrap *psi_thread_hook;
+extern void set_psi_thread_service(void *psi);
+extern MYSQL_PLUGIN_IMPORT PSI_mutex_bootstrap *psi_mutex_hook;
+extern void set_psi_mutex_service(void *psi);
+extern MYSQL_PLUGIN_IMPORT PSI_rwlock_bootstrap *psi_rwlock_hook;
+extern void set_psi_rwlock_service(void *psi);
+extern MYSQL_PLUGIN_IMPORT PSI_cond_bootstrap *psi_cond_hook;
+extern void set_psi_cond_service(void *psi);
+extern MYSQL_PLUGIN_IMPORT PSI_file_bootstrap *psi_file_hook;
+extern void set_psi_file_service(void *psi);
+extern MYSQL_PLUGIN_IMPORT PSI_socket_bootstrap *psi_socket_hook;
+extern void set_psi_socket_service(void *psi);
+extern MYSQL_PLUGIN_IMPORT PSI_table_bootstrap *psi_table_hook;
+extern void set_psi_table_service(void *psi);
+extern MYSQL_PLUGIN_IMPORT PSI_mdl_bootstrap *psi_mdl_hook;
+extern void set_psi_mdl_service(void *psi);
+extern MYSQL_PLUGIN_IMPORT PSI_idle_bootstrap *psi_idle_hook;
+extern void set_psi_idle_service(void *psi);
+extern MYSQL_PLUGIN_IMPORT PSI_stage_bootstrap *psi_stage_hook;
+extern void set_psi_stage_service(void *psi);
+extern MYSQL_PLUGIN_IMPORT PSI_statement_bootstrap *psi_statement_hook;
+extern void set_psi_statement_service(void *psi);
+extern MYSQL_PLUGIN_IMPORT PSI_transaction_bootstrap *psi_transaction_hook;
+extern void set_psi_transaction_service(void *psi);
+extern MYSQL_PLUGIN_IMPORT PSI_memory_bootstrap *psi_memory_hook;
+extern void set_psi_memory_service(void *psi);
+extern MYSQL_PLUGIN_IMPORT PSI_error_bootstrap *psi_error_hook;
+extern void set_psi_error_service(void *psi);
+extern MYSQL_PLUGIN_IMPORT PSI_data_lock_bootstrap *psi_data_lock_hook;
+extern void set_psi_data_lock_service(void *psi);
 #endif /* HAVE_PSI_INTERFACE */
 
 struct st_mysql_file;

@@ -1,70 +1,64 @@
 /* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "dd/impl/types/index_impl.h"
+#include "sql/dd/impl/types/index_impl.h"
 
 #include <stddef.h>
 #include <sstream>
+#include <string>
 
-#include "dd/impl/properties_impl.h"            // Properties_impl
-#include "dd/impl/raw/raw_record.h"             // Raw_record
-#include "dd/impl/sdi_impl.h"                   // sdi read/write functions
-#include "dd/impl/tables/index_column_usage.h"  // Index_column_usage
-#include "dd/impl/tables/indexes.h"             // Indexes
-#include "dd/impl/transaction_impl.h"           // Open_dictionary_tables_ctx
-#include "dd/impl/types/index_element_impl.h"   // Index_element_impl
-#include "dd/impl/types/table_impl.h"           // Table_impl
-#include "dd/properties.h"
-#include "dd/string_type.h"                     // dd::String_type
-#include "dd/types/index_element.h"
-#include "dd/types/object_table.h"
-#include "dd/types/weak_object.h"
+#include "my_rapidjson_size_t.h"    // IWYU pragma: keep
+#include <rapidjson/document.h>
+#include <rapidjson/prettywriter.h>
+
 #include "m_string.h"
 #include "my_inttypes.h"
 #include "my_sys.h"
 #include "mysqld_error.h"                       // ER_*
-#include "rapidjson/document.h"
-#include "rapidjson/prettywriter.h"
-#include "sql_table.h"                          // MAX_LEN_GEOM_POINT_FIELD
+#include "sql/dd/impl/properties_impl.h"        // Properties_impl
+#include "sql/dd/impl/raw/raw_record.h"         // Raw_record
+#include "sql/dd/impl/sdi_impl.h"               // sdi read/write functions
+#include "sql/dd/impl/tables/index_column_usage.h" // Index_column_usage
+#include "sql/dd/impl/tables/indexes.h"         // Indexes
+#include "sql/dd/impl/transaction_impl.h"       // Open_dictionary_tables_ctx
+#include "sql/dd/impl/types/index_element_impl.h" // Index_element_impl
+#include "sql/dd/impl/types/table_impl.h"       // Table_impl
+#include "sql/dd/properties.h"
+#include "sql/dd/string_type.h"                 // dd::String_type
+#include "sql/dd/types/column.h"
+#include "sql/dd/types/index_element.h"
+#include "sql/dd/types/object_table.h"
+#include "sql/dd/types/weak_object.h"
+#include "sql/field.h"
+#include "sql/sql_table.h"                      // MAX_LEN_GEOM_POINT_FIELD
 
 using dd::tables::Indexes;
 using dd::tables::Index_column_usage;
 
 namespace dd {
 
-class Column;
 class Sdi_rcontext;
 class Sdi_wcontext;
 class Table;
-
-///////////////////////////////////////////////////////////////////////////
-// Index implementation.
-///////////////////////////////////////////////////////////////////////////
-
-const Object_table &Index::OBJECT_TABLE()
-{
-  return Indexes::instance();
-}
-
-///////////////////////////////////////////////////////////////////////////
-
-const Object_type &Index::TYPE()
-{
-  static Index_type s_instance;
-  return s_instance;
-}
 
 ///////////////////////////////////////////////////////////////////////////
 // Index_impl implementation.
@@ -156,7 +150,7 @@ bool Index_impl::validate() const
   {
     my_error(ER_INVALID_DD_OBJECT,
              MYF(0),
-             Index_impl::OBJECT_TABLE().name().c_str(),
+             DD_table::instance().name().c_str(),
              "No table object associated with this index.");
     return true;
   }
@@ -164,7 +158,7 @@ bool Index_impl::validate() const
   {
     my_error(ER_INVALID_DD_OBJECT,
              MYF(0),
-             Index_impl::OBJECT_TABLE().name().c_str(),
+             DD_table::instance().name().c_str(),
              "Engine name is not set.");
     return true;
   }
@@ -173,7 +167,7 @@ bool Index_impl::validate() const
   {
     my_error(ER_INVALID_DD_OBJECT,
              MYF(0),
-             Index_impl::OBJECT_TABLE().name().c_str(),
+             DD_table::instance().name().c_str(),
              "The index has no elements.");
     return true;
   }
@@ -391,7 +385,6 @@ Index_element *Index_impl::add_element(Column *c)
   @note This function is in sync with how we evaluate TABLE_SHARE::primary_key.
 */
 
-/* purecov: begin deadcode */
 bool Index_impl::is_candidate_key() const
 {
   if (type() != Index::IT_PRIMARY && type() != Index::IT_UNIQUE)
@@ -439,7 +432,6 @@ bool Index_impl::is_candidate_key() const
   }
   return true;
 }
-/* purecov: end */
 
 ///////////////////////////////////////////////////////////////////////////
 
@@ -463,10 +455,15 @@ Index_impl::Index_impl(const Index_impl &src, Table_impl *parent)
 }
 
 ///////////////////////////////////////////////////////////////////////////
-// Index_type implementation.
+
+const Object_table &Index_impl::object_table() const
+{
+  return DD_table::instance();
+}
+
 ///////////////////////////////////////////////////////////////////////////
 
-void Index_type::register_tables(Open_dictionary_tables_ctx *otx) const
+void Index_impl::register_tables(Open_dictionary_tables_ctx *otx)
 {
   otx->add_table<Indexes>();
 

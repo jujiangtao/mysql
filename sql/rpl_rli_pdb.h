@@ -1,13 +1,20 @@
 /* Copyright (c) 2011, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -17,28 +24,33 @@
 #define RPL_RLI_PDB_H
 
 #include <stdarg.h>
-#include <stdarg.h>
 #include <sys/types.h>
 #include <time.h>
+#include <atomic>
+#include <atomic>
 
 #include "binlog_event.h"
-#include "log_event.h"         // Format_description_log_event
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_io.h"
 #include "my_loglevel.h"
 #include "my_psi_config.h"
+#include "mysql/components/services/mysql_cond_bits.h"
+#include "mysql/components/services/mysql_mutex_bits.h"
+#include "mysql/components/services/psi_mutex_bits.h"
 #include "mysql/psi/mysql_cond.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/psi/psi_base.h"
 #include "mysql/service_mysql_alloc.h"
+#include "mysql/udf_registration_types.h"
 #include "prealloced_array.h"  // Prealloced_array
-#include "rpl_gtid.h"
-#include "rpl_mts_submode.h"   // enum_mts_parallel_type
-#include "rpl_rli.h"           // Relay_log_info
-#include "rpl_slave.h"         // MTS_WORKER_UNDEF
-#include "sql_class.h"
-#include "system_variables.h"
+#include "sql/log_event.h"     // Format_description_log_event
+#include "sql/rpl_gtid.h"
+#include "sql/rpl_mts_submode.h" // enum_mts_parallel_type
+#include "sql/rpl_rli.h"       // Relay_log_info
+#include "sql/rpl_slave.h"     // MTS_WORKER_UNDEF
+#include "sql/sql_class.h"
+#include "sql/system_variables.h"
 
 class Rpl_info_handler;
 class Slave_worker;
@@ -99,6 +111,63 @@ Slave_worker *get_least_occupied_worker(Relay_log_info *rli,
 
 typedef struct st_slave_job_group
 {
+  st_slave_job_group() {}
+
+  /*
+    We need a custom copy constructor and assign operator because std::atomic<T>
+    is not copy-constructible.
+  */
+  st_slave_job_group(const st_slave_job_group &other)
+    : group_master_log_name(other.group_master_log_name),
+      group_master_log_pos(other.group_master_log_pos),
+      group_relay_log_name(other.group_relay_log_name),
+      group_relay_log_pos(other.group_relay_log_pos),
+      worker_id(other.worker_id),
+      worker(other.worker),
+      total_seqno(other.total_seqno),
+      master_log_pos(other.master_log_pos),
+      checkpoint_seqno(other.checkpoint_seqno),
+      checkpoint_log_pos(other.checkpoint_log_pos),
+      checkpoint_log_name(other.checkpoint_log_name),
+      checkpoint_relay_log_pos(other.checkpoint_relay_log_pos),
+      checkpoint_relay_log_name(other.checkpoint_relay_log_name),
+      done(other.done.load()),
+      shifted(other.shifted),
+      ts(other.ts),
+#ifndef DBUG_OFF
+      notified(other.notified),
+#endif
+      last_committed(other.last_committed),
+      sequence_number(other.sequence_number),
+      new_fd_event(other.new_fd_event) {}
+
+  st_slave_job_group &operator=(const st_slave_job_group &other)
+  {
+    group_master_log_name= other.group_master_log_name;
+    group_master_log_pos= other.group_master_log_pos;
+    group_relay_log_name= other.group_relay_log_name;
+    group_relay_log_pos= other.group_relay_log_pos;
+    worker_id= other.worker_id;
+    worker= other.worker;
+    total_seqno= other.total_seqno;
+    master_log_pos= other.master_log_pos;
+    checkpoint_seqno= other.checkpoint_seqno;
+    checkpoint_log_pos= other.checkpoint_log_pos;
+    checkpoint_log_name= other.checkpoint_log_name;
+    checkpoint_relay_log_pos= other.checkpoint_relay_log_pos;
+    checkpoint_relay_log_name= other.checkpoint_relay_log_name;
+    done.store(other.done.load());
+    shifted= other.shifted;
+    ts= other.ts;
+#ifndef DBUG_OFF
+    notified= other.notified;
+#endif
+    last_committed= other.last_committed;
+    sequence_number= other.sequence_number;
+    new_fd_event= other.new_fd_event;
+    return *this;
+  }
+
   char *group_master_log_name;   // (actually redundant)
   /*
     T-event lop_pos filled by Worker for CheckPoint (CP)
@@ -127,11 +196,11 @@ typedef struct st_slave_job_group
   char*    checkpoint_log_name;
   my_off_t checkpoint_relay_log_pos; // T-event lop_pos filled by W for CheckPoint
   char*    checkpoint_relay_log_name;
-  int32    done;  // Flag raised by W,  read and reset by Coordinator
+  std::atomic<int32> done;  // Flag raised by W,  read and reset by Coordinator
   ulong    shifted;     // shift the last CP bitmap at receiving a new CP
   time_t   ts;          // Group's timestampt to update Seconds_behind_master
 #ifndef DBUG_OFF
-  bool     notified;    // to debug group_master_log_name change notification
+  bool     notified{false};  // to debug group_master_log_name change notification
 #endif
   /* Clock-based scheduler requirement: */
   longlong last_committed; // commit parent timestamp
@@ -221,19 +290,24 @@ public:
   {
   }
 
-   /**
-      Content of the being dequeued item is copied to the arg-pointer
-      location.
-
-      @return the queue's array index that the de-queued item
-      located at, or
-      an error encoded in beyond the index legacy range.
-   */
-  ulong de_queue(Element_type *val);
   /**
-     Similar to de_queue but extracting happens from the tail side.
+     Content of the being dequeued item is copied to the arg-pointer
+     location.
+
+     @param [out] item A pointer to the being dequeued item.
+     @return the queue's array index that the de-queued item
+     located at, or
+     an error encoded in beyond the index legacy range.
   */
-  ulong de_tail(Element_type *val);
+  ulong de_queue(Element_type *item);
+  /**
+    Similar to de_queue but extracting happens from the tail side.
+
+    @param [out] item A pointer to the being dequeued item.
+    @return the queue's array index that the de-queued item
+           located at, or an error.
+  */
+  ulong de_tail(Element_type *item);
 
   /**
     return the index where the arg item locates
@@ -319,6 +393,30 @@ public:
       circular_buffer_queue<Slave_job_group>::en_queue(item);
   }
 
+  /**
+    Dequeue from head.
+
+    @param [out] item A pointer to the being dequeued item.
+    @return The queue's array index that the de-queued item located at,
+            or an error encoded in beyond the index legacy range.
+  */
+  ulong de_queue(Slave_job_group *item)
+  {
+    return circular_buffer_queue<Slave_job_group>::de_queue(item);
+  }
+
+  /**
+    Similar to de_queue() but removing an item from the tail side.
+
+    @param [out] item A pointer to the being dequeued item.
+    @return the queue's array index that the de-queued item
+           located at, or an error.
+  */
+  ulong de_tail(Slave_job_group *item)
+  {
+    return circular_buffer_queue<Slave_job_group>::de_tail(item);
+  }
+
   ulong find_lwm(Slave_job_group**, ulong);
 };
 
@@ -361,6 +459,71 @@ ulong circular_buffer_queue<Element_type>::en_queue(Element_type *item)
   return ret;
 }
 
+
+/**
+  Dequeue from head.
+
+  @param [out] item A pointer to the being dequeued item.
+  @return the queue's array index that the de-queued item
+          located at, or an error as an int outside the legacy
+          [0, size) (value `size' is excluded) range.
+*/
+template <typename Element_type>
+ulong circular_buffer_queue<Element_type>::de_queue(Element_type *item)
+{
+  ulong ret;
+  if (entry == size)
+  {
+    DBUG_ASSERT(len == 0);
+    return (ulong) -1;
+  }
+
+  ret= entry;
+  *item= m_Q[entry];
+  len--;
+
+  // pre boundary cond
+  if (avail == size)
+    avail= entry;
+  entry= (entry + 1) % size;
+
+  // post boundary cond
+  if (avail == entry)
+    entry= size;
+
+  DBUG_ASSERT(entry == size ||
+              (len == (avail >= entry)? (avail - entry) :
+               (size + avail - entry)));
+  DBUG_ASSERT(avail != entry);
+
+  return ret;
+}
+
+
+template <typename Element_type>
+ulong circular_buffer_queue<Element_type>::de_tail(Element_type *item)
+{
+  if (entry == size)
+  {
+    DBUG_ASSERT(len == 0);
+    return (ulong) -1;
+  }
+
+  avail= (entry + len - 1) % size;
+  *item= m_Q[avail];
+  len--;
+
+  // post boundary cond
+  if (avail == entry)
+    entry= size;
+
+  DBUG_ASSERT(entry == size ||
+              (len == (avail >= entry)? (avail - entry) :
+               (size + avail - entry)));
+  DBUG_ASSERT(avail != entry);
+
+  return avail;
+}
 
 
 class Slave_jobs_queue : public circular_buffer_queue<Slave_job_item>
@@ -487,8 +650,7 @@ public:
   */
   void copy_values_for_PFS(ulong worker_id, en_running_state running_status,
                            THD *worker_thd, const Error &last_error,
-                           trx_monitoring_info *processing_trx_arg,
-                           trx_monitoring_info *last_processed_trx_arg);
+                           Gtid_monitoring_info *monitoring_info_arg);
 
   /*
     The running status is guarded by jobs_lock mutex that a writer

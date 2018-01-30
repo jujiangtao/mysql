@@ -1,23 +1,28 @@
 /*
-* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
-*
-* This program is free software; you can redistribute it and/or
-* modify it under the terms of the GNU General Public License as
-* published by the Free Software Foundation; version 2 of the
-* License.
-*
-* This program is distributed in the hope that it will be useful,
-* but WITHOUT ANY WARRANTY; without even the implied warranty of
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-* GNU General Public License for more details.
-*
-* You should have received a copy of the GNU General Public License
-* along with this program; if not, write to the Free Software
-* Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
-* 02110-1301  USA
-*/
+ * Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License, version 2.0,
+ * as published by the Free Software Foundation.
+ *
+ * This program is also distributed with certain software (including
+ * but not limited to OpenSSL) that is licensed under separate terms,
+ * as designated in a particular file or component or in included license
+ * documentation.  The authors of MySQL hereby grant you an additional
+ * permission to link the program and your derivative works with the
+ * separately licensed software that they have included with MySQL.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License, version 2.0, for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
+ */
 
-#include "ngs/protocol/row_builder.h"
+#include "plugin/x/ngs/include/ngs/protocol/row_builder.h"
 
 #include <algorithm>
 #include <cstring>
@@ -29,10 +34,10 @@
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_macros.h"
-#include "ngs/protocol/output_buffer.h"
-#include "ngs_common/protocol_protobuf.h"
-#include "ngs_common/xdatetime.h"
-#include "ngs_common/xdecimal.h"
+#include "plugin/x/client/mysqlxclient/xdatetime.h"
+#include "plugin/x/client/mysqlxclient/xdecimal.h"
+#include "plugin/x/ngs/include/ngs/protocol/output_buffer.h"
+#include "plugin/x/ngs/include/ngs_common/protocol_protobuf.h"
 
 using namespace ngs;
 
@@ -191,7 +196,7 @@ static int __decimal2string(const decimal_t *from, char *to, int *to_len,
   if (!(intg_len = fixed_precision ? fixed_intg : intg))
     intg_len = 1;
   frac_len = fixed_precision ? fixed_decimals : frac;
-  len = from->sign + intg_len + MY_TEST(frac) + frac_len;
+  len = from->sign + intg_len + (frac != 0 ? 1 : 0) + frac_len;
   if (fixed_precision)
   {
     if (frac > fixed_decimals)
@@ -225,7 +230,7 @@ static int __decimal2string(const decimal_t *from, char *to, int *to_len,
     else
       frac -= j;
     frac_len = frac;
-    len = from->sign + intg_len + MY_TEST(frac) + frac_len;
+    len = from->sign + intg_len + (frac != 0 ? 1 : 0) + frac_len;
   }
   *to_len = len;
   s[len] = 0;
@@ -292,7 +297,7 @@ void Row_builder::add_decimal_field(const decimal_t * value)
   __decimal2string(value, &(str_buf)[0], &str_len, 0, 0, 0);
   str_buf.resize(str_len);
 
-  mysqlx::Decimal dec(str_buf);
+  xcl::Decimal dec(str_buf);
   std::string dec_bytes = dec.to_bytes();
 
   m_out_stream->WriteVarint32(static_cast<google::protobuf::uint32>(dec_bytes.length()));
@@ -304,7 +309,7 @@ void Row_builder::add_decimal_field(const char * const value, size_t length)
   ADD_FIELD_HEADER();
 
   std::string dec_str(value, length);
-  mysqlx::Decimal dec(dec_str);
+  xcl::Decimal dec(dec_str);
   std::string dec_bytes = dec.to_bytes();
 
   m_out_stream->WriteVarint32(static_cast<google::protobuf::uint32>(dec_bytes.length()));
@@ -345,7 +350,8 @@ void Row_builder::add_date_field(const MYSQL_TIME * value)
 size_t Row_builder::get_time_size(const MYSQL_TIME * value)
 {
   size_t result = 0;
-  if (value->hour != 0 || value->minute != 0 || value->second != 0 || value->second_part != 0)
+  if (value->hour != 0 || value->minute != 0 || value->second != 0 ||
+      value->second_part != 0)
   {
     result += CodedOutputStream::VarintSize64(value->hour);
   }
@@ -368,7 +374,8 @@ size_t Row_builder::get_time_size(const MYSQL_TIME * value)
 void Row_builder::append_time_values(const MYSQL_TIME * value, CodedOutputStream* out_stream)
 {
   // optimize the output size skipping the right-most 0's
-  if (value->hour != 0 || value->minute != 0 || value->second != 0 || value->second_part != 0)
+  if (value->hour != 0 || value->minute != 0 || value->second != 0 ||
+      value->second_part != 0)
   {
     out_stream->WriteVarint64(value->hour);
   }

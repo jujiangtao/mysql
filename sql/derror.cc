@@ -1,17 +1,24 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "sql/derror.h"
 
@@ -19,30 +26,61 @@
 #include <stddef.h>
 #include <sys/types.h>
 
-#include "current_thd.h"
-#include "log.h"
+#include "m_string.h"
 #include "my_byteorder.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_io.h"
+#include "my_loglevel.h"
 #include "my_macros.h"
 #include "my_sys.h"
 #include "mysql/psi/mysql_file.h"
-#include "mysql/psi/mysql_statement.h"
 #include "mysql/service_mysql_alloc.h"
-#include "mysqld.h"                             // lc_messages_dir
+#include "mysql/udf_registration_types.h"
 #include "mysqld_error.h"
-#include "psi_memory_key.h"
-#include "sql_class.h"                          // THD
-#include "sql_locale.h"
-#include "system_variables.h"
-#include "table.h"
+#include "sql/current_thd.h"
+#include "sql/log.h"
+#include "sql/mysqld.h"                         // lc_messages_dir
+#include "sql/psi_memory_key.h"
+#include "sql/session_tracker.h"
+#include "sql/sql_class.h"                      // THD
+#include "sql/sql_locale.h"
+#include "sql/system_variables.h"
+#include "sql/table.h"
+#include "storage/perfschema/pfs_error.h"
 
 CHARSET_INFO *error_message_charset_info;
 
 static const char *ERRMSG_FILE = "errmsg.sys";
-static const int NUM_SECTIONS=
-  sizeof(errmsg_section_start) / sizeof(errmsg_section_start[0]);
+
+
+/**
+  Find the error message record for a given MySQL error code in the
+  array of registered messages.
+  The result is an index for said array; this value should not be
+  considered stable between subsequent invocations of the server.
+
+  @param mysql_errno  the error code to look for
+
+  @retval -1          no message registered for this error code
+  @retval >=0         index
+ */
+int mysql_errno_to_builtin(uint mysql_errno)
+{
+  int offset= 0; // Position where the current section starts in the array.
+  int i;
+  int temp_errno= (int)mysql_errno;
+
+  for (i= 0; i < NUM_SECTIONS; i++)
+  {
+    if (temp_errno >= errmsg_section_start[i] &&
+        temp_errno < (errmsg_section_start[i] + errmsg_section_size[i]))
+      return mysql_errno - errmsg_section_start[i] + offset;
+    offset+= errmsg_section_size[i];
+  }
+  return -1; /* General error */
+}
+
 
 /*
   Error messages are stored sequentially in an array.
@@ -77,11 +115,24 @@ const char* ER_THD(const THD *thd, int mysql_errno)
 
 
 C_MODE_START
-static const char *get_server_errmsgs(int mysql_errno)
+const char *get_server_errmsgs(int mysql_errno)
 {
   if (current_thd)
     return ER_THD(current_thd, mysql_errno);
-  return ER_DEFAULT(mysql_errno);
+
+  if ((my_default_lc_messages != nullptr) &&
+      (my_default_lc_messages->errmsgs->is_loaded()))
+    return ER_DEFAULT(mysql_errno);
+
+  {
+    server_error *sqlstate_map= &error_names_array[1];
+    int           i= mysql_errno_to_builtin(mysql_errno);
+
+    if (i >= 0)
+      return sqlstate_map[i].text;
+  }
+
+  return nullptr;
 }
 C_MODE_END
 
@@ -141,10 +192,11 @@ bool MY_LOCALE_ERRMSGS::read_texts()
   File file;
   char name[FN_REFLEN];
   char lang_path[FN_REFLEN];
-  uchar *start_of_errmsgs= NULL;
-  uchar *pos= NULL;
+  uchar *start_of_errmsgs= nullptr;
+  uchar *pos= nullptr;
   uchar head[32];
   uint error_messages= 0;
+
   DBUG_ENTER("read_texts");
 
   for (int i= 0; i < NUM_SECTIONS; i++)
@@ -169,18 +221,11 @@ bool MY_LOCALE_ERRMSGS::read_texts()
                                O_RDONLY,
                                MYF(0))) < 0)
     {
-      sql_print_error("Can't find error-message file '%s'. Check error-message"
-                      " file location and 'lc-messages-dir' configuration"
-                      " directive.", name);
+      LogErr(ERROR_LEVEL, ER_ERRMSG_CANT_FIND_FILE, name);
       goto open_err;
     }
 
-    sql_print_warning("Using pre 5.5 semantics to load error messages from %s.",
-                      lc_messages_dir);
-
-    sql_print_warning("If this is not intended, refer to the documentation for "
-                      "valid usage of --lc-messages-dir and --language "
-                      "parameters.");
+    LogErr(WARNING_LEVEL, ER_ERRMSG_LOADING_55_STYLE, lc_messages_dir);
   }
 
   // Read the header from the file
@@ -196,11 +241,8 @@ bool MY_LOCALE_ERRMSGS::read_texts()
 
   if (no_of_errmsgs < error_messages)
   {
-    sql_print_error("Error message file '%s' had only %d error messages,\n\
-                    but it should contain at least %d error messages.\n\
-                    Check that the above file is the right version for \
-                    this program!",
-		    name,no_of_errmsgs,error_messages);
+    LogErr(ERROR_LEVEL, ER_ERRMSG_MISSING_IN_FILE,
+           name,no_of_errmsgs, error_messages);
     (void) mysql_file_close(file, MYF(MY_WME));
     goto open_err;
   }
@@ -208,10 +250,10 @@ bool MY_LOCALE_ERRMSGS::read_texts()
   // Free old language and allocate for the new one
   my_free(errmsgs);
   if (!(errmsgs= (const char**)
-	my_malloc(key_memory_errmsgs,
+        my_malloc(key_memory_errmsgs,
                   length+no_of_errmsgs*sizeof(char*), MYF(0))))
   {
-    sql_print_error("Not enough memory for messagefile '%s'", name);
+    LogErr(ERROR_LEVEL, ER_ERRMSG_OOM, name);
     (void) mysql_file_close(file, MYF(MY_WME));
     DBUG_RETURN(true);
   }
@@ -240,29 +282,45 @@ bool MY_LOCALE_ERRMSGS::read_texts()
     goto read_err_init;
 
   (void) mysql_file_close(file, MYF(0));
+
   DBUG_RETURN(false);
 
 read_err_init:
-  for (uint i= 0; i < error_messages; ++i)
-    errmsgs[i]= "";
+  /*
+    At this point, we've already thrown away any old, valid setup
+    we may have had, and we have a half set up message-set.
+    Release the mess and fall through to init from built-ins below!
+  */
+  my_free(errmsgs);
+  errmsgs= nullptr;
 read_err:
-  sql_print_error("Can't read from messagefile '%s'", name);
+  LogErr(ERROR_LEVEL, ER_ERRMSG_CANT_READ, name);
   (void) mysql_file_close(file, MYF(MY_WME));
 open_err:
+  /*
+    We may have failed now, but we may still have succeeded earlier,
+    so check whether we've got errmsgs from the previous time!
+  */
   if (!errmsgs)
   {
     /*
-      Allocate and initialize errmsgs to empty string in order to avoid access
-      to errmsgs during another failure in abort operation
+      If we can't read the messages from disk, allocate space just for
+      the pointers, and set up pointers to reference our built-in defaults
+      for the messages. Since (messages + pointers) is allocated and freed
+      as one contiguous memory block, this will still be released correctly
+      at shutdown.
     */
-    if ((errmsgs= (const char**) my_malloc(key_memory_errmsgs,
-                                           error_messages *
-                                           sizeof(char*), MYF(0))))
+    if ((errmsgs= (const char **) my_malloc(key_memory_errmsgs,
+                                            error_messages *
+                                             sizeof(char*), MYF(0))))
     {
+      server_error *sqlstate_map= &error_names_array[1];
+
       for (uint i= 0; i < error_messages; ++i)
-        errmsgs[i]= "";
+        errmsgs[i]= sqlstate_map[i].text;
     }
   }
+
   DBUG_RETURN(true);
 } /* read_texts */
 
@@ -270,4 +328,5 @@ open_err:
 void MY_LOCALE_ERRMSGS::destroy()
 {
   my_free(errmsgs);
+  errmsgs= nullptr;
 }

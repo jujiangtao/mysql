@@ -1,17 +1,24 @@
 /* Copyright (c) 2006, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA */
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef RPL_UTILITY_H
 #define RPL_UTILITY_H
@@ -21,24 +28,26 @@
 #endif
 
 #include <sys/types.h>
+#include <unordered_map>
 
 #include "binary_log_types.h"   // enum_field_types
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_macros.h"
+#include "mysql/udf_registration_types.h"
+#include "sql/psi_memory_key.h"
 
 #ifdef MYSQL_SERVER
-#include "handler.h"
-#include "hash.h"
-#include "prealloced_array.h"   // Prealloced_array
-#include "table.h"              // TABLE_LIST
+#include <memory>
 
-class THD;
+#include "map_helpers.h"
+#include "prealloced_array.h"   // Prealloced_array
+#include "sql/handler.h"
+#include "sql/table.h"          // TABLE_LIST
+
 class Log_event;
 class Relay_log_info;
-#endif
-
-#ifdef MYSQL_SERVER
+class THD;
 
 /**
    Hash table used when applying row events on the slave and there is
@@ -57,6 +66,13 @@ typedef struct hash_row_pos_st
 
 } HASH_ROW_POS;
 
+struct HASH_ROW_ENTRY;
+
+struct hash_slave_rows_free_entry
+{
+  void operator() (HASH_ROW_ENTRY *entry) const;
+};
+
 
 /**
    Internal structure that acts as a preamble for HASH_ROW_POS
@@ -67,21 +83,21 @@ typedef struct hash_row_pos_st
  */
 typedef struct hash_row_preamble_st
 {
+  hash_row_preamble_st()= default;
   /*
     The actual key.
    */
-  my_hash_value_type hash_value;
-
-  /**  
-    Length of the key.
-   */
-  uint length;
+  uint hash_value;
 
   /**  
     The search state used to iterate over multiple entries for a
     given key.
    */
-  HASH_SEARCH_STATE search_state;
+  malloc_unordered_multimap
+    <uint,
+     std::unique_ptr<HASH_ROW_ENTRY,
+                     hash_slave_rows_free_entry>>::const_iterator
+       search_state;
 
   /**  
     Wether this search_state is usable or not.
@@ -90,11 +106,11 @@ typedef struct hash_row_preamble_st
 
 } HASH_ROW_PREAMBLE;
 
-typedef struct hash_row_entry_st
+struct HASH_ROW_ENTRY
 {
   HASH_ROW_PREAMBLE *preamble;
   HASH_ROW_POS *positions;
-} HASH_ROW_ENTRY;
+};
 
 class Hash_slave_rows 
 {
@@ -211,7 +227,10 @@ private:
   /**
      The hashtable itself.
    */
-  HASH m_hash;
+  malloc_unordered_multimap
+    <uint,
+     std::unique_ptr<HASH_ROW_ENTRY, hash_slave_rows_free_entry>> m_hash
+       {key_memory_HASH_ROW_ENTRY};
 
   /**
      Auxiliary and internal method used to create an hash key, based on
@@ -222,7 +241,7 @@ private:
 
      @returns the hash key created.
    */
-  my_hash_value_type make_hash_key(TABLE *table, MY_BITMAP* cols);
+  uint make_hash_key(TABLE *table, MY_BITMAP* cols);
 };
 
 #endif
@@ -234,8 +253,9 @@ private:
   - Extract and decode table definition data from the table map event
   - Check if table definition in table map is compatible with table
     definition on slave
- */
-
+  - expose the type information so that it can be used when encoding
+    or decoding row event data.
+*/
 class table_def
 {
 public:
@@ -270,6 +290,22 @@ public:
   {
     return static_cast<enum_field_types>(m_type[index]);
   }
+
+  /// Return the number of JSON columns in this table.
+  int json_column_count() const
+  {
+    // Cache in member field to make successive calls faster.
+    if (m_json_column_count == -1)
+    {
+      int c= 0;
+      for (uint i= 0; i < size(); i++)
+        if (type(i) == MYSQL_TYPE_JSON)
+          c++;
+      m_json_column_count= c;
+    }
+    return m_json_column_count;
+  }
+
   /*
     Return a representation of the type data for one field.
 
@@ -421,6 +457,7 @@ private:
   uchar *m_null_bits;
   uint16 m_flags;         // Table flags
   uchar *m_memory;
+  mutable int m_json_column_count;   // Number of JSON columns
 };
 
 

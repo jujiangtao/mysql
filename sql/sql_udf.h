@@ -4,30 +4,38 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 
 /* This file defines structures needed by udf functions */
 
+#include <mysql/components/services/udf_registration.h>
 #include <stddef.h>
 #include <sys/types.h>
 
 #include "lex_string.h"
 #include "my_inttypes.h"
 #include "my_table_map.h"
-#include "mysql/mysql_lex_string.h"  // LEX_STRING
+#include "mysql/udf_registration_types.h"
 #include "mysql_com.h"               // Item_result
-#include "sql_alloc.h"               // Sql_alloc
+#include "sql/sql_alloc.h"           // Sql_alloc
 
 class Item;
 class Item_result_field;
@@ -35,17 +43,6 @@ class String;
 class THD;
 class my_decimal;
 
-
-enum Item_udftype {UDFTYPE_FUNCTION=1,UDFTYPE_AGGREGATE};
-
-typedef void (*Udf_func_clear)(UDF_INIT *, uchar *, uchar *);
-typedef void (*Udf_func_add)(UDF_INIT *, UDF_ARGS *, uchar *, uchar *);
-typedef void (*Udf_func_deinit)(UDF_INIT*);
-typedef bool (*Udf_func_init)(UDF_INIT *, UDF_ARGS *,  char *);
-typedef void (*Udf_func_any)();
-typedef double (*Udf_func_double)(UDF_INIT *, UDF_ARGS *, uchar *, uchar *);
-typedef longlong (*Udf_func_longlong)(UDF_INIT *, UDF_ARGS *, uchar *,
-                                      uchar *);
 
 typedef struct st_udf_func
 {
@@ -76,7 +73,6 @@ class udf_handler :public Sql_alloc
 
  public:
   table_map used_tables_cache;
-  bool const_item_cache;
   bool not_original;
   udf_handler(udf_func *udf_arg) :u_d(udf_arg), buffers(0), error(0),
     is_null(0), initialized(0), not_original(0)
@@ -84,7 +80,7 @@ class udf_handler :public Sql_alloc
   ~udf_handler();
   const char *name() const { return u_d ? u_d->name.str : "?"; }
   Item_result result_type () const
-  { return u_d	? u_d->returns : STRING_RESULT;}
+  { return (Item_result) (u_d ? (u_d->returns) : STRING_RESULT);}
   bool get_arguments();
   bool fix_fields(THD *thd, Item_result_field *item,
                   uint arg_count, Item **args);
@@ -147,9 +143,17 @@ class udf_handler :public Sql_alloc
 };
 
 
-void udf_init(void),udf_deinit(void);
+void udf_init_globals();
+void udf_read_functions_table();
+void udf_unload_udfs();
+void udf_deinit_globals();
 udf_func *find_udf(const char *name, size_t len=0,bool mark_used=0);
 void free_udf(udf_func *udf);
-bool mysql_create_function(THD *thd,udf_func *udf);
-bool mysql_drop_function(THD *thd,const LEX_STRING *name);
+bool mysql_create_function(THD *thd, udf_func *udf);
+bool mysql_drop_function(THD *thd, const LEX_STRING *name);
+ulong udf_hash_size(void);
+void udf_hash_rlock(void);
+void udf_hash_unlock(void);
+typedef void udf_hash_for_each_func_t(udf_func *, void *);
+void udf_hash_for_each(udf_hash_for_each_func_t *func, void *arg);
 #endif /* SQL_UDF_INCLUDED */

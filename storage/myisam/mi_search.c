@@ -1,13 +1,20 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -20,12 +27,12 @@
 #include <stdlib.h>
 #include <sys/types.h>
 
-#include "fulltext.h"
 #include "m_ctype.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_macros.h"
+#include "storage/myisam/fulltext.h"
 
 static bool _mi_get_prev_key(MI_INFO *info, MI_KEYDEF *keyinfo, uchar *page,
                              uchar *key, uchar *keypos,
@@ -91,7 +98,7 @@ int _mi_search(MI_INFO *info, MI_KEYDEF *keyinfo,
   }
 
   if (!(buff=_mi_fetch_keypage(info,keyinfo,pos,DFLT_INIT_HITS,info->buff,
-                               MY_TEST(!(nextflag & SEARCH_SAVE_BUFF)))))
+                               !(nextflag & SEARCH_SAVE_BUFF))))
     goto err;
   DBUG_DUMP("page", buff, mi_getint(buff));
 
@@ -134,7 +141,7 @@ int _mi_search(MI_INFO *info, MI_KEYDEF *keyinfo,
   {
     uchar *old_buff=buff;
     if (!(buff=_mi_fetch_keypage(info,keyinfo,pos,DFLT_INIT_HITS,info->buff,
-                                 MY_TEST(!(nextflag & SEARCH_SAVE_BUFF)))))
+                                 !(nextflag & SEARCH_SAVE_BUFF))))
       goto err;
     keypos=buff+(keypos-old_buff);
     maxpos=buff+(maxpos-old_buff);

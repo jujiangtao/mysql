@@ -2,13 +2,20 @@
    Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -26,17 +33,17 @@
 #define _heap_h
 
 #ifndef _my_base_h
-#include <my_base.h>
+#include "my_base.h"
 #endif
 
 #include <sys/types.h>
-#include <thr_lock.h>
 #include <time.h>
 
 #include "my_compare.h"
 #include "my_inttypes.h"
 #include "my_list.h"
 #include "my_tree.h"
+#include "thr_lock.h"
 
 #ifdef	__cplusplus
 extern "C" {
@@ -187,7 +194,14 @@ typedef struct st_heap_info
   LIST open_list;
 } HP_INFO;
 
-
+typedef uchar *HEAP_PTR;
+  
+typedef struct st_heap_position
+{
+  HEAP_PTR ptr;
+  ulong record_no; /* Number of current record in table scan order (starting at 0) */
+} HP_HEAP_POSITION;
+  
 typedef struct st_heap_create_info
 {
   HP_KEYDEF *keydef;
@@ -218,7 +232,7 @@ extern void heap_release_share(HP_SHARE *share, bool single_instance);
 extern int heap_close(HP_INFO *info);
 extern int heap_write(HP_INFO *info,const uchar *buff);
 extern int heap_update(HP_INFO *info,const uchar *old,const uchar *newdata);
-extern int heap_rrnd(HP_INFO *info,uchar *buf,uchar *pos);
+extern int heap_rrnd(HP_INFO *info,uchar *buf, HP_HEAP_POSITION *pos);
 extern int heap_scan_init(HP_INFO *info);
 extern int heap_scan(HP_INFO *info, uchar *record);
 extern int heap_delete(HP_INFO *info,const uchar *buff);
@@ -250,9 +264,8 @@ int heap_rkey(HP_INFO *info, uchar *record, int inx, const uchar *key,
               key_part_map keypart_map, enum ha_rkey_function find_flag);
 extern uchar * heap_find(HP_INFO *info,int inx,const uchar *key);
 extern int heap_check_heap(HP_INFO *info, bool print_status);
-extern uchar *heap_position(HP_INFO *info);
+extern void heap_position(HP_INFO *info, HP_HEAP_POSITION *pos);
 
-typedef uchar *HEAP_PTR;
 
 #ifdef	__cplusplus
 }

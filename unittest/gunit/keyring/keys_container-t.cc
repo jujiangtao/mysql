@@ -1,13 +1,20 @@
 /* Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -16,15 +23,15 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include <keys_container.h>
 #include <mysql/plugin_keyring.h>
 #include <fstream>
 
-#include "buffered_file_io.h"
-#include "buffered_file_io_10.h"
-#include "i_serialized_object.h"
-#include "mock_logger.h"
 #include "my_inttypes.h"
+#include "plugin/keyring/buffered_file_io.h"
+#include "plugin/keyring/common/i_serialized_object.h"
+#include "plugin/keyring/common/keys_container.h"
+#include "unittest/gunit/keyring/buffered_file_io_10.h"
+#include "unittest/gunit/keyring/mock_logger.h"
 
 
 namespace keyring__keys_container_unittest
@@ -184,8 +191,7 @@ namespace keyring__keys_container_unittest
     EXPECT_CALL(*((Mock_logger *)logger),
                 log(MY_ERROR_LEVEL, StrEq("Incorrect Keyring file")));
     EXPECT_CALL(*((Mock_logger *)logger),
-                log(MY_ERROR_LEVEL, StrEq("Error while loading keyring content."
-                                          " The keyring might be malformed")));
+                log(MY_ERROR_LEVEL, StrEq("Error while loading keyring content. The keyring might be malformed")));
     EXPECT_EQ(keys_container->init(keyring_io, keyring_incorrect_tag), 1);
     remove(keyring_incorrect_tag);
     delete sample_key; //unused in this test
@@ -301,7 +307,7 @@ namespace keyring__keys_container_unittest
     ASSERT_TRUE(keys_container->get_number_of_keys() == 3);
 
     my_free(fetched_key->release_key_data());
-  }
+}
 
   TEST_F(Keys_container_test, StoreTwiceTheSame)
   {
@@ -420,7 +426,7 @@ namespace keyring__keys_container_unittest
     Buffered_file_io_dont_remove_backup(ILogger *logger)
       : Buffered_file_io(logger) {}
 
-    bool remove_backup(myf myFlags)
+    bool remove_backup(myf)
     {
       return FALSE;
     }
@@ -794,6 +800,7 @@ namespace keyring__keys_container_unittest
     delete keys_container;
     delete logger;
     my_free(fetchedKey->release_key_data());
+//    fetchedKey->release_key_data();
   }
 
   class Mock_keyring_io : public IKeyring_io
@@ -819,7 +826,10 @@ namespace keyring__keys_container_unittest
   class Mock_serializer : public ISerializer
   {
   public:
-    MOCK_METHOD3(serialize, ISerialized_object*(HASH*, IKey*, Key_operation));
+    MOCK_METHOD3(serialize, ISerialized_object*
+                   (const collation_unordered_map
+                      <std::string, std::unique_ptr<IKey>>&,
+                    IKey*, Key_operation));
   };
 
   class Keys_container_with_mocked_io_test : public ::testing::Test
@@ -903,7 +913,7 @@ namespace keyring__keys_container_unittest
    }
 
     EXPECT_EQ(keys_container->init(keyring_io, file_name), 1);
-    ASSERT_TRUE(keys_container->get_number_of_keys() == 0);
+    ASSERT_EQ(0u, keys_container->get_number_of_keys());
     delete logger;
   }
 

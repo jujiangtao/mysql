@@ -1,48 +1,60 @@
 /* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 
-#include "tc_log.h"
+#include "sql/tc_log.h"
+
+#include "my_config.h"
 
 #include <errno.h>
 #include <fcntl.h>
 #include <string.h>
 
-#include "my_config.h"
+#include "map_helpers.h"
+#include "my_alloc.h"
+#include "my_loglevel.h"
 #include "my_macros.h"
+#include "mysql/psi/mysql_mutex.h"
+#include "mysqld_error.h"
+#include "sql/histograms/histogram.h"
 #ifdef HAVE_SYS_MMAN_H
 #include <sys/mman.h>
 #endif
 
-#include "handler.h"
-#include "hash.h"
-#include "log.h"            // sql_print_error
-#include "m_ctype.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_thread_local.h"
 #include "mysql/psi/mysql_file.h"
 #include "mysql/psi/psi_base.h"
 #include "mysql/service_mysql_alloc.h"
-#include "mysqld.h"         // mysql_data_home
-#include "psi_memory_key.h" // key_memory_TC_LOG_MMAP_pages
-#include "sql_class.h"      // THD
-#include "sql_const.h"
+#include "sql/handler.h"
+#include "sql/log.h"
+#include "sql/mysqld.h"     // mysql_data_home
+#include "sql/psi_memory_key.h" // key_memory_TC_LOG_MMAP_pages
+#include "sql/sql_class.h"  // THD
+#include "sql/sql_const.h"
+#include "sql/transaction_info.h"
+#include "sql/xa.h"
 #include "thr_mutex.h"
-#include "transaction_info.h"
-#include "xa.h"
 
 TC_LOG::enum_result TC_LOG_DUMMY::commit(THD *thd, bool all)
 {
@@ -138,11 +150,10 @@ int TC_LOG_MMAP::open(const char *opt_name)
   {
     inited= 1;
     crashed= TRUE;
-    sql_print_information("Recovering after a crash using %s", opt_name);
+    LogErr(INFORMATION_LEVEL, ER_TC_RECOVERING_AFTER_CRASH_USING, opt_name);
     if (tc_heuristic_recover != TC_HEURISTIC_NOT_USED)
     {
-      sql_print_error("Cannot perform automatic crash recovery when "
-                      "--tc-heuristic-recover is used");
+      LogErr(ERROR_LEVEL, ER_TC_CANT_AUTO_RECOVER_WITH_TC_HEURISTIC_RECOVER);
       goto err;
     }
     file_length= mysql_file_seek(fd, 0L, MY_SEEK_END, MYF(MY_WME+MY_FAE));
@@ -458,7 +469,7 @@ bool TC_LOG_MMAP::sync()
   cookie points directly to the memory where xid was logged.
 */
 
-void TC_LOG_MMAP::unlog(ulong cookie, my_xid xid)
+void TC_LOG_MMAP::unlog(ulong cookie, my_xid xid MY_ATTRIBUTE((unused)))
 {
   PAGE *p= pages + (cookie / tc_log_page_size);
   my_xid *x= (my_xid *)(data + cookie);
@@ -513,12 +524,11 @@ void TC_LOG_MMAP::close()
 
 int TC_LOG_MMAP::recover()
 {
-  HASH xids;
   PAGE *p=pages, *end_p=pages+npages;
 
   if (memcmp(data, tc_log_magic, sizeof(tc_log_magic)))
   {
-    sql_print_error("Bad magic header in tc log");
+    LogErr(ERROR_LEVEL, ER_TC_BAD_MAGIC_IN_TC_LOG);
     goto err1;
   }
 
@@ -528,39 +538,34 @@ int TC_LOG_MMAP::recover()
   */
   if (data[sizeof(tc_log_magic)] != total_ha_2pc)
   {
-    sql_print_error("Recovery failed! You must enable "
-                    "exactly %d storage engines that support "
-                    "two-phase commit protocol",
-                    data[sizeof(tc_log_magic)]);
+    LogErr(ERROR_LEVEL, ER_TC_NEED_N_SE_SUPPORTING_2PC_FOR_RECOVERY,
+           data[sizeof(tc_log_magic)]);
     goto err1;
   }
 
-  if (my_hash_init(&xids, &my_charset_bin, tc_log_page_size/3,
-                   sizeof(my_xid), nullptr, nullptr, 0,
-                   PSI_INSTRUMENT_ME))
-    goto err1;
-
-  for ( ; p < end_p ; p++)
   {
-    for (my_xid *x=p->start; x < p->end; x++)
-      if (*x && my_hash_insert(&xids, (uchar *)x))
-        goto err2; // OOM
+    MEM_ROOT mem_root(
+      PSI_INSTRUMENT_ME, tc_log_page_size/3, tc_log_page_size/3);
+    memroot_unordered_set<my_xid> xids(&mem_root);
+
+    for ( ; p < end_p ; p++)
+    {
+      for (my_xid *x=p->start; x < p->end; x++)
+      {
+        if (*x) xids.insert(*x);
+      }
+    }
+
+    bool err= ha_recover(&xids);
+    if (err)
+      goto err1;
   }
 
-  if (ha_recover(&xids))
-    goto err2;
-
-  my_hash_free(&xids);
   memset(data, 0, (size_t)file_length);
   return 0;
 
-err2:
-  my_hash_free(&xids);
 err1:
-  sql_print_error("Crash recovery failed. Either correct the problem "
-                  "(if it's, for example, out of memory error) and restart, "
-                  "or delete tc log and start mysqld with "
-                  "--tc-heuristic-recover={commit|rollback}");
+  LogErr(ERROR_LEVEL, ER_TC_RECOVERY_FAILED_THESE_ARE_YOUR_OPTIONS);
   return 1;
 }
 
@@ -573,10 +578,9 @@ bool TC_LOG::using_heuristic_recover()
   if (tc_heuristic_recover == TC_HEURISTIC_NOT_USED)
     return false;
 
-  sql_print_information("Heuristic crash recovery mode");
+  LogErr(INFORMATION_LEVEL, ER_TC_HEURISTIC_RECOVERY_MODE);
   if (ha_recover(0))
-    sql_print_error("Heuristic crash recovery failed");
-  sql_print_information("Please restart mysqld without --tc-heuristic-recover");
+    LogErr(ERROR_LEVEL, ER_TC_HEURISTIC_RECOVERY_FAILED);
+  LogErr(INFORMATION_LEVEL, ER_TC_RESTART_WITHOUT_TC_HEURISTIC_RECOVER);
   return true;
 }
-

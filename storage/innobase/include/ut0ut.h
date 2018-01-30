@@ -3,16 +3,24 @@
 Copyright (c) 1994, 2017, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+the terms of the GNU General Public License, version 2.0, as published by the
+Free Software Foundation.
+
+This program is also distributed with certain software (including but not
+limited to OpenSSL) that is licensed under separate terms, as designated in a
+particular file or component or in included license documentation. The authors
+of MySQL hereby grant you an additional permission to link the program and
+your derivative works with the separately licensed software that they have
+included with MySQL.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+FOR A PARTICULAR PURPOSE. See the GNU General Public License, version 2.0,
+for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 *****************************************************************************/
 
@@ -30,13 +38,15 @@ Created 1/20/1994 Heikki Tuuri
 
 #include <ostream>
 #include <sstream>
+#include <algorithm>
+#include <iterator>
 #include <string.h>
 
 #include "db0err.h"
 
 #ifndef UNIV_HOTBACKUP
 # include "os0atomic.h"
-#endif /* UNIV_HOTBACKUP */
+#endif /* !UNIV_HOTBACKUP */
 
 #include <time.h>
 
@@ -181,14 +191,14 @@ ulint
 ut_2_log(
 /*=====*/
 	ulint	n);	/*!< in: number */
-/*************************************************************//**
-Calculates 2 to power n.
+
+/** Calculates 2 to power n.
+@param[in]	n	power of 2
 @return 2 to power n */
 UNIV_INLINE
-ulint
-ut_2_exp(
-/*=====*/
-	ulint	n);	/*!< in: number */
+uint32_t
+ut_2_exp(uint32_t n);
+
 /*************************************************************//**
 Calculates fast the number rounded up to the nearest power of 2.
 @return first power of 2 which is >= n */
@@ -211,7 +221,6 @@ the only way to manipulate it is to use the function ut_difftime.
 ib_time_t
 ut_time(void);
 /*=========*/
-#ifndef UNIV_HOTBACKUP
 /**********************************************************//**
 Returns system time.
 Upon successful completion, the value 0 is returned; otherwise the
@@ -241,27 +250,15 @@ purposes.
 ulint
 ut_time_ms(void);
 /*============*/
+
 #ifdef _WIN32
-/** Initialize counter frequency and offset values used by high resolution
-timing functions on Windows. */
-void
+/**********************************************************//**
+Initialise highest available time resolution API on Windows
+@return false if all OK else true */
+bool
 ut_win_init_time();
 
-/** Return the system time using a high resolution clock.
-Upon successful completion, the value 0 is returned; otherwise the
-value -1 is returned and the global variable errno is set to indicate the
-error.
-@param[out]	sec		seconds since the Epoch
-@param[out]	ms		microseconds since the Epoch+*sec
-@return 0 on success, -1 otherwise */
-int
-ut_high_res_usectime(
-	ulint*	sec,
-	ulint*	ms);
-#else
-#define ut_high_res_usectime	ut_usectime
 #endif /* _WIN32 */
-#endif /* !UNIV_HOTBACKUP */
 
 /**********************************************************//**
 Returns the number of milliseconds since some epoch.  The
@@ -298,23 +295,6 @@ struct ut_strcmp_functor
 	}
 };
 
-#ifdef UNIV_HOTBACKUP
-/**********************************************************//**
-Sprintfs a timestamp to a buffer with no spaces and with ':' characters
-replaced by '_'. */
-void
-ut_sprintf_timestamp_without_extra_chars(
-/*=====================================*/
-	char*	buf); /*!< in: buffer where to sprintf */
-/**********************************************************//**
-Returns current year, month, day. */
-void
-ut_get_year_month_day(
-/*==================*/
-	ulint*	year,	/*!< out: current year */
-	ulint*	month,	/*!< out: month */
-	ulint*	day);	/*!< out: day */
-#else /* UNIV_HOTBACKUP */
 /*************************************************************//**
 Runs an idle loop on CPU. The argument gives the desired delay
 in microseconds on 100 MHz Pentium + Visual C++.
@@ -374,7 +354,6 @@ ut_copy_file(
 /*=========*/
 	FILE*	dest,	/*!< in: output file */
 	FILE*	src);	/*!< in: input file to be appended to output */
-#endif /* !UNIV_HOTBACKUP */
 
 #ifdef _WIN32
 /**********************************************************************//**
@@ -539,7 +518,7 @@ by crashing it.  Use this class when MySQL server needs to be stopped
 immediately.  Refer to the documentation of class info for usage details. */
 class fatal : public logger {
 public:
-	~fatal();
+	~fatal() MY_ATTRIBUTE((noreturn));
 };
 
 /** Emit an error message if the given predicate is true, otherwise emit a
@@ -568,7 +547,38 @@ private:
 	const bool	m_fatal;
 };
 
+#ifdef UNIV_HOTBACKUP
+/**  The class trace is used to emit informational log messages. only when
+trace level is set in the MEB code */
+class trace : public logger {
+public:
+    ~trace();
+};
+
+/**  The class trace_2 is used to emit informational log messages only when
+trace level 2 is set in the MEB code */
+class trace_2 : public logger {
+public:
+    ~trace_2();
+};
+
+/**  The class trace_3 is used to emit informational log messages only when
+trace level 3 is set in the MEB code */
+class trace_3 : public logger {
+public:
+    ~trace_3();
+};
+#endif /* UNIV_HOTBACKUP */
 } // namespace ib
+
+#ifdef UNIV_HOTBACKUP
+/** Sprintfs a timestamp to a buffer with no spaces and with ':' characters
+replaced by '_'.
+@param[in]	buf	buffer where to sprintf */
+void
+meb_sprintf_timestamp_without_extra_chars(
+	char*	buf);
+#endif /* UNIV_HOTBACKUP */
 
 #include "ut0ut.ic"
 

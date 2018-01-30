@@ -12,7 +12,7 @@ CREATE TABLE t1(c1 VARCHAR(32),
 	primary key(c1),
 	KEY idx1(c4(20)),
 	UNIQUE KEY idx2(c6(50)))
-ENGINE = INNODB;
+CHARSET latin1 ENGINE = INNODB;
 
 perl;
 use strict;
@@ -59,12 +59,15 @@ ENGINE = INNODB;
 CREATE TABLE t7(c1 INT PRIMARY KEY,
 	c2 INT,
 	c3 CHAR(255),
-	c4 GEOMETRY NOT NULL,
+	c4 GEOMETRY NOT NULL SRID 0,
 	SPATIAL INDEX(c4))
 ENGINE = INNODB;
 
 # Tables must exist before plugin can be started!
 INSTALL PLUGIN daemon_memcached SONAME 'libmemcached.so';
+
+# Memcached query issued before memcached gets activated
+--sleep 2
 
 let TABLE_NAME = t1;
 let MEMCACHED_TABLE_MAPPING = desc_t1;

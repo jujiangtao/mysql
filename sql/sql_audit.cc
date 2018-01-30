@@ -1,55 +1,63 @@
 /* Copyright (c) 2007, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "sql_audit.h"
+#include "sql/sql_audit.h"
 
 #include <sys/types.h>
 
-#include "auto_thd.h"                           // Auto_THD
-#include "check_stack.h"
-#include "current_thd.h"
-#include "error_handler.h"                      // Internal_error_handler
-#include "key.h"
 #include "lex_string.h"
-#include "log.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
+#include "my_loglevel.h"
+#include "my_macros.h"
 #include "my_psi_config.h"
 #include "my_sqlcommand.h"
 #include "my_sys.h"
+#include "mysql/components/services/log_shared.h"
+#include "mysql/components/services/mysql_mutex_bits.h"
+#include "mysql/components/services/psi_mutex_bits.h"
 #include "mysql/mysql_lex_string.h"
 #include "mysql/plugin.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/psi/psi_base.h"
-#include "mysql/psi/psi_mutex.h"
-#include "mysqld.h"                             // sql_statement_names
 #include "mysqld_error.h"
 #include "prealloced_array.h"
+#include "sql/auto_thd.h"                       // Auto_THD
+#include "sql/current_thd.h"
+#include "sql/error_handler.h"                  // Internal_error_handler
+#include "sql/key.h"
+#include "sql/log.h"
+#include "sql/mysqld.h"                         // sql_statement_names
+#include "sql/sql_class.h"                      // THD
+#include "sql/sql_error.h"
+#include "sql/sql_lex.h"
+#include "sql/sql_plugin.h"                     // my_plugin_foreach
+#include "sql/sql_plugin_ref.h"
+#include "sql/sql_rewrite.h"                    // mysql_rewrite_query
+#include "sql/table.h"
 #include "sql_chars.h"
-#include "sql_class.h"                          // THD
-#include "sql_const.h"
-#include "sql_error.h"
-#include "sql_lex.h"
-#include "sql_plugin.h"                         // my_plugin_foreach
-#include "sql_plugin_ref.h"
-#include "sql_rewrite.h"                        // mysql_rewrite_query
 #include "sql_string.h"
-#include "table.h"
 #include "thr_mutex.h"
-#include "violite.h"
 
 /**
   @class Audit_error_handler
@@ -154,10 +162,11 @@ public:
                              const char* sqlstate,
                              const char* msg)
   {
-    sql_print_warning("%s. The trigger error was (%d) [%s]: %s", warn_msg,
-                      sql_errno,
-                      sqlstate ? sqlstate : "<NO_STATE>",
-                      msg ? msg : "<NO_MESSAGE>");
+    LogErr(WARNING_LEVEL, ER_AUDIT_WARNING,
+           warn_msg,
+           sql_errno,
+           sqlstate ? sqlstate : "<NO_STATE>",
+           msg ? msg : "<NO_MESSAGE>");
   }
 
   /**
@@ -380,12 +389,11 @@ public:
                              const char* sqlstate,
                              const char* msg)
   {
-    sql_print_warning("Event '%s' cannot be aborted. "
-                      "The trigger error was (%d) [%s]: %s",
-                      m_event_name,
-                      sql_errno,
-                      sqlstate ? sqlstate : "<NO_STATE>",
-                      msg ? msg : "<NO_MESSAGE>");
+    LogErr(WARNING_LEVEL, ER_AUDIT_CANT_ABORT_EVENT,
+           m_event_name,
+           sql_errno,
+           sqlstate ? sqlstate : "<NO_STATE>",
+           msg ? msg : "<NO_MESSAGE>");
   }
 
 private:
@@ -434,7 +442,8 @@ int mysql_audit_notify(THD *thd, mysql_event_general_subclass_t subclass,
   event.general_command.str= msg;
   event.general_command.length= msg_len;
 
-  if (subclass == MYSQL_AUDIT_GENERAL_ERROR)
+  if (subclass == MYSQL_AUDIT_GENERAL_ERROR ||
+      subclass == MYSQL_AUDIT_GENERAL_STATUS)
   {
     Ignore_event_error_handler handler(thd, subclass_name);
 
@@ -874,12 +883,11 @@ public:
                              const char* sqlstate,
                              const char* msg)
   {
-    sql_print_warning("Command '%s' cannot be aborted. "
-                      "The trigger error was (%d) [%s]: %s",
-                      m_command_text,
-                      sql_errno,
-                      sqlstate ? sqlstate : "<NO_STATE>",
-                      msg ? msg : "<NO_MESSAGE>");
+    LogErr(WARNING_LEVEL, ER_AUDIT_CANT_ABORT_COMMAND,
+           m_command_text,
+           sql_errno,
+           sqlstate ? sqlstate : "<NO_STATE>",
+           msg ? msg : "<NO_MESSAGE>");
   }
 
   /**
@@ -999,6 +1007,58 @@ int mysql_audit_notify(THD *thd,
   event.parameters= parameters;
 
   return event_class_dispatch_error(thd, MYSQL_AUDIT_STORED_PROGRAM_CLASS,
+                                    subclass_name, &event);
+}
+
+int mysql_audit_notify(THD *thd,
+                       mysql_event_authentication_subclass_t subclass,
+                       const char *subclass_name,
+                       int status,
+                       const char * user,
+                       const char * host,
+                       const char * authentication_plugin,
+                       bool is_role,
+                       const char * new_user,
+                       const char * new_host)
+{
+  mysql_event_authentication event;
+
+  if (mysql_audit_acquire_plugins(thd, MYSQL_AUDIT_AUTHENTICATION_CLASS,
+                                  static_cast<unsigned long>(subclass)))
+    return 0;
+
+  event.event_subclass= subclass;
+  event.status= status;
+  event.connection_id= thd->thread_id();
+  event.sql_command_id= thd->lex->sql_command;
+
+  thd_get_audit_query(thd, &event.query, &event.query_charset);
+
+  LEX_CSTRING obj_str;
+
+  lex_cstring_set(&obj_str, user ? user : "");
+  event.user.str= obj_str.str;
+  event.user.length= obj_str.length;
+
+  lex_cstring_set(&obj_str, host ? host : "");
+  event.host.str= obj_str.str;
+  event.host.length= obj_str.length;
+
+  lex_cstring_set(&obj_str, authentication_plugin ? authentication_plugin : "");
+  event.authentication_plugin.str= obj_str.str;
+  event.authentication_plugin.length= obj_str.length;
+
+  event.is_role= is_role;
+
+  lex_cstring_set(&obj_str, new_user ? new_user : "");
+  event.new_user.str= obj_str.str;
+  event.new_user.length= obj_str.length;
+
+  lex_cstring_set(&obj_str, new_host ? new_host : "");
+  event.new_host.str= obj_str.str;
+  event.new_host.length= obj_str.length;
+
+  return event_class_dispatch_error(thd, MYSQL_AUDIT_AUTHENTICATION_CLASS,
                                     subclass_name, &event);
 }
 
@@ -1187,7 +1247,7 @@ static PSI_mutex_key key_LOCK_audit_mask;
 
 static PSI_mutex_info all_audit_mutexes[]=
 {
-  { &key_LOCK_audit_mask, "LOCK_audit_mask", PSI_FLAG_GLOBAL, 0}
+  { &key_LOCK_audit_mask, "LOCK_audit_mask", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME}
 };
 
 static void init_audit_psi_keys(void)
@@ -1247,23 +1307,20 @@ int initialize_audit_plugin(st_plugin_int *plugin)
 
   if (data->class_mask[MYSQL_AUDIT_AUTHORIZATION_CLASS])
   {
-    sql_print_error("Plugin '%s' cannot subscribe to "
-                 "MYSQL_AUDIT_AUTHORIZATION events. Currently not supported.",
-                 plugin->name.str);
+    LogErr(ERROR_LEVEL, ER_AUDIT_PLUGIN_DOES_NOT_SUPPORT_AUDIT_AUTH_EVENTS,
+           plugin->name.str);
     return 1;
   }
 
   if (!data->event_notify || !masks)
   {
-    sql_print_error("Plugin '%s' has invalid data.",
-                    plugin->name.str);
+    LogErr(ERROR_LEVEL, ER_AUDIT_PLUGIN_HAS_INVALID_DATA, plugin->name.str);
     return 1;
   }
 
   if (plugin->plugin->init && plugin->plugin->init(plugin))
   {
-    sql_print_error("Plugin '%s' init function returned error.",
-                    plugin->name.str);
+    LogErr(ERROR_LEVEL, ER_PLUGIN_INIT_FAILED, plugin->name.str);
     return 1;
   }
 

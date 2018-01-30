@@ -1,17 +1,24 @@
 /* Copyright (c) 2008, 2017, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
-  along with this program; if not, write to the Free Software Foundation,
-  51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+  along with this program; if not, write to the Free Software
+  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 /**
   @file storage/perfschema/table_setup_instruments.cc
@@ -22,45 +29,39 @@
 
 #include <stddef.h>
 
-#include "field.h"
 #include "my_dbug.h"
 #include "my_thread.h"
-#include "pfs_builtin_memory.h"
-#include "pfs_column_types.h"
-#include "pfs_column_values.h"
-#include "pfs_global.h"
-#include "pfs_instr.h"
-#include "pfs_instr_class.h"
-#include "pfs_setup_object.h"
+#include "sql/field.h"
+#include "storage/perfschema/pfs_builtin_memory.h"
+#include "storage/perfschema/pfs_column_types.h"
+#include "storage/perfschema/pfs_column_values.h"
+#include "storage/perfschema/pfs_global.h"
+#include "storage/perfschema/pfs_instr.h"
+#include "storage/perfschema/pfs_instr_class.h"
+#include "storage/perfschema/pfs_setup_object.h"
 
 THR_LOCK table_setup_instruments::m_table_lock;
 
-/* clang-format off */
-static const TABLE_FIELD_TYPE field_types[]=
-{
-  {
-    { C_STRING_WITH_LEN("NAME") },
-    { C_STRING_WITH_LEN("varchar(128)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("ENABLED") },
-    { C_STRING_WITH_LEN("enum(\'YES\',\'NO\')") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("TIMED") },
-    { C_STRING_WITH_LEN("enum(\'YES\',\'NO\')") },
-    { NULL, 0}
-  }
-};
-/* clang-format on */
-
-TABLE_FIELD_DEF
-table_setup_instruments::m_field_def = {3, field_types};
+Plugin_table table_setup_instruments::m_table_def(
+  /* Schema name */
+  "performance_schema",
+  /* Name */
+  "setup_instruments",
+  /* Definition */
+  "  NAME VARCHAR(128) not null,\n"
+  "  ENABLED ENUM ('YES', 'NO') not null,\n"
+  "  TIMED ENUM ('YES', 'NO'),\n"
+  "  PROPERTIES SET('singleton', 'progress', 'user', 'global_statistics', "
+  "'mutable') not null,\n"
+  "  VOLATILITY int not null,\n"
+  "  DOCUMENTATION LONGTEXT,\n"
+  "  PRIMARY KEY (NAME) USING HASH\n",
+  /* Options */
+  " ENGINE=PERFORMANCE_SCHEMA",
+  /* Tablespace */
+  nullptr);
 
 PFS_engine_table_share table_setup_instruments::m_share = {
-  {C_STRING_WITH_LEN("setup_instruments")},
   &pfs_updatable_acl,
   table_setup_instruments::create,
   NULL, /* write_row */
@@ -68,9 +69,11 @@ PFS_engine_table_share table_setup_instruments::m_share = {
   table_setup_instruments::get_row_count,
   sizeof(pos_setup_instruments),
   &m_table_lock,
-  &m_field_def,
-  false, /* checked */
-  false  /* perpetual */
+  &m_table_def,
+  false, /* perpetual */
+  PFS_engine_table_proxy(),
+  {0},
+  false /* m_in_purgatory */
 };
 
 bool
@@ -95,7 +98,7 @@ PFS_index_setup_instruments::match(PFS_instr_class *klass)
 }
 
 PFS_engine_table *
-table_setup_instruments::create(void)
+table_setup_instruments::create(PFS_engine_table_share *)
 {
   return new table_setup_instruments();
 }
@@ -125,7 +128,6 @@ table_setup_instruments::rnd_next(void)
   PFS_instr_class *instr_class = NULL;
   PFS_builtin_memory_class *pfs_builtin;
   bool update_enabled;
-  bool update_timed;
 
   /* Do not advertise hard coded instruments when disabled. */
   if (!pfs_initialized)
@@ -136,7 +138,6 @@ table_setup_instruments::rnd_next(void)
   for (m_pos.set_at(&m_next_pos); m_pos.has_more_view(); m_pos.next_view())
   {
     update_enabled = true;
-    update_timed = true;
 
     switch (m_pos.m_index_1)
     {
@@ -148,9 +149,6 @@ table_setup_instruments::rnd_next(void)
       break;
     case pos_setup_instruments::VIEW_COND:
       instr_class = find_cond_class(m_pos.m_index_2);
-      break;
-    case pos_setup_instruments::VIEW_THREAD:
-      /* Not used yet  */
       break;
     case pos_setup_instruments::VIEW_FILE:
       instr_class = find_file_class(m_pos.m_index_2);
@@ -175,7 +173,6 @@ table_setup_instruments::rnd_next(void)
       break;
     case pos_setup_instruments::VIEW_BUILTIN_MEMORY:
       update_enabled = false;
-      update_timed = false;
       pfs_builtin = find_builtin_memory_class(m_pos.m_index_2);
       if (pfs_builtin != NULL)
       {
@@ -187,14 +184,12 @@ table_setup_instruments::rnd_next(void)
       }
       break;
     case pos_setup_instruments::VIEW_MEMORY:
-      update_timed = false;
       instr_class = find_memory_class(m_pos.m_index_2);
       break;
     case pos_setup_instruments::VIEW_METADATA:
       instr_class = find_metadata_class(m_pos.m_index_2);
       break;
     case pos_setup_instruments::VIEW_ERROR:
-      update_timed = false;
       instr_class = find_error_class(m_pos.m_index_2);
       break;
     }
@@ -202,7 +197,7 @@ table_setup_instruments::rnd_next(void)
     if (instr_class)
     {
       m_next_pos.set_after(&m_pos);
-      return make_row(instr_class, update_enabled, update_timed);
+      return make_row(instr_class, update_enabled);
     }
   }
 
@@ -215,7 +210,6 @@ table_setup_instruments::rnd_pos(const void *pos)
   PFS_instr_class *instr_class = NULL;
   PFS_builtin_memory_class *pfs_builtin;
   bool update_enabled;
-  bool update_timed;
 
   /* Do not advertise hard coded instruments when disabled. */
   if (!pfs_initialized)
@@ -226,7 +220,6 @@ table_setup_instruments::rnd_pos(const void *pos)
   set_position(pos);
 
   update_enabled = true;
-  update_timed = true;
 
   switch (m_pos.m_index_1)
   {
@@ -238,9 +231,6 @@ table_setup_instruments::rnd_pos(const void *pos)
     break;
   case pos_setup_instruments::VIEW_COND:
     instr_class = find_cond_class(m_pos.m_index_2);
-    break;
-  case pos_setup_instruments::VIEW_THREAD:
-    /* Not used yet */
     break;
   case pos_setup_instruments::VIEW_FILE:
     instr_class = find_file_class(m_pos.m_index_2);
@@ -265,7 +255,6 @@ table_setup_instruments::rnd_pos(const void *pos)
     break;
   case pos_setup_instruments::VIEW_BUILTIN_MEMORY:
     update_enabled = false;
-    update_timed = false;
     pfs_builtin = find_builtin_memory_class(m_pos.m_index_2);
     if (pfs_builtin != NULL)
     {
@@ -277,28 +266,26 @@ table_setup_instruments::rnd_pos(const void *pos)
     }
     break;
   case pos_setup_instruments::VIEW_MEMORY:
-    update_timed = false;
     instr_class = find_memory_class(m_pos.m_index_2);
     break;
   case pos_setup_instruments::VIEW_METADATA:
     instr_class = find_metadata_class(m_pos.m_index_2);
     break;
   case pos_setup_instruments::VIEW_ERROR:
-    update_timed = false;
     instr_class = find_error_class(m_pos.m_index_2);
     break;
   }
 
   if (instr_class)
   {
-    return make_row(instr_class, update_enabled, update_timed);
+    return make_row(instr_class, update_enabled);
   }
 
   return HA_ERR_RECORD_DELETED;
 }
 
 int
-table_setup_instruments::index_init(uint idx, bool)
+table_setup_instruments::index_init(uint idx MY_ATTRIBUTE((unused)), bool)
 {
   PFS_index_setup_instruments *result;
 
@@ -316,7 +303,6 @@ table_setup_instruments::index_next(void)
   PFS_instr_class *instr_class = NULL;
   PFS_builtin_memory_class *pfs_builtin;
   bool update_enabled;
-  bool update_timed;
 
   /* Do not advertise hard coded instruments when disabled. */
   if (!pfs_initialized)
@@ -334,7 +320,6 @@ table_setup_instruments::index_next(void)
     do
     {
       update_enabled = true;
-      update_timed = true;
 
       switch (m_pos.m_index_1)
       {
@@ -346,9 +331,6 @@ table_setup_instruments::index_next(void)
         break;
       case pos_setup_instruments::VIEW_COND:
         instr_class = find_cond_class(m_pos.m_index_2);
-        break;
-      case pos_setup_instruments::VIEW_THREAD:
-        /* Not used yet  */
         break;
       case pos_setup_instruments::VIEW_FILE:
         instr_class = find_file_class(m_pos.m_index_2);
@@ -373,7 +355,6 @@ table_setup_instruments::index_next(void)
         break;
       case pos_setup_instruments::VIEW_BUILTIN_MEMORY:
         update_enabled = false;
-        update_timed = false;
         pfs_builtin = find_builtin_memory_class(m_pos.m_index_2);
         if (pfs_builtin != NULL)
         {
@@ -385,14 +366,12 @@ table_setup_instruments::index_next(void)
         }
         break;
       case pos_setup_instruments::VIEW_MEMORY:
-        update_timed = false;
         instr_class = find_memory_class(m_pos.m_index_2);
         break;
       case pos_setup_instruments::VIEW_METADATA:
         instr_class = find_metadata_class(m_pos.m_index_2);
         break;
       case pos_setup_instruments::VIEW_ERROR:
-        update_timed = false;
         instr_class = find_error_class(m_pos.m_index_2);
         break;
       }
@@ -401,7 +380,7 @@ table_setup_instruments::index_next(void)
       {
         if (m_opened_index->match(instr_class))
         {
-          if (!make_row(instr_class, update_enabled, update_timed))
+          if (!make_row(instr_class, update_enabled))
           {
             m_next_pos.set_after(&m_pos);
             return 0;
@@ -416,26 +395,28 @@ table_setup_instruments::index_next(void)
 }
 
 int
-table_setup_instruments::make_row(PFS_instr_class *klass,
-                                  bool update_enabled,
-                                  bool update_timed)
+table_setup_instruments::make_row(PFS_instr_class *klass, bool update_enabled)
 {
   m_row.m_instr_class = klass;
   m_row.m_update_enabled = update_enabled;
-  m_row.m_update_timed = update_timed;
+  m_row.m_update_timed = klass->can_be_timed();
 
   return 0;
 }
 
 int
 table_setup_instruments::read_row_values(TABLE *table,
-                                         unsigned char *,
+                                         unsigned char *buf,
                                          Field **fields,
                                          bool read_all)
 {
   Field *f;
+  const char *doc;
+  uint properties;
 
-  DBUG_ASSERT(table->s->null_bytes == 0);
+  /* Set the null bits */
+  DBUG_ASSERT(table->s->null_bytes == 1);
+  buf[0] = 0;
 
   /*
     The row always exist, the instrument classes
@@ -456,7 +437,52 @@ table_setup_instruments::read_row_values(TABLE *table,
         set_field_enum(f, m_row.m_instr_class->m_enabled ? ENUM_YES : ENUM_NO);
         break;
       case 2: /* TIMED */
-        set_field_enum(f, m_row.m_instr_class->m_timed ? ENUM_YES : ENUM_NO);
+        if (m_row.m_update_timed)
+        {
+          set_field_enum(f, m_row.m_instr_class->m_timed ? ENUM_YES : ENUM_NO);
+        }
+        else
+        {
+          f->set_null();
+        }
+        break;
+      case 3: /* PROPERTIES */
+        properties = 0;
+        if (m_row.m_instr_class->is_singleton())
+        {
+          properties |= INSTR_PROPERTIES_SET_SINGLETON;
+        }
+        if (m_row.m_instr_class->is_mutable())
+        {
+          properties |= INSTR_PROPERTIES_SET_MUTABLE;
+        }
+        if (m_row.m_instr_class->is_progress())
+        {
+          properties |= INSTR_PROPERTIES_SET_PROGRESS;
+        }
+        if (m_row.m_instr_class->is_user())
+        {
+          properties |= INSTR_PROPERTIES_SET_USER;
+        }
+        if (m_row.m_instr_class->is_global())
+        {
+          properties |= INSTR_PROPERTIES_SET_GLOBAL_STAT;
+        }
+        set_field_set(f, properties);
+        break;
+      case 4: /* VOLATILITY */
+        set_field_ulong(f, m_row.m_instr_class->m_volatility);
+        break;
+      case 5: /* DOCUMENTATION */
+        doc = m_row.m_instr_class->m_documentation;
+        if (doc != NULL)
+        {
+          set_field_blob(f, doc, strlen(doc));
+        }
+        else
+        {
+          f->set_null();
+        }
         break;
       default:
         DBUG_ASSERT(false);
@@ -500,6 +526,10 @@ table_setup_instruments::update_row_values(TABLE *table,
           m_row.m_instr_class->m_timed = (value == ENUM_YES) ? true : false;
         }
         break;
+      case 3: /* PROPERTIES */
+      case 4: /* VOLATILITY */
+      case 5: /* DOCUMENTATION */
+        return HA_ERR_WRONG_COMMAND;
       default:
         DBUG_ASSERT(false);
       }
@@ -516,9 +546,6 @@ table_setup_instruments::update_row_values(TABLE *table,
     break;
   case pos_setup_instruments::VIEW_COND:
     update_cond_derived_flags();
-    break;
-  case pos_setup_instruments::VIEW_THREAD:
-    /* Not used yet  */
     break;
   case pos_setup_instruments::VIEW_FILE:
     update_file_derived_flags();

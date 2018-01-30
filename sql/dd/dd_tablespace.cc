@@ -1,13 +1,20 @@
 /* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -16,32 +23,37 @@
 #include "sql/dd/dd_tablespace.h"
 
 #include <stddef.h>
+#include <string.h>
 #include <memory>
-#include <string>
 
-#include "dd/cache/dictionary_client.h"       // dd::cache::Dictionary_client
-#include "dd/dd.h"                            // dd::create_object
-#include "dd/dictionary.h"                    // dd::Dictionary::is_dd_table...
-#include "dd/impl/system_registry.h"          // dd::System_tablespaces
-#include "dd/object_id.h"
-#include "dd/properties.h"                    // dd::Properties
-#include "dd/types/index.h"                   // dd::Index
-#include "dd/types/partition.h"               // dd::Partition
-#include "dd/types/partition_index.h"         // dd::Partition_index
-#include "dd/types/table.h"                   // dd::Table
-#include "dd/types/tablespace.h"              // dd::Tablespace
-#include "dd/types/tablespace_file.h"         // dd::Tablespace_file
-#include "handler.h"
 #include "lex_string.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_io.h"
 #include "my_sys.h"
+#include "mysql_com.h"
 #include "mysqld_error.h"
-#include "sql_class.h"                        // THD
-#include "sql_plugin_ref.h"
-#include "sql_table.h"                        // validate_comment_length
-#include "table.h"
+
+#include "sql/dd/cache/dictionary_client.h"   // dd::cache::Dictionary_client
+#include "sql/dd/dd.h"                        // dd::create_object
+#include "sql/dd/dictionary.h"                // dd::Dictionary::is_dd_table...
+#include "sql/dd/impl/dictionary_impl.h"      // dd::dd_tablespace_id()
+#include "sql/dd/impl/system_registry.h"      // dd::System_tablespaces
+#include "sql/dd/object_id.h"
+#include "sql/dd/properties.h"                // dd::Properties
+#include "sql/dd/string_type.h"
+#include "sql/dd/types/index.h"               // dd::Index
+#include "sql/dd/types/partition.h"           // dd::Partition
+#include "sql/dd/types/partition_index.h"     // dd::Partition_index
+#include "sql/dd/types/table.h"               // dd::Table
+#include "sql/dd/types/tablespace.h"          // dd::Tablespace
+#include "sql/dd/types/tablespace_file.h"     // dd::Tablespace_file
+#include "sql/handler.h"
+#include "sql/key.h"
+#include "sql/sql_class.h"                    // THD
+#include "sql/sql_servers.h"
+#include "sql/sql_table.h"                    // validate_comment_length
+#include "sql/table.h"
 
 namespace {
 template <typename T>
@@ -54,10 +66,9 @@ bool get_and_store_tablespace_name(THD *thd, const T *obj,
     return true;
   }
 
-  if (tablespace_name &&
-      tablespace_set->insert(const_cast<char*>(tablespace_name)))
+  if (tablespace_name)
   {
-    return true;
+    tablespace_set->insert(tablespace_name);
   }
 
   return false;
@@ -115,6 +126,21 @@ fill_table_and_parts_tablespace_names(THD *thd,
       for (const dd::Partition_index *part_idx_obj : part_obj->indexes())
         if (get_and_store_tablespace_name(thd, part_idx_obj, tablespace_set))
           return true;
+
+      // Iterate through tablespace names used by subpartition/indexes.
+      for (const dd::Partition *sub_part_obj : part_obj->sub_partitions())
+      {
+        if (get_and_store_tablespace_name(thd, sub_part_obj, tablespace_set))
+          return true;
+
+        for (const dd::Partition_index *subpart_idx_obj :
+               sub_part_obj->indexes())
+          if (get_and_store_tablespace_name(thd,
+                                            subpart_idx_obj,
+                                            tablespace_set))
+            return true;
+      }
+
     }
   }
 
@@ -139,18 +165,16 @@ bool get_tablespace_name(THD *thd, const T *obj,
   //
   String_type name;
 
-  if (System_tablespaces::instance()->find(MYSQL_TABLESPACE_NAME.str) &&
-      dd::get_dictionary()->is_dd_table_name(MYSQL_SCHEMA_NAME.str,
-                                             obj->name()))
+  if (obj->tablespace_id() == Dictionary_impl::dd_tablespace_id())
   {
-    // If this is a DD table, and we have a DD tablespace, then we use its name.
+    // If this is the DD tablespace id, then we use its name.
     name= MYSQL_TABLESPACE_NAME.str;
   }
   else if (obj->tablespace_id() != dd::INVALID_OBJECT_ID)
   {
     /*
-      We get here, when we have InnoDB or NDB table in a tablespace
-      which is not one of special 'innodb_%' tablespaces.
+      We get here, when we have a table in a tablespace
+      which is 'innodb_system' or a user defined tablespace.
 
       We cannot take MDL lock as we don't know the tablespace name.
       Without a MDL lock we cannot acquire a object placing it in DD
@@ -181,8 +205,8 @@ bool get_tablespace_name(THD *thd, const T *obj,
   else
   {
     /*
-      If user has specified special tablespace name like 'innodb_%'
-      then we read it from tablespace options.
+      If user has specified special tablespace name like
+      'innodb_file_per_table' then we read it from tablespace options.
     */
     const dd::Properties *table_options= &obj->options();
     table_options->get("tablespace", name);
@@ -197,71 +221,6 @@ bool get_tablespace_name(THD *thd, const T *obj,
   }
 
   return false;
-}
-
-
-bool create_tablespace(THD *thd, st_alter_tablespace *ts_info,
-                       handlerton *hton)
-{
-  DBUG_ENTER("dd_create_tablespace");
-
-  // Check if same tablespace already exists.
-  dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
-  const dd::Tablespace* ts= NULL;
-  if (thd->dd_client()->acquire(ts_info->tablespace_name, &ts))
-  {
-    // Error is reported by the dictionary subsystem.
-    DBUG_RETURN(true);
-  }
-  if (ts)
-  {
-    my_error(ER_TABLESPACE_EXISTS, MYF(0), ts_info->tablespace_name);
-    DBUG_RETURN(true);
-  }
-
-  // Create new tablespace.
-  std::unique_ptr<dd::Tablespace> tablespace(dd::create_object<dd::Tablespace>());
-
-  // Set tablespace name
-  tablespace->set_name(ts_info->tablespace_name);
-
-  // Engine type
-  tablespace->set_engine(ha_resolve_storage_engine_name(hton));
-
-  // TODO: Move below checks out from dd/dd_tablespace.cc like it was done
-  //       for ALTER TABLESPACE case.
-
-  // Comment
-  if (ts_info->ts_comment)
-  {
-    LEX_CSTRING comment= { ts_info->ts_comment, strlen(ts_info->ts_comment) };
-
-    if (validate_comment_length(thd, comment.str, &comment.length,
-                                TABLESPACE_COMMENT_MAXLEN,
-                                ER_TOO_LONG_TABLESPACE_COMMENT,
-                                ts_info->tablespace_name))
-      DBUG_RETURN(true);
-
-    tablespace->set_comment(String_type(comment.str, comment.length));
-  }
-
-  if (strlen(ts_info->data_file_name) > FN_REFLEN)
-  {
-    my_error(ER_PATH_LENGTH, MYF(0), "DATAFILE");
-    DBUG_RETURN(true);
-  }
-
-  // Add datafile
-  dd::Tablespace_file *tsf_obj= tablespace->add_file();
-  tsf_obj->set_filename(ts_info->data_file_name);
-
-  // Write changes to dictionary.
-  if (thd->dd_client()->store(tablespace.get()))
-  {
-    DBUG_RETURN(true);
-  }
-
-  DBUG_RETURN(false);
 }
 
 } // namespace dd

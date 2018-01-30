@@ -1,17 +1,24 @@
 /* Copyright (c) 2008, 2017, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
-  along with this program; if not, write to the Free Software Foundation,
-  51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+  along with this program; if not, write to the Free Software
+  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 /**
   @file storage/perfschema/pfs_engine_table.cc
@@ -20,117 +27,121 @@
 
 #include "storage/perfschema/pfs_engine_table.h"
 
-#include "current_thd.h"
-#include "derror.h"
-#include "lock.h"  // MYSQL_LOCK_IGNORE_TIMEOUT
-#include "log.h"
 #include "my_dbug.h"
 #include "my_macros.h"
 #include "my_thread.h"
-#include "mysqld.h" /* lower_case_table_names */
-#include "pfs_buffer_container.h"
+#include "sql/auth/auth_acls.h"
+#include "sql/current_thd.h"
+#include "sql/derror.h"
+#include "sql/lock.h"  // MYSQL_LOCK_IGNORE_TIMEOUT
+#include "sql/log.h"
+#include "sql/mysqld.h"    /* lower_case_table_names */
+#include "sql/sql_base.h"  // close_thread_tables
+#include "sql/sql_class.h"
+#include "storage/perfschema/pfs_buffer_container.h"
 /* For show status */
-#include "pfs_column_values.h"
-#include "pfs_digest.h"
-#include "pfs_global.h"
-#include "pfs_instr.h"
-#include "pfs_instr_class.h"
-#include "pfs_setup_actor.h"
-#include "pfs_setup_object.h"
-#include "sql_base.h"  // close_thread_tables
-#include "sql_class.h"
-#include "table_accounts.h"
-#include "table_data_lock_waits.h"
-#include "table_data_locks.h"
-#include "table_ees_by_account_by_error.h"
-#include "table_ees_by_host_by_error.h"
-#include "table_ees_by_thread_by_error.h"
-#include "table_ees_by_user_by_error.h"
-#include "table_ees_global_by_error.h"
-#include "table_esgs_by_account_by_event_name.h"
-#include "table_esgs_by_host_by_event_name.h"
-#include "table_esgs_by_thread_by_event_name.h"
-#include "table_esgs_by_user_by_event_name.h"
-#include "table_esgs_global_by_event_name.h"
-#include "table_esms_by_account_by_event_name.h"
-#include "table_esms_by_digest.h"
-#include "table_esms_by_host_by_event_name.h"
-#include "table_esms_by_program.h"
-#include "table_esmh_global.h"
-#include "table_esmh_by_digest.h"
-#include "table_esms_by_thread_by_event_name.h"
-#include "table_esms_by_user_by_event_name.h"
-#include "table_esms_global_by_event_name.h"
-#include "table_ets_by_account_by_event_name.h"
-#include "table_ets_by_host_by_event_name.h"
-#include "table_ets_by_thread_by_event_name.h"
-#include "table_ets_by_user_by_event_name.h"
-#include "table_ets_global_by_event_name.h"
-#include "table_events_stages.h"
-#include "table_events_statements.h"
-#include "table_events_transactions.h"
-#include "table_events_waits.h"
-#include "table_events_waits_summary.h"
-#include "table_ews_by_account_by_event_name.h"
-#include "table_ews_by_host_by_event_name.h"
-#include "table_ews_by_thread_by_event_name.h"
-#include "table_ews_by_user_by_event_name.h"
-#include "table_ews_global_by_event_name.h"
-#include "table_file_instances.h"
-#include "table_file_summary_by_event_name.h"
-#include "table_file_summary_by_instance.h"
-#include "table_global_status.h"
-#include "table_global_variables.h"
-#include "table_host_cache.h"
-#include "table_hosts.h"
-#include "table_md_locks.h"
-#include "table_mems_by_account_by_event_name.h"
-#include "table_mems_by_host_by_event_name.h"
-#include "table_mems_by_thread_by_event_name.h"
-#include "table_mems_by_user_by_event_name.h"
-#include "table_mems_global_by_event_name.h"
-#include "table_os_global_by_type.h"
-#include "table_performance_timers.h"
-#include "table_prepared_stmt_instances.h"
-#include "table_replication_applier_configuration.h"
-#include "table_replication_applier_status.h"
-#include "table_replication_applier_status_by_coordinator.h"
-#include "table_replication_applier_status_by_worker.h"
+#include "storage/perfschema/pfs_column_values.h"
+#include "storage/perfschema/pfs_digest.h"
+#include "storage/perfschema/pfs_global.h"
+#include "storage/perfschema/pfs_instr.h"
+#include "storage/perfschema/pfs_instr_class.h"
+#include "storage/perfschema/pfs_setup_actor.h"
+#include "storage/perfschema/pfs_setup_object.h"
+#include "storage/perfschema/table_accounts.h"
+#include "storage/perfschema/table_data_lock_waits.h"
+#include "storage/perfschema/table_data_locks.h"
+#include "storage/perfschema/table_ees_by_account_by_error.h"
+#include "storage/perfschema/table_ees_by_host_by_error.h"
+#include "storage/perfschema/table_ees_by_thread_by_error.h"
+#include "storage/perfschema/table_ees_by_user_by_error.h"
+#include "storage/perfschema/table_ees_global_by_error.h"
+#include "storage/perfschema/table_esgs_by_account_by_event_name.h"
+#include "storage/perfschema/table_esgs_by_host_by_event_name.h"
+#include "storage/perfschema/table_esgs_by_thread_by_event_name.h"
+#include "storage/perfschema/table_esgs_by_user_by_event_name.h"
+#include "storage/perfschema/table_esgs_global_by_event_name.h"
+#include "storage/perfschema/table_esmh_by_digest.h"
+#include "storage/perfschema/table_esmh_global.h"
+#include "storage/perfschema/table_esms_by_account_by_event_name.h"
+#include "storage/perfschema/table_esms_by_digest.h"
+#include "storage/perfschema/table_esms_by_host_by_event_name.h"
+#include "storage/perfschema/table_esms_by_program.h"
+#include "storage/perfschema/table_esms_by_thread_by_event_name.h"
+#include "storage/perfschema/table_esms_by_user_by_event_name.h"
+#include "storage/perfschema/table_esms_global_by_event_name.h"
+#include "storage/perfschema/table_ets_by_account_by_event_name.h"
+#include "storage/perfschema/table_ets_by_host_by_event_name.h"
+#include "storage/perfschema/table_ets_by_thread_by_event_name.h"
+#include "storage/perfschema/table_ets_by_user_by_event_name.h"
+#include "storage/perfschema/table_ets_global_by_event_name.h"
+#include "storage/perfschema/table_events_stages.h"
+#include "storage/perfschema/table_events_statements.h"
+#include "storage/perfschema/table_events_transactions.h"
+#include "storage/perfschema/table_events_waits.h"
+#include "storage/perfschema/table_events_waits_summary.h"
+#include "storage/perfschema/table_ews_by_account_by_event_name.h"
+#include "storage/perfschema/table_ews_by_host_by_event_name.h"
+#include "storage/perfschema/table_ews_by_thread_by_event_name.h"
+#include "storage/perfschema/table_ews_by_user_by_event_name.h"
+#include "storage/perfschema/table_ews_global_by_event_name.h"
+#include "storage/perfschema/table_file_instances.h"
+#include "storage/perfschema/table_file_summary_by_event_name.h"
+#include "storage/perfschema/table_file_summary_by_instance.h"
+#include "storage/perfschema/table_global_status.h"
+#include "storage/perfschema/table_global_variables.h"
+#include "storage/perfschema/table_host_cache.h"
+#include "storage/perfschema/table_hosts.h"
+#include "storage/perfschema/table_md_locks.h"
+#include "storage/perfschema/table_mems_by_account_by_event_name.h"
+#include "storage/perfschema/table_mems_by_host_by_event_name.h"
+#include "storage/perfschema/table_mems_by_thread_by_event_name.h"
+#include "storage/perfschema/table_mems_by_user_by_event_name.h"
+#include "storage/perfschema/table_mems_global_by_event_name.h"
+#include "storage/perfschema/table_os_global_by_type.h"
+#include "storage/perfschema/table_performance_timers.h"
+#include "storage/perfschema/table_persisted_variables.h"
+#include "storage/perfschema/table_plugin_table.h"
+#include "storage/perfschema/table_prepared_stmt_instances.h"
+#include "storage/perfschema/table_replication_applier_configuration.h"
+#include "storage/perfschema/table_replication_applier_filters.h"
+#include "storage/perfschema/table_replication_applier_global_filters.h"
+#include "storage/perfschema/table_replication_applier_status.h"
+#include "storage/perfschema/table_replication_applier_status_by_coordinator.h"
+#include "storage/perfschema/table_replication_applier_status_by_worker.h"
 /* For replication related perfschema tables. */
-#include "table_replication_connection_configuration.h"
-#include "table_replication_connection_status.h"
-#include "table_replication_group_member_stats.h"
-#include "table_replication_group_members.h"
-#include "table_replication_applier_filters.h"
-#include "table_replication_applier_global_filters.h"
-#include "table_session_account_connect_attrs.h"
-#include "table_session_connect_attrs.h"
-#include "table_session_status.h"
-#include "table_session_variables.h"
-#include "table_setup_actors.h"
-#include "table_setup_consumers.h"
-#include "table_setup_instruments.h"
-#include "table_setup_objects.h"
-#include "table_setup_timers.h"
-#include "table_socket_instances.h"
-#include "table_socket_summary_by_event_name.h"
-#include "table_socket_summary_by_instance.h"
-#include "table_status_by_account.h"
-#include "table_status_by_host.h"
-#include "table_status_by_thread.h"
-#include "table_status_by_user.h"
-#include "table_sync_instances.h"
-#include "table_table_handles.h"
-#include "table_threads.h"
-#include "table_tiws_by_index_usage.h"
-#include "table_tiws_by_table.h"
-#include "table_tlws_by_table.h"
-#include "table_users.h"
-#include "table_uvar_by_thread.h"
-#include "table_variables_by_thread.h"
-#include "table_variables_info.h"
-#include "table_persisted_variables.h"
+#include "storage/perfschema/table_replication_connection_configuration.h"
+#include "storage/perfschema/table_replication_connection_status.h"
+#include "storage/perfschema/table_replication_group_member_stats.h"
+#include "storage/perfschema/table_replication_group_members.h"
+#include "storage/perfschema/table_session_account_connect_attrs.h"
+#include "storage/perfschema/table_session_connect_attrs.h"
+#include "storage/perfschema/table_session_status.h"
+#include "storage/perfschema/table_session_variables.h"
+#include "storage/perfschema/table_setup_actors.h"
+#include "storage/perfschema/table_setup_consumers.h"
+#include "storage/perfschema/table_setup_instruments.h"
+#include "storage/perfschema/table_setup_objects.h"
+#include "storage/perfschema/table_setup_threads.h"
+#include "storage/perfschema/table_socket_instances.h"
+#include "storage/perfschema/table_socket_summary_by_event_name.h"
+#include "storage/perfschema/table_socket_summary_by_instance.h"
+#include "storage/perfschema/table_status_by_account.h"
+#include "storage/perfschema/table_status_by_host.h"
+#include "storage/perfschema/table_status_by_thread.h"
+#include "storage/perfschema/table_status_by_user.h"
+#include "storage/perfschema/table_sync_instances.h"
+#include "storage/perfschema/table_table_handles.h"
+#include "storage/perfschema/table_threads.h"
+#include "storage/perfschema/table_tiws_by_index_usage.h"
+#include "storage/perfschema/table_tiws_by_table.h"
+#include "storage/perfschema/table_tlws_by_table.h"
+#include "storage/perfschema/table_user_defined_functions.h"
+#include "storage/perfschema/table_users.h"
+#include "storage/perfschema/table_uvar_by_thread.h"
+#include "storage/perfschema/table_variables_by_thread.h"
+#include "storage/perfschema/table_variables_info.h"
 
+/* clang-format off */
 /**
   @page PAGE_PFS_NEW_TABLE Implementing a new performance_schema table
 
@@ -444,6 +455,7 @@
 
   An example of table using this pattern is @c table_host_cache.
 */
+/* clang-format on */
 
 /**
   @addtogroup performance_schema_engine
@@ -456,8 +468,7 @@ PFS_table_context::initialize(void)
   if (m_restore)
   {
     /* Restore context from TLS. */
-    PFS_table_context *context =
-      static_cast<PFS_table_context *>(my_get_thread_local(m_thr_key));
+    PFS_table_context *context = THR_PFS_contexts[m_thr_key];
     DBUG_ASSERT(context != NULL);
 
     if (context)
@@ -472,9 +483,7 @@ PFS_table_context::initialize(void)
   else
   {
     /* Check that TLS is not in use. */
-    PFS_table_context *context =
-      static_cast<PFS_table_context *>(my_get_thread_local(m_thr_key));
-    // DBUG_ASSERT(context == NULL);
+    PFS_table_context *context = THR_PFS_contexts[m_thr_key];
 
     context = this;
 
@@ -483,19 +492,8 @@ PFS_table_context::initialize(void)
     m_map = NULL;
     m_word_size = sizeof(ulong) * 8;
 
-#if 0
-    /* Disabled. */
-    /* Allocate a bitmap to record which threads are materialized. */
-    if (m_map_size > 0)
-    {
-      THD *thd= current_thd;
-      ulong words= m_map_size / m_word_size + (m_map_size % m_word_size > 0);
-      m_map= (ulong *)thd->mem_calloc(words * m_word_size);
-    }
-#endif
-
     /* Write to TLS. */
-    my_set_thread_local(m_thr_key, static_cast<void *>(context));
+    THR_PFS_contexts[m_thr_key] = context;
   }
 
   m_initialized = (m_map_size > 0) ? (m_map != NULL) : true;
@@ -506,7 +504,7 @@ PFS_table_context::initialize(void)
 /* Constructor for global or single thread tables, map size = 0.  */
 PFS_table_context::PFS_table_context(ulonglong current_version,
                                      bool restore,
-                                     thread_local_key_t key)
+                                     THR_PFS_key key)
   : m_thr_key(key),
     m_current_version(current_version),
     m_last_version(0),
@@ -525,7 +523,7 @@ PFS_table_context::PFS_table_context(ulonglong current_version,
 PFS_table_context::PFS_table_context(ulonglong current_version,
                                      ulong map_size,
                                      bool restore,
-                                     thread_local_key_t key)
+                                     THR_PFS_key key)
   : m_thr_key(key),
     m_current_version(current_version),
     m_last_version(0),
@@ -541,11 +539,6 @@ PFS_table_context::PFS_table_context(ulonglong current_version,
 
 PFS_table_context::~PFS_table_context(void)
 {
-  /* Clear TLS after final use. */
-  //  if (m_restore)
-  //  {
-  //    my_set_thread_local(m_thr_key, NULL);
-  //  }
 }
 
 void
@@ -592,7 +585,7 @@ static PFS_engine_table_share *all_shares[] = {
   &table_setup_consumers::m_share,
   &table_setup_instruments::m_share,
   &table_setup_objects::m_share,
-  &table_setup_timers::m_share,
+  &table_setup_threads::m_share,
   &table_tiws_by_index_usage::m_share,
   &table_tiws_by_table::m_share,
   &table_tlws_by_table::m_share,
@@ -682,103 +675,48 @@ static PFS_engine_table_share *all_shares[] = {
   &table_session_variables::m_share,
   &table_variables_info::m_share,
   &table_persisted_variables::m_share,
+  &table_user_defined_functions::m_share,
 
   NULL};
 
-/**
-  Check all the tables structure.
-  @param thd              current thread
-*/
+static PSI_mutex_key key_LOCK_pfs_share_list;
+static PSI_mutex_info info_LOCK_pfs_share_list = {
+  &key_LOCK_pfs_share_list,
+  "LOCK_pfs_share_list",
+  PSI_VOLATILITY_PERMANENT,
+  PSI_FLAG_SINGLETON,
+  /* Doc */
+  "Components can provide their own performance_schema tables. "
+  "This lock protects the list of such tables definitions."};
+
 void
-PFS_engine_table_share::check_all_tables(THD *thd)
+PFS_dynamic_table_shares::init_mutex()
+{
+  /* This is called once at startup, ok to register here. */
+  /* FIXME: Category "performance_schema" leads to a name too long. */
+  mysql_mutex_register("pfs", &info_LOCK_pfs_share_list, 1);
+  mysql_mutex_init(
+    key_LOCK_pfs_share_list, &LOCK_pfs_share_list, MY_MUTEX_INIT_FAST);
+}
+
+void
+PFS_dynamic_table_shares::destroy_mutex()
+{
+  mysql_mutex_destroy(&LOCK_pfs_share_list);
+}
+
+PFS_dynamic_table_shares pfs_external_table_shares;
+
+/** Get all the core performance schema tables. */
+void
+PFS_engine_table_share::get_all_tables(List<const Plugin_table> *tables)
 {
   PFS_engine_table_share **current;
 
-  DBUG_EXECUTE_IF("tampered_perfschema_table1", {
-    /* Hack SETUP_INSTRUMENT, incompatible change. */
-    all_shares[20]->m_field_def->count++;
-  });
-
   for (current = &all_shares[0]; (*current) != NULL; current++)
   {
-    (*current)->check_one_table(thd);
+    tables->push_back((*current)->m_table_def);
   }
-}
-
-/** Error reporting for schema integrity checks. */
-class PFS_check_intact : public Table_check_intact
-{
-protected:
-  virtual void report_error(uint code, const char *fmt, ...);
-
-public:
-  PFS_check_intact()
-  {
-  }
-
-  ~PFS_check_intact()
-  {
-  }
-};
-
-void
-PFS_check_intact::report_error(uint, const char *fmt, ...)
-{
-  va_list args;
-  char buff[MYSQL_ERRMSG_SIZE];
-
-  va_start(args, fmt);
-  my_vsnprintf(buff, sizeof(buff), fmt, args);
-  va_end(args);
-
-  /*
-    This is an install/upgrade issue:
-    - do not report it in the user connection, there is none in main(),
-    - report it in the server error log.
-  */
-  sql_print_error("%s", buff);
-}
-
-/**
-  Check integrity of the actual table schema.
-  The actual table schema is compared to the expected schema.
-  @param thd              current thread
-*/
-void
-PFS_engine_table_share::check_one_table(THD *thd)
-{
-  TABLE_LIST tables;
-
-  tables.init_one_table(PERFORMANCE_SCHEMA_str.str,
-                        PERFORMANCE_SCHEMA_str.length,
-                        m_name.str,
-                        m_name.length,
-                        m_name.str,
-                        TL_READ);
-
-  /* Work around until Bug#32115 is backported. */
-  LEX dummy_lex;
-  LEX *old_lex = thd->lex;
-  thd->lex = &dummy_lex;
-  lex_start(thd);
-
-  if (!open_and_lock_tables(thd, &tables, MYSQL_LOCK_IGNORE_TIMEOUT))
-  {
-    PFS_check_intact checker;
-
-    if (!checker.check(thd, tables.table, m_field_def))
-    {
-      m_checked = true;
-    }
-    close_thread_tables(thd);
-  }
-  else
-    sql_print_error(ER_DEFAULT(ER_WRONG_NATIVE_TABLE_STRUCTURE),
-                    PERFORMANCE_SCHEMA_str.str,
-                    m_name.str);
-
-  lex_end(&dummy_lex);
-  thd->lex = old_lex;
 }
 
 /** Initialize all the table share locks. */
@@ -812,20 +750,12 @@ PFS_engine_table_share::get_row_count(void) const
 }
 
 int
-PFS_engine_table_share::write_row(TABLE *table,
+PFS_engine_table_share::write_row(PFS_engine_table *pfs_table,
+                                  TABLE *table,
                                   unsigned char *buf,
                                   Field **fields) const
 {
   my_bitmap_map *org_bitmap;
-
-  /*
-    Make sure the table structure is as expected before mapping
-    hard wired columns in m_write_row.
-  */
-  if (!m_checked)
-  {
-    return HA_ERR_TABLE_NEEDS_UPGRADE;
-  }
 
   if (m_write_row == NULL)
   {
@@ -834,13 +764,13 @@ PFS_engine_table_share::write_row(TABLE *table,
 
   /* We internally read from Fields to support the write interface */
   org_bitmap = dbug_tmp_use_all_columns(table, table->read_set);
-  int result = m_write_row(table, buf, fields);
+  int result = m_write_row(pfs_table, table, buf, fields);
   dbug_tmp_restore_column_map(table->read_set, org_bitmap);
 
   return result;
 }
 
-static int
+int
 compare_table_names(const char *name1, const char *name2)
 {
   /*
@@ -871,22 +801,28 @@ compare_table_names(const char *name1, const char *name2)
   @param name             The table name
   @return table share
 */
-const PFS_engine_table_share *
+PFS_engine_table_share *
 PFS_engine_table::find_engine_table_share(const char *name)
 {
   DBUG_ENTER("PFS_engine_table::find_table_share");
+  PFS_engine_table_share *result;
 
+  /* First try to find in native performance schema table shares */
   PFS_engine_table_share **current;
 
   for (current = &all_shares[0]; (*current) != NULL; current++)
   {
-    if (compare_table_names(name, (*current)->m_name.str) == 0)
+    if (compare_table_names(name, (*current)->m_table_def->get_name()) == 0)
     {
       DBUG_RETURN(*current);
     }
   }
 
-  DBUG_RETURN(NULL);
+  /* Now try to find in non-native performance schema tables shares */
+  result = pfs_external_table_shares.find_share(name, false);
+
+  // FIXME : here we return an object that could be destroyed, unsafe.
+  DBUG_RETURN(result);
 }
 
 /**
@@ -902,15 +838,6 @@ PFS_engine_table::read_row(TABLE *table, unsigned char *buf, Field **fields)
   my_bitmap_map *org_bitmap;
   Field *f;
   Field **fields_reset;
-
-  /*
-    Make sure the table structure is as expected before mapping
-    hard wired columns in read_row_values.
-  */
-  if (!m_share_ptr->m_checked)
-  {
-    return HA_ERR_TABLE_NEEDS_UPGRADE;
-  }
 
   /* We must read all columns in case a table is opened for update */
   bool read_all = !bitmap_is_clear_all(table->write_set);
@@ -951,15 +878,6 @@ PFS_engine_table::update_row(TABLE *table,
 {
   my_bitmap_map *org_bitmap;
 
-  /*
-    Make sure the table structure is as expected before mapping
-    hard wired columns in update_row_values.
-  */
-  if (!m_share_ptr->m_checked)
-  {
-    return HA_ERR_TABLE_NEEDS_UPGRADE;
-  }
-
   /* We internally read from Fields to support the write interface */
   org_bitmap = dbug_tmp_use_all_columns(table, table->read_set);
   int result = update_row_values(table, old_buf, new_buf, fields);
@@ -974,15 +892,6 @@ PFS_engine_table::delete_row(TABLE *table,
                              Field **fields)
 {
   my_bitmap_map *org_bitmap;
-
-  /*
-    Make sure the table structure is as expected before mapping
-    hard wired columns in delete_row_values.
-  */
-  if (!m_share_ptr->m_checked)
-  {
-    return HA_ERR_TABLE_NEEDS_UPGRADE;
-  }
 
   /* We internally read from Fields to support the delete interface */
   org_bitmap = dbug_tmp_use_all_columns(table, table->read_set);
@@ -1016,20 +925,6 @@ void
 PFS_engine_table::set_position(const void *ref)
 {
   memcpy(m_pos_ptr, ref, m_share_ptr->m_ref_length);
-}
-
-/**
-  Get the timer normalizer and class type for the current row.
-  @param [in] instr_class    class
-*/
-void
-PFS_engine_table::get_normalizer(PFS_instr_class *instr_class)
-{
-  if (instr_class->m_type != m_class_type)
-  {
-    m_normalizer = time_normalizer::get(*instr_class->m_timer);
-    m_class_type = instr_class->m_type;
-  }
 }
 
 int
@@ -1087,6 +982,48 @@ PFS_engine_table::index_next_same(const uchar *, uint)
   return index_next();
 }
 
+/**
+  Find a share in the list
+  @param table_name  name of the table
+  @param is_dead_too if true, consider tables marked to be deleted
+
+  @return if found table share or NULL
+*/
+PFS_engine_table_share *
+PFS_dynamic_table_shares::find_share(const char *table_name, bool is_dead_too)
+{
+  if (!opt_initialize)
+    mysql_mutex_assert_owner(&LOCK_pfs_share_list);
+
+  for (auto it : shares_vector)
+  {
+    if ((compare_table_names(table_name, it->m_table_def->get_name()) == 0) &&
+        (it->m_in_purgatory == false || is_dead_too))
+      return it;
+  }
+  return NULL;
+}
+
+/**
+  Remove a share from the list
+  @param share  share to be removed
+*/
+void
+PFS_dynamic_table_shares::remove_share(PFS_engine_table_share *share)
+{
+  mysql_mutex_assert_owner(&LOCK_pfs_share_list);
+
+  std::vector<PFS_engine_table_share *>::iterator it;
+
+  /* Search for the share in share list */
+  it = std::find(shares_vector.begin(), shares_vector.end(), share);
+  if (it != shares_vector.end())
+  {
+    /* Remove the share from the share list */
+    shares_vector.erase(it);
+  }
+}
+
 /** Implementation of internal ACL checks, for the performance schema. */
 class PFS_internal_schema_access : public ACL_internal_schema_access
 {
@@ -1108,7 +1045,7 @@ ACL_internal_access_result
 PFS_internal_schema_access::check(ulong want_access, ulong *) const
 {
   const ulong always_forbidden =
-    /* CREATE_ACL | */ REFERENCES_ACL | INDEX_ACL | ALTER_ACL | CREATE_TMP_ACL |
+    CREATE_ACL | REFERENCES_ACL | INDEX_ACL | ALTER_ACL | CREATE_TMP_ACL |
     EXECUTE_ACL | CREATE_VIEW_ACL | SHOW_VIEW_ACL | CREATE_PROC_ACL |
     ALTER_PROC_ACL | EVENT_ACL | TRIGGER_ACL;
 
@@ -1128,16 +1065,22 @@ const ACL_internal_table_access *
 PFS_internal_schema_access::lookup(const char *name) const
 {
   const PFS_engine_table_share *share;
+
+  pfs_external_table_shares.lock_share_list();
   share = PFS_engine_table::find_engine_table_share(name);
   if (share)
   {
-    return share->m_acl;
+    const ACL_internal_table_access *acl = share->m_acl;
+    pfs_external_table_shares.unlock_share_list();
+    return acl;
   }
+
+  pfs_external_table_shares.unlock_share_list();
   /*
     Do not return NULL, it would mean we are not interested
     in privilege checks for unknown tables.
     Instead, return an object that denies every actions,
-    to prevent users for creating their own tables in the
+    to prevent users from creating their own tables in the
     performance_schema database schema.
   */
   return &pfs_unknown_acl;
@@ -1159,15 +1102,43 @@ initialize_performance_schema_acl(bool bootstrap)
   }
 }
 
+static bool
+allow_drop_privilege()
+{
+  /*
+    The same DROP_ACL privilege is used for different statements,
+    in particular:
+    - TRUNCATE TABLE
+    - DROP TABLE
+    - ALTER TABLE
+    Here, we want to prevent DROP / ALTER  while allowing TRUNCATE.
+    Note that we must also allow GRANT to transfer the truncate privilege.
+  */
+  THD *thd = current_thd;
+  if (thd == NULL)
+  {
+    return false;
+  }
+
+  DBUG_ASSERT(thd->lex != NULL);
+  if ((thd->lex->sql_command != SQLCOM_TRUNCATE) &&
+      (thd->lex->sql_command != SQLCOM_GRANT))
+  {
+    return false;
+  }
+
+  return true;
+}
+
 PFS_readonly_acl pfs_readonly_acl;
 
 ACL_internal_access_result
 PFS_readonly_acl::check(ulong want_access, ulong *) const
 {
   const ulong always_forbidden = INSERT_ACL | UPDATE_ACL | DELETE_ACL |
-                                 /* CREATE_ACL | */ REFERENCES_ACL | INDEX_ACL |
-                                 ALTER_ACL | CREATE_VIEW_ACL | SHOW_VIEW_ACL |
-                                 TRIGGER_ACL | LOCK_TABLES_ACL;
+                                 CREATE_ACL | DROP_ACL | REFERENCES_ACL |
+                                 INDEX_ACL | ALTER_ACL | CREATE_VIEW_ACL |
+                                 SHOW_VIEW_ACL | TRIGGER_ACL | LOCK_TABLES_ACL;
 
   if (unlikely(want_access & always_forbidden))
   {
@@ -1197,13 +1168,21 @@ ACL_internal_access_result
 PFS_truncatable_acl::check(ulong want_access, ulong *) const
 {
   const ulong always_forbidden = INSERT_ACL | UPDATE_ACL | DELETE_ACL |
-                                 /* CREATE_ACL | */ REFERENCES_ACL | INDEX_ACL |
+                                 CREATE_ACL | REFERENCES_ACL | INDEX_ACL |
                                  ALTER_ACL | CREATE_VIEW_ACL | SHOW_VIEW_ACL |
                                  TRIGGER_ACL | LOCK_TABLES_ACL;
 
   if (unlikely(want_access & always_forbidden))
   {
     return ACL_INTERNAL_ACCESS_DENIED;
+  }
+
+  if (want_access & DROP_ACL)
+  {
+    if (!allow_drop_privilege())
+    {
+      return ACL_INTERNAL_ACCESS_DENIED;
+    }
   }
 
   return ACL_INTERNAL_ACCESS_CHECK_GRANT;
@@ -1229,8 +1208,8 @@ ACL_internal_access_result
 PFS_updatable_acl::check(ulong want_access, ulong *) const
 {
   const ulong always_forbidden =
-    INSERT_ACL | DELETE_ACL | /* CREATE_ACL | */ REFERENCES_ACL | INDEX_ACL |
-    ALTER_ACL | CREATE_VIEW_ACL | SHOW_VIEW_ACL | TRIGGER_ACL;
+    INSERT_ACL | DELETE_ACL | CREATE_ACL | DROP_ACL | REFERENCES_ACL |
+    INDEX_ACL | ALTER_ACL | CREATE_VIEW_ACL | SHOW_VIEW_ACL | TRIGGER_ACL;
 
   if (unlikely(want_access & always_forbidden))
   {
@@ -1245,13 +1224,21 @@ PFS_editable_acl pfs_editable_acl;
 ACL_internal_access_result
 PFS_editable_acl::check(ulong want_access, ulong *) const
 {
-  const ulong always_forbidden = /* CREATE_ACL | */ REFERENCES_ACL | INDEX_ACL |
+  const ulong always_forbidden = CREATE_ACL | REFERENCES_ACL | INDEX_ACL |
                                  ALTER_ACL | CREATE_VIEW_ACL | SHOW_VIEW_ACL |
                                  TRIGGER_ACL;
 
   if (unlikely(want_access & always_forbidden))
   {
     return ACL_INTERNAL_ACCESS_DENIED;
+  }
+
+  if (want_access & DROP_ACL)
+  {
+    if (!allow_drop_privilege())
+    {
+      return ACL_INTERNAL_ACCESS_DENIED;
+    }
   }
 
   return ACL_INTERNAL_ACCESS_CHECK_GRANT;
@@ -1263,7 +1250,9 @@ ACL_internal_access_result
 PFS_unknown_acl::check(ulong want_access, ulong *) const
 {
   const ulong always_forbidden = CREATE_ACL | REFERENCES_ACL | INDEX_ACL |
-                                 ALTER_ACL | CREATE_VIEW_ACL | TRIGGER_ACL;
+                                 ALTER_ACL | CREATE_VIEW_ACL | TRIGGER_ACL |
+                                 INSERT_ACL | UPDATE_ACL | DELETE_ACL |
+                                 SHOW_VIEW_ACL | LOCK_TABLES_ACL;
 
   if (unlikely(want_access & always_forbidden))
   {
@@ -1271,6 +1260,7 @@ PFS_unknown_acl::check(ulong want_access, ulong *) const
   }
 
   /*
+    About SELECT_ACL:
     There is no point in hiding (by enforcing ACCESS_DENIED for SELECT_ACL
     on performance_schema.*) tables that do not exist anyway.
     When SELECT_ACL is granted on performance_schema.* or *.*,
@@ -1279,6 +1269,10 @@ PFS_unknown_acl::check(ulong want_access, ulong *) const
     instead of ER_TABLEACCESS_DENIED_ERROR.
     The same goes for other DML (INSERT_ACL | UPDATE_ACL | DELETE_ACL),
     for ease of use: error messages will be less surprising.
+
+    About DROP_ACL:
+    "Unknown" tables are not supposed to be here,
+    so allowing DROP_ACL to make cleanup possible.
   */
   return ACL_INTERNAL_ACCESS_CHECK_GRANT;
 }
@@ -1482,15 +1476,6 @@ PFS_key_reader::read_varchar_utf8(enum ha_rkey_function find_flag,
     *buffer_length = (uint)string_len;
 
     uchar *pos = (uchar *)buffer;
-#if 0
-    const CHARSET_INFO *cs= &my_charset_utf8_bin; // FIXME
-    if (cs->mbmaxlen > 1)
-    {
-      size_t char_length;
-      char_length= my_charpos(cs, pos, pos + string_len, string_len/cs->mbmaxlen);
-      set_if_smaller(string_len, char_length);
-    }
-#endif
     const uchar *end = skip_trailing_space(pos, string_len);
     *buffer_length = (uint)(end - pos);
 

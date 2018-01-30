@@ -1,17 +1,24 @@
 /* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef DD__COLUMN_IMPL_INCLUDED
 #define DD__COLUMN_IMPL_INCLUDED
@@ -20,29 +27,31 @@
 #include <sys/types.h>
 #include <memory>   // std::unique_ptr
 #include <new>
-#include <string>
 
-#include "dd/impl/types/entity_object_impl.h" // dd::Entity_object_impl
-#include "dd/impl/types/weak_object_impl.h"
-#include "dd/object_id.h"
-#include "dd/properties.h"                    // dd::Properties
-#include "dd/sdi_fwd.h"
-#include "dd/types/column.h"                  // dd::Column
-#include "dd/types/column_type_element.h"     // dd::Column_type_element
-#include "dd/types/object_type.h"             // dd::Object_type
 #include "my_dbug.h"
+#include "nullable.h"
+#include "sql/dd/impl/types/entity_object_impl.h" // dd::Entity_object_impl
+#include "sql/dd/impl/types/weak_object_impl.h"
+#include "sql/dd/object_id.h"
+#include "sql/dd/properties.h"
+#include "sql/dd/sdi_fwd.h"
+#include "sql/dd/string_type.h"
+#include "sql/dd/types/column.h"              // dd::Column
+#include "sql/dd/types/column_type_element.h" // IWYU pragma: keep
+#include "sql/gis/srid.h"                     // gis::srid_t
+
+using Mysql::Nullable;
 
 namespace dd {
 
 ///////////////////////////////////////////////////////////////////////////
 
-class Abstract_table_impl;
-class Open_dictionary_tables_ctx;
-class Raw_record;
 class Abstract_table;
-class Column_type_element;
+class Abstract_table_impl;
 class Object_table;
+class Open_dictionary_tables_ctx;
 class Properties;
+class Raw_record;
 class Sdi_rcontext;
 class Sdi_wcontext;
 class Weak_object;
@@ -62,8 +71,9 @@ public:
   virtual ~Column_impl();
 
 public:
-  virtual const Object_table &object_table() const
-  { return Column::OBJECT_TABLE(); }
+  virtual const Object_table &object_table() const;
+
+  static void register_tables(Open_dictionary_tables_ctx *otx);
 
   virtual bool validate() const;
 
@@ -385,6 +395,15 @@ public:
   { return m_column_key; }
 
   /////////////////////////////////////////////////////////////////////////
+  // Spatial reference system ID
+  /////////////////////////////////////////////////////////////////////////
+  virtual void set_srs_id(Nullable<gis::srid_t> srs_id)
+  { m_srs_id= srs_id; }
+
+  virtual Nullable<gis::srid_t> srs_id() const
+  { return m_srs_id; }
+
+  /////////////////////////////////////////////////////////////////////////
   // Elements.
   /////////////////////////////////////////////////////////////////////////
 
@@ -411,10 +430,10 @@ public:
   { return m_elements.size(); }
 
   // Fix "inherits ... via dominance" warnings
-  virtual Weak_object_impl *impl()
-  { return Weak_object_impl::impl(); }
-  virtual const Weak_object_impl *impl() const
-  { return Weak_object_impl::impl(); }
+  virtual Entity_object_impl *impl()
+  { return Entity_object_impl::impl(); }
+  virtual const Entity_object_impl *impl() const
+  { return Entity_object_impl::impl(); }
   virtual Object_id id() const
   { return Entity_object_impl::id(); }
   virtual bool is_persistent() const
@@ -494,17 +513,8 @@ private:
   // instead of utf8_general_ci.
 
   enum_column_key m_column_key;
-};
 
-///////////////////////////////////////////////////////////////////////////
-
-class Column_type : public Object_type
-{
-public:
-  virtual void register_tables(Open_dictionary_tables_ctx *otx) const;
-
-  virtual Weak_object *create_object() const
-  { return new (std::nothrow) Column_impl(); }
+  Nullable<gis::srid_t> m_srs_id;
 };
 
 ///////////////////////////////////////////////////////////////////////////

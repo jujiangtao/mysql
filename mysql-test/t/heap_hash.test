@@ -1,16 +1,6 @@
 # Test needs myisam for some myisam specific testcases
 --source include/have_myisam.inc
 
-########################################
-##### WL#7554 Force schema `test` to character set latin1
-##### This test should be migrated to utf8mb4
---disable_query_log
-let $testdbcs191=`select default_character_set_name from information_schema.schemata where schema_name='test'`;
-alter schema default character set latin1;
-use test;
---enable_query_log
-########################################
-
 #
 # Test of heap tables.
 #
@@ -225,7 +215,7 @@ create table t2 (
 
 insert into t1 (name) values ('Matt'), ('Lilu'), ('Corbin'), ('Carly'), 
   ('Suzy'), ('Hoppy'), ('Burrito'), ('Mimi'), ('Sherry'), ('Ben'), ('Phil'), 
-  ('Emily'), ('Mike');
+  ('Emily');
 insert into t2 select * from t1;
 explain select * from t1 where name='matt';
 explain select * from t2 where name='matt';
@@ -260,7 +250,6 @@ create table t3
   key (a,b)
 ) charset latin1 engine=heap;
 insert into t3 select name, name from t1;
-analyze table t3;
 show index from t3;
 show index from t3;
 
@@ -353,10 +342,3 @@ EXPLAIN SELECT c2, COUNT(c1) FROM t1 GROUP BY c2;
 SELECT c2, COUNT(c1) FROM t1 GROUP BY c2;
 
 DROP TABLE t1;
-
-########################################
-##### WL#7554 set schema `test` back to what it was
---disable_query_log
---eval alter schema test default character set $testdbcs191;
---enable_query_log
-########################################

@@ -1,40 +1,46 @@
 /* Copyright (c) 2006, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "rpl_mi.h"
+#include "sql/rpl_mi.h"
 
 #include <stdlib.h>
 #include <string.h>
 #include <algorithm>
 
-#include "dynamic_ids.h"        // Server_ids
-#include "log.h"                // sql_print_error
 #include "my_dbug.h"
-#include "my_macros.h"
+#include "my_loglevel.h"
 #include "my_sys.h"
-#include "mysql/psi/psi_stage.h"
+#include "mysql/components/services/psi_stage_bits.h"
 #include "mysql/service_my_snprintf.h"
 #include "mysql_version.h"
-#include "mysqld.h"             // sync_masterinfo_period
+#include "mysqld_error.h"
 #include "prealloced_array.h"
-#include "rpl_info_handler.h"
-#include "rpl_msr.h"            // channel_map
-#include "rpl_slave.h"          // master_retry_count
-#include "sql_class.h"
-
-class Relay_log_info;
+#include "sql/dynamic_ids.h"    // Server_ids
+#include "sql/log.h"
+#include "sql/mysqld.h"         // sync_masterinfo_period
+#include "sql/rpl_info_handler.h"
+#include "sql/rpl_msr.h"        // channel_map
+#include "sql/rpl_slave.h"      // master_retry_count
+#include "sql/sql_class.h"
 
 
 enum {
@@ -73,8 +79,14 @@ enum {
   /* line for tls_version */
   LINE_FOR_TLS_VERSION= 25,
 
+  /* line for master_public_key_path */
+  LINE_FOR_PUBLIC_KEY_PATH= 26,
+
+  /* line for get_master_public_key */
+  LINE_FOR_GET_PUBLIC_KEY= 27,
+
   /* Number of lines currently used when saving master info file */
-  LINES_IN_MASTER_INFO= LINE_FOR_TLS_VERSION
+  LINES_IN_MASTER_INFO= LINE_FOR_GET_PUBLIC_KEY
 
 };
 
@@ -110,6 +122,8 @@ const char *info_mi_fields []=
   "auto_position",
   "channel_name",
   "tls_version",
+  "public_key_path",
+  "get_public_key"
 };
 
 const uint info_mi_table_pk_field_indexes []=
@@ -141,6 +155,7 @@ Master_info::Master_info(
             ),
    start_user_configured(false),
    ssl(0), ssl_verify_server_cert(0),
+   get_public_key(false),
    port(MYSQL_PORT), connect_retry(DEFAULT_CONNECT_RETRY),
    clock_diff_with_master(0), heartbeat_period(0),
    received_heartbeats(0), last_heartbeat(0), master_id(0),
@@ -157,12 +172,10 @@ Master_info::Master_info(
   master_uuid[0]= 0;
   start_plugin_auth[0]= 0; start_plugin_dir[0]= 0;
   start_user[0]= 0;
+  public_key_path[0]= 0;
   ignore_server_ids= new Server_ids;
 
-  last_queued_trx= new trx_monitoring_info;
-  last_queued_trx->clear();
-  queueing_trx= new trx_monitoring_info;
-  queueing_trx->clear();
+  gtid_monitoring_info= new Gtid_monitoring_info(&data_lock);
 
   /*channel is set in base class, rpl_info.cc*/
   my_snprintf(for_channel_str, sizeof(for_channel_str)-1,
@@ -187,8 +200,7 @@ Master_info::~Master_info()
   delete m_channel_lock;
   delete ignore_server_ids;
   delete mi_description_event;
-  delete last_queued_trx;
-  delete queueing_trx;
+  delete gtid_monitoring_info;
 }
 
 /**
@@ -286,7 +298,7 @@ int Master_info::flush_info(bool force)
   DBUG_RETURN(0);
 
 err:
-  sql_print_error("Error writing master configuration.");
+  LogErr(ERROR_LEVEL, ER_RPL_ERROR_WRITING_MASTER_CONFIGURATION);
   DBUG_RETURN(1);
 }
 
@@ -334,7 +346,7 @@ int Master_info::mi_init_info()
 err:
   handler->end_info();
   inited= 0;
-  sql_print_error("Error reading master configuration.");
+  LogErr(ERROR_LEVEL, ER_RPL_ERROR_READING_MASTER_CONFIGURATION);
   DBUG_RETURN(1);
 }
 
@@ -362,6 +374,7 @@ bool Master_info::read_info(Rpl_info_handler *from)
   int temp_ssl= 0;
   int temp_ssl_verify_server_cert= 0;
   int temp_auto_position= 0;
+  int temp_get_public_key= 0;
 
   DBUG_ENTER("Master_info::read_info");
 
@@ -509,16 +522,27 @@ bool Master_info::read_info(Rpl_info_handler *from)
       DBUG_RETURN(true);
   }
 
-  ssl= (bool) MY_TEST(temp_ssl);
-  ssl_verify_server_cert= (bool) MY_TEST(temp_ssl_verify_server_cert);
+  if (lines >= LINE_FOR_PUBLIC_KEY_PATH)
+  {
+    if (from->get_info(public_key_path, sizeof(public_key_path), (char *) 0))
+      DBUG_RETURN(true);
+  }
+
+  if (lines >= LINE_FOR_GET_PUBLIC_KEY)
+  {
+    if (from->get_info(&temp_get_public_key, 0))
+      DBUG_RETURN(true);
+  }
+
+  ssl= (bool) temp_ssl;
+  ssl_verify_server_cert= (bool) temp_ssl_verify_server_cert;
   master_log_pos= (my_off_t) temp_master_log_pos;
-  auto_position= MY_TEST(temp_auto_position);
+  auto_position= temp_auto_position;
+  get_public_key= (bool) temp_get_public_key;
 
 #ifndef HAVE_OPENSSL
   if (ssl)
-    sql_print_warning("SSL information in the master info file "
-                      "are ignored because this MySQL slave was "
-                      "compiled without SSL support.");
+    LogErr(WARNING_LEVEL, ER_RPL_SSL_INFO_IN_MASTER_INFO_IGNORED);
 #endif /* HAVE_OPENSSL */
 
   DBUG_RETURN(false);
@@ -572,7 +596,9 @@ bool Master_info::write_info(Rpl_info_handler *to)
       to->set_info(ssl_crlpath) ||
       to->set_info((int) auto_position) ||
       to->set_info(channel) ||
-      to->set_info(tls_version))
+      to->set_info(tls_version) ||
+      to->set_info(public_key_path) ||
+      to->set_info(get_public_key))
     DBUG_RETURN(TRUE);
 
   DBUG_RETURN(FALSE);
@@ -646,4 +672,9 @@ void Master_info::wait_until_no_reference(THD *thd)
     my_sleep(10000);
 
   THD_STAGE_INFO(thd, *old_stage);
+}
+
+bool Master_info::is_ignore_server_ids_configured()
+{
+  return ignore_server_ids->dynamic_ids.size() > 0;
 }

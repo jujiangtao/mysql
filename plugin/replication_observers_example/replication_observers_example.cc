@@ -1,17 +1,24 @@
 /* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA */
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 /*
   This plugin serves as an example for all those who which to use the new
@@ -21,7 +28,6 @@
  */
 
 #include <assert.h>
-#include <current_thd.h>
 #include <mysql/group_replication_priv.h>
 #include <mysql/plugin.h>
 #include <mysql/service_my_plugin_log.h>
@@ -30,6 +36,7 @@
 
 #include "my_dbug.h"
 #include "my_inttypes.h"
+#include "sql/current_thd.h"
 
 static MYSQL_PLUGIN plugin_info_ptr;
 
@@ -201,7 +208,7 @@ static void dump_transaction_calls()
 /*
   Transaction lifecycle events observers.
 */
-static int trans_before_dml(Trans_param*, int& out_val)
+static int trans_before_dml(Trans_param*, int& out_val MY_ATTRIBUTE((unused)))
 {
   trans_before_dml_call++;
 
@@ -293,7 +300,7 @@ static int before_commit_tests(Trans_param *param,
 }
 #endif
 
-static int trans_before_commit(Trans_param *param)
+static int trans_before_commit(Trans_param *param MY_ATTRIBUTE((unused)))
 {
   trans_before_commit_call++;
 
@@ -329,7 +336,7 @@ static int trans_after_commit(Trans_param*)
   return 0;
 }
 
-static int trans_after_rollback(Trans_param *param)
+static int trans_after_rollback(Trans_param *param MY_ATTRIBUTE((unused)))
 {
   trans_after_rollback_call++;
 
@@ -354,6 +361,7 @@ Trans_observer trans_observer = {
 */
 static int binlog_relay_thread_start_call= 0;
 static int binlog_relay_thread_stop_call= 0;
+static int binlog_relay_applier_start_call= 0;
 static int binlog_relay_applier_stop_call= 0;
 static int binlog_relay_before_request_transmit_call= 0;
 static int binlog_relay_after_read_event_call= 0;
@@ -374,6 +382,13 @@ static void dump_binlog_relay_calls()
     my_plugin_log_message(&plugin_info_ptr,
                           MY_INFORMATION_LEVEL,
                           "\nreplication_observers_example_plugin:binlog_relay_thread_stop");
+  }
+
+  if (binlog_relay_applier_start_call)
+  {
+    my_plugin_log_message(&plugin_info_ptr,
+                          MY_INFORMATION_LEVEL,
+                          "\nreplication_observers_example_plugin:binlog_relay_applier_start");
   }
 
   if (binlog_relay_applier_stop_call)
@@ -426,6 +441,12 @@ static int binlog_relay_thread_stop(Binlog_relay_IO_param*)
   return 0;
 }
 
+int binlog_relay_applier_start(Binlog_relay_IO_param*)
+{
+  binlog_relay_applier_start_call++;
+  return 0;
+}
+
 static int binlog_relay_applier_stop(Binlog_relay_IO_param*,
                                      bool aborted)
 {
@@ -468,16 +489,26 @@ static int binlog_relay_after_reset_slave(Binlog_relay_IO_param*)
   return 0;
 }
 
+static int binlog_relay_applier_log_event(Binlog_relay_IO_param*,
+                                          Trans_param*,
+                                          int&)
+{
+  return 0;
+}
+
+
 Binlog_relay_IO_observer relay_io_observer = {
   sizeof(Binlog_relay_IO_observer),
 
   binlog_relay_thread_start,
   binlog_relay_thread_stop,
+  binlog_relay_applier_start,
   binlog_relay_applier_stop,
   binlog_relay_before_request_transmit,
   binlog_relay_after_read_event,
   binlog_relay_after_queue_event,
   binlog_relay_after_reset_slave,
+  binlog_relay_applier_log_event
 };
 
 
@@ -502,7 +533,7 @@ int validate_plugin_server_requirements(Trans_param *param)
   Gtid gtid= { fake_sidno, fake_gno };
   Gtid_specification gtid_spec= { GTID_GROUP, gtid };
   Gtid_log_event *gle=
-    new Gtid_log_event(param->server_id, true, 0, 1, 0, 0, gtid_spec);
+    new Gtid_log_event(param->server_id, true, 0, 1, true, 0, 0, gtid_spec);
 
   if (gle->is_valid())
     success++;
@@ -519,7 +550,7 @@ int validate_plugin_server_requirements(Trans_param *param)
   */
   Gtid_specification anonymous_gtid_spec= { ANONYMOUS_GROUP, gtid };
   gle=
-    new Gtid_log_event(param->server_id, true, 0, 1, 0, 0, anonymous_gtid_spec);
+    new Gtid_log_event(param->server_id, true, 0, 1, true, 0, 0, anonymous_gtid_spec);
 
   if (gle->is_valid())
     success++;
@@ -586,7 +617,11 @@ int validate_plugin_server_requirements(Trans_param *param)
   char *hostname, *uuid;
   uint port;
   unsigned int server_version;
-  get_server_parameters(&hostname, &port, &uuid, &server_version);
+  st_server_ssl_variables server_ssl_variables=
+      {false,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL};
+
+  get_server_parameters(&hostname, &port, &uuid, &server_version,
+                        &server_ssl_variables);
 
   Trans_context_info startup_pre_reqs;
   get_server_startup_prerequirements(startup_pre_reqs, false);
@@ -1159,6 +1194,7 @@ mysql_declare_plugin(replication_observers_example)
   "Replication observer infrastructure example.",
   PLUGIN_LICENSE_GPL,
   replication_observers_example_plugin_init, /* Plugin Init */
+  NULL, /* Plugin Check uninstall */
   replication_observers_example_plugin_deinit, /* Plugin Deinit */
   0x0100 /* 1.0 */,
   NULL,                       /* status variables                */

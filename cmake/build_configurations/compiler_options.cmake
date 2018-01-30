@@ -1,17 +1,24 @@
 # Copyright (c) 2012, 2017, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; version 2 of the License.
-# 
+# it under the terms of the GNU General Public License, version 2.0,
+# as published by the Free Software Foundation.
+#
+# This program is also distributed with certain software (including
+# but not limited to OpenSSL) that is licensed under separate terms,
+# as designated in a particular file or component or in included license
+# documentation.  The authors of MySQL hereby grant you an additional
+# permission to link the program and your derivative works with the
+# separately licensed software that they have included with MySQL.
+#
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-# 
+# GNU General Public License, version 2.0, for more details.
+#
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
-# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 INCLUDE(CheckCCompilerFlag)
 INCLUDE(CheckCXXCompilerFlag)
@@ -30,7 +37,7 @@ IF(UNIX)
 
   # Default GCC flags
   IF(CMAKE_COMPILER_IS_GNUCC)
-    SET(COMMON_C_FLAGS               "-g -fno-omit-frame-pointer -fno-strict-aliasing")
+    SET(COMMON_C_FLAGS               "-g -fno-omit-frame-pointer")
     # Disable inline optimizations for valgrind testing to avoid false positives
     IF(WITH_VALGRIND)
       SET(COMMON_C_FLAGS             "-fno-inline ${COMMON_C_FLAGS}")
@@ -43,10 +50,10 @@ IF(UNIX)
       SET(COMMON_C_FLAGS             "-fPIC ${COMMON_C_FLAGS}")
     ENDIF()
     SET(CMAKE_C_FLAGS_DEBUG          "${COMMON_C_FLAGS}")
-    SET(CMAKE_C_FLAGS_RELWITHDEBINFO "-O3 ${COMMON_C_FLAGS}")
+    SET(CMAKE_C_FLAGS_RELWITHDEBINFO "-O2 -ffunction-sections -fdata-sections ${COMMON_C_FLAGS}")
   ENDIF()
   IF(CMAKE_COMPILER_IS_GNUCXX)
-    SET(COMMON_CXX_FLAGS               "-g -fno-omit-frame-pointer -fno-strict-aliasing -std=c++11")
+    SET(COMMON_CXX_FLAGS               "-g -fno-omit-frame-pointer -std=c++11")
     # Disable inline optimizations for valgrind testing to avoid false positives
     IF(WITH_VALGRIND)
       SET(COMMON_CXX_FLAGS             "-fno-inline ${COMMON_CXX_FLAGS}")
@@ -59,27 +66,27 @@ IF(UNIX)
       SET(COMMON_CXX_FLAGS             "-fPIC ${COMMON_CXX_FLAGS}")
     ENDIF()
     SET(CMAKE_CXX_FLAGS_DEBUG          "${COMMON_CXX_FLAGS}")
-    SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O3 ${COMMON_CXX_FLAGS}")
+    SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -ffunction-sections -fdata-sections ${COMMON_CXX_FLAGS}")
     # -std=c++11 must be set
     SET(CMAKE_CXX_FLAGS_RELEASE        "${CMAKE_CXX_FLAGS_RELEASE} -std=c++11")
   ENDIF()
 
   # Default Clang flags
   IF(CMAKE_C_COMPILER_ID MATCHES "Clang")
-    SET(COMMON_C_FLAGS               "-g -fno-omit-frame-pointer -fno-strict-aliasing")
+    SET(COMMON_C_FLAGS               "-g -fno-omit-frame-pointer")
     IF(NOT DISABLE_SHARED)
       SET(COMMON_C_FLAGS             "-fPIC ${COMMON_C_FLAGS}")
     ENDIF()
     SET(CMAKE_C_FLAGS_DEBUG          "${COMMON_C_FLAGS}")
-    SET(CMAKE_C_FLAGS_RELWITHDEBINFO "-O3 ${COMMON_C_FLAGS}")
+    SET(CMAKE_C_FLAGS_RELWITHDEBINFO "-O2 -ffunction-sections -fdata-sections ${COMMON_C_FLAGS}")
   ENDIF()
   IF(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    SET(COMMON_CXX_FLAGS               "-g -fno-omit-frame-pointer -fno-strict-aliasing -std=c++11")
+    SET(COMMON_CXX_FLAGS               "-g -fno-omit-frame-pointer -std=c++11")
     IF(NOT DISABLE_SHARED)
       SET(COMMON_CXX_FLAGS             "-fPIC ${COMMON_CXX_FLAGS}")
     ENDIF()
     SET(CMAKE_CXX_FLAGS_DEBUG          "${COMMON_CXX_FLAGS}")
-    SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O3 ${COMMON_CXX_FLAGS}")
+    SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -ffunction-sections -fdata-sections ${COMMON_CXX_FLAGS}")
     # -std=c++11 must be set
     SET(CMAKE_CXX_FLAGS_RELEASE        "${CMAKE_CXX_FLAGS_RELEASE} -std=c++11")
   ENDIF()
@@ -109,6 +116,7 @@ IF(UNIX)
       SET(SUNPRO_FLAGS     "-xdebuginfo=no%decl")
       SET(SUNPRO_FLAGS     "${SUNPRO_FLAGS} -xbuiltin=%all")
       SET(SUNPRO_FLAGS     "${SUNPRO_FLAGS} -xlibmil")
+      SET(SUNPRO_FLAGS     "${SUNPRO_FLAGS} -xatomic=studio")
       IF(NOT DISABLE_SHARED)
         SET(SUNPRO_FLAGS   "${SUNPRO_FLAGS} -KPIC")
       ENDIF()

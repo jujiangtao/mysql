@@ -84,13 +84,13 @@
 #include <assert.h>
 #include <ctype.h>
 #include <errno.h>
-#include <m_string.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/types.h>
 #include <time.h>
 
+#include "m_string.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
@@ -1408,11 +1408,11 @@ void _db_doprnt_(const char *format,...)
  * vfprintf clone with consistent, platform independent output for 
  * problematic formats like %p, %zd and %lld.
  */
+MY_ATTRIBUTE((format(printf, 2, 0)))
 static void DbugVfprintf(FILE *stream, const char* format, va_list args)
 {
-  char cvtbuf[1024];
-  (void) my_vsnprintf(cvtbuf, sizeof(cvtbuf), format, args);
-  (void) fprintf(stream, "%s\n", cvtbuf);
+  vfprintf(stream, format, args);
+  fprintf(stream, "\n");
 }
 
 /*

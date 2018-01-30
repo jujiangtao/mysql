@@ -1,17 +1,24 @@
 /* Copyright (c) 2008, 2017, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
-  along with this program; if not, write to the Free Software Foundation,
-  51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+  along with this program; if not, write to the Free Software
+  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef PFS_SERVER_H
 #define PFS_SERVER_H
@@ -46,16 +53,16 @@
 #define PFS_AUTOSIZE_VALUE (-1)
 
 #ifndef PFS_MAX_MUTEX_CLASS
-#define PFS_MAX_MUTEX_CLASS 220
+#define PFS_MAX_MUTEX_CLASS 250
 #endif
 #ifndef PFS_MAX_RWLOCK_CLASS
-#define PFS_MAX_RWLOCK_CLASS 50
+#define PFS_MAX_RWLOCK_CLASS 60
 #endif
 #ifndef PFS_MAX_COND_CLASS
 #define PFS_MAX_COND_CLASS 80
 #endif
 #ifndef PFS_MAX_THREAD_CLASS
-#define PFS_MAX_THREAD_CLASS 50
+#define PFS_MAX_THREAD_CLASS 100
 #endif
 #ifndef PFS_MAX_FILE_CLASS
 #define PFS_MAX_FILE_CLASS 80
@@ -264,6 +271,9 @@ struct PFS_global_param
   long m_max_digest_length;
   ulong m_max_sql_text_length;
 
+  /** Maximum age in seconds for a query sample. */
+  ulong m_max_digest_sample_age;
+
   /** Maximum number of error instrumented */
   ulong m_error_sizing;
 
@@ -341,8 +351,6 @@ void pfs_automated_sizing(PFS_global_param *param);
 */
 void initialize_performance_schema_acl(bool bootstrap);
 
-void check_performance_schema();
-
 /**
   Reset the aggregated status counter stats.
 */
@@ -358,6 +366,18 @@ void init_pfs_instrument_array();
   Process one PFS_INSTRUMENT configuration string.
 */
 int add_pfs_instr_to_array(const char *name, const char *value);
+
+/**
+  Register/unregister notification service.
+*/
+int register_pfs_notification_service();
+int unregister_pfs_notification_service();
+
+/**
+  Register/unregister resource group service.
+*/
+int register_pfs_resource_group_service();
+int unregister_pfs_resource_group_service();
 
 /**
   Shutdown the performance schema.

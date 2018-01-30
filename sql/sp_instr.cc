@@ -1,70 +1,77 @@
 /* Copyright (c) 2012, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "sp_instr.h"
+#include "sql/sp_instr.h"
+
+#include "my_config.h"
 
 #include <algorithm>
+#include <atomic>
 #include <functional>
 
-#include "auth_acls.h"
-#include "auth_common.h"              // check_table_access
-#include "binlog.h"                   // mysql_bin_log
-#include "enum_query_type.h"
-#include "error_handler.h"            // Strict_error_handler
-#include "field.h"
-#include "item.h"                     // Item_splocal
-#include "item_cmpfunc.h"             // Item_func_eq
-#include "log.h"                      // Query_logger
 #include "m_ctype.h"
-#include "mdl.h"
 #include "my_command.h"
 #include "my_compiler.h"
-#include "my_config.h"
 #include "my_dbug.h"
 #include "my_sqlcommand.h"
+#include "mysql/components/services/log_shared.h"
 #include "mysql/psi/mysql_statement.h"
 #include "mysql/psi/psi_base.h"
 #include "mysql_com.h"
-#include "mysqld.h"                   // next_query_id
 #include "mysqld_error.h"
-#include "opt_trace.h"                // Opt_trace_start
 #include "prealloced_array.h"         // Prealloced_array
-#include "protocol.h"
-#include "query_options.h"
-#include "session_tracker.h"
-#include "sp.h"                       // sp_get_item_value
-#include "sp_head.h"                  // sp_head
-#include "sp_pcontext.h"              // sp_pcontext
-#include "sp_rcontext.h"              // sp_rcontext
-#include "sql_base.h"                 // open_temporary_tables
-#include "sql_cache.h"                // query_cache
-#include "sql_const.h"
-#include "sql_parse.h"                // parse_sql
-#include "sql_plugin.h"
-#include "sql_prepare.h"              // reinit_stmt_before_use
-#include "sql_profile.h"
-#include "system_variables.h"
-#include "table_trigger_dispatcher.h" // Table_trigger_dispatcher
-#include "thr_malloc.h"
-#include "transaction.h"              // trans_commit_stmt
-#include "transaction_info.h"
-#include "trigger.h"                  // Trigger
-#include "trigger_def.h"
-
-struct PSI_statement_locker;
-struct sql_digest_state;
+#include "sql/auth/auth_acls.h"
+#include "sql/auth/auth_common.h"     // check_table_access
+#include "sql/binlog.h"               // mysql_bin_log
+#include "sql/enum_query_type.h"
+#include "sql/error_handler.h"        // Strict_error_handler
+#include "sql/field.h"
+#include "sql/item.h"                 // Item_splocal
+#include "sql/item_cmpfunc.h"         // Item_func_eq
+#include "sql/key.h"
+#include "sql/log.h"                  // Query_logger
+#include "sql/mdl.h"
+#include "sql/mysqld.h"               // next_query_id
+#include "sql/opt_trace.h"            // Opt_trace_start
+#include "sql/protocol.h"
+#include "sql/query_options.h"
+#include "sql/session_tracker.h"
+#include "sql/sp.h"                   // sp_get_item_value
+#include "sql/sp_head.h"              // sp_head
+#include "sql/sp_pcontext.h"          // sp_pcontext
+#include "sql/sp_rcontext.h"          // sp_rcontext
+#include "sql/sql_base.h"             // open_temporary_tables
+#include "sql/sql_const.h"
+#include "sql/sql_digest_stream.h"
+#include "sql/sql_parse.h"            // parse_sql
+#include "sql/sql_prepare.h"          // reinit_stmt_before_use
+#include "sql/sql_profile.h"
+#include "sql/system_variables.h"
+#include "sql/table_trigger_dispatcher.h" // Table_trigger_dispatcher
+#include "sql/thr_malloc.h"
+#include "sql/transaction.h"          // trans_commit_stmt
+#include "sql/transaction_info.h"
+#include "sql/trigger.h"              // Trigger
+#include "sql/trigger_def.h"
 
 
 class Cmp_splocal_locations :
@@ -290,6 +297,31 @@ static bool subst_spvars(THD *thd, sp_instr *instr, LEX_STRING *query_str)
 ///////////////////////////////////////////////////////////////////////////
 
 
+class SP_instr_error_handler : public Internal_error_handler
+{
+public:
+  virtual bool handle_condition(THD *thd,
+                                uint sql_errno,
+                                const char*,
+                                Sql_condition::enum_severity_level*,
+                                const char*)
+  {
+    /*
+      Check if the "table exists" error or warning reported for the
+      CREATE TABLE ... SELECT statement.
+    */
+    if (thd->lex && thd->lex->sql_command == SQLCOM_CREATE_TABLE &&
+        thd->lex->select_lex && thd->lex->select_lex->item_list.elements > 0 &&
+        sql_errno == ER_TABLE_EXISTS_ERROR)
+      cts_table_exists_error= true;
+
+    return false;
+  }
+
+  bool cts_table_exists_error= false;
+};
+
+
 bool sp_lex_instr::reset_lex_and_exec_core(THD *thd,
                                            uint *nextp,
                                            bool open_tables)
@@ -360,7 +392,9 @@ bool sp_lex_instr::reset_lex_and_exec_core(THD *thd,
       thd->session_tracker.changed_any())
     thd->lex->safe_to_cache_query= 0;
 
-  bool open_table_success= true;
+  SP_instr_error_handler sp_instr_error_handler;
+  thd->push_internal_handler(&sp_instr_error_handler);
+
   /* Open tables if needed. */
 
   if (!error)
@@ -392,8 +426,6 @@ bool sp_lex_instr::reset_lex_and_exec_core(THD *thd,
 
       if (!error)
         error= open_and_lock_tables(thd, m_lex->query_tables, 0);
-
-      open_table_success= !error;
 
       if (!error)
       {
@@ -440,6 +472,9 @@ bool sp_lex_instr::reset_lex_and_exec_core(THD *thd,
     }
   }
 
+  // Pop SP_instr_error_handler error handler.
+  thd->pop_internal_handler();
+
   if (m_lex->query_tables_own_last)
   {
     /*
@@ -467,45 +502,46 @@ bool sp_lex_instr::reset_lex_and_exec_core(THD *thd,
     When entering this function, state is STMT_INITIALIZED_FOR_SP if this is
     the first execution, otherwise it is STMT_EXECUTED.
 
-    When an error occurs during opening tables, no execution takes place and
-    no state change will take place.
-
     When a re-prepare error is raised, the next execution will re-prepare the
     statement. To make sure that items are created in the statement mem_root,
     change state to STMT_INITIALIZED_FOR_SP.
 
-    In other cases, the state should become (or remain) STMT_EXECUTED.
-    See Query_arena->state definition for explanation.
+    When a "table exists" error occur for CREATE TABLE ... SELECT change state
+    to STMT_INITIALIZED_FOR_SP, as if statement must be reprepared.
 
-    Some special handling of CREATE TABLE .... SELECT in an SP is required. The
-    state is always set to STMT_INITIALIZED_FOR_SP in such a case.
+      Why is this necessary? A useful pointer would be to note how
+      PREPARE/EXECUTE uses functions like select_like_stmt_test to implement
+      CREATE TABLE .... SELECT. The SELECT part of the DDL is resolved first.
+      Then there is an attempt to create the table. So in the execution phase,
+      if "table exists" error occurs or flush table preceeds the execute, the
+      item tree of the select is re-created and followed by an attempt to create
+      the table.
 
-    Why is this necessary? A useful pointer would be to note how
-    PREPARE/EXECUTE uses functions like select_like_stmt_test to implement
-    CREATE TABLE .... SELECT. The SELECT part of the DDL is resolved first.
-    Then there is an attempt to create the table. So in the execution phase,
-    if "table exists" error occurs or flush table preceeds the execute, the
-    item tree of the select is re-created and followed by an attempt to create
-    the table.
+      But SP uses mysql_execute_command (which is used by the conventional
+      execute) after doing a parse. This creates a problem for SP since it
+      tries to preserve the item tree from the previous execution.
 
-    But SP uses mysql_execute_command (which is used by the conventional
-    execute) after doing a parse. This creates a problem for SP since it
-    tries to preserve the item tree from the previous execution.
+    When execution of the statement was started (completed), change state to
+    STMT_EXECUTED.
+
+    When an error occurs before statement execution starts (m_exec_started is
+    false at this stage of execution), state is not changed.
+    (STMT_INITIALIZED_FOR_SP means the statement was never prepared,
+    STMT_EXECUTED means the statement has been prepared and executed before,
+    but some error occurred during table open or execution).
   */
-  if (open_table_success)
-  {
-    bool reprepare_error=
-      error && thd->get_stmt_da()->mysql_errno() == ER_NEED_REPREPARE;
-    bool is_create_table_select=
-      thd->lex && thd->lex->m_sql_cmd &&
-      thd->lex->m_sql_cmd->sql_command_code() == SQLCOM_CREATE_TABLE &&
-      thd->lex->select_lex && thd->lex->select_lex->item_list.elements > 0;
+  bool reprepare_error=
+    error && thd->is_error() &&
+    thd->get_stmt_da()->mysql_errno() == ER_NEED_REPREPARE;
 
-    if (reprepare_error || is_create_table_select)
-      thd->stmt_arena->state= Query_arena::STMT_INITIALIZED_FOR_SP;
-    else
-      thd->stmt_arena->state= Query_arena::STMT_EXECUTED;
-  }
+  // Unless there is an error, execution must have started (and completed)
+  DBUG_ASSERT(error || m_lex->is_exec_started());
+
+  if (reprepare_error ||
+      sp_instr_error_handler.cts_table_exists_error)
+    thd->stmt_arena->state= Query_arena::STMT_INITIALIZED_FOR_SP;
+  else if (m_lex->is_exec_started())
+    thd->stmt_arena->state= Query_arena::STMT_EXECUTED;
 
   /*
     Merge here with the saved parent's values
@@ -645,7 +681,7 @@ LEX *sp_lex_instr::parse_expr(THD *thd, sp_head *sp)
            trg_fld;
            trg_fld= trg_fld->next_trg_field)
       {
-        trg_fld->setup_field(sp->m_trg_list->get_trigger_field_support(),
+        trg_fld->setup_field(sp->m_trg_list,
                              t->get_subject_table_grant());
       }
 
@@ -839,8 +875,8 @@ void sp_lex_instr::get_query(String *sql_query) const
 ///////////////////////////////////////////////////////////////////////////
 
 #ifdef HAVE_PSI_INTERFACE
-PSI_statement_info sp_instr_stmt::psi_info=                                    
-{ 0, "stmt", 0};
+PSI_statement_info sp_instr_stmt::psi_info=
+{ 0, "stmt", 0, PSI_DOCUMENT_ME};
 #endif
 
 bool sp_instr_stmt::execute(THD *thd, uint *nextp)
@@ -880,9 +916,6 @@ bool sp_instr_stmt::execute(THD *thd, uint *nextp)
     inside a procedure and can contain SP variables in it. Those too need to be
     substituted with NAME_CONST(...))
 
-    We don't have to substitute on behalf of the query cache as
-    queries with SP vars are not cached, anyway.
-
     query_name_consts is used elsewhere in a special case concerning
     CREATE TABLE, but we do not need to do anything about that here.
 
@@ -908,53 +941,42 @@ bool sp_instr_stmt::execute(THD *thd, uint *nextp)
   if (need_subst && subst_spvars(thd, this, &m_query))
     return true;
 
-  /*
-    (the order of query cache and subst_spvars calls is irrelevant because
-    queries with SP vars can't be cached)
-  */
   if (unlikely((thd->variables.option_bits & OPTION_LOG_OFF)==0))
     query_logger.general_log_write(thd, COM_QUERY, thd->query().str,
                                    thd->query().length);
 
-  if (query_cache.send_result_to_client(thd, thd->query()) <= 0)
+  rc= validate_lex_and_execute_core(thd, nextp, false);
+
+  if (thd->get_stmt_da()->is_eof())
   {
-    rc= validate_lex_and_execute_core(thd, nextp, false);
+    /* Finalize server status flags after executing a statement. */
+    thd->update_slow_query_status();
 
-    if (thd->get_stmt_da()->is_eof())
-    {
-      /* Finalize server status flags after executing a statement. */
-      thd->update_slow_query_status();
-
-      thd->send_statement_status();
-    }
-
-    query_cache.end_of_result(thd);
-
-    if (!rc && unlikely(log_slow_applicable(thd)))
-    {
-      /*
-        We actually need to write the slow log. Check whether we already
-        called subst_spvars() above, otherwise, do it now.  In the highly
-        unlikely event of subst_spvars() failing (OOM), we'll try to log
-        the unmodified statement instead.
-      */
-      if (!need_subst)
-        rc= subst_spvars(thd, this, &m_query);
-      log_slow_do(thd);
-    }
-
-    /*
-      With the current setup, a subst_spvars() and a mysql_rewrite_query()
-      (rewriting passwords etc.) will not both happen to a query.
-      If this ever changes, we give the engineer pause here so they will
-      double-check whether the potential conflict they created is a
-      problem.
-    */
-    DBUG_ASSERT((thd->query_name_consts == 0) ||
-                (thd->rewritten_query.length() == 0));
+    thd->send_statement_status();
   }
-  else
-    *nextp= get_ip() + 1;
+
+  if (!rc && unlikely(log_slow_applicable(thd)))
+  {
+    /*
+      We actually need to write the slow log. Check whether we already
+      called subst_spvars() above, otherwise, do it now.  In the highly
+      unlikely event of subst_spvars() failing (OOM), we'll try to log
+      the unmodified statement instead.
+    */
+    if (!need_subst)
+      rc= subst_spvars(thd, this, &m_query);
+    log_slow_do(thd);
+  }
+
+  /*
+    With the current setup, a subst_spvars() and a mysql_rewrite_query()
+    (rewriting passwords etc.) will not both happen to a query.
+    If this ever changes, we give the engineer pause here so they will
+    double-check whether the potential conflict they created is a
+    problem.
+  */
+  DBUG_ASSERT((thd->query_name_consts == 0) ||
+              (thd->rewritten_query.length() == 0));
 
   thd->set_query(query_backup);
   thd->query_name_consts= 0;
@@ -1017,8 +1039,8 @@ bool sp_instr_stmt::exec_core(THD *thd, uint *nextp)
 ///////////////////////////////////////////////////////////////////////////
 
 #ifdef HAVE_PSI_INTERFACE
-PSI_statement_info sp_instr_set::psi_info=                                     
-{ 0, "set", 0};
+PSI_statement_info sp_instr_set::psi_info=
+{ 0, "set", 0, PSI_DOCUMENT_ME};
 #endif
 
 bool sp_instr_set::exec_core(THD *thd, uint *nextp)
@@ -1068,8 +1090,8 @@ void sp_instr_set::print(String *str)
 ///////////////////////////////////////////////////////////////////////////
 
 #ifdef HAVE_PSI_INTERFACE
-PSI_statement_info sp_instr_set_trigger_field::psi_info=                       
-{ 0, "set_trigger_field", 0};
+PSI_statement_info sp_instr_set_trigger_field::psi_info=
+{ 0, "set_trigger_field", 0, PSI_DOCUMENT_ME};
 #endif
 
 bool sp_instr_set_trigger_field::exec_core(THD *thd, uint *nextp)
@@ -1142,8 +1164,8 @@ void sp_instr_set_trigger_field::cleanup_before_parsing(THD *thd)
 ///////////////////////////////////////////////////////////////////////////
 
 #ifdef HAVE_PSI_INTERFACE
-PSI_statement_info sp_instr_jump::psi_info=                                    
-{ 0, "jump", 0};
+PSI_statement_info sp_instr_jump::psi_info=
+{ 0, "jump", 0, PSI_DOCUMENT_ME};
 #endif
 
 void sp_instr_jump::print(String *str)
@@ -1201,8 +1223,8 @@ void sp_instr_jump::opt_move(uint dst, List<sp_branch_instr> *bp)
 ///////////////////////////////////////////////////////////////////////////
 
 #ifdef HAVE_PSI_INTERFACE
-PSI_statement_info sp_instr_jump_if_not::psi_info=                             
-{ 0, "jump_if_not", 0};
+PSI_statement_info sp_instr_jump_if_not::psi_info=
+{ 0, "jump_if_not", 0, PSI_DOCUMENT_ME};
 #endif
 
 bool sp_instr_jump_if_not::exec_core(THD *thd, uint *nextp)
@@ -1297,8 +1319,8 @@ void sp_lex_branch_instr::opt_move(uint dst, List<sp_branch_instr> *bp)
 ///////////////////////////////////////////////////////////////////////////
 
 #ifdef HAVE_PSI_INTERFACE
-PSI_statement_info sp_instr_jump_case_when::psi_info=                          
-{ 0, "jump_case_when", 0};
+PSI_statement_info sp_instr_jump_case_when::psi_info=
+{ 0, "jump_case_when", 0, PSI_DOCUMENT_ME};
 #endif
 
 bool sp_instr_jump_case_when::exec_core(THD *thd, uint *nextp)
@@ -1378,8 +1400,8 @@ bool sp_instr_jump_case_when::on_after_expr_parsing(THD *thd)
 ///////////////////////////////////////////////////////////////////////////
 
 #ifdef HAVE_PSI_INTERFACE
-PSI_statement_info sp_instr_freturn::psi_info=                                 
-{ 0, "freturn", 0};
+PSI_statement_info sp_instr_freturn::psi_info=
+{ 0, "freturn", 0, PSI_DOCUMENT_ME};
 #endif
 
 bool sp_instr_freturn::exec_core(THD *thd, uint *nextp)
@@ -1420,8 +1442,8 @@ void sp_instr_freturn::print(String *str)
 ///////////////////////////////////////////////////////////////////////////
 
 #ifdef HAVE_PSI_INTERFACE
-PSI_statement_info sp_instr_hpush_jump::psi_info=                              
-{ 0, "hpush_jump", 0};
+PSI_statement_info sp_instr_hpush_jump::psi_info=
+{ 0, "hpush_jump", 0, PSI_DOCUMENT_ME};
 #endif
 
 
@@ -1512,8 +1534,8 @@ uint sp_instr_hpush_jump::opt_mark(sp_head *sp, List<sp_instr> *leads)
 ///////////////////////////////////////////////////////////////////////////
 
 #ifdef HAVE_PSI_INTERFACE
-PSI_statement_info sp_instr_hpop::psi_info=                                    
-{ 0, "hpop", 0};
+PSI_statement_info sp_instr_hpop::psi_info=
+{ 0, "hpop", 0, PSI_DOCUMENT_ME};
 #endif
 
 bool sp_instr_hpop::execute(THD *thd, uint *nextp)
@@ -1529,8 +1551,8 @@ bool sp_instr_hpop::execute(THD *thd, uint *nextp)
 ///////////////////////////////////////////////////////////////////////////
 
 #ifdef HAVE_PSI_INTERFACE
-PSI_statement_info sp_instr_hreturn::psi_info=                                 
-{ 0, "hreturn", 0};
+PSI_statement_info sp_instr_hreturn::psi_info=
+{ 0, "hreturn", 0, PSI_DOCUMENT_ME};
 #endif
 
 
@@ -1607,8 +1629,8 @@ uint sp_instr_hreturn::opt_mark(sp_head*, List<sp_instr>*)
 ///////////////////////////////////////////////////////////////////////////
 
 #ifdef HAVE_PSI_INTERFACE
-PSI_statement_info sp_instr_cpush::psi_info=                                   
-{ 0, "cpush", 0};
+PSI_statement_info sp_instr_cpush::psi_info=
+{ 0, "cpush", 0, PSI_DOCUMENT_ME};
 #endif
 
 bool sp_instr_cpush::execute(THD *thd, uint *nextp)
@@ -1660,8 +1682,8 @@ void sp_instr_cpush::print(String *str)
 ///////////////////////////////////////////////////////////////////////////
 
 #ifdef HAVE_PSI_INTERFACE
-PSI_statement_info sp_instr_cpop::psi_info=                                    
-{ 0, "cpop", 0};
+PSI_statement_info sp_instr_cpop::psi_info=
+{ 0, "cpop", 0, PSI_DOCUMENT_ME};
 #endif
 
 bool sp_instr_cpop::execute(THD *thd, uint *nextp)
@@ -1688,8 +1710,8 @@ void sp_instr_cpop::print(String *str)
 ///////////////////////////////////////////////////////////////////////////
 
 #ifdef HAVE_PSI_INTERFACE
-PSI_statement_info sp_instr_copen::psi_info=                                   
-{ 0, "copen", 0};
+PSI_statement_info sp_instr_copen::psi_info=
+{ 0, "copen", 0, PSI_DOCUMENT_ME};
 #endif
 
 bool sp_instr_copen::execute(THD *thd, uint *nextp)
@@ -1763,8 +1785,8 @@ void sp_instr_copen::print(String *str)
 ///////////////////////////////////////////////////////////////////////////
 
 #ifdef HAVE_PSI_INTERFACE
-PSI_statement_info sp_instr_cclose::psi_info=                                  
-{ 0, "cclose", 0};
+PSI_statement_info sp_instr_cclose::psi_info=
+{ 0, "cclose", 0, PSI_DOCUMENT_ME};
 #endif
 
 bool sp_instr_cclose::execute(THD *thd, uint *nextp)
@@ -1806,8 +1828,8 @@ void sp_instr_cclose::print(String *str)
 ///////////////////////////////////////////////////////////////////////////
 
 #ifdef HAVE_PSI_INTERFACE
-PSI_statement_info sp_instr_cfetch::psi_info=                                  
-{ 0, "cfetch", 0};
+PSI_statement_info sp_instr_cfetch::psi_info=
+{ 0, "cfetch", 0, PSI_DOCUMENT_ME};
 #endif
 
 bool sp_instr_cfetch::execute(THD *thd, uint *nextp)
@@ -1819,7 +1841,7 @@ bool sp_instr_cfetch::execute(THD *thd, uint *nextp)
 
   sp_cursor *c= thd->sp_runtime_ctx->get_cursor(m_cursor_idx);
 
-  return c ? c->fetch(thd, &m_varlist) : true;
+  return c ? c->fetch(&m_varlist) : true;
 }
 
 
@@ -1860,8 +1882,8 @@ void sp_instr_cfetch::print(String *str)
 ///////////////////////////////////////////////////////////////////////////
 
 #ifdef HAVE_PSI_INTERFACE
-PSI_statement_info sp_instr_error::psi_info=                                   
-{ 0, "error", 0};
+PSI_statement_info sp_instr_error::psi_info=
+{ 0, "error", 0, PSI_DOCUMENT_ME};
 #endif
 
 void sp_instr_error::print(String *str)
@@ -1879,8 +1901,8 @@ void sp_instr_error::print(String *str)
 ///////////////////////////////////////////////////////////////////////////
 
 #ifdef HAVE_PSI_INTERFACE
-PSI_statement_info sp_instr_set_case_expr::psi_info=                           
-{ 0, "set_case_expr", 0};
+PSI_statement_info sp_instr_set_case_expr::psi_info=
+{ 0, "set_case_expr", 0, PSI_DOCUMENT_ME};
 #endif
 
 bool sp_instr_set_case_expr::exec_core(THD *thd, uint *nextp)

@@ -1,13 +1,20 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -24,23 +31,15 @@
 #include <string.h>
 #include <sys/types.h>
 #include <map>
+#include <memory>
 #include <new>
+#include <string>
 #include <utility>
 
 #include "binary_log_types.h"
-#include "dd/info_schema/stats.h"     // dd::info_schema::Statistics_cache
-#include "enum_query_type.h"
-#include "field.h"
-#include "handler.h"
-#include "hash.h"
-#include "item.h"                     // Name_resolution_context
-#include "item_subselect.h"           // chooser_compare_func_creator
-#include "key_spec.h"                 // KEY_CREATE_INFO
 #include "lex_string.h"
-#include "lex_symbol.h"               // LEX_SYMBOL
 #include "m_string.h"
-#include "mdl.h"
-#include "mem_root_array.h"           // Mem_root_array
+#include "map_helpers.h"
 #include "my_base.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
@@ -51,58 +50,89 @@
 #include "my_table_map.h"
 #include "my_thread_local.h"
 #include "my_time.h"
+#include "mysql/components/services/psi_statement_bits.h"
 #include "mysql/psi/psi_base.h"
+#include "mysql/psi/psi_statement.h"
+#include "mysql/udf_registration_types.h"
 #include "mysql_com.h"
-#include "opt_hints.h"
-#include "parse_tree_hints.h"
-#include "parse_tree_node_base.h"     // enum_parsing_context
 #include "prealloced_array.h"         // Prealloced_array
-#include "query_options.h"            // OPTION_NO_CONST_TABLES
-#include "set_var.h"
-#include "sql_admin.h"
-#include "sql_alloc.h"                // Sql_alloc
-#include "sql_alter.h"                // Alter_info
-#include "sql_array.h"
+#include "sql/dd/info_schema/table_stats.h"  // dd::info_schema::Table_stati...
+#include "sql/dd/info_schema/tablespace_stats.h" // dd::info_schema::Tablesp...
+#include "sql/enum_query_type.h"
+#include "sql/field.h"
+#include "sql/handler.h"
+#include "sql/item.h"                 // Name_resolution_context
+#include "sql/item_create.h"          // Cast_target
+#include "sql/item_subselect.h"       // chooser_compare_func_creator
+#include "sql/key.h"
+#include "sql/key_spec.h"             // KEY_CREATE_INFO
+#include "sql/lex_symbol.h"           // LEX_SYMBOL
+#include "sql/mdl.h"
+#include "sql/mem_root_array.h"       // Mem_root_array
+#include "sql/opt_hints.h"
+#include "sql/parse_tree_hints.h"
+#include "sql/parse_tree_node_base.h" // enum_parsing_context
+#include "sql/query_options.h"        // OPTION_NO_CONST_TABLES
+#include "sql/resourcegroups/platform/thread_attrs_api.h" // cpu_id_t
+#include "sql/resourcegroups/resource_group_basic_types.h" // Type, Range
+#include "sql/set_var.h"
+#include "sql/sql_admin.h"
+#include "sql/sql_alloc.h"            // Sql_alloc
+#include "sql/sql_alter.h"            // Alter_info
+#include "sql/sql_array.h"
+#include "sql/sql_connect.h"          // USER_RESOURCES
+#include "sql/sql_const.h"
+#include "sql/sql_data_change.h"      // enum_duplicates
+#include "sql/sql_get_diagnostics.h"  // Diagnostics_information
+#include "sql/sql_list.h"
+#include "sql/sql_plugin_ref.h"
+#include "sql/sql_servers.h"          // Server_options
+#include "sql/sql_signal.h"           // enum_condition_item_name
+#include "sql/sql_udf.h"              // Item_udftype
+#include "sql/table.h"                // TABLE_LIST
+#include "sql/thr_malloc.h"
+#include "sql/trigger_def.h"          // enum_trigger_action_time_type
+#include "sql/window_lex.h"
+#include "sql/xa.h"                   // xa_option_words
 #include "sql_chars.h"
-#include "sql_connect.h"              // USER_RESOURCES
-#include "sql_const.h"
-#include "sql_data_change.h"          // enum_duplicates
-#include "sql_get_diagnostics.h"      // Diagnostics_information
-#include "sql_list.h"
-#include "sql_plugin.h"
-#include "sql_plugin_ref.h"
-#include "sql_servers.h"              // Server_options
-#include "sql_signal.h"               // enum_condition_item_name
 #include "sql_string.h"
-#include "table.h"                    // TABLE_LIST
 #include "thr_lock.h"                 // thr_lock_type
-#include "thr_malloc.h"
-#include "trigger_def.h"              // enum_trigger_action_time_type
 #include "violite.h"                  // SSL_type
-#include "xa.h"                       // xa_option_words
 
 class Item_func_set_user_var;
 class Item_sum;
+class PT_alter_table_standalone_action;
+class PT_assign_to_keycache;
 class PT_base_index_option;
 class PT_column_attr_base;
 class PT_create_table_option;
+class PT_ddl_table_option;
+class PT_json_table_column;
 class PT_part_definition;
 class PT_part_value_item;
 class PT_part_value_item_list_paren;
 class PT_part_values;
 class PT_partition;
 class PT_partition_option;
+class PT_preload_keys;
 class PT_query_expression;
+class PT_role_or_privilege;
 class PT_subpartition;
+class PT_subquery;
 class PT_table_element;
 class PT_table_reference;
 class Protocol;
 class SELECT_LEX_UNIT;
 class Select_lex_visitor;
 class THD;
+class Window;
+struct Sql_cmd_srs_attributes;
 
-#include "item_create.h"              // Cast_target
-#include "sql_udf.h"                  // Item_udftype
+class Json_table_column;
+enum class enum_jt_column;
+enum class enum_jtc_on : uint16;
+typedef Parse_tree_node_tmpl<struct Alter_tablespace_parse_context>
+    PT_alter_tablespace_option_base;
 
 /* YACC and LEX Definitions */
 
@@ -116,9 +146,10 @@ class partition_info;
 class sp_head;
 class sp_name;
 class sp_pcontext;
-class sql_exchange;
-struct PSI_digest_locker;
 struct sql_digest_state;
+class Sql_cmd_tablespace;
+class Sql_cmd_logfile_group;
+struct Tablespace_options;
 
 const size_t INITIAL_LEX_PLUGIN_LIST_SIZE = 16;
 
@@ -179,7 +210,6 @@ enum class enum_ha_read_modes;
 
 enum enum_filetype { FILETYPE_CSV, FILETYPE_XML };
 
-
 /**
   used by the parser to store internal variable name
 */
@@ -194,10 +224,6 @@ struct sys_var_with_base
 union YYSTYPE;
 
 typedef YYSTYPE *LEX_YYSTYPE;
-
-// describe/explain types
-#define DESCRIBE_NONE		0 // Not explain query
-#define DESCRIBE_NORMAL		1
 
 /*
   If we encounter a diagnostics statement (GET DIAGNOSTICS, or e.g.
@@ -317,7 +343,8 @@ enum enum_drop_mode
 /* Structure for db & table in sql_yacc */
 extern LEX_CSTRING EMPTY_CSTR;
 extern LEX_CSTRING NULL_CSTR;
-extern char internal_table_name[2];
+
+class Table_function;
 
 class Table_ident :public Sql_alloc
 {
@@ -325,13 +352,15 @@ public:
   LEX_CSTRING db;
   LEX_CSTRING table;
   SELECT_LEX_UNIT *sel;
+  Table_function *table_function;
+
   Table_ident(Protocol *protocol, const LEX_CSTRING &db_arg,
               const LEX_CSTRING &table_arg, bool force);
   Table_ident(const LEX_CSTRING &db_arg, const LEX_CSTRING &table_arg)
-    :db(db_arg), table(table_arg), sel(NULL)
+    :db(db_arg), table(table_arg), sel(NULL), table_function(NULL)
   {}
   Table_ident(const LEX_CSTRING &table_arg)
-    :table(table_arg), sel(NULL)
+    :table(table_arg), sel(NULL), table_function(NULL)
   {
     db= NULL_CSTR;
   }
@@ -341,15 +370,27 @@ public:
     Later, if there was an alias specified for the table, it will be set
     by add_table_to_list.
   */
-  Table_ident(SELECT_LEX_UNIT *s) : sel(s)
+  Table_ident(SELECT_LEX_UNIT *s) : sel(s), table_function(NULL)
+  {
+    db= EMPTY_CSTR;                    /* a subject to casedn_str */
+    table = EMPTY_CSTR;
+  }
+  /*
+    This constructor is used only for the case when we create a table function.
+    It has no name and doesn't belong to any database as it exists only
+    during query execution. Later, if there was an alias specified for the
+    table, it will be set by add_table_to_list.
+  */
+  Table_ident(LEX_CSTRING &table_arg, Table_function *table_func_arg)
+    : table(table_arg), sel(NULL), table_function(table_func_arg)
   {
     /* We must have a table name here as this is used with add_table_to_list */
     db= EMPTY_CSTR;                    /* a subject to casedn_str */
-    table.str= internal_table_name;
-    table.length=1;
   }
+  // True if we can tell from syntax that this is a table function.
+  bool is_table_function() const { return (table_function != nullptr); }
   // True if we can tell from syntax that this is an unnamed derived table.
-  bool is_derived_table() const { return MY_TEST(sel); }
+  bool is_derived_table() const { return sel; }
   void change_db(const char *db_name)
   {
     db.str= db_name;
@@ -400,9 +441,10 @@ typedef struct st_lex_master_info
    */
   enum {LEX_MI_UNCHANGED= 0, LEX_MI_DISABLE, LEX_MI_ENABLE}
     ssl, ssl_verify_server_cert, heartbeat_opt, repl_ignore_server_ids_opt,
-    retry_count_opt, auto_position, port_opt;
+    retry_count_opt, auto_position, port_opt, get_public_key;
   char *ssl_key, *ssl_cert, *ssl_ca, *ssl_capath, *ssl_cipher;
   char *ssl_crl, *ssl_crlpath, *tls_version;
+  char *public_key_path;
   char *relay_log_name;
   ulong relay_log_pos;
   Prealloced_array<ulong, 2> repl_ignore_server_ids;
@@ -463,11 +505,11 @@ public:
     The index name. Empty (str=NULL) name represents an empty list 
     USE INDEX () clause 
   */ 
-  LEX_STRING key_name;
+  LEX_CSTRING key_name;
 
   Index_hint (const char *str, uint length)
   {
-    key_name.str= const_cast<char *>(str);
+    key_name.str= str;
     key_name.length= length;
   }
 
@@ -594,10 +636,9 @@ public:
 
 
 class JOIN;
+class PT_with_clause;
 class Query_result;
 class Query_result_union;
-class PT_with_clause;
-class THD;
 struct LEX;
 
 /**
@@ -940,9 +981,14 @@ public:
   */
   void set_tables_readonly()
   {
-    for (TABLE_LIST *tr= get_table_list(); tr != NULL; tr= tr->next_local)
+    // Set all referenced base tables as read only.
+    for (TABLE_LIST *tr= leaf_tables; tr != nullptr; tr= tr->next_leaf)
       tr->set_readonly();
   }
+
+  /// @returns a map of all tables references in the query block
+  table_map all_tables_map() const
+  { return (1ULL << leaf_table_count) - 1; }
 
 private:
   /**
@@ -978,19 +1024,15 @@ private:
 
 public:
   /**
-    In sql_cache we store SQL_CACHE flag as specified by user to be
-    able to restore SELECT statement from internal structures.
-  */
-  enum e_sql_cache { SQL_CACHE_UNSPECIFIED, SQL_NO_CACHE, SQL_CACHE };
-  /// Query cache hint (should rather belong in LEX object?)
-  e_sql_cache sql_cache;
-  /**
     result of this query can't be cached, bit field, can be :
       UNCACHEABLE_DEPENDENT
       UNCACHEABLE_RAND
       UNCACHEABLE_SIDEEFFECT
   */
   uint8 uncacheable;
+
+  /// True: skip local transformations during prepare() call (used by INSERT)
+  bool skip_local_transforms;
 
   /// Describes context of this query block (e.g if it is a derived table).
   enum sub_select_type linkage;
@@ -1065,6 +1107,11 @@ public:
   Group_list_ptrs        *group_list_ptrs;
 
   /**
+    All windows defined on the select, both named and inlined
+  */
+  List<Window>            m_windows;
+
+  /**
     List of columns and expressions:
     SELECT: Columns and expressions in the SELECT list.
     UPDATE: Columns in the SET clause.
@@ -1107,6 +1154,8 @@ public:
   uint leaf_table_count;
   /// Number of derived tables and views in this query block.
   uint derived_table_count;
+  /// Number of table functions in this query block
+  uint table_func_count;
   /// Number of materialized derived tables and views in this query block.
   uint materialized_derived_table_count;
   /**
@@ -1245,7 +1294,8 @@ public:
   /// Query-block-level hints, for this query block
   Opt_hints_qb *opt_hints_qb;
 
-
+  // Last table for LATERAL join, used by table functions
+  TABLE_LIST *end_lateral_table;
   /**
     @note the group_by and order_by lists below will probably be added to the
           constructor when the parser is converted into a true bottom-up design.
@@ -1259,6 +1309,19 @@ public:
   SELECT_LEX *outer_select() const { return master->outer_select(); }
   SELECT_LEX *next_select() const { return next; }
 
+  /**
+    @return true  If STRAIGHT_JOIN applies to all tables.
+    @return false Else.
+  */
+  bool is_straight_join()
+  {
+    bool straight_join= true;
+    /// false for exmaple in t1 STRAIGHT_JOIN t2 JOIN t3.
+    for (TABLE_LIST *tbl= leaf_tables->next_leaf; tbl ; tbl=tbl->next_leaf)
+      straight_join&= tbl->straight;
+    return straight_join || (active_options() & SELECT_STRAIGHT_JOIN);
+  }
+
   SELECT_LEX* last_select()
   {
     SELECT_LEX* mylast= this;
@@ -1269,7 +1332,7 @@ public:
 
   SELECT_LEX *next_select_in_list() const { return link_next; }
 
-  void mark_as_dependent(SELECT_LEX *last);
+  void mark_as_dependent(SELECT_LEX *last, bool aggregate);
 
   /// @return true if query block is explicitly grouped (non-empty GROUP BY)
   bool is_explicitly_grouped() const { return group_list.elements > 0; }
@@ -1341,7 +1404,7 @@ public:
   bool add_ftfunc_to_list(Item_func_match *func);
   void add_order_to_list(ORDER *order);
   TABLE_LIST* add_table_to_list(THD *thd, Table_ident *table,
-				LEX_STRING *alias,
+				const char *alias,
 				ulong table_options,
 				thr_lock_type flags= TL_UNLOCK,
                                 enum_mdl_type mdl_type= MDL_SHARED_READ,
@@ -1365,8 +1428,8 @@ public:
   // Resolve and prepare information about tables for one query block
   bool setup_tables(THD *thd, TABLE_LIST *tables, bool select_insert);
 
-  // Resolve derived table and view information for a query block
-  bool resolve_derived(THD *thd, bool apply_semijoin);
+  // Resolve derived table, view, table function information for a query block
+  bool resolve_placeholder_tables(THD *thd, bool apply_semijoin);
 
   // Propagate exclusion from table uniqueness test into subqueries
   void propagate_unique_test_exclusion();
@@ -1544,7 +1607,6 @@ private:
     type_str[static_cast<int>(enum_explain_type::EXPLAIN_total)];
 
   friend class SELECT_LEX_UNIT;
-
   bool record_join_nest_info(List<TABLE_LIST> *tables);
   bool simplify_joins(THD *thd,
                       List<TABLE_LIST> *join_list,
@@ -1684,7 +1746,6 @@ struct Limit_options
 
 struct Query_options {
   ulonglong query_spec_options;
-  enum SELECT_LEX::e_sql_cache sql_cache;
 
   bool merge(const Query_options &a, const Query_options &b);
   bool save_to(Parse_context *);
@@ -1816,6 +1877,86 @@ enum class Numeric_type : ulong
 };
 
 
+enum class Show_cmd_type
+{
+  STANDARD,
+  FULL_SHOW,
+  EXTENDED_SHOW,
+  EXTENDED_FULL_SHOW
+};
+
+
+/**
+  std::optional-like wrapper for simple bitmaps (usually enums of binary flags)
+
+  This template wraps trivial bitmap implementations to add two features:
+
+  * std::optional-like behavior -- the "unset" flag, so we don't have
+    to inject a special "invalid" value into existent enum types, this
+    wrapper class does that for us.
+
+  * the merge() function to merge two bitmap values in a type-safe way.
+
+  @tparam Enum           Usually a enum type which simulates a bit set.
+  @tparam Default_value  A default Enum value for "unset" variables.
+
+*/
+template<typename Enum, Enum Default_value>
+class Enum_parser
+{
+public:
+  /// Constructor-like function
+  ///
+  /// The Enum_parser<> class is designed for use as a field of restricted
+  /// unions, so it can't have C++ constructors.
+  void init() { m_is_set= false; }
+
+  /// False if the wrapped Enum value is not assigned.
+  bool is_set() const { return m_is_set; }
+
+  /// Return the wrapped Enum value.
+  ///
+  /// @note The wrapped value must be assigned.
+  Enum get() const
+  {
+    DBUG_ASSERT(is_set());
+    return m_enum;
+  }
+
+  /// Return the wrapped Enum value (if any) or the Default_value.
+  Enum get_or_default() const { return is_set() ? get() : Default_value; }
+
+  /// Assign the wrapped Enum value.
+  void set(Enum value)
+  {
+    m_is_set= true;
+    m_enum= value;
+  }
+
+  /// Merge the x bit set into the wrapped Enum value (if any), or replace it
+  void merge(const Enum_parser &x)
+  {
+    if (x.is_set())
+      set(x.get());
+  }
+
+private:
+  bool m_is_set; ///< True if m_enum is assigned with some value
+  Enum m_enum;   ///< The wrapped Enum value.
+};
+
+
+template<typename T>
+struct Value_or_default
+{
+  bool is_default;
+  T value; ///< undefined if is_default is true
+};
+
+
+enum class Explain_format_type { TRADITIONAL, JSON };
+
+
 union YYSTYPE {
   /*
     Hint parser section (sql_hints.yy)
@@ -1834,6 +1975,7 @@ union YYSTYPE {
   int  num;
   ulong ulong_num;
   ulonglong ulonglong_number;
+  LEX_CSTRING lex_cstr;
   LEX_STRING lex_str;
   LEX_STRING *lex_str_ptr;
   LEX_SYMBOL symbol;
@@ -1913,6 +2055,16 @@ union YYSTYPE {
   Parse_tree_node *node;
   enum olap_type olap_type;
   class PT_group *group;
+  class PT_window_list *windows;
+  class PT_window *window;
+  class PT_frame *window_frame;
+  enum_window_frame_unit frame_units;
+  class PT_borders *frame_extent;
+  class PT_border *bound;
+  class PT_exclusion *frame_exclusion;
+  enum enum_null_treatment null_treatment;
+  enum enum_from_first_last from_first_last;
+  Item_string *item_string;
   class PT_order *order;
   class PT_table_reference *table_reference;
   class PT_joined_table *join_table;
@@ -1934,7 +2086,6 @@ union YYSTYPE {
   class PT_select_var *select_var_ident;
   class PT_select_var_list *select_var_list;
   Mem_root_array_YY<PT_table_reference *> table_reference_list;
-  class PT_select_stmt *select_stmt;
   class Item_param *param_marker;
   class PTI_text_literal *text_literal;
   class PT_query_expression *query_expression;
@@ -1961,18 +2112,22 @@ union YYSTYPE {
     class PT_item_list *column_list;
     class PT_query_expression *insert_query_expression;
   } insert_query_expression;
+  struct {
+    class Item *offset;
+    class Item *default_value;
+  } lead_lag_info;
   class PT_insert_values_list *values_list;
-  class PT_statement *statement;
+  class Parse_tree_root *top_level_node;
   class Table_ident *table_ident;
   Mem_root_array_YY<Table_ident *> table_ident_list;
   delete_option_enum opt_delete_option;
   class PT_hint_list *optimizer_hints;
   enum alter_instance_action_enum alter_instance_action;
-  class PT_index_definition_stmt *index_definition_stmt;
+  class PT_create_index_stmt *create_index_stmt;
   class PT_table_constraint_def *table_constraint_def;
   List<Key_part_spec> *index_column_list;
   struct {
-    class PT_field_ident *name;
+    LEX_STRING name;
     class PT_base_index_option *type;
   } index_name_and_type;
   class PT_base_index_option *index_option;
@@ -2013,6 +2168,7 @@ union YYSTYPE {
   Ternary_option ternary_option;
   class PT_create_table_option *create_table_option;
   Trivial_array<PT_create_table_option *> *create_table_options;
+  Trivial_array<PT_ddl_table_option *> *space_separated_alter_table_opts;
   On_duplicate on_duplicate;
   class PT_column_attr_base *col_attr;
   column_format_type column_format;
@@ -2042,7 +2198,6 @@ union YYSTYPE {
     fk_option fk_update_opt;
     fk_option fk_delete_opt;
   } fk_references;
-  class PT_field_ident *field_ident;
   class PT_column_def *column_def;
   class PT_table_element *table_element;
   Trivial_array<PT_table_element *> *table_element_list;
@@ -2056,16 +2211,96 @@ union YYSTYPE {
   Locked_row_action locked_row_action;
   class PT_locking_clause *locking_clause;
   class PT_locking_clause_list *locking_clause_list;
+  Trivial_array<PT_json_table_column *> *jtc_list;
+  struct jt_on_response {
+    enum_jtc_on type;
+    const LEX_STRING *default_str;
+  } jt_on_response;
+  struct {
+    struct jt_on_response error;
+    struct jt_on_response empty;
+  } jt_on_error_or_empty;
+  PT_json_table_column *jt_column;
+  enum_jt_column jt_column_type;
   struct
   {
     LEX_STRING wild;
     Item *where;
   } wild_or_where;
+  Show_cmd_type show_cmd_type;
+  struct {
+    Sql_cmd_analyze_table::Histogram_command command;
+    List<String> *columns;
+    int num_buckets;
+  } histogram;
   Acl_type acl_type;
   Trivial_array<LEX_CSTRING> *lex_cstring_list;
   class PT_role_or_privilege *role_or_privilege;
   Trivial_array<PT_role_or_privilege *> *role_or_privilege_list;
+  enum_order order_direction;
+  Alter_info::enum_with_validation with_validation;
+  class PT_alter_table_action *alter_table_action;
+  class PT_alter_table_standalone_action *alter_table_standalone_action;
+  Alter_info::enum_alter_table_algorithm alter_table_algorithm;
+  Alter_info::enum_alter_table_lock alter_table_lock;
+  struct Algo_and_lock {
+    Enum_parser<Alter_info::enum_alter_table_algorithm,
+                Alter_info::ALTER_TABLE_ALGORITHM_DEFAULT> algo;
+    Enum_parser<Alter_info::enum_alter_table_lock,
+                Alter_info::ALTER_TABLE_LOCK_DEFAULT> lock;
+    void init() { algo.init(); lock.init(); }
+  } opt_index_lock_and_algorithm;
+  struct Algo_and_lock_and_validation {
+    Enum_parser<Alter_info::enum_alter_table_algorithm,
+                Alter_info::ALTER_TABLE_ALGORITHM_DEFAULT> algo;
+    Enum_parser<Alter_info::enum_alter_table_lock,
+                Alter_info::ALTER_TABLE_LOCK_DEFAULT> lock;
+    Enum_parser<Alter_info::enum_with_validation,
+                Alter_info::ALTER_VALIDATION_DEFAULT> validation;
+    void init() { algo.init(); lock.init(); validation.init(); }
+    void merge(const Algo_and_lock_and_validation &x)
+    { algo.merge(x.algo); lock.merge(x.lock); validation.merge(x.validation); }
+  } algo_and_lock_and_validation;
+  struct {
+    Algo_and_lock_and_validation flags;
+    Trivial_array<PT_ddl_table_option *> *actions;
+  } alter_list;
+  struct {
+    Algo_and_lock_and_validation flags;
+    PT_alter_table_standalone_action *action;
+  } standalone_alter_table_action;
+  class PT_assign_to_keycache *assign_to_keycache;
+  Trivial_array<PT_assign_to_keycache *> *keycache_list;
+  class PT_adm_partition *adm_partition;
+  class PT_preload_keys *preload_keys;
+  Trivial_array<PT_preload_keys *> *preload_list;
+  PT_alter_tablespace_option_base *ts_option;
+  Trivial_array<PT_alter_tablespace_option_base *> *ts_options;
+  struct {
+    resourcegroups::platform::cpu_id_t start;
+    resourcegroups::platform::cpu_id_t end;
+  } vcpu_range_type;
+  Trivial_array<resourcegroups::Range> *resource_group_vcpu_list_type;
+  Value_or_default<int> resource_group_priority_type;
+  Value_or_default<bool> resource_group_state_type;
+  bool resource_group_flag_type;
+  resourcegroups::Type resource_group_type;
+  Trivial_array<ulonglong> *thread_id_list_type;
+  Explain_format_type explain_format_type;
+  struct {
+    Item *set_var;
+    Item *set_expr;
+    String *set_expr_str;
+  } load_set_element;
+  struct {
+    PT_item_list *set_var_list;
+    PT_item_list *set_expr_list;
+    List<String> *set_expr_str_list;
+  } load_set_list;
+  Sql_cmd_srs_attributes *sql_cmd_srs_attributes;
 };
+
+static_assert(sizeof(YYSTYPE) <= 32, "YYSTYPE is too big");
 
 
 /**
@@ -2155,6 +2390,8 @@ class Sroutine_hash_entry;
 class Query_tables_list
 {
 public:
+  Query_tables_list& operator=(Query_tables_list &&) = default;
+
   /**
     SQL command for this statement. Part of this class since the
     process of opening and locking tables for the statement needs
@@ -2176,9 +2413,13 @@ public:
   /*
     Set of stored routines called by statement.
     (Note that we use lazy-initialization for this hash).
+
+    See Sroutine_hash_entry for explanation why this hash uses binary
+    key comparison.
   */
   enum { START_SROUTINES_HASH_SIZE= 16 };
-  HASH sroutines;
+  std::unique_ptr<malloc_unordered_map<std::string, Sroutine_hash_entry *>>
+    sroutines;
   /*
     List linking elements of 'sroutines' set. Allows you to add new elements
     to this set as you iterate through the list of existing elements.
@@ -2235,7 +2476,7 @@ public:
   void destroy_query_tables_list();
   void set_query_tables_list(Query_tables_list *state)
   {
-    *this= *state;
+    *this= std::move(*state);
   }
 
   /*
@@ -2250,7 +2491,7 @@ public:
   }
   bool requires_prelocking()
   {
-    return MY_TEST(query_tables_own_last);
+    return query_tables_own_last;
   }
   void mark_as_requiring_prelocking(TABLE_LIST **tables_own_last)
   {
@@ -2269,17 +2510,6 @@ public:
       query_tables_last= query_tables_own_last;
       query_tables_own_last= 0;
     }
-  }
-
-  /** Return a pointer to the last element in query table list. */
-  TABLE_LIST *last_table()
-  {
-    /* Don't use offsetof() macro in order to avoid warnings. */
-    return query_tables ?
-           (TABLE_LIST*) ((char*) query_tables_last -
-                          ((char*) &(query_tables->next_global) -
-                           (char*) query_tables)) :
-           0;
   }
 
   /**
@@ -2426,6 +2656,11 @@ public:
     BINLOG_STMT_UNSAFE_FULLTEXT_PLUGIN,
     BINLOG_STMT_UNSAFE_SKIP_LOCKED,
     BINLOG_STMT_UNSAFE_NOWAIT,
+
+    /**
+      XA transactions and statements.
+    */
+    BINLOG_STMT_UNSAFE_XA,
 
     /* the last element of this enumeration type. */
     BINLOG_STMT_UNSAFE_COUNT
@@ -2910,7 +3145,7 @@ public:
     Get the last character accepted.
     @return the last character accepted.
   */
-  unsigned char yyGetLast()
+  unsigned char yyGetLast() const
   {
     return m_ptr[-1];
   }
@@ -2918,7 +3153,7 @@ public:
   /**
     Look at the next character to parse, but do not accept it.
   */
-  unsigned char yyPeek()
+  unsigned char yyPeek() const
   {
     DBUG_ASSERT(m_ptr <= m_end_of_query);
     return m_ptr[0];
@@ -2928,7 +3163,7 @@ public:
     Look ahead at some character to parse.
     @param n offset of the character to look up
   */
-  unsigned char yyPeekn(int n)
+  unsigned char yyPeekn(int n) const
   {
     DBUG_ASSERT(m_ptr + n <= m_end_of_query);
     return m_ptr[n];
@@ -3004,7 +3239,7 @@ public:
     End of file indicator for the query text to parse.
     @return true if there are no more characters to parse
   */
-  bool eof()
+  bool eof() const
   {
     return (m_ptr >= m_end_of_query);
   }
@@ -3014,25 +3249,25 @@ public:
     @param n number of characters expected
     @return true if there are less than n characters to parse
   */
-  bool eof(int n)
+  bool eof(int n) const
   {
     return ((m_ptr + n) >= m_end_of_query);
   }
 
   /** Get the raw query buffer. */
-  const char *get_buf()
+  const char *get_buf() const
   {
     return m_buf;
   }
 
   /** Get the pre-processed query buffer. */
-  const char *get_cpp_buf()
+  const char *get_cpp_buf() const
   {
     return m_cpp_buf;
   }
 
   /** Get the end of the raw query buffer. */
-  const char *get_end_of_query()
+  const char *get_end_of_query() const
   {
     return m_end_of_query;
   }
@@ -3058,43 +3293,43 @@ public:
   }
 
   /** Get the token start position, in the raw buffer. */
-  const char *get_tok_start()
+  const char *get_tok_start() const
   {
     return m_tok_start;
   }
 
   /** Get the token start position, in the pre-processed buffer. */
-  const char *get_cpp_tok_start()
+  const char *get_cpp_tok_start() const
   {
     return m_cpp_tok_start;
   }
 
   /** Get the token end position, in the raw buffer. */
-  const char *get_tok_end()
+  const char *get_tok_end() const
   {
     return m_tok_end;
   }
 
   /** Get the token end position, in the pre-processed buffer. */
-  const char *get_cpp_tok_end()
+  const char *get_cpp_tok_end() const
   {
     return m_cpp_tok_end;
   }
 
   /** Get the current stream pointer, in the raw buffer. */
-  const char *get_ptr()
+  const char *get_ptr() const
   {
     return m_ptr;
   }
 
   /** Get the current stream pointer, in the pre-processed buffer. */
-  const char *get_cpp_ptr()
+  const char *get_cpp_ptr() const
   {
     return m_cpp_ptr;
   }
 
   /** Get the length of the current token, in the raw buffer. */
-  uint yyLength()
+  uint yyLength() const
   {
     /*
       The assumption is that the lexical analyser is always 1 character ahead,
@@ -3105,13 +3340,13 @@ public:
   }
    
   /** Get the utf8-body string. */
-  const char *get_body_utf8_str()
+  const char *get_body_utf8_str() const
   {
     return m_body_utf8;
   }
 
   /** Get the utf8-body length. */
-  uint get_body_utf8_length()
+  uint get_body_utf8_length() const
   {
     return (uint) (m_body_utf8_ptr - m_body_utf8);
   }
@@ -3124,7 +3359,7 @@ public:
                                 const CHARSET_INFO *txt_cs,
                                 const char *end_ptr);
 
-  uint get_lineno(const char *raw_ptr);
+  uint get_lineno(const char *raw_ptr) const;
 
   /** Current thread. */
   THD *m_thd;
@@ -3326,7 +3561,7 @@ private:
   SELECT_LEX *m_current_select;
 
 public:
-  inline SELECT_LEX *current_select() { return m_current_select; }
+  inline SELECT_LEX *current_select() const { return m_current_select; }
 
   /*
     We want to keep current_thd out of header files, so the debug assert 
@@ -3341,14 +3576,13 @@ public:
     m_current_select= select;
   }
   /// @return true if this is an EXPLAIN statement
-  bool is_explain() const { return (describe & DESCRIBE_NORMAL); }
+  bool is_explain() const { return explain_format != nullptr; }
   LEX_STRING name;
   char *help_arg;
   char* to_log;                                 /* For PURGE MASTER LOGS TO */
   char* x509_subject,*x509_issuer,*ssl_cipher;
   // Widcard from SHOW ... LIKE <wildcard> statements.
   String *wild;
-  sql_exchange *exchange;
   Query_result *result;
   LEX_STRING binlog_stmt_arg; ///< Argument of the BINLOG event statement.
   LEX_STRING ident;
@@ -3385,21 +3619,9 @@ public:
   List<LEX_USER>      users_list;
   List<LEX_COLUMN>    columns;
   List<LEX_CSTRING>   dynamic_privileges;
+  List<LEX_USER>      *default_roles;
 
   ulonglong           bulk_insert_row_cnt;
-
-  // LOAD statement-specific fields:
-
-  List<Item>          load_field_list;
-  List<Item>          load_update_list;
-  List<Item>          load_value_list;
-  /*
-    A list of strings is maintained to store the SET clause command user strings
-    which are specified in load data operation.  This list will be used
-    during the reconstruction of "load data" statement at the time of writing
-    to binary log.
-  */
-  List<String>        load_set_str_list;
 
   // PURGE statement-specific fields:
   List<Item>          purge_value_list;
@@ -3407,16 +3629,21 @@ public:
   // KILL statement-specific fields:
   List<Item>          kill_value_list;
 
-  // CALL statement-specific fields:
-  List<Item>          call_value_list;
-
-  // HANDLER statement-specific fields:
-  List<Item>          *handler_insert_list;
-
   // other stuff:
   List<set_var_base>  var_list;
   List<Item_func_set_user_var> set_var_list; // in-query assignment list
+  /**
+    List of placeholders ('?') for parameters of a prepared statement. Because
+    we append to this list during parsing, it is naturally sorted by
+    position of the '?' in the query string. The code which fills placeholders
+    with user-supplied values, and the code which writes a query for
+    statement-based logging, rely on this order.
+    This list contains only real placeholders, not the clones which originate
+    in a re-parsed CTE definition.
+  */
   List<Item_param>    param_list;
+
+  bool locate_var_assignment(const Name_string &name);
 
   void insert_values_map(Field *f1, Field *f2)
   {
@@ -3451,7 +3678,7 @@ private:
     With Visual Studio, an std::map will always allocate two small objects
     on the heap. Sometimes we put LEX objects in a MEM_ROOT, and never run
     the LEX DTOR. To avoid memory leaks, put this std::map on the heap,
-    and call clear_values_map() in lex_end()
+    and call clear_values_map() at the end of each statement.
    */
   std::map<Field *,Field *> *insert_update_values_map;
 public:
@@ -3494,6 +3721,12 @@ public:
     aggregate functions are allowed for that query block.
   */
   nesting_map allow_sum_func;
+  /**
+    Windowing functions are not allowed in HAVING - in contrast to group
+    aggregates - then we need to be stricter than allow_sum_func.
+    One bit per query block, as allow_sum_func.
+  */
+  nesting_map m_deny_window_func;
 
   Sql_cmd *m_sql_cmd;
 
@@ -3516,23 +3749,35 @@ public:
   enum enum_tx_isolation tx_isolation;
   enum enum_var_type option_type;
   enum_view_create_mode create_view_mode;
-  enum enum_drop_mode drop_mode;
 
-  /// QUERY ID for SHOW PROFILE and EXPLAIN CONNECTION
-  my_thread_id query_id;
+  /// QUERY ID for SHOW PROFILE
+  my_thread_id show_profile_query_id;
   uint profile_options;
   uint grant, grant_tot_col;
+  bool grant_privilege;
   uint slave_thd_opt, start_transaction_opt;
   int select_number;                     ///< Number of query block (by EXPLAIN)
-  uint8 describe;
   uint8 create_view_algorithm;
   uint8 create_view_check;
+  /**
+    @todo ensure that correct CONTEXT_ANALYSIS_ONLY is set for all preparation
+          code, so we can fully rely on this field.
+  */
   uint8 context_analysis_only;
-  bool drop_if_exists, drop_temporary, local_file;
+  bool drop_if_exists;
+  bool drop_temporary;
   bool autocommit;
   bool verbose, no_write_to_binlog;
+  // For show commands to show hidden columns and indexes.
+  bool m_extended_show;
 
   enum enum_yes_no_unknown tx_chain, tx_release;
+
+  /**
+    Whether this query will return the same answer every time, given unchanged data.
+    Used to be for the query cache, but is now used to find out if an expression
+    is usable for partitioning.
+  */
   bool safe_to_cache_query;
   bool subqueries;
 private:
@@ -3541,13 +3786,7 @@ public:
   bool is_ignore() const { return ignore; }
   void set_ignore(bool ignore_param) { ignore= ignore_param; }
   st_parsing_options parsing_options;
-  Alter_info alter_info;
-  /*
-    For CREATE TABLE statement last element of table list which is not
-    part of SELECT or LIKE part (i.e. either element for table we are
-    creating or last of tables referenced by foreign keys).
-  */
-  TABLE_LIST *create_last_non_select_table;
+  Alter_info *alter_info;
   /* Prepared statements SQL syntax:*/
   LEX_CSTRING prepared_stmt_name; /* Statement name (in all queries) */
   /*
@@ -3569,6 +3808,11 @@ public:
 
 private:
   bool m_broken; ///< see mark_broken()
+  /**
+    Set to true when execution has started (after parsing, tables opened and
+    query preparation is complete. Used to track arena state for SPs).
+  */
+  bool m_exec_started;
   /// Current SP parsing context.
   /// @see also sp_head::m_root_parsing_ctx.
   sp_pcontext *sp_current_parsing_ctx;
@@ -3602,6 +3846,16 @@ public:
       m_broken= false;
   }
 
+  bool is_exec_started() const { return m_exec_started; }
+
+  void set_exec_started()
+  {
+    m_exec_started= true;
+  }
+  void reset_exec_started()
+  {
+    m_exec_started= false;
+  }
   sp_pcontext *get_sp_current_parsing_ctx()
   { return sp_current_parsing_ctx; }
 
@@ -3611,7 +3865,10 @@ public:
   /// Check if the current statement uses meta-data (uses a table or a stored
   /// routine).
   bool is_metadata_used() const
-  { return query_tables != NULL || sroutines.records > 0; }
+  {
+    return query_tables != NULL ||
+      (sroutines != nullptr && !sroutines->empty());
+  }
 
 public:
   st_sp_chistics sp_chistics;
@@ -3647,12 +3904,6 @@ public:
   */
   bool use_only_table_context;
 
-  /*
-    Reference to a struct that contains information in various commands
-    to add/create/drop/change table spaces.
-  */
-  st_alter_tablespace *alter_tablespace_info;
-  
   bool is_lex_started; /* If lex_start() did run. For debugging. */
   /// Set to true while resolving values in ON DUPLICATE KEY UPDATE clause
   bool in_update_value_clause;
@@ -3663,7 +3914,7 @@ public:
     TODO: possibly this it is incorrect to have used tables in LEX because
     with subquery, it is not clear what does the field mean. To fix this
     we should aggregate used tables information for selected expressions
-    into the select_lex.
+    into the select_lex. This map should contain "real" tables only.
   */
   table_map  used_tables;
 
@@ -3677,6 +3928,13 @@ public:
     on explicit_defaults_for_timestamp
   */
   bool binlog_need_explicit_defaults_ts;
+
+  /**
+    Used to inform MYSQLparse() whether it should contextualize the parse
+    tree. When we get a pure parser this will not be needed.
+  */
+  bool will_contextualize;
+
   LEX();
 
   virtual ~LEX();
@@ -3781,7 +4039,12 @@ public:
     context_stack.pop();
   }
 
-  bool copy_db_to(char **p_db, size_t *p_db_length) const;
+  bool copy_db_to(char const **p_db, size_t *p_db_length) const;
+
+  bool copy_db_to(char **p_db, size_t *p_db_length) const
+  {
+    return copy_db_to(const_cast<const char **>(p_db), p_db_length);
+  }
 
   Name_resolution_context *current_context()
   {
@@ -3796,7 +4059,6 @@ public:
   void restore_backup_query_tables_list(Query_tables_list *backup);
 
   bool table_or_sp_used();
-  bool is_partition_management() const;
 
   /**
     @brief check if the statement is a single-level join
@@ -3812,7 +4074,8 @@ public:
       on its top. So select_lex (as the first added) will be at the tail 
       of the list.
     */ 
-    if (select_lex == all_selects_list && !sroutines.records)
+    if (select_lex == all_selects_list &&
+        (sroutines == nullptr || sroutines->empty()))
     {
       DBUG_ASSERT(!all_selects_list->next_select_in_list());
       return TRUE;
@@ -3825,7 +4088,8 @@ public:
     These statistics are cached, to avoid opening of table more
     than once while preparing a single output record buffer.
   */
-  dd::info_schema::Statistics_cache m_IS_dyn_stat_cache;
+  dd::info_schema::Table_statistics m_IS_table_stats;
+  dd::info_schema::Tablespace_statistics m_IS_tablespace_stats;
 
   bool accept(Select_lex_visitor *visitor);
 
@@ -3854,7 +4118,6 @@ public:
     yacc_yyls= NULL;
     m_lock_type= TL_READ_DEFAULT;
     m_mdl_type= MDL_SHARED_READ;
-    m_ha_rkey_mode= HA_READ_KEY_EXACT;
   }
 
   ~Yacc_state();
@@ -3867,7 +4130,6 @@ public:
   {
     m_lock_type= TL_READ_DEFAULT;
     m_mdl_type= MDL_SHARED_READ;
-    m_ha_rkey_mode= HA_READ_KEY_EXACT; /* Let us be future-proof. */
   }
 
   /**
@@ -3912,9 +4174,6 @@ public:
     the statement table list.
   */
   enum_mdl_type m_mdl_type;
-
-  /** Type of condition for key in HANDLER READ statement. */
-  enum ha_rkey_function m_ha_rkey_mode;
 
   /*
     TODO: move more attributes from the LEX structure here.
@@ -4094,5 +4353,38 @@ void print_derived_column_names(THD *thd, String *str,
 /**
   @} (End of group GROUP_PARSER)
 */
+
+
+/**
+   Check if the given string is invalid using the system charset.
+
+   @param string_val       Reference to the string.
+   @param charset_info     Pointer to charset info.
+
+   @return true if the string has an invalid encoding using
+                the system charset else false.
+*/
+
+inline bool is_invalid_string(const LEX_CSTRING &string_val,
+                              const CHARSET_INFO *charset_info)
+{
+  size_t valid_len;
+  bool len_error;
+
+  if (validate_string(charset_info, string_val.str,
+                      static_cast<uint32>(string_val.length),
+                      &valid_len, &len_error))
+  {
+    char hexbuf[7];
+    octet2hex(hexbuf, string_val.str + valid_len,
+              static_cast<uint>(std::min<size_t>(string_val.length - valid_len,
+                                                 3)));
+    my_error(ER_INVALID_CHARACTER_STRING, MYF(0), charset_info->csname,
+             hexbuf);
+    return true;
+  }
+  return false;
+}
+
 
 #endif /* SQL_LEX_INCLUDED */

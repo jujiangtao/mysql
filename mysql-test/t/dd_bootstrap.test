@@ -1,6 +1,4 @@
 --source include/big_test.inc
---source include/not_embedded.inc
---source include/have_no_undo_tablespaces.inc
 
 --echo #
 --echo # This file contains bootstrap test cases that do not
@@ -12,7 +10,7 @@
 let BASEDIR=    `select @@basedir`;
 let DDIR=       $MYSQL_TMP_DIR/dd_bootstrap_test;
 let MYSQLD_LOG= $MYSQL_TMP_DIR/server.log;
-let extra_args= --no-defaults --log-error=$MYSQLD_LOG --log-syslog=0 --secure-file-priv="" --loose-skip-auto_generate_certs --loose-skip-sha256_password_auto_generate_rsa_keys --skip-ssl --basedir=$BASEDIR --lc-messages-dir=$MYSQL_SHAREDIR;
+let extra_args= --no-defaults --innodb_dedicated_server=OFF --log-error=$MYSQLD_LOG --log-syslog=0 --secure-file-priv="" --loose-skip-auto_generate_certs --loose-skip-sha256_password_auto_generate_rsa_keys --skip-ssl --basedir=$BASEDIR --lc-messages-dir=$MYSQL_SHAREDIR;
 let BOOTSTRAP_SQL= $MYSQL_TMP_DIR/tiny_bootstrap.sql;
 let PASSWD_FILE=   $MYSQL_TMP_DIR/password_file.txt;
 
@@ -55,7 +53,7 @@ perl;
   use strict;
   my $log= $ENV{'MYSQLD_LOG'} or die;
   open(FILE, "$log") or die;
-  my $c_e= grep(/.Warning. Can\'t open and lock time zone table/gi,<FILE>);
+  my $c_e= grep(/\[Warning\] \[[^]]*\] Can\'t open and lock time zone table/gi,<FILE>);
   print "#     Time zone table warning found $c_e times.\n";
   close(FILE);
 EOF
@@ -66,14 +64,14 @@ remove_file $MYSQLD_LOG;
 --force-rmdir $DDIR
 
 --echo #
---echo # 2. Try restart after deleting the version tablespace.
+--echo # 2. Try restart after deleting the mysql dd tablespace.
 --echo # -----------------------------------------------------
 
 --echo # 2.1 First start the server with --initialize.
 --exec $MYSQLD $extra_args --initialize-insecure --datadir=$DDIR
 
---echo # 2.2 Delete the physical tablespace file for mysql.version.
-remove_file $DDIR/mysql/version.ibd;
+--echo # 2.2 Delete the physical tablespace file for mysql.ibd.
+remove_file $DDIR/mysql.ibd;
 
 --echo # 2.3 Restart the server against DDIR - should fail.
 --error 1
@@ -84,8 +82,8 @@ perl;
   use strict;
   my $log= $ENV{'MYSQLD_LOG'} or die;
   open(FILE, "$log") or die;
-  my $c_e= grep(/.ERROR. InnoDB: Failed to find tablespace/gi,<FILE>);
-  print "#     Tablespace error found $c_e times.\n";
+  my $c_e= grep(/Data Dictionary initialization failed/gi,<FILE>);
+  print "#     DD initialization error found $c_e times.\n";
   close(FILE);
 EOF
 
@@ -108,7 +106,7 @@ perl;
   use strict;
   my $log= $ENV{'MYSQLD_LOG'} or die;
   open(FILE, "$log") or die;
-  my $c_e= grep(/.ERROR. failed to set datadir/gi,<FILE>);
+  my $c_e= grep(/\[ERROR\] \[[^]]*\] failed to set datadir/gi,<FILE>);
   print "#     Datadir error found $c_e times.\n";
   close(FILE);
 EOF
@@ -124,7 +122,7 @@ remove_file $MYSQLD_LOG;
 --mkdir $DDIR
 
 --echo # 4.1 Restart the server against existing but empty DDIR - should fail.
---error 3
+--error 1
 --exec $MYSQLD $extra_args --datadir=$DDIR
 
 --echo # 4.2 Look for error.
@@ -132,8 +130,8 @@ perl;
   use strict;
   my $log= $ENV{'MYSQLD_LOG'} or die;
   open(FILE, "$log") or die;
-  my $c_e= grep(/\[ERROR\] InnoDB: File .*ibdata1: 'open' returned OS error \d+/gi,<FILE>);
-  print "#     InnoDB file open error found $c_e times.\n";
+    my $c_e= grep(/Data Dictionary initialization failed/gi,<FILE>);
+  print "#     DD initialization error found $c_e times.\n";
   close(FILE);
 EOF
 
@@ -149,7 +147,7 @@ remove_file $MYSQLD_LOG;
 --mkdir $DDIR/mysql
 
 --echo # 5.1 Restart the server against existing but empty mysql dir - should fail.
---error 3
+--error 1
 --exec $MYSQLD $extra_args --datadir=$DDIR
 
 --echo # 5.2 Look for error.
@@ -157,8 +155,8 @@ perl;
   use strict;
   my $log= $ENV{'MYSQLD_LOG'} or die;
   open(FILE, "$log") or die;
-  my $c_e= grep(/\[ERROR\] InnoDB: File .*ibdata1: 'open' returned OS error \d+/gi,<FILE>);
-  print "#     InnoDB file open error found $c_e times.\n";
+  my $c_e= grep(/Data Dictionary initialization failed/gi,<FILE>);
+  print "#     DD initialization error found $c_e times.\n";
   close(FILE);
 EOF
 

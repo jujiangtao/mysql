@@ -1,21 +1,28 @@
 # Copyright (c) 2006, 2017, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; version 2 of the License.
-# 
+# it under the terms of the GNU General Public License, version 2.0,
+# as published by the Free Software Foundation.
+#
+# This program is also distributed with certain software (including
+# but not limited to OpenSSL) that is licensed under separate terms,
+# as designated in a particular file or component or in included license
+# documentation.  The authors of MySQL hereby grant you an additional
+# permission to link the program and your derivative works with the
+# separately licensed software that they have included with MySQL.
+#
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-# 
+# GNU General Public License, version 2.0, for more details.
+#
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
-# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 # Build comp_sql - used for embedding SQL in C or C++ programs
 IF(NOT CMAKE_CROSSCOMPILING)
- ADD_EXECUTABLE(comp_sql comp_sql.c)
+ MYSQL_ADD_EXECUTABLE(comp_sql comp_sql.c SKIP_INSTALL)
  TARGET_LINK_LIBRARIES(comp_sql)
 ENDIF()
 
@@ -23,19 +30,18 @@ ENDIF()
 SET(COMPILER_ID_AND_VERSION
   "${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
 
-# Check that mysql_system_tables.sql is up-to-date
-IF(WITH_NDBCLUSTER_STORAGE_ENGINE)
-  IF(NOT TARGET ndbinfo_sql_run)
-    MESSAGE(FATAL "TARGET ndbinfo_sql_run missing, needed to generate storage/ndb/tools/ndbinfo.sql.")
+IF(NOT WITHOUT_SERVER)
+  # Check that mysql_system_tables.sql is up-to-date
+  IF(WITH_NDBCLUSTER_STORAGE_ENGINE)
+    SET(MYSQL_SYSTEM_TABLES_PATCHES
+        ${PROJECT_BINARY_DIR}/storage/ndb/tools/ndbinfo.sql)
+    SET(MYSQL_SYSTEM_TABLES_DEPENDS
+        ndbinfo_sql)
   ENDIF()
-  SET(MYSQL_SYSTEM_TABLES_PATCHES
-      ${PROJECT_BINARY_DIR}/storage/ndb/tools/ndbinfo.sql)
-  SET(MYSQL_SYSTEM_TABLES_DEPENDS
-      ndbinfo_sql_run)
 ENDIF()
 
 IF(DEFINED MYSQL_SYSTEM_TABLES_PATCHES)
-  ADD_EXECUTABLE(patch_file patch_file.cc)
+  MYSQL_ADD_EXECUTABLE(patch_file patch_file.cc SKIP_INSTALL)
   ADD_CUSTOM_TARGET(Check_mysql_system_tables_sql
     ALL
     patch_file ${CMAKE_CURRENT_SOURCE_DIR}/mysql_system_tables.sql
@@ -255,6 +261,12 @@ IF(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   STRING(REGEX REPLACE "-std=c..[0-9]+" "" CXXFLAGS "${CXXFLAGS}")
 ENDIF()
 
+IF(CMAKE_SYSTEM_NAME MATCHES "FreeBSD")
+  SET (PERL_PATH "/usr/local/bin/perl")
+ELSE()
+  SET (PERL_PATH "/usr/bin/perl")
+ENDIF()
+
 IF(UNIX)
   # SHELL_PATH, FIND_PROC, CHECK_PID are used by mysqld_safe
 IF(CMAKE_SYSTEM_NAME MATCHES "SunOS")
@@ -327,6 +339,11 @@ IF(CMAKE_SYSTEM_NAME STREQUAL "SunOS")
   SET(RPATH_OPTION " -R$pkglibdir")
 ENDIF()
 
+IF(LINUX_INSTALL_RPATH_ORIGIN)
+  SET(RPATH_OPTION " -Wl,-R,$pkglibdir")    # for mysql_config
+  SET(RPATH_OPTION_PC " -Wl,-R,\${libdir}") # for pkg_config
+ENDIF()
+
 # some scripts use  @TARGET_LINUX@
 IF(CMAKE_SYSTEM_NAME MATCHES "Linux")
   SET(TARGET_LINUX "true")
@@ -338,14 +355,6 @@ ENDIF()
 # mysqlclient library (add -l stuff)
 SET(CLIENT_LIBS "")
 SET(LIBS "")
-
-# Avoid compatibility warning about lists with empty elements
-IF(POLICY CMP0011)
-  CMAKE_POLICY(SET CMP0011 NEW)
-ENDIF()
-IF(POLICY CMP0007)
-  CMAKE_POLICY(SET CMP0007 OLD)
-ENDIF()
 
 # Extract dependencies using CMake's internal ${target}_LIB_DEPENDS variable
 # returned string in ${var} is can be passed to linker's command line
@@ -396,6 +405,16 @@ IF (WITH_SSL STREQUAL "system")
   STRING(REPLACE "-lcrypto" "" CONFIG_LIBS_PRIVATE "${CONFIG_LIBS_PRIVATE}")
   STRING(REGEX REPLACE "[ ]+" " " CONFIG_LIBS_PRIVATE "${CONFIG_LIBS_PRIVATE}")
 ENDIF()
+
+# libmysqlclient.dylib will depend on @loader_path/libssl.1.0.0.dylib
+IF(APPLE AND HAVE_CRYPTO_DYLIB AND HAVE_OPENSSL_DYLIB)
+  STRING(REPLACE "-lssl" "" CONFIG_CLIENT_LIBS "${CONFIG_CLIENT_LIBS}")
+  STRING(REPLACE "-lcrypto" "" CONFIG_CLIENT_LIBS "${CONFIG_CLIENT_LIBS}")
+  STRING(REGEX REPLACE "[ ]+" " " CONFIG_CLIENT_LIBS "${CONFIG_CLIENT_LIBS}")
+ENDIF()
+
+MESSAGE(STATUS "CONFIG_CLIENT_LIBS ${CONFIG_CLIENT_LIBS}")
+MESSAGE(STATUS "CONFIG_LIBS_PRIVATE ${CONFIG_LIBS_PRIVATE}")
 
 SET(mysql_config_COMPONENT COMPONENT Development)
 

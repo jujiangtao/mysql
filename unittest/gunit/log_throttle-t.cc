@@ -1,17 +1,24 @@
 /* Copyright (c) 2013, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA */
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 // First include (the generated) my_config.h, to get correct platform defines,
 // then gtest.h (before any other MySQL headers), to avoid min() macros etc ...
@@ -20,8 +27,8 @@
 #include <gtest/gtest.h>
 #include <sys/types.h>
 
-#include "log.h"
-#include "test_utils.h"
+#include "sql/log.h"
+#include "unittest/gunit/test_utils.h"
 
 namespace log_throttle_unittest {
 
@@ -30,23 +37,11 @@ using my_testing::Server_initializer;
 int summary_count= 0;
 char last_query[10];
 
-static bool slow_logger(THD *thd, const char *query, size_t query_length)
+static bool slow_logger(THD*, const char *query, size_t)
 {
   summary_count++;
   strcpy(last_query, query);
   return false;
-}
-
-
-static void error_logger(const char *format,  ...)
-{
-  va_list args;
-
-  va_start(args, format);
-  sprintf(last_query, format, va_arg(args, ulong));
-  va_end(args);
-
-  summary_count++;
 }
 
 
@@ -174,76 +169,6 @@ TEST_F(LogThrottleTest, SlowLogSuppressCount)
   EXPECT_EQ(2, summary_count);
   EXPECT_STREQ("2", last_query);
 }
-// End of Slow_log_throttles test cases.
-
-//Error_log_throttles test cases starts from here.
-
-/*
-  Test basic functionality - throttling, eligibility, printing of summary of
-                             Error_log_throttle.
-*/
-TEST_F(LogThrottleTest, ErrorLogBasic)
-{
-  ulong window= 1000000;
-  Error_log_throttle throttle(window, error_logger, "%lu");
-
-  // Should not be throttled
-  EXPECT_FALSE(throttle.log());
-
-  // Flush and check that summary was not printed
-  EXPECT_FALSE(throttle.flush());
-  EXPECT_EQ(0, summary_count);
-
-  /*
-    Should be throttled. Even though this is the first
-    log after flush, flush didn't do anything and window
-    is not ended yet.
-  */
-  EXPECT_TRUE(throttle.log());
-
-  // Should be throttled.
-  EXPECT_TRUE(throttle.log());
-
-  // Flush and check that summary was printed
-  EXPECT_TRUE(throttle.flush());
-  EXPECT_EQ(1, summary_count);
-
-  // Flush and check that summary was not printed again
-  EXPECT_FALSE(throttle.flush());
-  EXPECT_EQ(1, summary_count);
-
-  // Get another summary printed
-  EXPECT_FALSE(throttle.log());
-  EXPECT_TRUE(throttle.log());
-  EXPECT_TRUE(throttle.log());
-  EXPECT_TRUE(throttle.flush());
-  EXPECT_EQ(2, summary_count);
-}
-
-
-// Test number of suppressed messages written by error logger
-TEST_F(LogThrottleTest, ErrorLogSuppressCount)
-{
-  ulong window= 1000000;
-  Error_log_throttle throttle(window, error_logger, "%lu");
-
-  // Suppress 3 events
-  EXPECT_FALSE(throttle.log());
-  EXPECT_TRUE(throttle.log());
-  EXPECT_TRUE(throttle.log());
-  EXPECT_TRUE(throttle.log());
-  EXPECT_TRUE(throttle.flush());
-  EXPECT_EQ(1, summary_count);
-  EXPECT_STREQ("3", last_query);
-
-  // Suppress 2 events
-  EXPECT_FALSE(throttle.log());
-  EXPECT_TRUE(throttle.log());
-  EXPECT_TRUE(throttle.log());
-  EXPECT_TRUE(throttle.flush());
-  EXPECT_EQ(2, summary_count);
-  EXPECT_STREQ("2", last_query);
-}
-//End of Error_log_throttles test cases.
+//End of Slow_log_throttles test cases.
 
 }

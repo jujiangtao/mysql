@@ -1,17 +1,24 @@
 /* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef DD__TABLESPACE_IMPL_INCLUDED
 #define DD__TABLESPACE_IMPL_INCLUDED
@@ -20,26 +27,30 @@
 #include <new>
 #include <string>
 
-#include "dd/impl/raw/raw_record.h"
-#include "dd/impl/types/entity_object_impl.h" // dd::Entity_object_impl
-#include "dd/impl/types/weak_object_impl.h"
-#include "dd/object_id.h"
-#include "dd/sdi_fwd.h"
-#include "dd/types/dictionary_object_table.h" // dd::Dictionary_object_table
-#include "dd/types/object_type.h"             // dd::Object_type
-#include "dd/types/tablespace.h"              // dd::Tablespace
-#include "dd/types/tablespace_file.h"         // dd::Tablespace_file
+#include "sql/dd/impl/raw/raw_record.h"
+#include "sql/dd/impl/types/entity_object_impl.h" // dd::Entity_object_impl
+#include "sql/dd/impl/types/weak_object_impl.h"
+#include "sql/dd/object_id.h"
+#include "sql/dd/properties.h"
+#include "sql/dd/sdi_fwd.h"
+#include "sql/dd/string_type.h"
+#include "sql/dd/types/tablespace.h"          // dd::Tablespace
+#include "sql/dd/types/tablespace_file.h"     // dd::Tablespace_file
+
+class THD;
 
 namespace dd {
 
 ///////////////////////////////////////////////////////////////////////////
 
+class Object_table;
 class Open_dictionary_tables_ctx;
 class Properties;
 class Sdi_rcontext;
 class Sdi_wcontext;
 class Tablespace_file;
 class Weak_object;
+class Object_table;
 
 class Tablespace_impl : public Entity_object_impl,
                         public Tablespace
@@ -50,8 +61,7 @@ public:
   virtual ~Tablespace_impl();
 
 public:
-  virtual const Dictionary_object_table &object_table() const
-  { return Tablespace::OBJECT_TABLE(); }
+  virtual const Object_table &object_table() const;
 
   virtual bool validate() const;
 
@@ -74,6 +84,8 @@ public:
   virtual bool is_empty(THD *thd, bool *empty) const;
 
 public:
+  static void register_tables(Open_dictionary_tables_ctx *otx);
+
   /////////////////////////////////////////////////////////////////////////
   // comment.
   /////////////////////////////////////////////////////////////////////////
@@ -130,10 +142,10 @@ public:
   { return m_files; }
 
   // Fix "inherits ... via dominance" warnings
-  virtual Weak_object_impl *impl()
-  { return Weak_object_impl::impl(); }
-  virtual const Weak_object_impl *impl() const
-  { return Weak_object_impl::impl(); }
+  virtual Entity_object_impl *impl()
+  { return Entity_object_impl::impl(); }
+  virtual const Entity_object_impl *impl() const
+  { return Entity_object_impl::impl(); }
   virtual Object_id id() const
   { return Entity_object_impl::id(); }
   virtual bool is_persistent() const
@@ -165,17 +177,6 @@ private:
 
 ///////////////////////////////////////////////////////////////////////////
 
-class Tablespace_type : public Object_type
-{
-public:
-  virtual void register_tables(Open_dictionary_tables_ctx *otx) const;
-
-  virtual Weak_object *create_object() const
-  { return new (std::nothrow) Tablespace_impl(); }
-};
-
-///////////////////////////////////////////////////////////////////////////
-
-}
+} // namespace dd
 
 #endif // DD__TABLESPACE_IMPL_INCLUDED

@@ -1,13 +1,20 @@
 /* Copyright (c) 2013, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -20,18 +27,21 @@
 #include <sys/types.h>
 #include <new>
 
-#include "item.h"
-#include "item_func.h"      // Item etc.
 #include "lex_string.h"
-#include "mem_root_array.h"
+#include "m_ctype.h"
 #include "my_dbug.h"
-#include "my_decimal.h"
 #include "my_inttypes.h"
-#include "parse_tree_node_base.h"
-#include "set_var.h"        // enum_var_type
-#include "sql_list.h"
-#include "sql_udf.h"
-#include "typelib.h"
+#include "mysql/udf_registration_types.h"
+#include "sql/item.h"
+#include "sql/item_func.h"  // Item etc.
+#include "sql/mem_root_array.h"
+#include "sql/my_decimal.h"
+#include "sql/parse_tree_node_base.h"
+#include "sql/resourcegroups/resource_group_basic_types.h"  // resourcegroups::Range
+#include "sql/set_var.h"    // enum_var_type
+#include "sql/sql_list.h"
+#include "sql/table.h"
+#include "sql/thr_malloc.h"
 
 class String;
 class THD;
@@ -125,19 +135,20 @@ public:
 /**
   Contextualize a Mem_root_array of parse tree nodes of the type PTN
 
-  @tparam PTN           Common type of parse tree nodes in the array.
+  @tparam Context       Parse context.
+  @tparam Array         Array of parse tree nodes.
 
   @param[in,out] pc     Parse context.
   @param[in,out] array  Array of nodes to contextualize.
 
   @return false on success.
 */
-template<class PTN>
-bool contextualize_array(Parse_context *pc, Mem_root_array_YY<PTN *> *array)
+template<typename Context, typename Array>
+bool contextualize_array(Context *pc, Array *array)
 {
   for (auto it : *array)
   {
-    if (it->contextualize(pc))
+    if (pc->thd->lex->will_contextualize && it->contextualize(pc))
       return true;
   }
   return false;
@@ -241,4 +252,24 @@ bool resolve_engine(THD *thd,
 bool apply_privileges(THD *thd,
                       const Trivial_array<class PT_role_or_privilege *> &privs);
 
+
+inline bool is_identifier(const char *str, const char *ident)
+{
+  return !my_strcasecmp(system_charset_info, str, ident);
+}
+
+
+inline bool is_identifier(const LEX_STRING &str, const char *ident)
+{
+  return is_identifier(str.str, ident);
+}
+bool is_key_cache_variable_suffix(const char *suffix);
+
+
+bool validate_vcpu_range(const resourcegroups::Range &range);
+bool validate_resource_group_priority(THD *thd, int *priority,
+                                      const LEX_CSTRING &name,
+                                      const resourcegroups::Type &type);
+bool check_resource_group_support();
+bool check_resource_group_name_len(const LEX_CSTRING &name);
 #endif /* PARSE_TREE_HELPERS_INCLUDED */

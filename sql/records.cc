@@ -1,17 +1,24 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 /**
   @file
@@ -23,28 +30,31 @@
 #include "sql/records.h"
 
 #include <string.h>
+#include <atomic>
 
-#include "field.h"
-#include "filesort.h"            // filesort_free_buffers
-#include "handler.h"
-#include "item.h"
 #include "my_byteorder.h"
 #include "my_dbug.h"
 #include "my_pointer_arithmetic.h"
 #include "my_sys.h"
 #include "my_thread_local.h"
 #include "mysql/service_mysql_alloc.h"
-#include "opt_range.h"           // QUICK_SELECT_I
-#include "psi_memory_key.h"
-#include "sort_param.h"
-#include "sql_class.h"           // THD
-#include "sql_const.h"
-#include "sql_executor.h"        // QEP_TAB
-#include "sql_sort.h"
+#include "mysql/udf_registration_types.h"
+#include "sql/field.h"
+#include "sql/filesort.h"        // filesort_free_buffers
+#include "sql/handler.h"
+#include "sql/item.h"
+#include "sql/opt_range.h"       // QUICK_SELECT_I
+#include "sql/psi_memory_key.h"
+#include "sql/sort_param.h"
+#include "sql/sql_class.h"       // THD
+#include "sql/sql_const.h"
+#include "sql/sql_executor.h"    // QEP_TAB
+#include "sql/sql_sort.h"
+#include "sql/system_variables.h"
+#include "sql/table.h"
 #include "sql_string.h"
-#include "system_variables.h"
-#include "table.h"
 #include "thr_lock.h"
+#include "varlen_sort.h"
 
 static int rr_quick(READ_RECORD *info);
 static int rr_from_tempfile(READ_RECORD *info);
@@ -736,14 +746,6 @@ static int init_rr_cache(THD *thd, READ_RECORD *info)
 } /* init_rr_cache */
 
 
-static int rr_cmp(const void *p_ref_length, const void *a, const void *b)
-{
-  size_t ref_length= *(static_cast<size_t*>(const_cast<void*>(p_ref_length)));
-  DBUG_ASSERT(ref_length <= MAX_REFLENGTH);
-  return memcmp(a, b, ref_length);
-}
-
-
 static int rr_from_cache(READ_RECORD *info)
 {
   uint i;
@@ -793,8 +795,14 @@ static int rr_from_cache(READ_RECORD *info)
       ref_position+=3;
     }
     size_t ref_length= info->ref_length;
-    my_qsort2(info->read_positions, length, info->struct_length,
-              rr_cmp, &ref_length);
+    DBUG_ASSERT(ref_length <= MAX_REFLENGTH);
+    varlen_sort(info->read_positions,
+                info->read_positions + length * info->struct_length,
+                info->struct_length,
+                [ref_length](const uchar *a, const uchar *b)
+                {
+                  return memcmp(a, b, ref_length) < 0;
+                });
 
     position=info->read_positions;
     for (i=0 ; i < length ; i++)

@@ -2,13 +2,20 @@
   Copyright (c) 2010, 2017, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
   along with this program; if not, write to the Free Software
@@ -31,14 +38,16 @@
   to include sql_profile.h and table.h.
 */
 #include <mysqld_error.h> /* To get ER_ERROR_ON_READ */
-#include <conn_handler/channel_info.h>
-#include <conn_handler/connection_handler_manager.h>
-#include <debug_sync.h>
-#include <sql_profile.h>
-#include <table.h>
-#include "field.h"
-#include "sql_thd_internal_api.h"
 #include <set>
+
+#include "sql/conn_handler/channel_info.h"
+#include "sql/conn_handler/connection_handler_manager.h"
+#include "sql/debug_sync.h"
+#include "sql/field.h"
+#include "sql/sql_profile.h"
+#include "sql/sql_thd_internal_api.h"
+#include "sql/table.h"
+
 
 #ifdef __cplusplus
 extern "C" {
@@ -130,11 +139,6 @@ void thd_set_not_killable(THD *thd);
 ulong  thd_get_net_wait_timeout(THD *thd);
 my_socket thd_get_fd(THD *thd);
 int thd_store_globals(THD* thd);
-
-/* Print to the MySQL error log */
-void sql_print_error(const char *format, ...);
-void sql_print_warning(const char *format, ...);
-void sql_print_information(const char *format, ...);
 
 /* Store a table record */
 bool schema_table_store_record(THD *thd, TABLE *table);

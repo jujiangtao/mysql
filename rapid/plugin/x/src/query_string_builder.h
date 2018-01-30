@@ -1,33 +1,38 @@
 /*
- * Copyright (c) 2015, 2016 Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
  *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License as
- * published by the Free Software Foundation; version 2 of the
- * License.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License, version 2.0,
+ * as published by the Free Software Foundation.
  *
+ * This program is also distributed with certain software (including
+ * but not limited to OpenSSL) that is licensed under separate terms,
+ * as designated in a particular file or component or in included license
+ * documentation.  The authors of MySQL hereby grant you an additional
+ * permission to link the program and your derivative works with the
+ * separately licensed software that they have included with MySQL.
+ *  
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License, version 2.0, for more details.
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
- * 02110-1301  USA
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
  */
 
 #ifndef _QUERY_STRING_BUILDER_H_
 #define _QUERY_STRING_BUILDER_H_
 
-#include <string>
-#include <string.h>
 #include <stdint.h>
+#include <string.h>
+#include <mutex>
+#include <string>
 
-#include <ngs/thread.h>
-#include <ngs/memory.h>
-
-#include <query_formatter.h>
+#include "plugin/x/ngs/include/ngs/memory.h"
+#include "plugin/x/ngs/include/ngs/thread.h"
+#include "plugin/x/src/query_formatter.h"
 
 struct charset_info_st;
 
@@ -94,10 +99,7 @@ public:
 
   Query_string_builder &put(const int64_t i) { return put(ngs::to_string(i)); }
   Query_string_builder &put(const uint64_t u) { return put(ngs::to_string(u)); }
-
-//  NOTE: Commented for coverage. Uncomment when needed.
-//  Query_string_builder &put(const int32_t i) { return put(ngs::to_string(i)); }
-
+  Query_string_builder &put(const int32_t i) { return put(ngs::to_string(i)); }
   Query_string_builder &put(const uint32_t u) { return put(ngs::to_string(u)); }
   Query_string_builder &put(const float f) { return put(ngs::to_string(f)); }
   Query_string_builder &put(const double d) { return put(ngs::to_string(d)); }
@@ -118,6 +120,29 @@ public:
     return put(s.data(), s.length());
   }
 
+  template <typename I>
+  Query_string_builder &put_list(I begin, I end, const std::string &sep = ",") {
+    if (std::distance(begin, end) == 0) return *this;
+    put(*begin);
+    for (++begin; begin != end; ++begin) {
+      put(sep);
+      put(*begin);
+    }
+    return *this;
+  }
+
+  template <typename I, typename P>
+  Query_string_builder &put_list(I begin, I end, P push,
+                                 const std::string &sep = ",") {
+    if (std::distance(begin, end) == 0) return *this;
+    push(*begin, this);
+    for (++begin; begin != end; ++begin) {
+      put(sep);
+      push(*begin, this);
+    }
+    return *this;
+  }
+
   void clear()
   {
     m_str.clear();
@@ -136,7 +161,7 @@ private:
   bool m_in_identifier;
 
   static void init_charset();
-  static my_thread_once_t  m_charset_initialized;
+  static std::once_flag m_charset_initialized;
   static charset_info_st *m_charset;
 };
 

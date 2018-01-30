@@ -1,17 +1,24 @@
 /* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
-  along with this program; if not, write to the Free Software Foundation,
-  51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+  along with this program; if not, write to the Free Software
+  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef PFS_BUFFER_CONTAINER_H
 #define PFS_BUFFER_CONTAINER_H
@@ -23,16 +30,17 @@
 
 #include <stddef.h>
 #include <sys/types.h>
+#include <atomic>
 
 #include "my_dbug.h"
 #include "my_inttypes.h"
-#include "pfs_builtin_memory.h"
-#include "pfs_instr.h"
-#include "pfs_lock.h"
-#include "pfs_prepared_stmt.h"
-#include "pfs_program.h"
-#include "pfs_setup_actor.h"
-#include "pfs_setup_object.h"
+#include "storage/perfschema/pfs_builtin_memory.h"
+#include "storage/perfschema/pfs_instr.h"
+#include "storage/perfschema/pfs_lock.h"
+#include "storage/perfschema/pfs_prepared_stmt.h"
+#include "storage/perfschema/pfs_program.h"
+#include "storage/perfschema/pfs_setup_actor.h"
+#include "storage/perfschema/pfs_setup_object.h"
 
 #define USE_SCALABLE
 
@@ -90,8 +98,20 @@ public:
       return NULL;
     }
 
-    monotonic = PFS_atomic::add_u32(&m_monotonic.m_u32, 1);
+    monotonic = m_monotonic.m_size_t++;
     monotonic_max = monotonic + m_max;
+
+    if (unlikely(monotonic >= monotonic_max))
+    {
+      /*
+        This will happen once every 2^64 - m_max calls.
+        Computation of monotonic_max just overflowed,
+        so reset monotonic counters and start again from the beginning.
+      */
+      m_monotonic.m_size_t.store(0);
+      monotonic = 0;
+      monotonic_max = m_max;
+    }
 
     while (monotonic < monotonic_max)
     {
@@ -102,7 +122,7 @@ public:
       {
         return pfs;
       }
-      monotonic = PFS_atomic::add_u32(&m_monotonic.m_u32, 1);
+      monotonic = m_monotonic.m_size_t++;
     }
 
     m_full = true;
@@ -129,7 +149,7 @@ public:
   }
 
   bool m_full;
-  PFS_cacheline_uint32 m_monotonic;
+  PFS_cacheline_atomic_size_t m_monotonic;
   T *m_ptr;
   size_t m_max;
   /** Container. */
@@ -152,7 +172,7 @@ public:
   {
     array->m_ptr = NULL;
     array->m_full = true;
-    array->m_monotonic.m_u32 = 0;
+    array->m_monotonic.m_size_t.store(0);
 
     if (array->m_max > 0)
     {
@@ -201,14 +221,14 @@ public:
     m_array.m_full = true;
     m_array.m_ptr = NULL;
     m_array.m_max = 0;
-    m_array.m_monotonic.m_u32 = 0;
+    m_array.m_monotonic.m_size_t = 0;
     m_lost = 0;
     m_max = 0;
     m_allocator = allocator;
   }
 
   int
-  init(ulong max_size)
+  init(size_t max_size)
   {
     if (max_size > 0)
     {
@@ -231,19 +251,19 @@ public:
     m_allocator->free_array(&m_array);
   }
 
-  ulong
+  size_t
   get_row_count() const
   {
     return m_max;
   }
 
-  ulong
+  size_t
   get_row_size() const
   {
     return sizeof(value_type);
   }
 
-  ulong
+  size_t
   get_memory() const
   {
     return get_row_count() * get_row_size();
@@ -414,7 +434,7 @@ private:
     return NULL;
   }
 
-  ulong m_max;
+  size_t m_max;
   array_type m_array;
   allocator_type *m_allocator;
 };
@@ -475,8 +495,8 @@ public:
     m_max_page_count = PFS_PAGE_COUNT;
     m_last_page_size = PFS_PAGE_SIZE;
     m_lost = 0;
-    m_monotonic.m_u32 = 0;
-    m_max_page_index.m_u32 = 0;
+    m_monotonic.m_size_t.store(0);
+    m_max_page_index.m_size_t.store(0);
 
     for (i = 0; i < PFS_PAGE_COUNT; i++)
     {
@@ -552,21 +572,21 @@ public:
     m_initialized = false;
   }
 
-  ulong
+  size_t
   get_row_count()
   {
-    ulong page_count = PFS_atomic::load_u32(&m_max_page_index.m_u32);
+    size_t page_count = m_max_page_index.m_size_t.load();
 
     return page_count * PFS_PAGE_SIZE;
   }
 
-  ulong
+  size_t
   get_row_size() const
   {
     return sizeof(value_type);
   }
 
-  ulong
+  size_t
   get_memory()
   {
     return get_row_count() * get_row_size();
@@ -581,26 +601,34 @@ public:
       return NULL;
     }
 
-    uint index;
-    uint monotonic;
-    uint monotonic_max;
-    uint current_page_count;
+    size_t index;
+    size_t monotonic;
+    size_t monotonic_max;
+    size_t current_page_count;
     value_type *pfs;
     array_type *array;
-
-    void *addr;
-    void *volatile *typed_addr;
-    void *ptr;
 
     /*
       1: Try to find an available record within the existing pages
     */
-    current_page_count = PFS_atomic::load_u32(&m_max_page_index.m_u32);
+    current_page_count = m_max_page_index.m_size_t.load();
 
     if (current_page_count != 0)
     {
-      monotonic = PFS_atomic::load_u32(&m_monotonic.m_u32);
+      monotonic = m_monotonic.m_size_t.load();
       monotonic_max = monotonic + current_page_count;
+
+      if (unlikely(monotonic >= monotonic_max))
+      {
+        /*
+          This will happen once every 2^64 - current_page_count calls.
+          Computation of monotonic_max just overflowed,
+          so reset monotonic counters and start again from the beginning.
+        */
+        m_monotonic.m_size_t.store(0);
+        monotonic = 0;
+        monotonic_max = current_page_count;
+      }
 
       while (monotonic < monotonic_max)
       {
@@ -611,10 +639,7 @@ public:
         index = monotonic % current_page_count;
 
         /* Atomic Load, array= m_pages[index] */
-        addr = &m_pages[index];
-        typed_addr = static_cast<void *volatile *>(addr);
-        ptr = my_atomic_loadptr(typed_addr);
-        array = static_cast<array_type *>(ptr);
+        array = m_pages[index].load();
 
         if (array != NULL)
         {
@@ -643,7 +668,7 @@ public:
           counter faster and then move on to the detection of new pages,
           in part 2: below.
         */
-        monotonic = PFS_atomic::add_u32(&m_monotonic.m_u32, 1);
+        monotonic = m_monotonic.m_size_t++;
       };
     }
 
@@ -655,10 +680,7 @@ public:
       /* Peek for pages added by collaborating threads */
 
       /* (2-a) Atomic Load, array= m_pages[current_page_count] */
-      addr = &m_pages[current_page_count];
-      typed_addr = static_cast<void *volatile *>(addr);
-      ptr = my_atomic_loadptr(typed_addr);
-      array = static_cast<array_type *>(ptr);
+      array = m_pages[current_page_count].load();
 
       if (array == NULL)
       {
@@ -695,8 +717,7 @@ public:
 
         /* (2-b) Atomic Load, array= m_pages[current_page_count] */
 
-        ptr = my_atomic_loadptr(typed_addr);
-        array = static_cast<array_type *>(ptr);
+        array = m_pages[current_page_count].load();
 
         if (array == NULL)
         {
@@ -720,11 +741,10 @@ public:
           array->m_container = reinterpret_cast<PFS_opaque_container *>(this);
 
           /* (2-d) Atomic STORE, m_pages[current_page_count] = array  */
-          ptr = array;
-          my_atomic_storeptr(typed_addr, ptr);
+          m_pages[current_page_count].store(array);
 
           /* Advertise the new page */
-          PFS_atomic::add_u32(&m_max_page_index.m_u32, 1);
+          ++m_max_page_index.m_size_t;
         }
 
         native_mutex_unlock(&m_critical_section);
@@ -1070,11 +1090,11 @@ private:
   bool m_initialized;
   bool m_full;
   size_t m_max;
-  PFS_cacheline_uint32 m_monotonic;
-  PFS_cacheline_uint32 m_max_page_index;
-  ulong m_max_page_count;
-  ulong m_last_page_size;
-  array_type *m_pages[PFS_PAGE_COUNT];
+  PFS_cacheline_atomic_size_t m_monotonic;
+  PFS_cacheline_atomic_size_t m_max_page_index;
+  size_t m_max_page_count;
+  size_t m_last_page_size;
+  std::atomic<array_type *> m_pages[PFS_PAGE_COUNT];
   allocator_type *m_allocator;
   native_mutex_t m_critical_section;
 };
@@ -1205,10 +1225,10 @@ public:
     }
   }
 
-  ulong
+  size_t
   get_row_count() const
   {
-    ulong sum = 0;
+    size_t sum = 0;
 
     for (int i = 0; i < PFS_PARTITION_COUNT; i++)
     {
@@ -1218,16 +1238,16 @@ public:
     return sum;
   }
 
-  ulong
+  size_t
   get_row_size() const
   {
     return sizeof(value_type);
   }
 
-  ulong
+  size_t
   get_memory() const
   {
-    ulong sum = 0;
+    size_t sum = 0;
 
     for (int i = 0; i < PFS_PARTITION_COUNT; i++)
     {

@@ -14,6 +14,8 @@
 --source include/not_group_replication_plugin.inc
 # This test case is binary log format agnostic
 --source include/have_binlog_format_row.inc
+# Test requires master-info-repository=TABLE, relay-log-info-repository=TABLE
+--source include/have_slave_repository_type_table.inc
 --let $rpl_skip_start_slave= 1
 --let $rpl_extra_connections_per_server= 2
 --source include/master-slave.inc
@@ -64,12 +66,10 @@ INSERT INTO t1 VALUES (1);
 --let $cond1 = "System lock"
 # This is the expected state with a MTS slave.
 --let $cond2 = "Waiting for workers to exit"
-# This is the expected state when server query_cache_type option is set.
---let $cond3 = "invalidating query cache entries (table)"
 # This is the state that the thread has while applying RBR events
 --let $cond4 = "Applying batch of row changes (write)"
---let $assert_cond= [ SELECT "$ch1_sql_status" = $cond1 OR "$ch1_sql_status" = $cond2 OR "$ch1_sql_status" = $cond3 OR "$ch1_sql_status" = $cond4 ]
---let $assert_text= SQL thread for ch1 running state is $cond1 or $cond2 or $cond3 or $cond4
+--let $assert_cond= [ SELECT "$ch1_sql_status" = $cond1 OR "$ch1_sql_status" = $cond2 OR "$ch1_sql_status" = $cond4 ]
+--let $assert_text= SQL thread for ch1 running state is $cond1 or $cond2 or $cond4
 --source include/assert.inc
 
 --echo Stop ch2 SQL thread while stopping ch1 SQL thread

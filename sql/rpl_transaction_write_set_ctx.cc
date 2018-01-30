@@ -1,13 +1,20 @@
 /* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -15,18 +22,21 @@
 
 #include "sql/rpl_transaction_write_set_ctx.h"
 
+#include <assert.h>
 #include <stddef.h>
+#include <utility>
 
+#include "m_string.h"
 #include "my_dbug.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/service_mysql_alloc.h"
 #include "mysql/service_rpl_transaction_write_set.h" // Transaction_write_set
-#include "mysqld_thd_manager.h"                      // Global_THD_manager
-#include "psi_memory_key.h"
-#include "sql_class.h"                               // THD
-#include "transaction_info.h"
-#include "debug_sync.h"                              // debug_sync_set_action
-#include "current_thd.h"                             // current_thd
+#include "sql/current_thd.h"                         // current_thd
+#include "sql/debug_sync.h"                          // debug_sync_set_action
+#include "sql/mysqld_thd_manager.h"                  // Global_THD_manager
+#include "sql/psi_memory_key.h"
+#include "sql/sql_class.h"                           // THD
+#include "sql/transaction_info.h"
 
 
 Rpl_transaction_write_set_ctx::Rpl_transaction_write_set_ctx():

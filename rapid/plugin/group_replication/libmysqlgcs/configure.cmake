@@ -1,17 +1,24 @@
-# Copyright (c) 2015, 2016, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; version 2 of the License.
+# it under the terms of the GNU General Public License, version 2.0,
+# as published by the Free Software Foundation.
+#
+# This program is also distributed with certain software (including
+# but not limited to OpenSSL) that is licensed under separate terms,
+# as designated in a particular file or component or in included license
+# documentation.  The authors of MySQL hereby grant you an additional
+# permission to link the program and your derivative works with the
+# separately licensed software that they have included with MySQL.
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU General Public License, version 2.0, for more details.
 #
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
-# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 #TODO If deemed necessary, these checks must go to config.h of the server
 # which we must include
@@ -69,13 +76,6 @@ CHECK_STRUCT_HAS_MEMBER("struct xdr_ops" x_getint32 rpc/xdr.h
 
 CHECK_C_SOURCE_COMPILES(
   "
-  #include <rpc/rpc.h>
-  int main(__const int *i){return *i;}
-  "
-  HAVE___CONST)
-
-CHECK_C_SOURCE_COMPILES(
-  "
   #include <rpc/types.h>
   int main(void) { rpc_inline_t x; return 0; }
   "
@@ -101,20 +101,6 @@ IF(NOT APPLE
     int main() { XDR xdr; xdr.x_handy = -1; return (int)xdr.x_handy; }
     "
     OLD_XDR)
-
-  CHECK_C_SOURCE_COMPILES(
-    "
-    #include <rpc/xdr.h>
-    u_int getpostn(XDR* xdr) { return (u_int)xdr->x_handy; }
-    int main() {
-      XDR xdr;
-      struct xdr_ops ops;
-
-      ops.x_getpostn = getpostn;
-      return (int)ops.x_getpostn(&xdr);
-    }
-    "
-    X_GETPOSTN_NOT_USE_CONST)
 
   CHECK_C_COMPILER_FLAG("-Wincompatible-pointer-types"
                         HAS_INCOMPATIBLE_POINTER_TYPES)

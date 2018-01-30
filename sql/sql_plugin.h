@@ -1,38 +1,48 @@
 /* Copyright (c) 2005, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef _sql_plugin_h
 #define _sql_plugin_h
 
 #include <stddef.h>
 #include <sys/types.h>
+#include <string>
 #include <vector>
 
 #include "lex_string.h"
+#include "map_helpers.h"
 #include "my_inttypes.h"
 #include "my_io.h"
 #include "my_sqlcommand.h"          // enum_sql_command
-#include "mysql/mysql_lex_string.h" // LEX_CSTRING
+#include "mysql/components/services/mysql_mutex_bits.h"
 #include "mysql/psi/mysql_mutex.h"
-#include "sql_cmd.h"                // Sql_cmd
-#include "sql_plugin_ref.h"         // plugin_ref
-#include "thr_malloc.h"
+#include "sql/sql_cmd.h"            // Sql_cmd
+#include "sql/sql_plugin_ref.h"     // plugin_ref
+#include "sql/thr_malloc.h"
 
 class THD;
 class i_string;
 struct my_option;
+struct st_bookmark;
 struct st_mysql_sys_var;
 template <class T> class I_List;
 
@@ -160,6 +170,7 @@ extern bool plugin_register_early_plugins(int *argc, char **argv, int flags);
 extern bool plugin_register_builtin_and_init_core_se(int *argc, char **argv);
 extern bool plugin_register_dynamic_and_init_all(int *argc,
                                                  char **argv, int init_flags);
+extern bool is_builtin_and_core_se_initialized();
 extern void plugin_shutdown(void);
 extern void memcached_shutdown(void);
 void add_plugin_options(std::vector<my_option> *options, MEM_ROOT *mem_root);
@@ -190,5 +201,13 @@ extern bool plugin_foreach_with_mask(THD *thd, plugin_foreach_func **funcs,
                                      int type, uint state_mask, void *arg);
 int lock_plugin_data();
 int unlock_plugin_data();
+malloc_unordered_map<std::string, st_bookmark *>* get_bookmark_hash();
+
+bool end_transaction(THD *thd, bool error);
+
+/**
+  Initialize one plugin.
+*/
+bool plugin_early_load_one(int *argc, char **argv, const char *plugin);
 
 #endif

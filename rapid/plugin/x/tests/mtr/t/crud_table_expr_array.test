@@ -21,6 +21,7 @@
 --echo PREAMBLE
 --echo ================================================================================
 --source include/xplugin_preamble.inc
+--source include/xplugin_create_user.inc
 ## Test starts here
 --echo ================================================================================
 --echo TEST START
@@ -71,7 +72,7 @@ Mysqlx.Crud.Insert {
   }
 }
 
--- Mysqlx.Sql.StmtExecuteOk
+#-- Mysqlx.Sql.StmtExecuteOk
 -->recvresult
 
 -->sql
@@ -119,7 +120,7 @@ Mysqlx.Crud.Insert {
     }
   }
 }
--- Mysqlx.Sql.StmtExecuteOk
+#-- Mysqlx.Sql.StmtExecuteOk
 -->recvresult
 
 -->sql
@@ -152,7 +153,7 @@ Mysqlx.Crud.Find {
   }
 }
 
--- Mysqlx.Sql.StmtExecuteOk
+#-- Mysqlx.Sql.StmtExecuteOk
 -->recvresult
 
 -->echo Selecting array from table
@@ -179,7 +180,7 @@ Mysqlx.Crud.Find {
   }
 }
 
--- Mysqlx.Sql.StmtExecuteOk
+#-- Mysqlx.Sql.StmtExecuteOk
 -->recvresult
 
 -->echo Selecting a value not available from table to get null values
@@ -205,7 +206,7 @@ Mysqlx.Crud.Find {
     }
   }
 }
--- Mysqlx.Sql.StmtExecuteOk
+#-- Mysqlx.Sql.StmtExecuteOk
 -->recvresult
 
 -->echo Selecting only array from table
@@ -226,7 +227,7 @@ Mysqlx.Crud.Find {
     }
   }
 }
--- Mysqlx.Sql.StmtExecuteOk
+#-- Mysqlx.Sql.StmtExecuteOk
 -->recvresult
 
 
@@ -266,7 +267,7 @@ Mysqlx.Crud.Find {
   }
 }
 
--- Mysqlx.Sql.StmtExecuteOk
+#-- Mysqlx.Sql.StmtExecuteOk
 -->recvresult
 
 -->echo Selecting only array with sub-array including null values from table with alias
@@ -338,7 +339,7 @@ Mysqlx.Crud.Find {
     }
   }
 }
--- Mysqlx.Sql.StmtExecuteOk
+#-- Mysqlx.Sql.StmtExecuteOk
 -->recvresult
 
 -->echo Updating table by array
@@ -364,7 +365,7 @@ Mysqlx.Crud.Update {
   }
 }
   
--- Mysqlx.Sql.StmtExecuteOk
+#-- Mysqlx.Sql.StmtExecuteOk
 -->recvresult
 
 -->sql
@@ -393,7 +394,7 @@ Mysqlx.Crud.Update {
     }
   }
 }
- -- Mysqlx.Sql.StmtExecuteOk
+#-- Mysqlx.Sql.StmtExecuteOk
 -->recvresult
 
 -->sql
@@ -422,7 +423,7 @@ Mysqlx.Crud.Update {
     }
   }
 }
- -- Mysqlx.Sql.StmtExecuteOk
+#-- Mysqlx.Sql.StmtExecuteOk
 -->recvresult
 
 -->sql
@@ -449,7 +450,7 @@ Mysqlx.Crud.Update {
     }
   }
 }
- -- Mysqlx.Sql.StmtExecuteOk
+#-- Mysqlx.Sql.StmtExecuteOk
 -->recvresult
 
 -->sql
@@ -477,7 +478,7 @@ Mysqlx.Crud.Update {
     }
   }
 }
- -- Mysqlx.Sql.StmtExecuteOk
+#-- Mysqlx.Sql.StmtExecuteOk
 -->recvresult
 
 -->sql
@@ -507,7 +508,7 @@ Mysqlx.Crud.Insert {
   }
 }
 
--- Mysqlx.Sql.StmtExecuteOk
+#-- Mysqlx.Sql.StmtExecuteOk
 -->recvresult
 
 -->sql
@@ -542,12 +543,13 @@ drop schema if exists xtest;
 -->endsql
 EOF
 
---exec $MYSQLXTEST -uroot --password='' --file=$MYSQL_TMP_DIR/crud_table_expr_array.tmp 2>&1
+--exec $MYSQLXTEST -ux_root --password='' --file=$MYSQL_TMP_DIR/crud_table_expr_array.tmp 2>&1
 --remove_file $MYSQL_TMP_DIR/crud_table_expr_array.tmp
 
 ## Postamble
 --echo ================================================================================
 --echo POSTAMBLE
 --echo ================================================================================
+--source include/xplugin_drop_user.inc
 uninstall plugin mysqlx;
 

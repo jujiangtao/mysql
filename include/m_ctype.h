@@ -1,13 +1,20 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -31,7 +38,6 @@
 #include "my_inttypes.h"
 #include "my_loglevel.h"
 #include "my_sharedlib.h"
-#include "str_uca_type.h"
 
 #ifdef	__cplusplus
 extern "C" {
@@ -98,85 +104,7 @@ extern MY_UNICASE_INFO my_unicase_turkish;
 extern MY_UNICASE_INFO my_unicase_mysql500;
 extern MY_UNICASE_INFO my_unicase_unicode520;
 
-/*
-  NOTE: If you change MY_UCA_MAX_CONTRACTION, be sure to update the comment on
-  MY_UCA_CNT_MID1 in strings/uca_data.h, as it might cause us to run out of
-  bits in a byte flag.
-*/
-#define MY_UCA_MAX_CONTRACTION 6
-#define MY_UCA_MAX_WEIGHT_SIZE 25
-#define MY_UCA_WEIGHT_LEVELS   1
-
-typedef struct my_contraction_t
-{
-  my_wc_t ch[MY_UCA_MAX_CONTRACTION];   /* Character sequence              */
-  uint16 weight[MY_UCA_MAX_WEIGHT_SIZE];/* Its weight string, 0-terminated */
-  bool with_context;
-} MY_CONTRACTION;
-
-
-
-typedef struct my_contraction_list_t
-{
-  bool has_contractions;
-  /*
-    Contractions are split by their length. The first two elements in nitems
-    and item are meaningless because contraction must consist of at least two
-    code points.
-  */
-
-  /* Number of contractions of same length. */
-  size_t nitems[MY_UCA_MAX_CONTRACTION + 1];
-  /* Lists of contractions of same length. */
-  MY_CONTRACTION* item[MY_UCA_MAX_CONTRACTION + 1];
-
-  /*
-    Character flags for each character, e.g. "is contraction head"
-    (MY_UCA_CNT_HEAD). These are set per-character, but to conserve space,
-    only the lowest few bits of each character are used (so there could be
-    false positives). Specifically, the code point is ANDed with
-    MY_UCA_CNT_FLAG_MASK to index into this array.
-  */
-  char *flags;
-} MY_CONTRACTIONS;
-
-
-bool my_uca_can_be_contraction_head(const MY_CONTRACTIONS *c, my_wc_t wc);
-bool my_uca_can_be_contraction_tail(const MY_CONTRACTIONS *c, my_wc_t wc);
-uint16 *my_uca_contraction2_weight(const MY_CONTRACTIONS *c,
-                                   my_wc_t wc1, my_wc_t wc2);
-
-
-typedef struct uca_info_st
-{
-  enum enum_uca_ver   version;
-
-  // Collation weights.
-  my_wc_t maxchar;
-  uchar   *lengths;
-  uint16  **weights;
-  MY_CONTRACTIONS contractions;
-
-  /* Logical positions */
-  my_wc_t first_non_ignorable;
-  my_wc_t last_non_ignorable;
-  my_wc_t first_primary_ignorable;
-  my_wc_t last_primary_ignorable;
-  my_wc_t first_secondary_ignorable;
-  my_wc_t last_secondary_ignorable;
-  my_wc_t first_tertiary_ignorable;
-  my_wc_t last_tertiary_ignorable;
-  my_wc_t first_trailing;
-  my_wc_t last_trailing;
-  my_wc_t first_variable;
-  my_wc_t last_variable;
-
-} MY_UCA_INFO;
-
-
-
-extern MY_UCA_INFO my_uca_v400;
-
+struct MY_UCA_INFO;
 
 typedef struct uni_ctype_st
 {
@@ -209,7 +137,12 @@ extern MY_UNI_CTYPE my_uni_ctype[256];
 #define MY_CS_LOADED    8      /* sets that are currently loaded */
 #define MY_CS_BINSORT	16     /* if binary sort order           */
 #define MY_CS_PRIMARY	32     /* if primary collation           */
-#define MY_CS_STRNXFRM	64     /* if strnxfrm is used for sort   */
+#define MY_CS_STRNXFRM	64     /*
+                                 if _not_ set, sort_order will
+                                 give same result as strnxfrm --
+                                 all new collations should have this
+                                 flag set, do not check it in new code
+                               */
 #define MY_CS_UNICODE	128    /* is a charset is BMP Unicode    */
 #define MY_CS_READY	256    /* if a charset is initialized    */
 #define MY_CS_AVAILABLE	512    /* If either compiled-in or loaded*/
@@ -267,6 +200,7 @@ enum Pad_attribute { PAD_SPACE, NO_PAD };
 typedef struct my_collation_handler_st
 {
   bool (*init)(struct charset_info_st *, MY_CHARSET_LOADER *);
+  void (*uninit)(struct charset_info_st *);
   /* Collation routines */
   int     (*strnncoll)(const struct charset_info_st *,
 		       const uchar *, size_t, const uchar *, size_t, bool);
@@ -308,7 +242,18 @@ typedef struct my_collation_handler_st
   size_t  (*strnxfrm)(const struct charset_info_st *,
                       uchar *dst, size_t dstlen, uint num_codepoints,
                       const uchar *src, size_t srclen, uint flags);
-  size_t    (*strnxfrmlen)(const struct charset_info_st *, size_t);
+
+  /**
+    Return the maximum number of output bytes needed for strnxfrm()
+    to output all weights for any string of the given input length.
+    You can use this to e.g. size buffers for sort keys.
+
+    @param num_bytes Number of bytes in the input string. Note that for
+      multibyte character sets, this _must_ be a pessimistic estimate,
+      ie., one that's cs->mbmaxlen * max_num_codepoints. So for e.g.
+      the utf8mb4 string "foo", you will need to give in 12, not 3.
+  */
+  size_t    (*strnxfrmlen)(const struct charset_info_st *, size_t num_bytes);
   bool (*like_range)(const struct charset_info_st *,
 		     const char *s, size_t s_length,
 		     char w_prefix, char w_one, char w_many,
@@ -469,7 +414,7 @@ typedef struct charset_info_st
   const uchar *to_lower;
   const uchar *to_upper;
   const uchar *sort_order;
-  MY_UCA_INFO *uca; /* This can be changed in apply_one_rule() */
+  struct MY_UCA_INFO *uca; /* This can be changed in apply_one_rule() */
   const uint16     *tab_to_uni;
   const MY_UNI_IDX *tab_from_uni;
   const MY_UNICASE_INFO *caseinfo;
@@ -512,6 +457,7 @@ typedef struct charset_info_st
 extern MYSQL_PLUGIN_IMPORT CHARSET_INFO my_charset_bin;
 extern MYSQL_PLUGIN_IMPORT CHARSET_INFO my_charset_latin1;
 extern MYSQL_PLUGIN_IMPORT CHARSET_INFO my_charset_filename;
+extern MYSQL_PLUGIN_IMPORT CHARSET_INFO my_charset_utf8mb4_0900_ai_ci;
 
 extern CHARSET_INFO my_charset_latin1_bin;
 extern CHARSET_INFO my_charset_utf32_unicode_ci;
@@ -746,8 +692,6 @@ size_t my_strxfrm_pad(const CHARSET_INFO *cs,
 
 bool my_charset_is_ascii_compatible(const CHARSET_INFO *cs);
 
-const MY_CONTRACTIONS *my_charset_get_contractions(const CHARSET_INFO *cs);
-
 extern size_t my_vsnprintf_ex(const CHARSET_INFO *cs, char *to, size_t n,
                               const char* fmt, va_list ap);
 
@@ -766,11 +710,12 @@ uint my_mbcharlen_ptr(const CHARSET_INFO *cs, const char *s, const char *e);
 #define	_MY_B	0100	/* Blank */
 #define	_MY_X	0200	/* heXadecimal digit */
 
-
+/* The following macros makes sense only for one-byte character sets.
+They will not fail for multibyte character sets, but will not produce
+the expected results. They may have som limited usability like
+e.g. for utf8mb3/utf8mb4, meaningful results will be produced for
+values < 0x7F. */
 #define	my_isascii(c)	(!((c) & ~0177))
-#define	my_toascii(c)	((c) & 0177)
-#define my_tocntrl(c)	((c) & 31)
-#define my_toprint(c)	((c) | 64)
 #define my_toupper(s,c)	(char) ((s)->to_upper[(uchar) (c)])
 #define my_tolower(s,c)	(char) ((s)->to_lower[(uchar) (c)])
 #define	my_isalpha(s, c)  (((s)->ctype+1)[(uchar) (c)] & (_MY_U | _MY_L))

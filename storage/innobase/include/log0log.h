@@ -10,16 +10,24 @@ incorporated with their permission, and subject to the conditions contained in
 the file COPYING.Google.
 
 This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+the terms of the GNU General Public License, version 2.0, as published by the
+Free Software Foundation.
+
+This program is also distributed with certain software (including but not
+limited to OpenSSL) that is licensed under separate terms, as designated in a
+particular file or component or in included license documentation. The authors
+of MySQL hereby grant you an additional permission to link the program and
+your derivative works with the separately licensed software that they have
+included with MySQL.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+FOR A PARTICULAR PURPOSE. See the GNU General Public License, version 2.0,
+for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 *****************************************************************************/
 
@@ -38,6 +46,11 @@ Created 12/9/1995 Heikki Tuuri
 #ifndef UNIV_HOTBACKUP
 #include "sync0rw.h"
 #endif /* !UNIV_HOTBACKUP */
+
+extern const char* const ib_logfile_basename;
+
+/* base name length(10) + length for decimal digits(22) */
+const uint MAX_LOG_FILE_NAME = 32;
 
 /* Type used for all log sequence number storage and arithmetics */
 typedef	ib_uint64_t		lsn_t;
@@ -165,12 +178,10 @@ log_group_init(
 	space_id_t	space_id);	/*!< in: space id of the file space
 					which contains the log files of this
 					group */
-/******************************************************//**
-Completes an i/o to a log file. */
+/** Completes an i/o to a log file.
+@param[in,out]	group		log group or a dummy pointer */
 void
-log_io_complete(
-/*============*/
-	log_group_t*	group);	/*!< in: log group */
+log_io_complete(log_group_t* group);
 
 /* Read the first log file header to get the encryption
 information if it exist.
@@ -275,24 +286,6 @@ void
 log_write_checkpoint_info(
 	bool	sync);
 
-/** Set extra data to be written to the redo log during checkpoint.
-@param[in]	buf	data to be appended on checkpoint, or NULL
-@return pointer to previous data to be appended on checkpoint */
-mtr_buf_t*
-log_append_on_checkpoint(
-	mtr_buf_t*	buf);
-#else /* !UNIV_HOTBACKUP */
-/******************************************************//**
-Writes info to a buffer of a log group when log files are created in
-backup restoration. */
-void
-log_reset_first_header_and_checkpoint(
-/*==================================*/
-	byte*		hdr_buf,/*!< in: buffer which will be written to the
-				start of the first log file */
-	ib_uint64_t	start);	/*!< in: lsn of the start of the first log file;
-				we pretend that there is a checkpoint at
-				start + LOG_BLOCK_HDR_SIZE */
 #endif /* !UNIV_HOTBACKUP */
 /**
 Checks that there is enough free space in the log to start a new query step.
@@ -302,15 +295,6 @@ objects! */
 void
 log_check_margins(void);
 #ifndef UNIV_HOTBACKUP
-/******************************************************//**
-Reads a specified log segment to a buffer. */
-void
-log_group_read_log_seg(
-/*===================*/
-	byte*		buf,		/*!< in: buffer where to read */
-	log_group_t*	group,		/*!< in: log group */
-	lsn_t		start_lsn,	/*!< in: read area start */
-	lsn_t		end_lsn);	/*!< in: read area end */
 /********************************************************//**
 Sets the field values in group to correspond to a given lsn. For this function
 to work, the values must already be correctly initialized to correspond to
@@ -453,17 +437,6 @@ log_block_init(
 	byte*	log_block,
 	lsn_t	lsn);
 
-#ifdef UNIV_HOTBACKUP
-/************************************************************//**
-Initializes a log block in the log buffer in the old, < 3.23.52 format, where
-there was no checksum yet. */
-UNIV_INLINE
-void
-log_block_init_in_old_format(
-/*=========================*/
-	byte*	log_block,	/*!< in: pointer to the log buffer */
-	lsn_t	lsn);		/*!< in: lsn within the log block */
-#endif /* UNIV_HOTBACKUP */
 /************************************************************//**
 Converts a lsn to a log block number.
 @return log block number, it is > 0 and <= 1G */
@@ -500,11 +473,19 @@ Shutdown the log system but do not release all the memory. */
 void
 log_shutdown(void);
 /*==============*/
-/********************************************************//**
-Free the log system data structures. */
+
+/** Get last redo block from redo buffer and end LSN
+@param[out]	last_lsn	end lsn of last mtr
+@param[out]	last_block	last redo block */
 void
-log_mem_free(void);
-/*==============*/
+log_get_last_block(lsn_t& last_lsn, byte* last_block);
+
+/** Fill redo log header
+@param[out]	buf		filled buffer
+@param[in]	start_lsn	log start LSN
+@param[in]	creator		creator of the header */
+void
+log_header_fill(byte* buf, lsn_t start_lsn, const char* creator);
 
 /** Redo log system */
 extern log_t*	log_sys;
@@ -580,16 +561,18 @@ because InnoDB never supported more than one copy of the redo log. */
 /** 4 unused (zero-initialized) bytes. */
 #define LOG_HEADER_PAD1		4
 /** LSN of the start of data in this log file
-(with format version 1 and 2). */
+(with format version 1, 2 and 3). */
 #define LOG_HEADER_START_LSN	8
-/** A null-terminated string which will contain either the string 'ibbackup'
-and the creation time if the log file was created by mysqlbackup --restore,
-or the MySQL version that created the redo log file. */
+/** A null-terminated string which will contain either the string 'MEB'
+and the MySQL version if the log file was created by mysqlbackup,
+or 'MySQL' and the MySQL version that created the redo log file. */
 #define LOG_HEADER_CREATOR	16
 /** End of the log file creator field. */
 #define LOG_HEADER_CREATOR_END	(LOG_HEADER_CREATOR + 32)
 /** Contents of the LOG_HEADER_CREATOR field */
 #define LOG_HEADER_CREATOR_CURRENT	"MySQL " INNODB_VERSION_STR
+/** Header is created during DB clone */
+#define LOG_HEADER_CREATOR_CLONE	"MySQL Clone"
 
 /** Supported redo log formats. Stored in LOG_HEADER_FORMAT. */
 enum log_header_format_t
@@ -597,9 +580,18 @@ enum log_header_format_t
 	/** The MySQL 5.7.9 redo log format identifier. We can support recovery
 	from this format if the redo log is clean (logically empty). */
 	LOG_HEADER_FORMAT_5_7_9 = 1,
+
+	/** Remove MLOG_FILE_NAME and MLOG_CHECKPOINT, introduce MLOG_FILE_OPEN
+	redo log record. */
+	LOG_HEADER_FORMAT_8_0_1 = 2,
+
+	/** Remove MLOG_FILE_OPEN, MLOG_FILE_CREATE2 and MLOG_FILE_RENAME2
+	Resurrect MLOG_FILE_CREATE and MLOG_FILE_RENAME. */
+	LOG_HEADER_FORMAT_8_0_3 = 3,
+
 	/** The redo log format identifier
 	corresponding to the current format version. */
-	LOG_HEADER_FORMAT_CURRENT = 2
+	LOG_HEADER_FORMAT_CURRENT = LOG_HEADER_FORMAT_8_0_3
 };
 /* @} */
 
@@ -622,8 +614,10 @@ enum log_group_state_t {
 	LOG_GROUP_CORRUPTED
 };
 
+#ifndef UNIV_HOTBACKUP
 typedef ib_mutex_t	LogSysMutex;
 typedef ib_mutex_t	FlushOrderMutex;
+#endif /* !UNIV_HOTBACKUP */
 
 /** Log group consists of a number of log files, each of the same size; a log
 group is implemented as a space in the sense of the module fil0fil.
@@ -665,7 +659,7 @@ struct log_group_t{
 
 /** Redo log buffer */
 struct log_t{
-	char		pad1[CACHE_LINE_SIZE];
+	char		pad1[INNOBASE_CACHE_LINE_SIZE];
 					/*!< Padding to prevent other memory
 					update hotspots from residing on the
 					same memory cache line */
@@ -673,11 +667,11 @@ struct log_t{
 	ulint		buf_free;	/*!< first free offset within the log
 					buffer in use */
 #ifndef UNIV_HOTBACKUP
-	char		pad2[CACHE_LINE_SIZE];/*!< Padding */
+	char		pad2[INNOBASE_CACHE_LINE_SIZE];/*!< Padding */
 	LogSysMutex	mutex;		/*!< mutex protecting the log */
 	LogSysMutex	write_mutex;	/*!< mutex protecting writing to log
 					file and accessing to log_group_t */
-	char		pad3[CACHE_LINE_SIZE];/*!< Padding */
+	char		pad3[INNOBASE_CACHE_LINE_SIZE];/*!< Padding */
 	FlushOrderMutex	log_flush_order_mutex;/*!< mutex to serialize access to
 					the flush list when we are putting
 					dirty blocks in the list. The idea
@@ -716,6 +710,13 @@ struct log_t{
 			log_groups;	/*!< log groups */
 
 #ifndef UNIV_HOTBACKUP
+
+#ifdef UNIV_DEBUG
+	/** When this is set, writing to the redo log should be disabled. We
+	check for this in functions that write to the redo log. */
+	bool		disable_redo_writes;
+#endif /* UNIV_DEBUG */
+
 	/** The fields involved in the log buffer flush @{ */
 
 	ulint		buf_next_to_write;/*!< first offset in the log buffer
@@ -785,13 +786,6 @@ struct log_t{
 					/*!< latest checkpoint lsn */
 	lsn_t		next_checkpoint_lsn;
 					/*!< next checkpoint lsn */
-	mtr_buf_t*	append_on_checkpoint;
-					/*!< extra redo log records to write
-					during a checkpoint, or NULL if none.
-					The pointer is protected by
-					log_sys->mutex, and the data must
-					remain constant as long as this
-					pointer is not NULL. */
 	ulint		n_pending_checkpoint_writes;
 					/*!< number of currently pending
 					checkpoint writes */
@@ -857,6 +851,16 @@ lsn_t
 log_group_calc_lsn_offset(
 	lsn_t			lsn,
 	const log_group_t*	group);
+
+/** Writes a log file header to a log file space.
+@param[in]	group		log group
+@param[in]	nth_file	header to the nth file in the log file space
+@param[in]	start_lsn	log file data starts at this lsn */
+void
+log_group_file_header_flush(
+	log_group_t*	group,
+	ulint		nth_file,
+	lsn_t		start_lsn);
 
 #include "log0log.ic"
 

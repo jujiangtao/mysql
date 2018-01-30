@@ -1,35 +1,43 @@
 /* Copyright (c) 2002, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "sql/item_row.h"
 
 #include <stddef.h>
 
-#include "current_thd.h"
 #include "my_dbug.h"
+#include "my_inttypes.h"
 #include "my_sys.h"
 #include "mysqld_error.h"
-#include "sql_class.h"  // THD
-#include "sql_lex.h"
-#include "sql_list.h"
+#include "sql/current_thd.h"
+#include "sql/sql_class.h" // THD
+#include "sql/sql_lex.h"
+#include "sql/sql_list.h"
+#include "sql/thr_malloc.h"
 #include "sql_string.h"
-#include "thr_malloc.h"
 
 Item_row::Item_row(const POS &pos, Item *head, List<Item> &tail):
   super(pos), used_tables_cache(0), not_null_tables_cache(0),
-  const_item_cache(1), with_null(0)
+  with_null(false)
 {
 
   //TODO: think placing 2-3 component items in item (as it done for function)
@@ -53,7 +61,7 @@ Item_row::Item_row(const POS &pos, Item *head, List<Item> &tail):
 
 Item_row::Item_row(Item *head, List<Item> &tail):
   used_tables_cache(0), not_null_tables_cache(0),
-  const_item_cache(1), with_null(0)
+  with_null(false)
 {
 
   //TODO: think placing 2-3 component items in item (as it done for function)
@@ -90,7 +98,8 @@ bool Item_row::itemize(Parse_context *pc, Item **res)
 }
 
 
-void Item_row::illegal_method_call(const char *method) const
+void Item_row::
+illegal_method_call(const char *method MY_ATTRIBUTE((unused))) const
 {
   DBUG_ENTER("Item_row::illegal_method_call");
   DBUG_PRINT("error", ("!!! %s method was called for row item", method));
@@ -103,7 +112,7 @@ bool Item_row::fix_fields(THD *thd, Item**)
 {
   DBUG_ASSERT(fixed == 0);
   null_value= 0;
-  maybe_null= 0;
+  maybe_null= false;
   Item **arg, **arg_end;
   for (arg= items, arg_end= items+arg_count; arg != arg_end ; arg++)
   {
@@ -111,19 +120,16 @@ bool Item_row::fix_fields(THD *thd, Item**)
       return true;
     // we can't assign 'item' before, because fix_fields() can change arg
     Item *item= *arg;
-    used_tables_cache |= item->used_tables();
-    const_item_cache&= item->const_item() && !with_null;
+    used_tables_cache|= item->used_tables();
+
     not_null_tables_cache|= item->not_null_tables();
 
-    if (const_item_cache)
+    if (const_item())
     {
       if (item->cols() > 1)
 	with_null|= item->null_inside();
       else
-      {
-	if (item->is_null())
-          with_null|= 1;
-      }
+	with_null|= item->is_null();
     }
 
     // item->is_null() may have raised an error.
@@ -131,10 +137,9 @@ bool Item_row::fix_fields(THD *thd, Item**)
       return true;
 
     maybe_null|= item->maybe_null;
-    with_sum_func|= item->with_sum_func;
-    with_subselect|= item->has_subquery();
+    add_accum_properties(item);
   }
-  fixed= 1;
+  fixed= true;
   return false;
 }
 
@@ -146,8 +151,7 @@ void Item_row::cleanup()
   Item::cleanup();
   /* Reset to the original values */
   used_tables_cache= 0;
-  const_item_cache= 1;
-  with_null= 0;
+  with_null= false;
 
   DBUG_VOID_RETURN;
 }
@@ -165,16 +169,12 @@ void Item_row::split_sum_func(THD *thd, Ref_item_array ref_item_array,
 void Item_row::update_used_tables()
 {
   used_tables_cache= 0;
-  const_item_cache= true;
-  with_subselect= false;
-  with_stored_program= false;
+  m_accum_properties= 0;
   for (uint i= 0; i < arg_count; i++)
   {
     items[i]->update_used_tables();
     used_tables_cache|= items[i]->used_tables();
-    const_item_cache&= items[i]->const_item();
-    with_subselect|= items[i]->has_subquery();
-    with_stored_program|= items[i]->has_stored_program();
+    add_accum_properties(items[i]);
   }
 }
 
@@ -183,13 +183,11 @@ void Item_row::fix_after_pullout(SELECT_LEX *parent_select,
 {
   used_tables_cache= 0;
   not_null_tables_cache= 0;
-  const_item_cache= true;
   for (uint i= 0; i < arg_count; i++)
   {
     items[i]->fix_after_pullout(parent_select, removed_select);
     used_tables_cache|= items[i]->used_tables();
     not_null_tables_cache|= items[i]->not_null_tables();
-    const_item_cache&= items[i]->const_item();
   }
 }
 

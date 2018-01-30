@@ -4,16 +4,24 @@ Copyright (c) 1994, 2017, Oracle and/or its affiliates. All Rights Reserved.
 Copyright (c) 2012, Facebook Inc.
 
 This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+the terms of the GNU General Public License, version 2.0, as published by the
+Free Software Foundation.
+
+This program is also distributed with certain software (including but not
+limited to OpenSSL) that is licensed under separate terms, as designated in a
+particular file or component or in included license documentation. The authors
+of MySQL hereby grant you an additional permission to link the program and
+your derivative works with the separately licensed software that they have
+included with MySQL.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+FOR A PARTICULAR PURPOSE. See the GNU General Public License, version 2.0,
+for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 *****************************************************************************/
 
@@ -28,27 +36,28 @@ Created 6/2/1994 Heikki Tuuri
 
 #include <sys/types.h>
 
-#include "fsp0sysspace.h"
-#include "gis0rtree.h"
-#include "my_dbug.h"
-#include "my_inttypes.h"
-#include "page0page.h"
-#include "page0zip.h"
+#ifndef UNIV_HOTBACKUP
+# include "fsp0sysspace.h"
+# include "gis0rtree.h"
+# include "my_dbug.h"
+# include "my_inttypes.h"
+# include "page0page.h"
+# include "page0zip.h"
+# include "btr0cur.h"
+# include "btr0pcur.h"
+# include "btr0sea.h"
+# include "buf0stats.h"
+# include "dict0boot.h"
+# include "gis0geo.h"
+# include "ibuf0ibuf.h"
+# include "lock0lock.h"
+# include "rem0cmp.h"
+# include "srv0mon.h"
+# include "trx0trx.h"
+# include "ut0new.h"
+#endif /* !UNIV_HOTBACKUP */
 
 #ifndef UNIV_HOTBACKUP
-#include "btr0cur.h"
-#include "btr0pcur.h"
-#include "btr0sea.h"
-#include "buf0stats.h"
-#include "dict0boot.h"
-#include "gis0geo.h"
-#include "ibuf0ibuf.h"
-#include "lock0lock.h"
-#include "rem0cmp.h"
-#include "srv0mon.h"
-#include "trx0trx.h"
-#include "ut0new.h"
-
 /**************************************************************//**
 Checks if the page in the cursor can be merged with given page.
 If necessary, re-organize the merge_page.
@@ -61,8 +70,7 @@ btr_can_merge_with_page(
 	page_no_t	page_no,	/*!< in: a sibling page */
 	buf_block_t**	merge_block,	/*!< out: the merge block */
 	mtr_t*		mtr);		/*!< in: mini-transaction */
-
-#endif /* UNIV_HOTBACKUP */
+#endif /* !UNIV_HOTBACKUP */
 
 /**************************************************************//**
 Report that an index page is corrupted. */
@@ -323,6 +331,10 @@ btr_root_adjust_on_import(
 			comparison because the space flags derived from table
 			flags will not have SDI flag */
 			fsp_flags &= ~FSP_FLAGS_MASK_SDI;
+
+			if (dict_table_is_sdi(index->table->id)) {
+				fsp_flags &= ~FSP_FLAGS_MASK_ENCRYPTION;
+			}
 
 			err = fsp_flags_are_equal(flags, fsp_flags)
 				? DB_SUCCESS : DB_CORRUPTION;
@@ -889,7 +901,6 @@ btr_free_root(
 	fseg_header_t*	header;
 
 	ut_ad(mtr_memo_contains_flagged(mtr, block, MTR_MEMO_PAGE_X_FIX));
-	ut_ad(mtr->is_named_space(block->page.id.space()));
 
 	btr_search_drop_page_hash_index(block);
 
@@ -983,7 +994,6 @@ btr_create(
 	page_t*			page;
 	page_zip_des_t*		page_zip;
 
-	ut_ad(mtr->is_named_space(space));
 	ut_ad(index_id != BTR_FREED_INDEX_ID);
 
 	/* Create the two new segments (one, in the case of an ibuf tree) for
@@ -1127,7 +1137,6 @@ btr_free_but_not_root(
 leaf_loop:
 	mtr_start(&mtr);
 	mtr_set_log_mode(&mtr, log_mode);
-	mtr.set_named_space(block->page.id.space());
 
 	page_t*	root = block->frame;
 
@@ -1152,7 +1161,6 @@ leaf_loop:
 top_loop:
 	mtr_start(&mtr);
 	mtr_set_log_mode(&mtr, log_mode);
-	mtr.set_named_space(block->page.id.space());
 
 	root = block->frame;
 
@@ -1191,7 +1199,6 @@ btr_free_if_exists(
 	}
 
 	btr_free_but_not_root(root, mtr->get_log_mode());
-	mtr->set_named_space(page_id.space());
 	btr_free_root(root, mtr);
 	btr_free_root_invalidate(root, mtr);
 }
@@ -1250,8 +1257,6 @@ btr_truncate(
 
 	block = buf_page_get(page_id, page_size, RW_X_LATCH, &mtr);
 
-	mtr.set_named_space(space);
-
 	page_t*			page = buf_block_get_frame(block);
 	ut_ad(page_is_root(page));
 
@@ -1264,7 +1269,6 @@ btr_truncate(
 	mtr.commit();
 
 	mtr.start();
-	mtr.set_named_space(space);
 
 	block = buf_page_get(page_id, page_size, RW_X_LATCH, &mtr);
 
@@ -1369,7 +1373,9 @@ btr_page_reorganize_low(
 	ulint		pos;
 	bool		log_compressed;
 
+#ifndef UNIV_HOTBACKUP
 	ut_ad(mtr_is_block_fix(mtr, block, MTR_MEMO_PAGE_X_FIX, index->table));
+#endif /* !UNIV_HOTBACKUP */
 	btr_assert_not_corrupted(block, index);
 #ifdef UNIV_ZIP_DEBUG
 	ut_a(!page_zip || page_zip_validate(page_zip, page, index));
@@ -1383,12 +1389,13 @@ btr_page_reorganize_low(
 #ifndef UNIV_HOTBACKUP
 	temp_block = buf_block_alloc(buf_pool);
 #else /* !UNIV_HOTBACKUP */
-	ut_ad(block == back_block1);
 	temp_block = back_block2;
 #endif /* !UNIV_HOTBACKUP */
 	temp_page = temp_block->frame;
 
+#ifndef UNIV_HOTBACKUP
 	MONITOR_INC(MONITOR_INDEX_REORG_ATTEMPTS);
+#endif /* !UNIV_HOTBACKUP */
 
 	/* Copy the old page to temporary space */
 	buf_frame_copy(temp_page, page);
@@ -1574,7 +1581,6 @@ btr_page_reorganize_block(
 	return(btr_page_reorganize_low(recovery, z_level, &cur, index, mtr));
 }
 
-#ifndef UNIV_HOTBACKUP
 /*************************************************************//**
 Reorganizes an index page.
 
@@ -1596,7 +1602,6 @@ btr_page_reorganize(
 	return(btr_page_reorganize_low(false, page_zip_level,
 				       cursor, index, mtr));
 }
-#endif /* !UNIV_HOTBACKUP */
 
 /***********************************************************//**
 Parses a redo log record of reorganizing a page.
@@ -2566,7 +2571,7 @@ btr_insert_into_right_sibling(
 
 	compressed = btr_cur_pessimistic_delete(
 		&err, TRUE, &next_father_cursor,
-		BTR_CREATE_FLAG, false, mtr);
+		BTR_CREATE_FLAG, false, 0, 0, 0, mtr);
 
 	ut_a(err == DB_SUCCESS);
 
@@ -3185,7 +3190,8 @@ btr_node_ptr_delete(
 	btr_page_get_father(index, block, mtr, &cursor);
 
 	compressed = btr_cur_pessimistic_delete(&err, TRUE, &cursor,
-						BTR_CREATE_FLAG, false, mtr);
+						BTR_CREATE_FLAG, false,
+						0, 0, 0, mtr);
 	ut_a(err == DB_SUCCESS);
 
 	if (!compressed) {
@@ -3798,10 +3804,9 @@ retry:
 			lock_mutex_exit();
 		} else {
 
-			compressed = btr_cur_pessimistic_delete(&err, TRUE,
-								&cursor2,
-								BTR_CREATE_FLAG,
-								false, mtr);
+			compressed = btr_cur_pessimistic_delete(
+				&err, TRUE, &cursor2, BTR_CREATE_FLAG,
+				false, 0, 0, 0, mtr);
 			ut_a(err == DB_SUCCESS);
 
 			if (!compressed) {
@@ -4337,7 +4342,7 @@ btr_check_node_ptr(
 	if (dict_index_is_spatial(index)) {
 		ut_a(!cmp_dtuple_rec_with_gis(
 			tuple, btr_cur_get_rec(&cursor),
-			offsets, PAGE_CUR_WITHIN));
+			offsets, PAGE_CUR_WITHIN, index->rtr_srs.get()));
 	} else {
 		ut_a(!cmp_dtuple_rec(
 			     tuple, btr_cur_get_rec(&cursor), index, offsets));
@@ -4399,7 +4404,7 @@ btr_index_rec_validate(
 	}
 
 #ifdef VIRTUAL_INDEX_DEBUG
-	if (dict_index_has_virtual(index)) {
+	if (dict_index_has_virtual(index) || index->is_clustered()) {
 		fprintf(stderr, "index name is %s\n", index->name());
 	}
 #endif
@@ -4497,7 +4502,7 @@ btr_index_rec_validate(
 	}
 
 #ifdef VIRTUAL_INDEX_DEBUG
-	if (dict_index_has_virtual(index)) {
+	if (dict_index_has_virtual(index) || index->is_clustered()) {
 		rec_print_new(stderr, rec, offsets);
 	}
 #endif
@@ -5308,12 +5313,12 @@ btr_sdi_create(
 	return(index->page);
 }
 
-/** Creates SDI indexes and stores the root page numbers in page 1 & 2
+/** Creates SDI index and stores the root page number in page 1 & 2
 @param[in]	space_id	tablespace id
 @param[in]	dict_locked	true if dict_sys mutex is acquired
 @return DB_SUCCESS on success, else DB_ERROR on failure */
 dberr_t
-btr_sdi_create_indexes(
+btr_sdi_create_index(
 	space_id_t	space_id,
 	bool		dict_locked)
 {
@@ -5323,47 +5328,34 @@ btr_sdi_create_indexes(
 		return(DB_ERROR);
 	}
 
-	dict_table_t*	sdi_tables[MAX_SDI_COPIES];
-	page_no_t	sdi_root_page_num[MAX_SDI_COPIES];
+	dict_table_t*	sdi_table;
+	page_no_t	sdi_root_page_num;
 
-	for (uint32_t	copy_num = 0; copy_num < MAX_SDI_COPIES; ++copy_num) {
-		sdi_tables[copy_num] =  dict_sdi_get_table(
-			space_id, copy_num, dict_locked);
-	        ut_ad(sdi_tables[copy_num] != NULL);
-	}
+	sdi_table = dict_sdi_get_table(space_id, dict_locked, true);
+	ut_ad(sdi_table != NULL);
 
 	mtr_t	mtr;
 	mtr.start();
-	mtr.set_named_space(space_id);
 
 	const page_size_t	page_size = page_size_t(space->flags);
 
 	/* Create B-Tree root page for SDI Indexes */
 
-	for (uint32_t	copy_num = 0; copy_num < MAX_SDI_COPIES; ++copy_num) {
-		sdi_root_page_num[copy_num] = btr_sdi_create(
-			space_id, page_size, &mtr, sdi_tables[copy_num]);
+	sdi_root_page_num = btr_sdi_create(space_id, page_size, &mtr, sdi_table);
 
-		if (sdi_root_page_num[copy_num] == FIL_NULL) {
-			ib::error() <<  "Unable to create root index page"
-				" for SDI table Copy " << copy_num
-				<< " in tablespace " << space_id;
-			mtr.commit();
-			dict_sdi_remove_from_cache(
-				space_id, sdi_tables, dict_locked);
-			fil_space_release(space);
-			return(DB_ERROR);
-		} else {
-			dict_index_t*	index = sdi_tables[copy_num]->first_index();
-			index->page = sdi_root_page_num[copy_num];
-		}
+	if (sdi_root_page_num == FIL_NULL) {
+		ib::error() <<  "Unable to create root index page"
+			" for SDI table "
+			<< " in tablespace " << space_id;
+		mtr.commit();
+		dict_sdi_remove_from_cache(
+			space_id, sdi_table, dict_locked);
+		fil_space_release(space);
+		return(DB_ERROR);
+	} else {
+		dict_index_t*	index = sdi_table->first_index();
+		index->page = sdi_root_page_num;
 	}
-
-	/* Write SDI Index root page numbers to Page 1 & 2 */
-	fsp_sdi_write_root_to_page(space_id, 1, page_size, sdi_root_page_num[0],
-				   sdi_root_page_num[1], &mtr);
-	fsp_sdi_write_root_to_page(space_id, 2, page_size, sdi_root_page_num[0],
-				   sdi_root_page_num[1], &mtr);
 
 	buf_block_t*	block = buf_page_get(page_id_t(space_id, 0), page_size,
 					     RW_SX_LATCH, &mtr);
@@ -5371,6 +5363,9 @@ btr_sdi_create_indexes(
 	buf_block_dbg_add_level(block, SYNC_FSP_PAGE);
 
 	page_t*	page = buf_block_get_frame(block);
+
+	/* Write SDI Index root page numbers to Page 0 */
+	fsp_sdi_write_root_to_page(page, page_size, sdi_root_page_num, &mtr);
 
 	/* Space flags from memory */
 	ulint	fsp_flags = space->flags;
@@ -5386,9 +5381,7 @@ btr_sdi_create_indexes(
 
 	fil_space_set_flags(space, fsp_flags);
 
-	for (uint32_t	copy_num = 0; copy_num < MAX_SDI_COPIES; ++copy_num) {
-		dict_table_close(sdi_tables[copy_num], dict_locked, false);
-	}
+	dict_table_close(sdi_table, dict_locked, false);
 
 	fil_space_release(space);
 	return(DB_SUCCESS);

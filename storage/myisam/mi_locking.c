@@ -1,13 +1,20 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -24,12 +31,12 @@
 #include <fcntl.h>
 #include <sys/types.h>
 
-#include "ftdefs.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_io.h"
 #include "my_macros.h"
-#include "myisam_sys.h"
+#include "storage/myisam/ftdefs.h"
+#include "storage/myisam/myisam_sys.h"
 
 	/* lock table by F_UNLCK, F_RDLCK or F_WRLCK */
 
@@ -111,6 +118,9 @@ int mi_lock_database(MI_INFO *info, int lock_type)
 	  share->changed=0;
 	  if (myisam_flush)
 	  {
+            if (share->file_map)
+              my_msync(info->dfile, share->file_map, share->mmaped_length, MS_SYNC);
+
             if (mysql_file_sync(share->kfile, MYF(0)))
 	      error= my_errno();
             if (mysql_file_sync(info->dfile, MYF(0)))
@@ -128,13 +138,13 @@ int mi_lock_database(MI_INFO *info, int lock_type)
 	{
 	  if (share->r_locks)
 	  {					/* Only read locks left */
-	    if (my_lock(share->kfile,F_RDLCK,0L,F_TO_EOF,
+	    if (my_lock(share->kfile,F_RDLCK,
 			MYF(MY_WME | MY_SEEK_NOT_DONE)) && !error)
 	      error=my_errno();
 	  }
 	  else if (!share->w_locks)
 	  {					/* No more locks */
-	    if (my_lock(share->kfile,F_UNLCK,0L,F_TO_EOF,
+	    if (my_lock(share->kfile,F_UNLCK,
 			MYF(MY_WME | MY_SEEK_NOT_DONE)) && !error)
 	      error=my_errno();
 	  }
@@ -155,7 +165,7 @@ int mi_lock_database(MI_INFO *info, int lock_type)
         */
 	if (share->w_locks == 1)
 	{
-          if (my_lock(share->kfile,lock_type,0L,F_TO_EOF,
+          if (my_lock(share->kfile,lock_type,
 		      MYF(MY_SEEK_NOT_DONE)))
 	  {
 	    error=my_errno();
@@ -169,7 +179,7 @@ int mi_lock_database(MI_INFO *info, int lock_type)
       }
       if (!share->r_locks && !share->w_locks)
       {
-	if (my_lock(share->kfile,lock_type,0L,F_TO_EOF,
+	if (my_lock(share->kfile,lock_type,
 		    info->lock_wait | MY_SEEK_NOT_DONE))
 	{
 	  error=my_errno();
@@ -178,7 +188,7 @@ int mi_lock_database(MI_INFO *info, int lock_type)
 	if (mi_state_info_read_dsk(share->kfile, &share->state, 1))
 	{
 	  error=my_errno();
-	  (void) my_lock(share->kfile,F_UNLCK,0L,F_TO_EOF,MYF(MY_SEEK_NOT_DONE));
+	  (void) my_lock(share->kfile,F_UNLCK,MYF(MY_SEEK_NOT_DONE));
 	  set_my_errno(error);
 	  break;
 	}
@@ -194,7 +204,7 @@ int mi_lock_database(MI_INFO *info, int lock_type)
       {						/* Change READONLY to RW */
 	if (share->r_locks == 1)
 	{
-	  if (my_lock(share->kfile,lock_type,0L,F_TO_EOF,
+	  if (my_lock(share->kfile,lock_type,
 		      MYF(info->lock_wait | MY_SEEK_NOT_DONE)))
 	  {
 	    error=my_errno();
@@ -210,7 +220,7 @@ int mi_lock_database(MI_INFO *info, int lock_type)
       {
 	if (!share->w_locks)
 	{
-	  if (my_lock(share->kfile,lock_type,0L,F_TO_EOF,
+	  if (my_lock(share->kfile,lock_type,
 		      info->lock_wait | MY_SEEK_NOT_DONE))
 	  {
 	    error=my_errno();
@@ -221,7 +231,7 @@ int mi_lock_database(MI_INFO *info, int lock_type)
 	    if (mi_state_info_read_dsk(share->kfile, &share->state, 1))
 	    {
 	      error=my_errno();
-	      (void) my_lock(share->kfile,F_UNLCK,0L,F_TO_EOF,
+	      (void) my_lock(share->kfile,F_UNLCK,
 			   info->lock_wait | MY_SEEK_NOT_DONE);
 	      set_my_errno(error);
 	      break;
@@ -232,7 +242,6 @@ int mi_lock_database(MI_INFO *info, int lock_type)
       (void) _mi_test_if_changed(info);
         
       info->lock_type=lock_type;
-      info->invalidator=info->s->invalidator;
       share->w_locks++;
       share->tot_locks++;
       info->s->in_use= list_add(info->s->in_use, &info->in_use);
@@ -406,13 +415,13 @@ int _mi_readinfo(MI_INFO *info, int lock_type, int check_keybuffer)
     MYISAM_SHARE *share=info->s;
     if (!share->tot_locks)
     {
-      if (my_lock(share->kfile,lock_type,0L,F_TO_EOF,
+      if (my_lock(share->kfile,lock_type,
 		  info->lock_wait | MY_SEEK_NOT_DONE))
 	DBUG_RETURN(1);
       if (mi_state_info_read_dsk(share->kfile, &share->state, 1))
       {
 	int error=my_errno() ? my_errno() : -1;
-	(void) my_lock(share->kfile,F_UNLCK,0L,F_TO_EOF,
+	(void) my_lock(share->kfile,F_UNLCK,
 		     MYF(MY_SEEK_NOT_DONE));
 	set_my_errno(error);
 	DBUG_RETURN(1);
@@ -420,7 +429,6 @@ int _mi_readinfo(MI_INFO *info, int lock_type, int check_keybuffer)
     }
     if (check_keybuffer)
       (void) _mi_test_if_changed(info);
-    info->invalidator=info->s->invalidator;
   }
   else if (lock_type == F_WRLCK && info->lock_type == F_RDLCK)
   {
@@ -458,13 +466,15 @@ int _mi_writeinfo(MI_INFO *info, uint operation)
 #ifdef _WIN32
       if (myisam_flush)
       {
+        if (share->file_map)
+          my_msync(info->dfile, share->file_map, share->mmaped_length, MS_SYNC);
         mysql_file_sync(share->kfile, 0);
         mysql_file_sync(info->dfile, 0);
       }
 #endif
     }
     if (!(operation & WRITEINFO_NO_UNLOCK) &&
-	my_lock(share->kfile,F_UNLCK,0L,F_TO_EOF,
+	my_lock(share->kfile,F_UNLCK,
 		MYF(MY_WME | MY_SEEK_NOT_DONE)) && !error)
       DBUG_RETURN(1);
     set_my_errno(olderror);
@@ -576,5 +586,5 @@ int _mi_decrement_open_count(MI_INFO *info)
     if (!lock_error)
       lock_error=mi_lock_database(info,old_lock);
   }
-  return MY_TEST(lock_error || write_error);
+  return (lock_error || write_error);
 }

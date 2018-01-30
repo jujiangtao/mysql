@@ -1,13 +1,20 @@
 /* Copyright (c) 2013, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -17,12 +24,13 @@
 
 #include <stddef.h>
 #include <sys/types.h>
+#include <atomic>
 #include <utility>
 
 #include "binlog_event.h"      // SEQ_UNINIT
-#include "my_atomic.h"
 #include "my_inttypes.h"
 #include "my_thread_local.h"   // my_thread_id
+#include "mysql/udf_registration_types.h"
 #include "prealloced_array.h"  // Prealloced_array
 
 class Log_event;
@@ -113,7 +121,7 @@ private:
   bool is_new_group;
   uint delegated_jobs;
   /* "instant" value of committed transactions low-water-mark */
-  longlong last_lwm_timestamp;
+  std::atomic<longlong> last_lwm_timestamp;
   /* GAQ index corresponding to the min commit point */
   ulong last_lwm_index;
   longlong last_committed;
@@ -126,7 +134,7 @@ public:
     the logical timestamp of the olderst transaction that is being waited by
     before to resume scheduling.
   */
-  longlong min_waited_timestamp;
+  std::atomic<longlong> min_waited_timestamp;
   /*
     Committed transactions and those that are waiting for their commit parents
     comprise sequences whose items are identified as GAQ index.
@@ -158,6 +166,13 @@ public:
     force_new_group= true;
     first_event= true;
   }
+  /**
+    Withdraw the delegated_job increased by the group.
+  */
+  void withdraw_delegated_job()
+  {
+    delegated_jobs--;
+  }
   int wait_for_workers_to_finish(Relay_log_info  *rli,
                                  Slave_worker *ignore= NULL);
   bool wait_for_last_committed_trx(Relay_log_info* rli,
@@ -185,7 +200,7 @@ public:
   longlong get_lwm_timestamp(Relay_log_info *rli, bool need_lock);
   longlong estimate_lwm_timestamp()
   {
-    return my_atomic_load64(&last_lwm_timestamp);
+    return last_lwm_timestamp.load();
   };
   ~Mts_submode_logical_clock() {}
 };

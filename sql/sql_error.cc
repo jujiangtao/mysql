@@ -1,13 +1,20 @@
 /* Copyright (c) 2002, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -41,7 +48,7 @@ This file contains the implementation of error and warnings related
 
 ***********************************************************************/
 
-#include "sql_error.h"
+#include "sql/sql_error.h"
 
 #include <float.h>
 #include <stdarg.h>
@@ -49,27 +56,28 @@ This file contains the implementation of error and warnings related
 
 #include "binary_log_types.h"
 #include "decimal.h"
-#include "derror.h"       // ER_THD
-#include "item.h"
-#include "log.h"          // sql_print_warning
 #include "my_dbug.h"
-#include "my_decimal.h"
 #include "my_inttypes.h"
+#include "my_loglevel.h"
 #include "my_macros.h"
 #include "my_sys.h"
 #include "my_time.h"
-#include "mysql/psi/mysql_statement.h"
+#include "mysql/components/services/log_shared.h"
 #include "mysql/psi/psi_base.h"
 #include "mysqld_error.h"
-#include "protocol.h"
-#include "sql_class.h"    // THD
-#include "sql_const.h"
-#include "sql_lex.h"
-#include "sql_plugin.h"
-#include "sql_servers.h"
-#include "system_variables.h"
-#include "table.h"
-#include "thr_malloc.h"
+#include "sql/auth/sql_security_ctx.h"
+#include "sql/derror.h"   // ER_THD
+#include "sql/item.h"
+#include "sql/log.h"      // sql_print_warning
+#include "sql/my_decimal.h"
+#include "sql/protocol.h"
+#include "sql/session_tracker.h"
+#include "sql/sql_class.h" // THD
+#include "sql/sql_const.h"
+#include "sql/sql_lex.h"
+#include "sql/sql_servers.h"
+#include "sql/system_variables.h"
+#include "sql/thr_malloc.h"
 
 using std::min;
 using std::max;
@@ -804,9 +812,8 @@ void push_deprecated_warn(THD *thd, const char *old_syntax,
                         ER_THD(thd, ER_WARN_DEPRECATED_SYNTAX),
                         old_syntax, new_syntax);
   else
-    sql_print_warning("The syntax '%s' is deprecated and will be removed "
-                      "in a future release. Please use %s instead.",
-                      old_syntax, new_syntax);
+    LogErr(WARNING_LEVEL, ER_DEPRECATED_SYNTAX_WITH_REPLACEMENT, old_syntax,
+           new_syntax);
 }
 
 
@@ -818,8 +825,7 @@ void push_deprecated_warn_no_replacement(THD *thd, const char *old_syntax)
                         ER_THD(thd, ER_WARN_DEPRECATED_SYNTAX_NO_REPLACEMENT),
                         old_syntax);
   else
-    sql_print_warning("The syntax '%s' is deprecated and will be removed "
-                      "in a future release", old_syntax);
+    LogErr(WARNING_LEVEL, ER_DEPRECATED_SYNTAX_NO_REPLACEMENT, old_syntax);
 }
 
 
@@ -870,7 +876,6 @@ bool mysqld_show_warnings(THD *thd, ulong levels_to_show)
                                 Protocol::SEND_NUM_ROWS | Protocol::SEND_EOF))
     rc= true;
 
-  const Sql_condition *err;
   SELECT_LEX *sel= thd->lex->select_lex;
   SELECT_LEX_UNIT *unit= thd->lex->unit;
   ulonglong idx= 0;
@@ -879,6 +884,7 @@ bool mysqld_show_warnings(THD *thd, ulong levels_to_show)
   unit->set_limit(thd, sel);
 
   Diagnostics_area::Sql_condition_iterator it= first_da->sql_conditions();
+  const Sql_condition *err= nullptr;
   while (!rc && (err= it++))
   {
     /* Skip levels that the user is not interested in */

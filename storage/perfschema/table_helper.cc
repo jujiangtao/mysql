@@ -1,17 +1,24 @@
 /* Copyright (c) 2010, 2017, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
   along with this program; if not, write to the Free Software
-  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA
+  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
   */
 
 /**
@@ -23,25 +30,95 @@
 
 #include "my_config.h"
 
-#include "field.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_macros.h"
 #include "my_thread.h"
-#include "pfs_account.h"
-#include "pfs_column_types.h"
-#include "pfs_column_values.h"
-#include "pfs_engine_table.h"
-#include "pfs_error.h"
-#include "pfs_host.h"
-#include "pfs_instr.h"
-#include "pfs_prepared_stmt.h"
-#include "pfs_program.h"
-#include "pfs_setup_actor.h"
-#include "pfs_setup_object.h"
-#include "pfs_user.h"
-#include "pfs_variable.h"
+#include "sql/field.h"
+#include "storage/perfschema/pfs_account.h"
+#include "storage/perfschema/pfs_column_types.h"
+#include "storage/perfschema/pfs_column_values.h"
+#include "storage/perfschema/pfs_engine_table.h"
+#include "storage/perfschema/pfs_error.h"
+#include "storage/perfschema/pfs_host.h"
+#include "storage/perfschema/pfs_instr.h"
+#include "storage/perfschema/pfs_prepared_stmt.h"
+#include "storage/perfschema/pfs_program.h"
+#include "storage/perfschema/pfs_setup_actor.h"
+#include "storage/perfschema/pfs_setup_object.h"
+#include "storage/perfschema/pfs_user.h"
+#include "storage/perfschema/pfs_variable.h"
 
+/* TINYINT TYPE */
+void
+set_field_tiny(Field *f, long value)
+{
+  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_TINY);
+  Field_tiny *f2 = (Field_tiny *)f;
+  f2->store(value, false);
+}
+void
+set_field_utiny(Field *f, ulong value)
+{
+  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_TINY);
+  Field_tiny *f2 = (Field_tiny *)f;
+  f2->store(value, true);
+}
+long
+get_field_tiny(Field *f)
+{
+  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_TINY);
+  Field_tiny *f2 = (Field_tiny *)f;
+  return f2->val_int();
+}
+
+/* SMALLINT TYPE */
+void
+set_field_short(Field *f, long value)
+{
+  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_SHORT);
+  Field_short *f2 = (Field_short *)f;
+  f2->store(value, false);
+}
+void
+set_field_ushort(Field *f, ulong value)
+{
+  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_SHORT);
+  Field_short *f2 = (Field_short *)f;
+  f2->store(value, true);
+}
+long
+get_field_short(Field *f)
+{
+  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_SHORT);
+  Field_short *f2 = (Field_short *)f;
+  return f2->val_int();
+}
+
+/* MEDIUMINT TYPE */
+void
+set_field_medium(Field *f, long value)
+{
+  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_INT24);
+  Field_medium *f2 = (Field_medium *)f;
+  f2->store(value, false);
+}
+void
+set_field_umedium(Field *f, ulong value)
+{
+  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_INT24);
+  Field_medium *f2 = (Field_medium *)f;
+  f2->store(value, true);
+}
+long
+get_field_medium(Field *f)
+{
+  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_INT24);
+  Field_medium *f2 = (Field_medium *)f;
+  return f2->val_int();
+}
+
+/* INTEGER (INT) TYPE */
 void
 set_field_long(Field *f, long value)
 {
@@ -49,7 +126,6 @@ set_field_long(Field *f, long value)
   Field_long *f2 = (Field_long *)f;
   f2->store(value, false);
 }
-
 void
 set_field_ulong(Field *f, ulong value)
 {
@@ -57,7 +133,15 @@ set_field_ulong(Field *f, ulong value)
   Field_long *f2 = (Field_long *)f;
   f2->store(value, true);
 }
+long
+get_field_long(Field *f)
+{
+  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_LONG);
+  Field_long *f2 = (Field_long *)f;
+  return f2->val_int();
+}
 
+/* BIGINT TYPE */
 void
 set_field_longlong(Field *f, longlong value)
 {
@@ -65,7 +149,6 @@ set_field_longlong(Field *f, longlong value)
   Field_longlong *f2 = (Field_longlong *)f;
   f2->store(value, false);
 }
-
 void
 set_field_ulonglong(Field *f, ulonglong value)
 {
@@ -73,7 +156,70 @@ set_field_ulonglong(Field *f, ulonglong value)
   Field_longlong *f2 = (Field_longlong *)f;
   f2->store(value, true);
 }
+longlong
+get_field_longlong(Field *f)
+{
+  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_LONGLONG);
+  Field_longlong *f2 = (Field_longlong *)f;
+  return f2->val_int();
+}
+ulonglong
+get_field_ulonglong(Field *f)
+{
+  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_LONGLONG);
+  Field_longlong *f2 = (Field_longlong *)f;
+  return f2->val_int();
+}
 
+/* DECIMAL TYPE */
+void
+set_field_decimal(Field *f, double value)
+{
+  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_NEWDECIMAL);
+  Field_new_decimal *f2 = (Field_new_decimal *)f;
+  f2->store(value);
+}
+double
+get_field_decimal(Field *f)
+{
+  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_NEWDECIMAL);
+  Field_new_decimal *f2 = (Field_new_decimal *)f;
+  return f2->val_real();
+}
+
+/* FLOAT TYPE */
+void
+set_field_float(Field *f, double value)
+{
+  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_FLOAT);
+  Field_float *f2 = (Field_float *)f;
+  f2->store(value);
+}
+double
+get_field_float(Field *f)
+{
+  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_FLOAT);
+  Field_float *f2 = (Field_float *)f;
+  return f2->val_real();
+}
+
+/* DOUBLE TYPE */
+void
+set_field_double(Field *f, double value)
+{
+  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_DOUBLE);
+  Field_double *f2 = (Field_double *)f;
+  f2->store(value);
+}
+double
+get_field_double(Field *f)
+{
+  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_DOUBLE);
+  Field_double *f2 = (Field_double *)f;
+  return f2->val_real();
+}
+
+/* CHAR TYPE */
 void
 set_field_char_utf8(Field *f, const char *str, uint len)
 {
@@ -81,7 +227,27 @@ set_field_char_utf8(Field *f, const char *str, uint len)
   Field_string *f2 = (Field_string *)f;
   f2->store(str, len, &my_charset_utf8_bin);
 }
+String *
+get_field_char_utf8(Field *f, String *val)
+{
+  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_STRING);
+  Field_string *f2 = (Field_string *)f;
+  val = f2->val_str(NULL, val);
+  return val;
+}
+char *
+get_field_char_utf8(Field *f, char *val, uint *len)
+{
+  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_STRING);
+  String temp;
+  Field_string *f2 = (Field_string *)f;
+  f2->val_str(NULL, &temp);
+  *len = temp.length();
+  strncpy(val, temp.ptr(), *len);
+  return val;
+}
 
+/* VARCHAR TYPE */
 void
 set_field_varchar(Field *f, const CHARSET_INFO *cs, const char *str, uint len)
 {
@@ -91,27 +257,37 @@ set_field_varchar(Field *f, const CHARSET_INFO *cs, const char *str, uint len)
 }
 
 void
+set_field_varchar_utf8(Field *f, const char *str)
+{
+  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_VARCHAR);
+  Field_varstring *f2 = (Field_varstring *)f;
+  f2->store(str, strlen(str), &my_charset_utf8_bin);
+}
+void
 set_field_varchar_utf8(Field *f, const char *str, uint len)
 {
   DBUG_ASSERT(f->real_type() == MYSQL_TYPE_VARCHAR);
   Field_varstring *f2 = (Field_varstring *)f;
   f2->store(str, len, &my_charset_utf8_bin);
 }
-
-void
-set_field_varchar_utf8mb4(Field *f, const char *str, uint len)
+String *
+get_field_varchar_utf8(Field *f, String *val)
 {
   DBUG_ASSERT(f->real_type() == MYSQL_TYPE_VARCHAR);
   Field_varstring *f2 = (Field_varstring *)f;
-  f2->store(str, len, &my_charset_utf8mb4_bin);
+  val = f2->val_str(NULL, val);
+  return val;
 }
-
-void
-set_field_varchar_utf8(Field *f, const char *str)
+char *
+get_field_varchar_utf8(Field *f, char *val, uint *len)
 {
   DBUG_ASSERT(f->real_type() == MYSQL_TYPE_VARCHAR);
+  String temp;
   Field_varstring *f2 = (Field_varstring *)f;
-  f2->store(str, strlen(str), &my_charset_utf8_bin);
+  f2->val_str(NULL, &temp);
+  *len = temp.length();
+  strncpy(val, temp.ptr(), *len);
+  return val;
 }
 
 void
@@ -121,29 +297,154 @@ set_field_varchar_utf8mb4(Field *f, const char *str)
   Field_varstring *f2 = (Field_varstring *)f;
   f2->store(str, strlen(str), &my_charset_utf8mb4_bin);
 }
-
 void
-set_field_longtext_utf8(Field *f, const char *str, uint len)
+set_field_varchar_utf8mb4(Field *f, const char *str, uint len)
 {
-  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_BLOB);
-  Field_blob *f2 = (Field_blob *)f;
-  f2->store(str, len, &my_charset_utf8_bin);
+  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_VARCHAR);
+  Field_varstring *f2 = (Field_varstring *)f;
+  f2->store(str, len, &my_charset_utf8mb4_bin);
 }
 
+/* BLOB TYPE */
 void
-set_field_blob(Field *f, const char *val, uint len)
+set_field_blob(Field *f, const char *val, size_t len)
 {
   DBUG_ASSERT(f->real_type() == MYSQL_TYPE_BLOB);
   Field_blob *f2 = (Field_blob *)f;
   f2->store(val, len, &my_charset_utf8_bin);
 }
 
+/* TEXT TYPE */
+void
+set_field_text(Field *f, const char *val, size_t len, const CHARSET_INFO *cs)
+{
+  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_BLOB);
+  Field_blob *f2 = (Field_blob *)f;
+  f2->store(val, len, cs);
+}
+
+char *
+get_field_blob(Field *f, char *val, uint *len)
+{
+  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_BLOB);
+  String temp;
+  Field_blob *f2 = (Field_blob *)f;
+  f2->val_str(NULL, &temp);
+  *len = temp.length();
+  strncpy(val, temp.ptr(), *len);
+  return val;
+}
+
+/* ENUM TYPE */
 void
 set_field_enum(Field *f, ulonglong value)
 {
   DBUG_ASSERT(f->real_type() == MYSQL_TYPE_ENUM);
   Field_enum *f2 = (Field_enum *)f;
   f2->store_type(value);
+}
+ulonglong
+get_field_enum(Field *f)
+{
+  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_ENUM);
+  Field_enum *f2 = (Field_enum *)f;
+  return f2->val_int();
+}
+
+/* SET TYPE */
+void
+set_field_set(Field *f, ulonglong value)
+{
+  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_SET);
+  Field_set *f2 = (Field_set *)f;
+  f2->store_type(value);
+}
+ulonglong
+get_field_set(Field *f)
+{
+  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_SET);
+  Field_set *f2 = (Field_set *)f;
+  return f2->val_int();
+}
+
+/* DATE TYPE */
+void
+set_field_date(Field *f, const char *value, uint len)
+{
+  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_NEWDATE);
+  Field_newdate *f2 = (Field_newdate *)f;
+  f2->store(value, len, system_charset_info);
+}
+char *
+get_field_date(Field *f, char *val, uint *len)
+{
+  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_NEWDATE);
+  String temp;
+  Field_newdate *f2 = (Field_newdate *)f;
+  f2->val_str(&temp, NULL);
+  *len = temp.length();
+  strncpy(val, temp.ptr(), *len);
+  return val;
+}
+
+/* TIME TYPE */
+void
+set_field_time(Field *f, const char *value, uint len)
+{
+  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_TIME2);
+  Field_timef *f2 = (Field_timef *)f;
+  f2->store(value, len, system_charset_info);
+}
+char *
+get_field_time(Field *f, char *val, uint *len)
+{
+  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_TIME2);
+  String temp;
+  Field_timef *f2 = (Field_timef *)f;
+  f2->val_str(&temp, NULL);
+  *len = temp.length();
+  strncpy(val, temp.ptr(), *len);
+  return val;
+}
+
+/* DATETIME TYPE */
+void
+set_field_datetime(Field *f, const char *value, uint len)
+{
+  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_DATETIME2);
+  Field_datetimef *f2 = (Field_datetimef *)f;
+  f2->store(value, len, system_charset_info);
+}
+char *
+get_field_datetime(Field *f, char *val, uint *len)
+{
+  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_DATETIME2);
+  String temp;
+  Field_datetimef *f2 = (Field_datetimef *)f;
+  f2->val_str(&temp, NULL);
+  *len = temp.length();
+  strncpy(val, temp.ptr(), *len);
+  return val;
+}
+
+/* TIMESTAMP TYPE */
+void
+set_field_timestamp(Field *f, const char *value, uint len)
+{
+  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_TIMESTAMP2);
+  Field_timestampf *f2 = (Field_timestampf *)f;
+  f2->store(value, len, system_charset_info);
+}
+char *
+get_field_timestamp(Field *f, char *val, uint *len)
+{
+  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_TIMESTAMP2);
+  String temp;
+  Field_timestampf *f2 = (Field_timestampf *)f;
+  f2->val_str(&temp, NULL);
+  *len = temp.length();
+  strncpy(val, temp.ptr(), *len);
+  return val;
 }
 
 void
@@ -157,46 +458,64 @@ set_field_timestamp(Field *f, ulonglong value)
   f2->store_timestamp(&tm);
 }
 
+/* YEAR TYPE */
 void
-set_field_double(Field *f, double value)
+set_field_year(Field *f, ulong value)
 {
-  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_DOUBLE);
-  Field_double *f2 = (Field_double *)f;
-  f2->store(value);
+  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_YEAR);
+  Field_year *f2 = (Field_year *)f;
+  f2->store(value, true);
 }
-
-ulonglong
-get_field_ulonglong(Field *f)
+ulong
+get_field_year(Field *f)
 {
-  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_LONGLONG);
-  Field_longlong *f2 = (Field_longlong *)f;
+  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_YEAR);
+  Field_year *f2 = (Field_year *)f;
   return f2->val_int();
 }
 
-ulonglong
-get_field_enum(Field *f)
+void
+format_sqltext(const char *source_sqltext,
+               size_t source_length,
+               const CHARSET_INFO *source_cs,
+               bool truncated,
+               String &sqltext)
 {
-  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_ENUM);
-  Field_enum *f2 = (Field_enum *)f;
-  return f2->val_int();
-}
+  DBUG_ASSERT(source_cs != NULL);
 
-String *
-get_field_char_utf8(Field *f, String *val)
-{
-  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_STRING);
-  Field_string *f2 = (Field_string *)f;
-  val = f2->val_str(NULL, val);
-  return val;
-}
+  sqltext.set_charset(source_cs);
+  sqltext.length(0);
 
-String *
-get_field_varchar_utf8(Field *f, String *val)
-{
-  DBUG_ASSERT(f->real_type() == MYSQL_TYPE_VARCHAR);
-  Field_varstring *f2 = (Field_varstring *)f;
-  val = f2->val_str(NULL, val);
-  return val;
+  if (source_length == 0)
+    return;
+
+  /* Adjust sqltext length to a valid number of bytes. */
+  int cs_error = 0;
+  size_t sqltext_length =
+    source_cs->cset->well_formed_len(source_cs,
+                                     source_sqltext,
+                                     source_sqltext + source_length,
+                                     source_length,
+                                     &cs_error);
+  if (sqltext_length > 0)
+  {
+    /* Copy the source text into the target, convert charset if necessary. */
+    sqltext.append(source_sqltext, sqltext_length, source_cs);
+
+    /* Append "..." if the string is truncated or not well-formed. */
+    if (truncated)
+    {
+      size_t chars = sqltext.numchars();
+      if (chars > 3)
+      {
+        chars -= 3;
+        size_t bytes_offset = sqltext.charpos(chars, 0);
+        sqltext.length(bytes_offset);
+        sqltext.append("...", 3);
+      }
+    }
+  }
+  return;
 }
 
 int
@@ -338,11 +657,11 @@ PFS_digest_row::make_row(PFS_statements_digest_stat *pfs)
   if (safe_byte_count > 0)
   {
     /*
-      Calculate digest from MD5 HASH collected to be shown as
+      Calculate digest from HASH collected to be shown as
       DIGEST in this row.
     */
-    MD5_HASH_TO_STRING(pfs->m_digest_storage.m_md5, m_digest);
-    m_digest_length = MD5_HASH_TO_STRING_LENGTH;
+    DIGEST_HASH_TO_STRING(pfs->m_digest_storage.m_hash, m_digest);
+    m_digest_length = DIGEST_HASH_TO_STRING_LENGTH;
 
     /*
       Calculate digest_text information from the token array collected
@@ -391,8 +710,7 @@ PFS_digest_row::set_field(uint index, Field *f)
   case 2: /* DIGEST_TEXT */
     if (m_digest_text.length() > 0)
     {
-      set_field_longtext_utf8(
-        f, m_digest_text.ptr(), (uint)m_digest_text.length());
+      set_field_blob(f, m_digest_text.ptr(), (uint)m_digest_text.length());
     }
     else
     {
@@ -462,75 +780,116 @@ PFS_object_row::make_row(PFS_program *pfs)
 }
 
 int
-PFS_object_row::make_row(const MDL_key *mdl)
+PFS_column_row::make_row(const MDL_key *mdl)
 {
+  static_assert(MDL_key::NAMESPACE_END == 16,
+                "Adjust performance schema when changing enum_mdl_namespace");
+
   switch (mdl->mdl_namespace())
   {
   case MDL_key::GLOBAL:
     m_object_type = OBJECT_TYPE_GLOBAL;
     m_schema_name_length = 0;
     m_object_name_length = 0;
-    break;
-  case MDL_key::SCHEMA:
-    m_object_type = OBJECT_TYPE_SCHEMA;
-    m_schema_name_length = mdl->db_name_length();
-    m_object_name_length = 0;
-    break;
-  case MDL_key::TABLE:
-    m_object_type = OBJECT_TYPE_TABLE;
-    m_schema_name_length = mdl->db_name_length();
-    m_object_name_length = mdl->name_length();
-    break;
-  case MDL_key::FUNCTION:
-    m_object_type = OBJECT_TYPE_FUNCTION;
-    m_schema_name_length = mdl->db_name_length();
-    m_object_name_length = mdl->name_length();
-    break;
-  case MDL_key::PROCEDURE:
-    m_object_type = OBJECT_TYPE_PROCEDURE;
-    m_schema_name_length = mdl->db_name_length();
-    m_object_name_length = mdl->name_length();
-    break;
-  case MDL_key::TRIGGER:
-    m_object_type = OBJECT_TYPE_TRIGGER;
-    m_schema_name_length = mdl->db_name_length();
-    m_object_name_length = mdl->name_length();
-    break;
-  case MDL_key::EVENT:
-    m_object_type = OBJECT_TYPE_EVENT;
-    m_schema_name_length = mdl->db_name_length();
-    m_object_name_length = mdl->name_length();
-    break;
-  case MDL_key::COMMIT:
-    m_object_type = OBJECT_TYPE_COMMIT;
-    m_schema_name_length = 0;
-    m_object_name_length = 0;
-    break;
-  case MDL_key::USER_LEVEL_LOCK:
-    m_object_type = OBJECT_TYPE_USER_LEVEL_LOCK;
-    m_schema_name_length = 0;
-    m_object_name_length = mdl->name_length();
+    m_column_name_length = 0;
     break;
   case MDL_key::TABLESPACE:
     m_object_type = OBJECT_TYPE_TABLESPACE;
     m_schema_name_length = 0;
     m_object_name_length = mdl->name_length();
+    m_column_name_length = 0;
+    break;
+  case MDL_key::SCHEMA:
+    m_object_type = OBJECT_TYPE_SCHEMA;
+    m_schema_name_length = mdl->db_name_length();
+    m_object_name_length = 0;
+    m_column_name_length = 0;
+    break;
+  case MDL_key::TABLE:
+    m_object_type = OBJECT_TYPE_TABLE;
+    m_schema_name_length = mdl->db_name_length();
+    m_object_name_length = mdl->name_length();
+    m_column_name_length = 0;
+    break;
+  case MDL_key::FUNCTION:
+    m_object_type = OBJECT_TYPE_FUNCTION;
+    m_schema_name_length = mdl->db_name_length();
+    m_object_name_length = mdl->name_length();
+    m_column_name_length = 0;
+    break;
+  case MDL_key::PROCEDURE:
+    m_object_type = OBJECT_TYPE_PROCEDURE;
+    m_schema_name_length = mdl->db_name_length();
+    m_object_name_length = mdl->name_length();
+    m_column_name_length = 0;
+    break;
+  case MDL_key::TRIGGER:
+    m_object_type = OBJECT_TYPE_TRIGGER;
+    m_schema_name_length = mdl->db_name_length();
+    m_object_name_length = mdl->name_length();
+    m_column_name_length = 0;
+    break;
+  case MDL_key::EVENT:
+    m_object_type = OBJECT_TYPE_EVENT;
+    m_schema_name_length = mdl->db_name_length();
+    m_object_name_length = mdl->name_length();
+    m_column_name_length = 0;
+    break;
+  case MDL_key::COMMIT:
+    m_object_type = OBJECT_TYPE_COMMIT;
+    m_schema_name_length = 0;
+    m_object_name_length = 0;
+    m_column_name_length = 0;
+    break;
+  case MDL_key::USER_LEVEL_LOCK:
+    m_object_type = OBJECT_TYPE_USER_LEVEL_LOCK;
+    m_schema_name_length = 0;
+    m_object_name_length = mdl->name_length();
+    m_column_name_length = 0;
     break;
   case MDL_key::LOCKING_SERVICE:
     m_object_type = OBJECT_TYPE_LOCKING_SERVICE;
     m_schema_name_length = mdl->db_name_length();
     m_object_name_length = mdl->name_length();
+    m_column_name_length = 0;
+    break;
+  case MDL_key::SRID:
+    m_object_type = OBJECT_TYPE_SRID;
+    m_schema_name_length = 0;
+    m_object_name_length = mdl->name_length();
+    m_column_name_length = 0;
     break;
   case MDL_key::ACL_CACHE:
     m_object_type = OBJECT_TYPE_ACL_CACHE;
     m_schema_name_length = mdl->db_name_length();
     m_object_name_length = mdl->name_length();
+    m_column_name_length = 0;
+    break;
+  case MDL_key::COLUMN_STATISTICS:
+    m_object_type = OBJECT_TYPE_COLUMN_STATISTICS;
+    m_schema_name_length = mdl->db_name_length();
+    m_object_name_length = mdl->name_length();
+    m_column_name_length = mdl->col_name_length();
+    break;
+  case MDL_key::BACKUP_LOCK:
+    m_object_type = OBJECT_TYPE_BACKUP_LOCK;
+    m_schema_name_length = 0;
+    m_object_name_length = 0;
+    m_column_name_length = 0;
+    break;
+  case MDL_key::RESOURCE_GROUPS:
+    m_object_type = OBJECT_TYPE_RESOURCE_GROUPS;
+    m_schema_name_length = mdl->db_name_length();
+    m_object_name_length = mdl->name_length();
+    m_column_name_length = 0;
     break;
   case MDL_key::NAMESPACE_END:
   default:
+    DBUG_ASSERT(false);
     m_object_type = NO_OBJECT_TYPE;
     m_schema_name_length = 0;
     m_object_name_length = 0;
+    m_column_name_length = 0;
     break;
   }
 
@@ -550,6 +909,15 @@ PFS_object_row::make_row(const MDL_key *mdl)
   if (m_object_name_length > 0)
   {
     memcpy(m_object_name, mdl->name(), m_object_name_length);
+  }
+
+  if (m_column_name_length > sizeof(m_column_name))
+  {
+    return 1;
+  }
+  if (m_column_name_length > 0)
+  {
+    memcpy(m_column_name, mdl->col_name(), m_column_name_length);
   }
 
   return 0;
@@ -603,6 +971,56 @@ PFS_object_row::set_nullable_field(uint index, Field *f)
     if (m_object_name_length > 0)
     {
       set_field_varchar_utf8(f, m_object_name, m_object_name_length);
+    }
+    else
+    {
+      f->set_null();
+    }
+    break;
+  default:
+    DBUG_ASSERT(false);
+  }
+}
+
+void
+PFS_column_row::set_nullable_field(uint index, Field *f)
+{
+  switch (index)
+  {
+  case 0: /* OBJECT_TYPE */
+    if (m_object_type != NO_OBJECT_TYPE)
+    {
+      set_field_object_type(f, m_object_type);
+    }
+    else
+    {
+      f->set_null();
+    }
+    break;
+  case 1: /* SCHEMA_NAME */
+    if (m_schema_name_length > 0)
+    {
+      set_field_varchar_utf8(f, m_schema_name, m_schema_name_length);
+    }
+    else
+    {
+      f->set_null();
+    }
+    break;
+  case 2: /* OBJECT_NAME */
+    if (m_object_name_length > 0)
+    {
+      set_field_varchar_utf8(f, m_object_name, m_object_name_length);
+    }
+    else
+    {
+      f->set_null();
+    }
+    break;
+  case 3: /* COLUMN_NAME */
+    if (m_column_name_length > 0)
+    {
+      set_field_varchar_utf8(f, m_column_name, m_column_name_length);
     }
     else
     {
@@ -941,6 +1359,9 @@ set_field_lock_type(Field *f, PFS_TL_LOCK_TYPE lock_type)
 void
 set_field_mdl_type(Field *f, opaque_mdl_type mdl_type)
 {
+  static_assert(MDL_TYPE_END == 11,
+                "Adjust performance schema when changing enum_mdl_type");
+
   enum_mdl_type e = (enum_mdl_type)mdl_type;
   switch (e)
   {
@@ -977,6 +1398,7 @@ set_field_mdl_type(Field *f, opaque_mdl_type mdl_type)
   case MDL_EXCLUSIVE:
     set_field_varchar_utf8(f, "EXCLUSIVE", 9);
     break;
+  case MDL_TYPE_END:
   default:
     DBUG_ASSERT(false);
   }
@@ -985,6 +1407,9 @@ set_field_mdl_type(Field *f, opaque_mdl_type mdl_type)
 void
 set_field_mdl_duration(Field *f, opaque_mdl_duration mdl_duration)
 {
+  static_assert(MDL_DURATION_END == 3,
+                "Adjust performance schema when changing enum_mdl_duration");
+
   enum_mdl_duration e = (enum_mdl_duration)mdl_duration;
   switch (e)
   {
@@ -1208,7 +1633,11 @@ PFS_user_variable_value_row::make_row(const char *val, size_t length)
 }
 
 bool
-PFS_key_long::do_match(bool record_null, long record_value)
+PFS_key_long::stateless_match(bool record_null,
+                              long record_value,
+                              bool m_is_null,
+                              long m_key_value,
+                              enum ha_rkey_function m_find_flag)
 {
   int cmp = 0;
 
@@ -1348,11 +1777,14 @@ PFS_key_ulonglong::do_match(bool record_null, ulonglong record_value)
   }
 }
 
-template <int SIZE>
 bool
-PFS_key_string<SIZE>::do_match(bool record_null,
-                               const char *record_string,
-                               size_t record_string_length)
+PFS_key_pstring::stateless_match(bool record_null,
+                                 const char *record_string,
+                                 size_t record_string_length,
+                                 const char *m_key_value,
+                                 size_t m_key_value_length,
+                                 bool m_is_null,
+                                 enum ha_rkey_function m_find_flag)
 {
   if (m_find_flag == HA_READ_KEY_EXACT)
   {
@@ -1561,13 +1993,6 @@ PFS_key_processlist_id::match(const PFS_thread *pfs)
 }
 
 bool
-PFS_key_processlist_id_int::match(const PFS_thread *pfs)
-{
-  bool record_null = (pfs->m_processlist_id == 0);
-  return do_match(record_null, pfs->m_processlist_id);
-}
-
-bool
 PFS_key_engine_transaction_id::match(ulonglong engine_transaction_id)
 {
   return do_match(false, engine_transaction_id);
@@ -1745,10 +2170,6 @@ PFS_key_event_name::match_view(uint view)
     return do_match_prefix(
       false, metadata_lock_class_name.str, metadata_lock_class_name.length);
 
-  case PFS_instrument_view_constants::VIEW_THREAD:
-    return do_match_prefix(
-      false, thread_instrument_prefix.str, thread_instrument_prefix.length);
-
   case PFS_instrument_view_constants::VIEW_STAGE:
     return do_match_prefix(
       false, stage_instrument_prefix.str, stage_instrument_prefix.length);
@@ -1864,11 +2285,11 @@ bool
 PFS_key_digest::match(PFS_statements_digest_stat *pfs)
 {
   bool record_null = (pfs->m_digest_storage.is_empty());
-  char md5_string[MD5_HASH_TO_STRING_LENGTH + 1];
+  char hash_string[DIGEST_HASH_TO_STRING_LENGTH + 1];
 
-  MD5_HASH_TO_STRING(pfs->m_digest_storage.m_md5, md5_string);
+  DIGEST_HASH_TO_STRING(pfs->m_digest_storage.m_hash, hash_string);
 
-  return do_match(record_null, md5_string, MD5_HASH_TO_STRING_LENGTH);
+  return do_match(record_null, hash_string, DIGEST_HASH_TO_STRING_LENGTH);
 }
 
 bool
@@ -1889,6 +2310,27 @@ PFS_key_name::match(const char *name, uint name_length)
 {
   bool record_null = (name_length == 0);
   return do_match(record_null, name, name_length);
+}
+
+bool
+PFS_key_group_name::match(const LEX_STRING *name)
+{
+  bool record_null = (name->length == 0);
+  return do_match(record_null, name->str, name->length);
+}
+
+bool
+PFS_key_group_name::match(const char *name, uint name_length)
+{
+  bool record_null = (name_length == 0);
+  return do_match(record_null, name, name_length);
+}
+
+bool
+PFS_key_group_name::match(PFS_thread *pfs)
+{
+  bool record_null = (pfs->m_groupname_length == 0);
+  return do_match(record_null, pfs->m_groupname, pfs->m_groupname_length);
 }
 
 bool
@@ -1983,19 +2425,76 @@ PFS_key_object_type::read(PFS_key_reader &reader,
 bool
 PFS_key_object_type::match(enum_object_type object_type)
 {
-  return (m_object_type == object_type);
+  bool record_null = (object_type == NO_OBJECT_TYPE);
+  return do_match(record_null, object_type);
 }
 
 bool
 PFS_key_object_type::match(const PFS_object_row *pfs)
 {
-  return (m_object_type == pfs->m_object_type);  // FIXME null check?
+  bool record_null = (pfs->m_object_type == NO_OBJECT_TYPE);
+  return do_match(record_null, pfs->m_object_type);
+}
+
+bool
+PFS_key_object_type::match(const PFS_column_row *pfs)
+{
+  bool record_null = (pfs->m_object_type == NO_OBJECT_TYPE);
+  return do_match(record_null, pfs->m_object_type);
 }
 
 bool
 PFS_key_object_type::match(const PFS_program *pfs)
 {
-  return (m_object_type == pfs->m_type);
+  bool record_null = (pfs->m_type == NO_OBJECT_TYPE);
+  return do_match(record_null, pfs->m_type);
+}
+
+bool
+PFS_key_object_type::do_match(bool record_null, enum_object_type record_value)
+{
+  int cmp = 0;
+
+  if (m_is_null)
+  {
+    cmp = (record_null ? 0 : 1);
+  }
+  else
+  {
+    if (record_null)
+    {
+      cmp = -1;
+    }
+    else if (record_value < m_object_type)
+    {
+      cmp = -1;
+    }
+    else if (record_value > m_object_type)
+    {
+      cmp = +1;
+    }
+    else
+    {
+      cmp = 0;
+    }
+  }
+
+  switch (m_find_flag)
+  {
+  case HA_READ_KEY_EXACT:
+    return (cmp == 0);
+  case HA_READ_KEY_OR_NEXT:
+    return (cmp >= 0);
+  case HA_READ_KEY_OR_PREV:
+    return (cmp <= 0);
+  case HA_READ_BEFORE_KEY:
+    return (cmp < 0);
+  case HA_READ_AFTER_KEY:
+    return (cmp > 0);
+  default:
+    DBUG_ASSERT(false);
+    return false;
+  }
 }
 
 void
@@ -2019,25 +2518,76 @@ PFS_key_object_type_enum::read(PFS_key_reader &reader,
 bool
 PFS_key_object_type_enum::match(enum_object_type object_type)
 {
-  return (m_object_type == object_type);
+  bool record_null = (object_type == NO_OBJECT_TYPE);
+  return do_match(record_null, object_type);
 }
 
 bool
 PFS_key_object_type_enum::match(const PFS_prepared_stmt *pfs)
 {
-  return (m_object_type == pfs->m_owner_object_type);
+  bool record_null = (pfs->m_owner_object_type == NO_OBJECT_TYPE);
+  return do_match(record_null, pfs->m_owner_object_type);
 }
 
 bool
 PFS_key_object_type_enum::match(const PFS_object_row *pfs)
 {
-  return (m_object_type == pfs->m_object_type);  // FIXME null check?
+  bool record_null = (pfs->m_object_type == NO_OBJECT_TYPE);
+  return do_match(record_null, pfs->m_object_type);
 }
 
 bool
 PFS_key_object_type_enum::match(const PFS_program *pfs)
 {
-  return (m_object_type == pfs->m_type);
+  bool record_null = (pfs->m_type == NO_OBJECT_TYPE);
+  return do_match(record_null, pfs->m_type);
+}
+
+bool
+PFS_key_object_type_enum::do_match(bool record_null, enum_object_type record_value)
+{
+  int cmp = 0;
+
+  if (m_is_null)
+  {
+    cmp = (record_null ? 0 : 1);
+  }
+  else
+  {
+    if (record_null)
+    {
+      cmp = -1;
+    }
+    else if (record_value < m_object_type)
+    {
+      cmp = -1;
+    }
+    else if (record_value > m_object_type)
+    {
+      cmp = +1;
+    }
+    else
+    {
+      cmp = 0;
+    }
+  }
+
+  switch (m_find_flag)
+  {
+  case HA_READ_KEY_EXACT:
+    return (cmp == 0);
+  case HA_READ_KEY_OR_NEXT:
+    return (cmp >= 0);
+  case HA_READ_KEY_OR_PREV:
+    return (cmp <= 0);
+  case HA_READ_BEFORE_KEY:
+    return (cmp < 0);
+  case HA_READ_AFTER_KEY:
+    return (cmp > 0);
+  default:
+    DBUG_ASSERT(false);
+    return false;
+  }
 }
 
 bool
@@ -2061,6 +2611,13 @@ PFS_key_object_schema::match(const PFS_prepared_stmt *pfs)
 
 bool
 PFS_key_object_schema::match(const PFS_object_row *pfs)
+{
+  bool record_null = (pfs->m_object_name_length == 0);
+  return do_match(record_null, pfs->m_schema_name, pfs->m_schema_name_length);
+}
+
+bool
+PFS_key_object_schema::match(const PFS_column_row *pfs)
 {
   bool record_null = (pfs->m_object_name_length == 0);
   return do_match(record_null, pfs->m_schema_name, pfs->m_schema_name_length);
@@ -2107,6 +2664,13 @@ PFS_key_object_name::match(const PFS_object_row *pfs)
 }
 
 bool
+PFS_key_object_name::match(const PFS_column_row *pfs)
+{
+  bool record_null = (pfs->m_object_name_length == 0);
+  return do_match(record_null, pfs->m_object_name, pfs->m_object_name_length);
+}
+
+bool
 PFS_key_object_name::match(const PFS_index_row *pfs)
 {
   bool record_null = (pfs->m_index_name_length == 0);
@@ -2125,6 +2689,13 @@ PFS_key_object_name::match(const char *object_name, uint object_name_length)
 {
   bool record_null = (object_name_length == 0);
   return do_match(record_null, object_name, object_name_length);
+}
+
+bool
+PFS_key_column_name::match(const PFS_column_row *pfs)
+{
+  bool record_null = (pfs->m_column_name_length == 0);
+  return do_match(record_null, pfs->m_column_name, pfs->m_column_name_length);
 }
 
 bool

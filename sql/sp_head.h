@@ -1,13 +1,20 @@
 /* Copyright (c) 2002, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -18,35 +25,42 @@
 
 #include <stddef.h>
 #include <sys/types.h>
+#include <string>
 
-#include "field.h"
-#include "handler.h"
 #include "lex_string.h"
-#include "mem_root_array.h"    // Mem_root_array
+#include "map_helpers.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_macros.h"
 #include "my_psi_config.h"
 #include "my_sqlcommand.h"
 #include "my_sys.h"
+#include "mysql/components/services/psi_statement_bits.h"
 #include "mysql/psi/mysql_statement.h"
+#include "mysql/udf_registration_types.h"
 #include "mysqld_error.h"
-#include "set_var.h"
-#include "sql_alloc.h"
-#include "sql_class.h"         // Query_arena
-#include "sql_lex.h"
-#include "sql_list.h"
-#include "sql_plugin.h"
-#include "sql_security_ctx.h"
-#include "sql_servers.h"
-#include "system_variables.h"
-#include "table.h"
+#include "sql/auth/sql_security_ctx.h"
+#include "sql/field.h"
+#include "sql/handler.h"
+#include "sql/item_create.h"
+#include "sql/key.h"
+#include "sql/mem_root_array.h" // Mem_root_array
+#include "sql/session_tracker.h"
+#include "sql/set_var.h"
+#include "sql/sql_alloc.h"
+#include "sql/sql_class.h"     // Query_arena
+#include "sql/sql_lex.h"
+#include "sql/sql_list.h"
+#include "sql/sql_plugin.h"
+#include "sql/sql_servers.h"
+#include "sql/system_variables.h"
+#include "sql/table.h"
 
 class Item;
 class Item_trigger_field;
+class Sroutine_hash_entry;
 class Table_trigger_field_support;
 class sp_head;
-struct MDL_key;
 struct PSI_sp_share;
 
 /**
@@ -140,8 +154,8 @@ public:
     m_qname.length= 0;
   }
 
-  /** Create temporary sp_name object from MDL key. */
-  sp_name(const MDL_key *key, char *qname_buff);
+  /** Create temporary sp_name object for Sroutine_hash_entry. */
+  sp_name(const Sroutine_hash_entry *rt, char *qname_buff);
 
   // Init. the qualified name from the db and name.
   void init_qname(THD *thd);	// thd for memroot allocation
@@ -414,6 +428,8 @@ private:
 
 ///////////////////////////////////////////////////////////////////////////
 
+struct SP_TABLE;
+
 /**
   sp_head represents one instance of a stored program. It might be of any type
   (stored procedure, function, trigger, event).
@@ -538,8 +554,11 @@ public:
     set are not linked in one list. Because of this we are able save memory
     by using for this set same objects that are used in 'sroutines' sets
     for statements of which this stored routine consists.
+
+    See Sroutine_hash_entry for explanation why this hash uses binary
+    key comparison.
   */
-  HASH m_sroutines;
+  malloc_unordered_map<std::string, Sroutine_hash_entry*> m_sroutines;
 
   /*
     Security context for stored routine which should be run under
@@ -843,9 +862,9 @@ public:
     else if (m_flags & HAS_SQLCOM_FLUSH)
       my_error(ER_STMT_NOT_ALLOWED_IN_SF_OR_TRG, MYF(0), "FLUSH");
 
-    return MY_TEST(m_flags &
-                   (CONTAINS_DYNAMIC_SQL|MULTI_RESULTS|HAS_SET_AUTOCOMMIT_STMT|
-                    HAS_COMMIT_OR_ROLLBACK|HAS_SQLCOM_RESET|HAS_SQLCOM_FLUSH));
+    return (m_flags &
+            (CONTAINS_DYNAMIC_SQL|MULTI_RESULTS|HAS_SET_AUTOCOMMIT_STMT|
+             HAS_COMMIT_OR_ROLLBACK|HAS_SQLCOM_RESET|HAS_SQLCOM_FLUSH));
   }
 
 #ifndef DBUG_OFF
@@ -947,7 +966,15 @@ private:
     We do so because the same instance of sp_head may be called both
     in prelocked mode and in non-prelocked mode.
   */
-  HASH m_sptabs;
+  collation_unordered_map<std::string, SP_TABLE *> m_sptabs;
+
+  /*
+    The same information as in m_sptabs, but sorted (by an arbitrary key).
+    This is useful to get consistent locking order, which makes MTR tests
+    more deterministic across platforms. It does not have a bearing on the
+    actual behavior of the server.
+  */
+  std::vector<SP_TABLE *> m_sptabs_sorted;
 
   /**
     Version of the stored routine cache at the moment when the

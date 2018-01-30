@@ -1,13 +1,20 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -16,30 +23,32 @@
 
 /* Functions to handle date and time */
 
-#include "sql_time.h"
+#include "sql/sql_time.h"
 
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
-#include "current_thd.h"
 #include "decimal.h"
-#include "derror.h"
-#include "field.h"
-#include "item_timefunc.h"   // INTERNAL_FORMAT
 #include "m_ctype.h"
 #include "m_string.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
-#include "my_decimal.h"
 #include "my_macros.h"
 #include "mysql_com.h"
 #include "mysqld_error.h"
-#include "sql_class.h"  // THD, MODE_STRICT_ALL_TABLES, MODE_STRICT_TRANS_TABLES
-#include "sql_const.h"
-#include "system_variables.h"
-#include "table.h"
-#include "tztime.h"                             // struct Time_zone
+#include "sql/auth/sql_security_ctx.h"
+#include "sql/current_thd.h"
+#include "sql/derror.h"
+#include "sql/field.h"
+#include "sql/histograms/value_map.h"
+#include "sql/item_timefunc.h" // INTERNAL_FORMAT
+#include "sql/my_decimal.h"
+#include "sql/session_tracker.h"
+#include "sql/sql_class.h" // THD, MODE_STRICT_ALL_TABLES, MODE_STRICT_TRANS_TABLES
+#include "sql/sql_const.h"
+#include "sql/system_variables.h"
+#include "sql/tztime.h"                         // struct Time_zone
 
 
 	/* Some functions to calculate dates */
@@ -121,9 +130,9 @@ uint calc_week(MYSQL_TIME *l_time, uint week_behaviour, uint *year)
   uint days;
   ulong daynr=calc_daynr(l_time->year,l_time->month,l_time->day);
   ulong first_daynr=calc_daynr(l_time->year,1,1);
-  bool monday_first= MY_TEST(week_behaviour & WEEK_MONDAY_FIRST);
-  bool week_year= MY_TEST(week_behaviour & WEEK_YEAR);
-  bool first_weekday= MY_TEST(week_behaviour & WEEK_FIRST_WEEKDAY);
+  bool monday_first= (week_behaviour & WEEK_MONDAY_FIRST);
+  bool week_year= (week_behaviour & WEEK_YEAR);
+  bool first_weekday= (week_behaviour & WEEK_FIRST_WEEKDAY);
 
   uint weekday=calc_weekday(first_daynr, !monday_first);
   *year=l_time->year;
@@ -206,6 +215,17 @@ void get_date_from_daynr(long daynr,uint *ret_year,uint *ret_month,
 
 	/* Functions to handle periods */
 
+bool valid_period(ulong period)
+{
+  if (period <= 0)
+    return false;
+  if ((period % 100) == 0)
+    return false;
+  if ((period % 100) > 12)
+    return false;
+  return true;
+}
+
 ulong convert_period_to_month(ulong period)
 {
   ulong a,b;
@@ -287,6 +307,7 @@ bool str_to_time(const CHARSET_INFO *cs, const char *str, size_t length,
 
 
 /* Character set-aware version of str_to_datetime() */
+#ifdef MYSQL_SERVER
 bool str_to_datetime(const CHARSET_INFO *cs,
                      const char *str, size_t length,
                      MYSQL_TIME *l_time, my_time_flags_t flags,
@@ -322,6 +343,7 @@ bool datetime_add_nanoseconds_adjust_frac(MYSQL_TIME *ltime, uint nanoseconds,
   else
     return datetime_add_nanoseconds_with_round(ltime, nanoseconds, warnings);
 }
+#endif // ifdef MYSQL_SERVER
 
 /**
   @param [in,out] ltime        MYSQL_TIME variable to add to.
@@ -443,6 +465,7 @@ ret:
   @param [in,out] warnings     Warning flag vector.
   @retval                      False on success, true on error.
 */
+#ifdef MYSQL_SERVER
 bool datetime_add_nanoseconds_with_round(MYSQL_TIME *ltime,
                                          uint nanoseconds, int *warnings)
 {
@@ -518,8 +541,12 @@ str_to_datetime_with_warn(String *str, MYSQL_TIME *l_time,
     flags|= TIME_FRAC_TRUNCATE;
   bool ret_val= str_to_datetime(str, l_time, flags, &status);
   if (ret_val || status.warnings)
-    make_truncated_value_warning(current_thd, Sql_condition::SL_WARNING,
-                                 ErrConvString(str), l_time->time_type, NullS);
+  {
+    if (make_truncated_value_warning(current_thd, Sql_condition::SL_WARNING,
+                                     ErrConvString(str), l_time->time_type,
+                                     NullS))
+      return true;
+  }
   return ret_val;
 }
 
@@ -589,9 +616,12 @@ bool my_decimal_to_datetime_with_warn(const my_decimal *decimal,
     rc= lldiv_t_to_datetime(lld, ltime, flags, &warnings);
 
   if (warnings)
-    make_truncated_value_warning(current_thd, Sql_condition::SL_WARNING,
-                                 ErrConvString(decimal), ltime->time_type,
-                                 NullS);
+  {
+    if (make_truncated_value_warning(current_thd, Sql_condition::SL_WARNING,
+                                     ErrConvString(decimal), ltime->time_type,
+                                     NullS))
+      return true;
+  }
   return rc;
 }
 
@@ -619,8 +649,12 @@ bool my_double_to_datetime_with_warn(double nr, MYSQL_TIME *ltime,
     rc= lldiv_t_to_datetime(lld, ltime, flags, &warnings);
 
   if (warnings)
-    make_truncated_value_warning(current_thd, Sql_condition::SL_WARNING,
-                                 ErrConvString(nr), ltime->time_type, NullS);
+  {
+    if (make_truncated_value_warning(current_thd, Sql_condition::SL_WARNING,
+                                     ErrConvString(nr), ltime->time_type,
+                                     NullS))
+      return true;
+  }
   return rc;
 }
 
@@ -639,9 +673,12 @@ bool my_longlong_to_datetime_with_warn(longlong nr, MYSQL_TIME *ltime,
   int warnings= 0;
   bool rc= number_to_datetime(nr, ltime, flags, &warnings) == -1LL;
   if (warnings)
-    make_truncated_value_warning(current_thd, Sql_condition::SL_WARNING,
-                                 ErrConvString(nr),  MYSQL_TIMESTAMP_NONE,
-                                 NullS);
+  {
+    if (make_truncated_value_warning(current_thd, Sql_condition::SL_WARNING,
+                                     ErrConvString(nr),  MYSQL_TIMESTAMP_NONE,
+                                     NullS))
+      return true;
+  }
   return rc;
 }
 
@@ -690,9 +727,12 @@ bool my_decimal_to_time_with_warn(const my_decimal *decimal, MYSQL_TIME *ltime)
     rc= lldiv_t_to_time(lld, ltime, &warnings);
 
   if (warnings)
-    make_truncated_value_warning(current_thd, Sql_condition::SL_WARNING,
-                                 ErrConvString(decimal), MYSQL_TIMESTAMP_TIME,
-                                 NullS);
+  {
+    if (make_truncated_value_warning(current_thd, Sql_condition::SL_WARNING,
+                                     ErrConvString(decimal), MYSQL_TIMESTAMP_TIME,
+                                     NullS))
+      return true;
+  }
   return rc;
 }
 
@@ -719,9 +759,12 @@ bool my_double_to_time_with_warn(double nr, MYSQL_TIME *ltime)
     rc= lldiv_t_to_time(lld, ltime, &warnings);
 
   if (warnings)
-    make_truncated_value_warning(current_thd, Sql_condition::SL_WARNING,
-                                 ErrConvString(nr), MYSQL_TIMESTAMP_TIME,
-                                 NullS);
+  {
+    if (make_truncated_value_warning(current_thd, Sql_condition::SL_WARNING,
+                                     ErrConvString(nr), MYSQL_TIMESTAMP_TIME,
+                                     NullS))
+      return true;
+  }
   return rc;
 }
 
@@ -738,9 +781,12 @@ bool my_longlong_to_time_with_warn(longlong nr, MYSQL_TIME *ltime)
   int warnings= 0;
   bool rc= number_to_time(nr, ltime, &warnings);
   if (warnings)
-    make_truncated_value_warning(current_thd, Sql_condition::SL_WARNING,
-                                 ErrConvString(nr), MYSQL_TIMESTAMP_TIME,
-                                 NullS);
+  {
+    if (make_truncated_value_warning(current_thd, Sql_condition::SL_WARNING,
+                                     ErrConvString(nr), MYSQL_TIMESTAMP_TIME,
+                                     NullS))
+      return true;
+  }
   return rc;
 }
 
@@ -903,9 +949,12 @@ str_to_time_with_warn(String *str, MYSQL_TIME *l_time)
 
   bool ret_val= str_to_time(str, l_time, flags, &status);
   if (ret_val || status.warnings)
-    make_truncated_value_warning(current_thd, Sql_condition::SL_WARNING,
-                                 ErrConvString(str), MYSQL_TIMESTAMP_TIME,
-                                 NullS);
+  {
+    if (make_truncated_value_warning(current_thd, Sql_condition::SL_WARNING,
+                                     ErrConvString(str), MYSQL_TIMESTAMP_TIME,
+                                     NullS))
+      return true;
+  }
   return ret_val;
 }
 
@@ -926,6 +975,7 @@ void time_to_datetime(THD *thd, const MYSQL_TIME *ltime, MYSQL_TIME *ltime2)
   ltime2->time_type= MYSQL_TIMESTAMP_DATE;
   mix_date_and_time(ltime2, ltime);
 }
+#endif // ifdef MYSQL_SERVER
 
 
 /*
@@ -1300,7 +1350,8 @@ bool my_TIME_to_str(const MYSQL_TIME *ltime, String *str, uint dec)
 }
 
 
-void make_truncated_value_warning(THD *thd,
+#ifdef MYSQL_SERVER
+bool make_truncated_value_warning(THD *thd,
                                   Sql_condition::enum_severity_level level,
                                   ErrConvString val, timestamp_type time_type,
                                   const char *field_name)
@@ -1310,7 +1361,7 @@ void make_truncated_value_warning(THD *thd,
   CHARSET_INFO *cs= system_charset_info;
 
   switch (time_type) {
-    case MYSQL_TIMESTAMP_DATE: 
+    case MYSQL_TIMESTAMP_DATE:
       type_str= "date";
       break;
     case MYSQL_TIMESTAMP_TIME:
@@ -1337,20 +1388,21 @@ void make_truncated_value_warning(THD *thd,
                          ER_THD(thd, ER_WRONG_VALUE), type_str, val.ptr());
   }
   push_warning(thd, level, ER_TRUNCATED_WRONG_VALUE, warn_buff);
+
+  // strict mode can convert warning to error. Check for error while returning.
+  return thd->is_error();
 }
 
 
 /* Daynumber from year 0 to 9999-12-31 */
-#define MAX_DAY_NUMBER 3652424L
+#define MAX_DAY_NUMBER 3652424UL
 
 bool date_add_interval(MYSQL_TIME *ltime, interval_type int_type,
                        Interval interval)
 {
-  long period, sign;
-
   ltime->neg= 0;
 
-  sign= (interval.neg ? -1 : 1);
+  long long sign= (interval.neg ? -1 : 1);
 
   switch (int_type) {
   case INTERVAL_SECOND:
@@ -1374,11 +1426,23 @@ bool date_add_interval(MYSQL_TIME *ltime, interval_type int_type,
     extra_sec= microseconds/1000000L;
     microseconds= microseconds%1000000L;
 
-    sec=((ltime->day-1)*3600*24L+ltime->hour*3600+ltime->minute*60+
+    if (interval.day > MAX_DAY_NUMBER)
+      goto invalid_date;
+    if (interval.hour > MAX_DAY_NUMBER * 24ULL)
+      goto invalid_date;
+    if (interval.minute > MAX_DAY_NUMBER * 24ULL * 60ULL)
+      goto invalid_date;
+    if (interval.second > MAX_DAY_NUMBER * 24ULL * 60ULL * 60ULL)
+      goto invalid_date;
+    sec=((ltime->day-1) * 3600LL * 24LL +
+         ltime->hour    * 3600LL +
+         ltime->minute  * 60LL +
 	 ltime->second +
-	 sign* (longlong) (interval.day*3600*24L +
-                           interval.hour*3600LL+interval.minute*60LL+
-                           interval.second))+ extra_sec;
+	 sign* (longlong) (interval.day    * 3600ULL * 24ULL +
+                           interval.hour   * 3600ULL +
+                           interval.minute *   60ULL +
+                           interval.second))
+      + extra_sec;
     if (microseconds < 0)
     {
       microseconds+= 1000000LL;
@@ -1404,15 +1468,29 @@ bool date_add_interval(MYSQL_TIME *ltime, interval_type int_type,
     break;
   }
   case INTERVAL_DAY:
-  case INTERVAL_WEEK:
-    period= (calc_daynr(ltime->year,ltime->month,ltime->day) +
-             sign * (long) interval.day);
-    /* Daynumber from year 0 to 9999-12-31 */
-    if ((ulong) period > MAX_DAY_NUMBER)
-      goto invalid_date;
+  case INTERVAL_WEEK: {
+    unsigned long period;
+    period= calc_daynr(ltime->year,ltime->month,ltime->day);
+    if (interval.neg)
+    {
+      if (period < interval.day)  // Before 0.
+        goto invalid_date;
+      period-= interval.day;
+    }
+    else
+    {
+      if (period + interval.day < period)  // Overflow.
+        goto invalid_date;
+      if (period + interval.day > MAX_DAY_NUMBER)  // After 9999-12-31.
+        goto invalid_date;
+      period+= interval.day;
+    }
     get_date_from_daynr((long) period,&ltime->year,&ltime->month,&ltime->day);
+  }
     break;
   case INTERVAL_YEAR:
+    if (interval.year > 10000UL)
+      goto invalid_date;
     ltime->year+= sign * (long) interval.year;
     if ((ulong) ltime->year >= 10000L)
       goto invalid_date;
@@ -1422,13 +1500,23 @@ bool date_add_interval(MYSQL_TIME *ltime, interval_type int_type,
     break;
   case INTERVAL_YEAR_MONTH:
   case INTERVAL_QUARTER:
-  case INTERVAL_MONTH:
-    period= (ltime->year*12 + sign * (long) interval.year*12 +
-	     ltime->month-1 + sign * (long) interval.month);
-    if ((ulong) period >= 120000L)
+  case INTERVAL_MONTH: {
+    unsigned long long period;
+
+    // Simple guards against arithmetic overflow when calculating period.
+    if (interval.month >= UINT_MAX / 2)
       goto invalid_date;
-    ltime->year= (uint) (period / 12);
-    ltime->month= (uint) (period % 12L)+1;
+    if (interval.year >= UINT_MAX / 12)
+      goto invalid_date;
+
+    period= (ltime->year * 12ULL +
+             sign * (unsigned long long) interval.year*12ULL +
+	     ltime->month - 1ULL +
+             sign * (unsigned long long) interval.month);
+    if (period >= 120000LL)
+      goto invalid_date;
+    ltime->year= period / 12;
+    ltime->month= (period % 12L)+1;
     /* Adjust day if the new month doesn't have enough days */
     if (ltime->day > days_in_month[ltime->month-1])
     {
@@ -1436,12 +1524,13 @@ bool date_add_interval(MYSQL_TIME *ltime, interval_type int_type,
       if (ltime->month == 2 && calc_days_in_year(ltime->year) == 366)
 	ltime->day++;				// Leap-year
     }
+  }
     break;
   default:
     goto null_date;
   }
 
-  return 0;					// Ok
+  return false;					// Ok
 
 invalid_date:
   push_warning_printf(current_thd, Sql_condition::SL_WARNING,
@@ -1449,8 +1538,9 @@ invalid_date:
                       ER_THD(current_thd, ER_DATETIME_FUNCTION_OVERFLOW),
                       "datetime");
 null_date:
-  return 1;
+  return true;
 }
+#endif // ifdef MYSQL_SERVER
 
 
 /*
@@ -1628,6 +1718,7 @@ bool my_time_adjust_frac(MYSQL_TIME *ltime, uint dec,
                             truncated/rounded.
   @return                   False on success, true on error.
 */
+#ifdef MYSQL_SERVER
 bool my_datetime_adjust_frac(MYSQL_TIME *ltime, uint dec, int *warnings,
                              bool truncate)
 {
@@ -1639,6 +1730,7 @@ bool my_datetime_adjust_frac(MYSQL_TIME *ltime, uint dec, int *warnings,
   my_time_trunc(ltime, dec);
   return rc;
 }
+#endif // ifdef MYSQL_SERVER
 
 
 /**
@@ -1782,6 +1874,7 @@ void TIME_from_longlong_packed(MYSQL_TIME *ltime,
   @return     A decimal value in on of the following formats, depending
               on type: YYYYMMDD, hhmmss.ffffff or YYMMDDhhmmss.ffffff.
 */
+#ifdef MYSQL_SERVER
 my_decimal *my_decimal_from_datetime_packed(my_decimal *dec,
                                             enum enum_field_types type,
                                             longlong packed_value)
@@ -1806,6 +1899,7 @@ my_decimal *my_decimal_from_datetime_packed(my_decimal *dec,
       return dec;
   }
 }
+#endif // ifdef MYSQL_SERVER
 
 
 /**
@@ -1846,7 +1940,7 @@ longlong longlong_from_datetime_packed(enum enum_field_types type,
   @param packed_value   Numeric packed temporal representation.
   @return               A double value in on of the following formats,
                         depending  on type:
-                        YYYYMMDD, hhmmss.ffffff or YYMMDDhhmmss.ffffff.                        
+                        YYYYMMDD, hhmmss.ffffff or YYMMDDhhmmss.ffffff.
 */
 double double_from_datetime_packed(enum enum_field_types type,
                                    longlong packed_value)
@@ -1855,3 +1949,35 @@ double double_from_datetime_packed(enum enum_field_types type,
   return result +
         ((double) MY_PACKED_TIME_GET_FRAC_PART(packed_value)) / 1000000;
 }
+
+/**
+  This function gets GMT time and adds value of time_zone to get
+  the local time. This function is used when server wants a timestamp
+  value from dictionary system.
+
+  @param  gmt_time     GMT time value.
+*/
+
+#ifdef MYSQL_SERVER
+ulonglong gmt_time_to_local_time(ulonglong gmt_time)
+{
+  MYSQL_TIME time;
+  bool not_used;
+
+  THD *thd= current_thd;
+  Time_zone *tz= thd->variables.time_zone;
+
+  // Convert longlong time to MYSQL_TIME format
+  my_longlong_to_datetime_with_warn(gmt_time, &time, MYF(0));
+
+  // Convert MYSQL_TIME to epoc second according to GMT time_zone.
+  my_time_t timestamp;
+  timestamp= my_tz_OFFSET0->TIME_to_gmt_sec(&time, &not_used);
+
+  // Convert epoc seconds to local time
+  tz->gmt_sec_to_TIME(&time, timestamp);
+
+  // Return ulonglong value from MYSQL_TIME
+  return TIME_to_ulonglong_datetime(&time);
+}
+#endif // ifdef MYSQL_SERVER

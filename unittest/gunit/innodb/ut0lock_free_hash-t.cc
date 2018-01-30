@@ -1,13 +1,20 @@
 /* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -62,22 +69,22 @@ unittest/gunit/innodb/CMakeLists.txt */
 #endif /* TEST_TBB */
 
 #include <gtest/gtest.h>
-#include <my_thread_local.h> /* Needed to access thread local variables */
 #include <stddef.h>
 #include <thread>
 
-#include "os0thread-create.h" /* os_thread_*() */
-#include "os0thread.h" /* os_thread_*() */
-#include "srv0conc.h" /* srv_max_n_threads */
-#include "sync0debug.h" /* sync_check_init(), sync_check_close() */
-#include "sync0policy.h" /* needed by ib0mutex.h, which is not self contained */
-#include "univ.i"
-#include "ut0dbg.h" /* ut_chrono_t */
-#include "ut0lock_free_hash.h"
-#include "ut0mutex.h" /* SysMutex, mutex_enter() */
+#include "my_thread_local.h" /* Needed to access thread local variables */
+#include "storage/innobase/include/os0thread-create.h" /* os_thread_*() */
+#include "storage/innobase/include/os0thread.h" /* os_thread_*() */
+#include "storage/innobase/include/srv0conc.h" /* srv_max_n_threads */
+#include "storage/innobase/include/sync0debug.h" /* sync_check_init(), sync_check_close() */
+#include "storage/innobase/include/sync0policy.h" /* needed by ib0mutex.h, which is not self contained */
+#include "storage/innobase/include/univ.i"
+#include "storage/innobase/include/ut0dbg.h" /* ut_chrono_t */
+#include "storage/innobase/include/ut0lock_free_hash.h"
+#include "storage/innobase/include/ut0mutex.h" /* SysMutex, mutex_enter() */
 
-/* Key for thread local counter variable for random backoff for spinlocks*/
-extern thread_local_key_t ut_rnd_ulint_counter_key;
+/* Thread local counter variable for random backoff for spinlocks */
+extern thread_local ulint ut_rnd_ulint_counter;
 
 namespace innodb_lock_free_hash_unittest {
 
@@ -518,7 +525,7 @@ run_multi_threaded(
 
 	ut_hash_interface_t*	hash;
 
-	(void)my_create_thread_local_key(&ut_rnd_ulint_counter_key, NULL);
+	ut_rnd_ulint_counter = 0;
 
 #if defined(TEST_STD_MAP) || defined(TEST_STD_UNORDERED_MAP)
 	hash = new std_hash_t();
@@ -560,7 +567,6 @@ run_multi_threaded(
 	delete[] threads;
 
 	delete hash;
-	my_delete_thread_local_key(ut_rnd_ulint_counter_key);
 
 }
 

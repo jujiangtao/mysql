@@ -1,29 +1,47 @@
 /* Copyright (c) 2017, Oracle and/or its affiliates. All rights reserved.
 
 This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; version 2 of the License.
+it under the terms of the GNU General Public License, version 2.0,
+as published by the Free Software Foundation.
+
+This program is also distributed with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have included with MySQL.
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
+GNU General Public License, version 2.0, for more details.
 
 You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
-Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02111-1307  USA */
-#include <mysql/components/service_implementation.h>
-#include <auth/auth_common.h>
-#include <auth/dynamic_privilege_table.h>
-#include <auth/sql_security_ctx.h>
+Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
+#include "sql/auth/dynamic_privileges_impl.h"
+
+#include <ctype.h>
 #include <mysql/components/my_service.h>
+#include <mysql/components/service_implementation.h>
 #include <mysql/components/services/dynamic_privilege.h>
-#include <stddef.h>
-#include "dynamic_privileges_impl.h"
 #include <mysql/service_plugin_registry.h>
-#include "current_thd.h"
-#include "auth/sql_auth_cache.h"
-#include "sql_thd_internal_api.h"  // create_thd
+#include <stddef.h>
+#include <string>
+#include <unordered_map>
+#include <utility>
+
+#include "m_string.h"
+#include "mysql/components/service.h"
+#include "mysql/components/services/registry.h"
+#include "mysql/psi/psi_base.h"
+#include "sql/auth/dynamic_privilege_table.h"
+#include "sql/auth/sql_auth_cache.h"
+#include "sql/auth/sql_security_ctx.h"
+#include "sql/current_thd.h"
+#include "sql/sql_thd_internal_api.h" // create_thd
+
+class THD;
 
 /**
   This helper class is used for either selecting a previous THD or
@@ -161,6 +179,12 @@ DEFINE_BOOL_METHOD(dynamic_privilege_services_impl::has_global_grant,
   return sctx->has_global_grant(privilege_str, privilege_str_len).first;
 }
 
+
+/**
+  Boostrap the dynamic privilege service by seeding it with server
+  implementation specific data. 
+*/
+
 bool dynamic_privilege_init(void)
 {
   // Set up default dynamic privileges
@@ -187,6 +211,16 @@ bool dynamic_privilege_init(void)
         service->register_privilege(STRING_WITH_LEN("CONNECTION_ADMIN"));
       ret |=
         service->register_privilege(STRING_WITH_LEN("SET_USER_ID"));
+      ret |=
+        service->register_privilege(STRING_WITH_LEN("XA_RECOVER_ADMIN"));
+      ret |=
+        service->register_privilege(STRING_WITH_LEN("PERSIST_RO_VARIABLES_ADMIN"));
+      ret |=
+        service->register_privilege(STRING_WITH_LEN("BACKUP_ADMIN"));
+      ret |=
+        service->register_privilege(STRING_WITH_LEN("RESOURCE_GROUP_ADMIN"));
+      ret |=
+        service->register_privilege(STRING_WITH_LEN("RESOURCE_GROUP_USER"));
     }
   } // exist scope
   mysql_plugin_registry_release(r);

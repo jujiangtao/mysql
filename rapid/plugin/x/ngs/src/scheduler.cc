@@ -1,20 +1,25 @@
 /*
  * Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
  *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License as
- * published by the Free Software Foundation; version 2 of the
- * License.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License, version 2.0,
+ * as published by the Free Software Foundation.
  *
+ * This program is also distributed with certain software (including
+ * but not limited to OpenSSL) that is licensed under separate terms,
+ * as designated in a particular file or component or in included license
+ * documentation.  The authors of MySQL hereby grant you an additional
+ * permission to link the program and your derivative works with the
+ * separately licensed software that they have included with MySQL.
+ *  
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License, version 2.0, for more details.
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
- * 02110-1301  USA
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
  */
 
 #include <stddef.h>
@@ -22,10 +27,10 @@
 #include "my_inttypes.h"
 #include "my_psi_config.h"
 #include "my_rdtsc.h"
-#include "ngs/log.h"
-#include "ngs/memory.h"
-#include "ngs/scheduler.h"
-#include "ngs_common/bind.h"
+#include "plugin/x/ngs/include/ngs/log.h"
+#include "plugin/x/ngs/include/ngs/memory.h"
+#include "plugin/x/ngs/include/ngs/scheduler.h"
+#include "plugin/x/ngs/include/ngs_common/bind.h"
 
 
 using namespace ngs;
@@ -69,7 +74,7 @@ void Scheduler_dynamic::launch()
 
 void Scheduler_dynamic::create_min_num_workers()
 {
-  Mutex_lock lock(m_worker_pending_mutex);
+  MUTEX_LOCK(lock, m_worker_pending_mutex);
 
   while (is_running() &&
          m_workers_count.load() < m_min_workers_count.load())
@@ -87,9 +92,14 @@ unsigned int Scheduler_dynamic::set_num_workers(unsigned int n)
   {
     create_min_num_workers();
   }
-  catch (std::exception &e)
+  catch (const std::exception &e)
   {
+    /* 'log_debug' isn't defined while building release executable.
+     'e' object is used only by log_debug. Below line disables
+     warnings about unused variables.*/
+    (void)e;
     log_debug("Exception in set minimal number of workers \"%s\"", e.what());
+
     const int32 m = m_workers_count.load();
     log_warning("Unable to set minimal number of workers to %u; actual value is %i", n, m);
     m_min_workers_count.store(m);
@@ -122,7 +132,7 @@ void Scheduler_dynamic::stop()
     m_worker_pending_cond.broadcast(m_worker_pending_mutex);
 
     {
-      Mutex_lock lock(m_thread_exit_mutex);
+      MUTEX_LOCK(lock, m_thread_exit_mutex);
       while (m_workers_count.load())
         m_thread_exit_cond.wait(m_thread_exit_mutex);
     }
@@ -146,7 +156,7 @@ bool Scheduler_dynamic::post(Task* task)
     return false;
 
   {
-    Mutex_lock lock(m_worker_pending_mutex);
+    MUTEX_LOCK(lock, m_worker_pending_mutex);
 
     log_debug("Scheduler '%s', post task", m_name.c_str());
 
@@ -224,7 +234,7 @@ void Scheduler_dynamic::thread_end()
 
 bool Scheduler_dynamic::wait_if_idle_then_delete_worker(ulonglong &thread_waiting_started)
 {
-  Mutex_lock lock(m_worker_pending_mutex);
+  MUTEX_LOCK(lock, m_worker_pending_mutex);
 
   if (TIME_VALUE_NOT_VALID == thread_waiting_started)
   {
@@ -320,8 +330,8 @@ void *Scheduler_dynamic::worker()
   }
 
   {
-    Mutex_lock lock_exit(m_thread_exit_mutex);
-    Mutex_lock lock_workers(m_worker_pending_mutex);
+    MUTEX_LOCK(lock_exit, m_thread_exit_mutex);
+    MUTEX_LOCK(lock_workers, m_worker_pending_mutex);
     if (worker_active)
       decrease_workers_count();
     m_thread_exit_cond.signal();

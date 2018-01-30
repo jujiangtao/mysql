@@ -3,16 +3,24 @@
 Copyright (c) 2009, 2017, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+the terms of the GNU General Public License, version 2.0, as published by the
+Free Software Foundation.
+
+This program is also distributed with certain software (including but not
+limited to OpenSSL) that is licensed under separate terms, as designated in a
+particular file or component or in included license documentation. The authors
+of MySQL hereby grant you an additional permission to link the program and
+your derivative works with the separately licensed software that they have
+included with MySQL.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+FOR A PARTICULAR PURPOSE. See the GNU General Public License, version 2.0,
+for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 *****************************************************************************/
 
@@ -25,8 +33,6 @@ Code used for calculating and manipulating table statistics.
 
 Created Jan 06, 2010 Vasil Dimov
 *******************************************************/
-
-#ifndef UNIV_HOTBACKUP
 
 #include <mysql_com.h>
 #include <algorithm>
@@ -188,7 +194,7 @@ dict_stats_exec_sql(
 	bool	trx_started = false;
 
 	ut_ad(rw_lock_own(dict_operation_lock, RW_LOCK_X));
-	ut_ad(mutex_own(&dict_sys->mutex));
+	ut_ad(!mutex_own(&dict_sys->mutex));
 
 	if (trx == NULL) {
 		trx = trx_allocate_for_background();
@@ -2179,7 +2185,6 @@ dict_stats_save_index_stat(
 	char		table_utf8[MAX_TABLE_UTF8_LEN];
 
 	ut_ad(rw_lock_own(dict_operation_lock, RW_LOCK_X));
-	ut_ad(mutex_own(&dict_sys->mutex));
 
 	dict_fs2utf8(index->table->name.m_name, db_utf8, sizeof(db_utf8),
 		     table_utf8, sizeof(table_utf8));
@@ -2267,7 +2272,6 @@ dict_stats_save(
 		     table_utf8, sizeof(table_utf8));
 
 	rw_lock_x_lock(dict_operation_lock);
-	mutex_enter(&dict_sys->mutex);
 
 	/* MySQL's timestamp is 4 byte, so we use
 	pars_info_add_int4_literal() which takes a lint arg, so "now" is
@@ -2311,7 +2315,6 @@ dict_stats_save(
 		ib::error() << "Cannot save table statistics for table "
 			<< table->name << ": " << ut_strerr(ret);
 
-		mutex_exit(&dict_sys->mutex);
 		rw_lock_x_unlock(dict_operation_lock);
 
 		dict_stats_snapshot_free(table);
@@ -2427,7 +2430,6 @@ dict_stats_save(
 end:
 	trx_free_for_background(trx);
 
-	mutex_exit(&dict_sys->mutex);
 	rw_lock_x_unlock(dict_operation_lock);
 
 	dict_stats_snapshot_free(table);
@@ -2828,9 +2830,9 @@ dict_stats_fetch_from_ps(
 	index_fetch_arg.table = table;
 	index_fetch_arg.stats_were_modified = false;
 	pars_info_bind_function(pinfo,
-			        "fetch_index_stats_step",
-			        dict_stats_fetch_index_stats_step,
-			        &index_fetch_arg);
+				"fetch_index_stats_step",
+				dict_stats_fetch_index_stats_step,
+				&index_fetch_arg);
 
 	ret = que_eval_sql(pinfo,
 			   "PROCEDURE FETCH_STATS () IS\n"
@@ -3139,7 +3141,6 @@ dict_stats_drop_index(
 	pars_info_add_str_literal(pinfo, "index_name", iname);
 
 	rw_lock_x_lock(dict_operation_lock);
-	mutex_enter(&dict_sys->mutex);
 
 	ret = dict_stats_exec_sql(
 		pinfo,
@@ -3151,7 +3152,6 @@ dict_stats_drop_index(
 		"index_name = :index_name;\n"
 		"END;\n", NULL);
 
-	mutex_exit(&dict_sys->mutex);
 	rw_lock_x_unlock(dict_operation_lock);
 
 	if (ret == DB_STATS_DO_NOT_EXIST) {
@@ -3201,7 +3201,6 @@ dict_stats_delete_from_table_stats(
 	dberr_t		ret;
 
 	ut_ad(rw_lock_own(dict_operation_lock, RW_LOCK_X));
-	ut_ad(mutex_own(&dict_sys->mutex));
 
 	pinfo = pars_info_create();
 
@@ -3237,7 +3236,6 @@ dict_stats_delete_from_index_stats(
 	dberr_t		ret;
 
 	ut_ad(rw_lock_own(dict_operation_lock, RW_LOCK_X));
-	ut_ad(mutex_own(&dict_sys->mutex));
 
 	pinfo = pars_info_create();
 
@@ -3274,6 +3272,8 @@ dict_stats_drop_table(
 	dberr_t		ret;
 
 	ut_ad(rw_lock_own(dict_operation_lock, RW_LOCK_X));
+	/* WL#9536 TODO: Once caller don't hold dict sys mutex, clean
+	this and following(exit&enter) up */
 	ut_ad(mutex_own(&dict_sys->mutex));
 
 	/* skip tables that do not contain a database name
@@ -3293,11 +3293,15 @@ dict_stats_drop_table(
 	dict_fs2utf8(db_and_table, db_utf8, sizeof(db_utf8),
 		     table_utf8, sizeof(table_utf8));
 
+	mutex_exit(&dict_sys->mutex);
+
 	ret = dict_stats_delete_from_table_stats(db_utf8, table_utf8);
 
 	if (ret == DB_SUCCESS) {
 		ret = dict_stats_delete_from_index_stats(db_utf8, table_utf8);
 	}
+
+	mutex_enter(&dict_sys->mutex);
 
 	if (ret == DB_STATS_DO_NOT_EXIST) {
 		ret = DB_SUCCESS;
@@ -3350,7 +3354,6 @@ dict_stats_rename_table_in_table_stats(
 	dberr_t		ret;
 
 	ut_ad(rw_lock_own(dict_operation_lock, RW_LOCK_X));
-	ut_ad(mutex_own(&dict_sys->mutex));
 
 	pinfo = pars_info_create();
 
@@ -3394,7 +3397,6 @@ dict_stats_rename_table_in_index_stats(
 	dberr_t		ret;
 
 	ut_ad(rw_lock_own(dict_operation_lock, RW_LOCK_X));
-	ut_ad(mutex_own(&dict_sys->mutex));
 
 	pinfo = pars_info_create();
 
@@ -3438,7 +3440,6 @@ dict_stats_rename_table(
 	dberr_t		ret;
 
 	ut_ad(!rw_lock_own(dict_operation_lock, RW_LOCK_X));
-	ut_ad(!mutex_own(&dict_sys->mutex));
 
 	/* skip innodb_table_stats and innodb_index_stats themselves */
 	if (strcmp(old_name, TABLE_STATS_NAME) == 0
@@ -3456,7 +3457,6 @@ dict_stats_rename_table(
 		     new_table_utf8, sizeof(new_table_utf8));
 
 	rw_lock_x_lock(dict_operation_lock);
-	mutex_enter(&dict_sys->mutex);
 
 	ulint	n_attempts = 0;
 	do {
@@ -3476,11 +3476,9 @@ dict_stats_rename_table(
 		}
 
 		if (ret != DB_SUCCESS) {
-			mutex_exit(&dict_sys->mutex);
 			rw_lock_x_unlock(dict_operation_lock);
 			os_thread_sleep(200000 /* 0.2 sec */);
 			rw_lock_x_lock(dict_operation_lock);
-			mutex_enter(&dict_sys->mutex);
 		}
 	} while ((ret == DB_DEADLOCK
 		  || ret == DB_DUPLICATE_KEY
@@ -3508,7 +3506,6 @@ dict_stats_rename_table(
 			    TABLE_STATS_NAME_PRINT,
 			    new_db_utf8, new_table_utf8,
 			    old_db_utf8, old_table_utf8);
-		mutex_exit(&dict_sys->mutex);
 		rw_lock_x_unlock(dict_operation_lock);
 		return(ret);
 	}
@@ -3532,18 +3529,15 @@ dict_stats_rename_table(
 		}
 
 		if (ret != DB_SUCCESS) {
-			mutex_exit(&dict_sys->mutex);
 			rw_lock_x_unlock(dict_operation_lock);
 			os_thread_sleep(200000 /* 0.2 sec */);
 			rw_lock_x_lock(dict_operation_lock);
-			mutex_enter(&dict_sys->mutex);
 		}
 	} while ((ret == DB_DEADLOCK
 		  || ret == DB_DUPLICATE_KEY
 		  || ret == DB_LOCK_WAIT_TIMEOUT)
 		 && n_attempts < 5);
 
-	mutex_exit(&dict_sys->mutex);
 	rw_lock_x_unlock(dict_operation_lock);
 
 	if (ret != DB_SUCCESS) {
@@ -3586,7 +3580,6 @@ dict_stats_rename_index(
 	const char*		new_index_name)	/*!< in: new index name */
 {
 	rw_lock_x_lock(dict_operation_lock);
-	mutex_enter(&dict_sys->mutex);
 
 	char	dbname_utf8[MAX_DB_UTF8_LEN];
 	char	tablename_utf8[MAX_TABLE_UTF8_LEN];
@@ -3617,10 +3610,179 @@ dict_stats_rename_index(
 		"index_name = :old_index_name;\n"
 		"END;\n", NULL);
 
-	mutex_exit(&dict_sys->mutex);
 	rw_lock_x_unlock(dict_operation_lock);
 
 	return(ret);
+}
+
+/** Evict the stats tables if they loaded in tablespace cache and also
+close the stats .ibd files. We have to close stats tables because
+8.0 stats tables will use the same name. We load the stats from 5.7
+with a suffix "_backup57" and migrate the statistics. */
+void
+dict_stats_evict_tablespaces()
+{
+	ut_ad(srv_is_upgrade_mode);
+
+	space_id_t	space_id_index_stats =
+                fil_space_get_id_by_name(INDEX_STATS_NAME);
+
+	space_id_t	space_id_table_stats =
+                fil_space_get_id_by_name(TABLE_STATS_NAME);
+
+	trx_t*		trx = trx_allocate_for_background();
+
+	trx_start_internal(trx);
+
+	if (space_id_index_stats != SPACE_UNKNOWN) {
+
+                dberr_t err;
+
+		err = fil_close_tablespace(trx, space_id_index_stats);
+
+                if (err != DB_SUCCESS) {
+
+			ib::info()
+				<< "dict_stats_evict_tablespace: "
+				<< " fil_close_tablespace("
+				<< space_id_index_stats << ") failed! "
+				<< ut_strerr(err);
+		}
+	}
+
+	if (space_id_table_stats != SPACE_UNKNOWN) {
+                dberr_t err;
+
+		err = fil_close_tablespace(trx, space_id_table_stats);
+
+                if (err != DB_SUCCESS) {
+
+			ib::info()
+				<< "dict_stats_evict_tablespace: "
+				<< " fil_close_tablespace("
+				<< space_id_index_stats << ") failed! "
+				<< ut_strerr(err);
+		}
+	}
+
+	trx_commit_for_mysql(trx);
+
+	trx_free_for_background(trx);
+}
+
+TableStatsRecord::TableStatsRecord()
+{
+	m_heap = nullptr;
+}
+
+TableStatsRecord::~TableStatsRecord()
+{
+	if (m_heap != nullptr) {
+		mem_heap_free(m_heap);
+	}
+}
+
+ib_uint64_t TableStatsRecord::get_n_rows() const
+{
+	return(m_n_rows);
+}
+
+void TableStatsRecord::set_n_rows(
+	ib_uint64_t no_of_rows)
+{
+	m_n_rows = no_of_rows;
+}
+
+ulint TableStatsRecord::get_clustered_index_size() const
+{
+	return(m_clustered_index_size);
+}
+
+void TableStatsRecord::set_clustered_index_size(ulint clust_size)
+{
+	m_clustered_index_size = clust_size;
+}
+
+ulint TableStatsRecord::get_sum_of_other_index_size() const
+{
+	return(m_sum_of_other_index_sizes);
+}
+
+void TableStatsRecord::set_sum_of_other_index_size(
+		ulint sum_of_other_index_size)
+{
+	m_sum_of_other_index_sizes = sum_of_other_index_size;
+}
+
+char* TableStatsRecord::get_db_name() const
+{
+	return(m_db_name);
+}
+
+void TableStatsRecord::set_db_name(
+	const byte*	data,
+	ulint		len)
+{
+	if (m_heap == nullptr) {
+		m_heap = mem_heap_create(MAX_DATABASE_NAME_LEN + 1);
+	}
+
+	m_db_name = static_cast<char*>(
+			mem_heap_dup(m_heap, data, len + 1));
+	m_db_name[len] = '\0';
+}
+
+char* TableStatsRecord::get_tbl_name() const
+{
+	return(m_tbl_name);
+}
+
+void TableStatsRecord::set_tbl_name(
+	const byte*	data,
+	ulint		len)
+{
+	if (m_heap == nullptr) {
+		m_heap = mem_heap_create(MAX_TABLE_NAME_LEN + 1);
+	}
+
+	m_tbl_name = static_cast<char*>(
+			mem_heap_dup(m_heap, data, len + 1));
+	m_tbl_name[len] = '\0';
+}
+
+void TableStatsRecord::set_data(
+	const byte*	data,
+	ulint		col_offset,
+	ulint		len)
+{
+	dict_table_t*	table = dict_sys->table_stats;
+	dict_index_t*	index = table->first_index();
+	ulint		value;
+	ib_uint64_t	n_row;
+	ulint		index_col_offset = index->get_col_no(col_offset);
+
+	switch(index_col_offset) {
+		case DB_NAME_COL_NO:
+			set_db_name(data, len);
+			break;
+		case TABLE_NAME_COL_NO:
+			set_tbl_name(data, len);
+			break;
+		case N_ROWS_COL_NO:
+			n_row = mach_read_from_8(data);
+			set_n_rows(n_row);
+			break;
+		case CLUST_INDEX_SIZE_COL_NO:
+			value = mach_read_from_8(data);
+			set_clustered_index_size(value);
+			break;
+		case SUM_OF_OTHER_INDEX_SIZE_COL_NO:
+			value = mach_read_from_8(data);
+			set_sum_of_other_index_size(value);
+			break;
+		default:
+			break;
+	}
 }
 
 /* tests @{ */
@@ -3886,5 +4048,3 @@ test_dict_stats_all()
 
 #endif /* UNIV_ENABLE_UNIT_TEST_DICT_STATS */
 /* @} */
-
-#endif /* UNIV_HOTBACKUP */

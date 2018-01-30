@@ -1,38 +1,40 @@
 /* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
-   This program is free software; you can redistribute it and/or
-   modify it under the terms of the GNU General Public License as
-   published by the Free Software Foundation; version 2 of the
-   License.
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
 
-   This program is distributed in the hope that it will be useful, but
-   WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
-   General Public License for more details.
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
-   02110-1301 USA */
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "sql/rpl_gtid_persist.h"
 
 #include "my_config.h"
 
 #include <assert.h>
-#include <stddef.h>
+
+#include "my_loglevel.h"
+#include "mysql/udf_registration_types.h"
+#include "sql/derror.h"
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
 #include <list>
 
 #include "control_events.h"
-#include "current_thd.h"
-#include "debug_sync.h"       // debug_sync_set_action
-#include "field.h"
-#include "handler.h"
-#include "key.h"
-#include "log.h"              // sql_print_error
 #include "m_ctype.h"
 #include "m_string.h"
 #include "my_base.h"
@@ -45,18 +47,23 @@
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/psi/mysql_thread.h"
 #include "mysql/thread_type.h"
-#include "mysql_com.h"
-#include "mysqld.h"           // gtid_executed_compression_period
-#include "query_options.h"
-#include "replication.h"      // THD_ENTER_COND
-#include "sql_base.h"         // MYSQL_OPEN_IGNORE_GLOBAL_READ_LOCK
-#include "sql_const.h"
-#include "sql_error.h"
-#include "sql_lex.h"
-#include "sql_parse.h"        // mysql_reset_thd_for_next_command
-#include "sql_security_ctx.h"
+#include "sql/auth/sql_security_ctx.h"
+#include "sql/current_thd.h"
+#include "sql/debug_sync.h"   // debug_sync_set_action
+#include "sql/field.h"
+#include "sql/handler.h"
+#include "sql/key.h"
+#include "sql/log.h"
+#include "sql/mysqld.h"       // gtid_executed_compression_period
+#include "sql/query_options.h"
+#include "sql/replication.h"  // THD_ENTER_COND
+#include "sql/sql_base.h"     // MYSQL_OPEN_IGNORE_GLOBAL_READ_LOCK
+#include "sql/sql_const.h"
+#include "sql/sql_error.h"
+#include "sql/sql_lex.h"
+#include "sql/sql_parse.h"    // mysql_reset_thd_for_next_command
+#include "sql/system_variables.h"
 #include "sql_string.h"
-#include "system_variables.h"
 
 using std::list;
 using std::string;
@@ -67,60 +74,6 @@ static bool terminate_compress_thread= false;
 static bool should_compress= false;
 const LEX_STRING Gtid_table_access_context::TABLE_NAME= {C_STRING_WITH_LEN("gtid_executed")};
 const LEX_STRING Gtid_table_access_context::DB_NAME= {C_STRING_WITH_LEN("mysql")};
-
-/**
-  A derived from THD::Attachable_trx class allows updates in
-  the attachable transaction. Callers of the class methods must
-  make sure the attachable_rw won't cause deadlock with the main transaction.
-  The destructor does not invoke ha_commit_{stmt,trans} nor ha_rollback_trans
-  on purpose.
-  Burden to terminate the read-write instance also lies on the caller!
-  In order to use this interface it *MUST* prove that no side effect to
-  the global transaction state can be inflicted by a chosen method.
-*/
-
-class THD::Attachable_trx_rw : public THD::Attachable_trx
-{
-public:
-  bool is_read_only() const { return false; }
-  Attachable_trx_rw(THD *thd, Attachable_trx *prev_trx= NULL)
-    : THD::Attachable_trx(thd, prev_trx)
-  {
-    m_thd->tx_read_only= false;
-    m_thd->lex->sql_command= SQLCOM_END;
-    m_xa_state_saved= m_thd->get_transaction()->xid_state()->get_state();
-    thd->get_transaction()->xid_state()->set_state(XID_STATE::XA_NOTR);
-  }
-  ~Attachable_trx_rw()
-  {
-    /* The attachable transaction has been already committed */
-    DBUG_ASSERT(!m_thd->get_transaction()->is_active(Transaction_ctx::STMT)
-                && !m_thd->get_transaction()->is_active(Transaction_ctx::SESSION));
-
-    m_thd->get_transaction()->xid_state()->set_state(m_xa_state_saved);
-    m_thd->tx_read_only= true;
-  }
-
-private:
-  XID_STATE::xa_states m_xa_state_saved;
-  Attachable_trx_rw(const Attachable_trx_rw &);
-  Attachable_trx_rw &operator =(const Attachable_trx_rw &);
-};
-
-
-bool THD::is_attachable_rw_transaction_active() const
-{
-  return m_attachable_trx != NULL && !m_attachable_trx->is_read_only();
-}
-
-
-void THD::begin_attachable_rw_transaction()
-{
-  DBUG_ASSERT(!m_attachable_trx);
-
-  m_attachable_trx= new Attachable_trx_rw(this);
-}
-
 
 /**
   Initialize a new THD.
@@ -153,7 +106,7 @@ static void deinit_thd(THD *thd)
   thd->release_resources();
   thd->restore_globals();
   delete thd;
-  my_thread_set_THR_THD(NULL);
+  current_thd= nullptr;
   DBUG_VOID_RETURN;
 }
 
@@ -228,12 +181,26 @@ bool Gtid_table_access_context::init(THD **thd, TABLE **table, bool is_write)
 }
 
 
-void Gtid_table_access_context::deinit(THD *thd, TABLE *table,
+bool Gtid_table_access_context::deinit(THD *thd, TABLE *table,
                                        bool error, bool need_commit)
 {
   DBUG_ENTER("Gtid_table_access_context::deinit");
 
-  this->close_table(thd, table, &m_backup, 0 != error, need_commit);
+  bool err;
+  err= this->close_table(thd, table, &m_backup, 0 != error, need_commit);
+
+  /*
+    If err is true this means that there was some problem during
+    FLUSH LOGS commit phase.
+  */
+  if (err)
+  {
+    my_printf_error(ER_ERROR_DURING_FLUSH_LOGS,
+                    ER_THD(thd, ER_ERROR_DURING_FLUSH_LOGS),
+                    MYF(ME_FATALERROR), err);
+    LogErr(ERROR_LEVEL, ER_ERROR_DURING_FLUSH_LOG_COMMIT_PHASE, err);
+    DBUG_RETURN(err);
+  }
 
   /*
     If Gtid is inserted through Attachable_trx_rw its has been done
@@ -252,7 +219,7 @@ void Gtid_table_access_context::deinit(THD *thd, TABLE *table,
   if (m_drop_thd_object)
     this->drop_thd(m_drop_thd_object);
 
-  DBUG_VOID_RETURN;
+  DBUG_RETURN(err);
 }
 
 
@@ -312,10 +279,8 @@ int Gtid_table_persistor::write_row(TABLE *table, const char *sid,
     if (error == HA_ERR_FOUND_DUPP_KEY)
     {
       /* Ignore the duplicate key error, log a warning for it. */
-      sql_print_warning("The transaction owned GTID is already in "
-                        "the %s table, which is caused by an "
-                        "explicit modifying from user client.",
-                        Gtid_table_access_context::TABLE_NAME.str);
+      LogErr(WARNING_LEVEL, ER_GTID_ALREADY_ADDED_BY_USER,
+             Gtid_table_access_context::TABLE_NAME.str);
     }
     else
     {
@@ -481,7 +446,10 @@ int Gtid_table_persistor::save(const Gtid_set *gtid_set)
   ret= error= save(table, gtid_set);
 
 end:
-  table_access_ctx.deinit(thd, table, 0 != error, true);
+  const int deinit_ret= table_access_ctx.deinit(thd, table, 0 != error, true);
+
+  if (!ret && deinit_ret)
+    ret= -1;
 
   /* Notify compression thread to compress gtid_executed table. */
   if (error == 0 && DBUG_EVALUATE_IF("dont_compress_gtid_table", 0, 1))
@@ -842,8 +810,8 @@ int Gtid_table_persistor::delete_all(TABLE *table)
                          (err= -1), err))
     {
       table->file->print_error(err, MYF(0));
-      sql_print_error("Failed to delete the row: '%s' from the gtid_executed "
-                      "table.", encode_gtid_text(table).c_str());
+      LogErr(ERROR_LEVEL, ER_FAILED_TO_DELETE_FROM_GTID_EXECUTED_TABLE,
+             encode_gtid_text(table).c_str());
       break;
     }
   }
@@ -876,6 +844,12 @@ static void *compress_gtid_table(void *p_thd)
   DBUG_ENTER("compress_gtid_table");
 
   init_thd(&thd);
+  /*
+    Gtid table compression thread should ignore 'read-only' and
+    'super_read_only' options so that it can update 'mysql.gtid_executed'
+    replication repository tables.
+  */
+  thd->set_skip_readonly_check();
   for (;;)
   {
     mysql_mutex_lock(&LOCK_compress_gtid_table);
@@ -897,7 +871,7 @@ static void *compress_gtid_table(void *p_thd)
     /* Compressing the gtid_executed table. */
     if (gtid_state->compress(thd))
     {
-      sql_print_warning("Failed to compress the gtid_executed table.");
+      LogErr(WARNING_LEVEL, ER_FAILED_TO_COMPRESS_GTID_EXECUTED_TABLE);
       /* Clear the error for going to wait for next compression signal. */
       thd->clear_error();
       DBUG_EXECUTE_IF("simulate_error_on_compress_gtid_table",
@@ -911,6 +885,7 @@ static void *compress_gtid_table(void *p_thd)
   }
 
   mysql_mutex_unlock(&LOCK_compress_gtid_table);
+  thd->reset_skip_readonly_check();
   deinit_thd(thd);
   DBUG_LEAVE;
   my_thread_end();
@@ -930,8 +905,7 @@ void create_compress_gtid_table_thread()
   THD *thd;
   if (!(thd= new THD))
   {
-    sql_print_error("Failed to compress the gtid_executed table, because "
-                    "it is failed to allocate the THD.");
+    LogErr(ERROR_LEVEL, ER_FAILED_TO_COMPRESS_GTID_EXECUTED_TABLE_OOM);
     return;
   }
 
@@ -941,8 +915,8 @@ void create_compress_gtid_table_thread()
 
   if (my_thread_attr_init(&attr))
   {
-    sql_print_error("Failed to initialize thread attribute "
-                    "when creating compression thread.");
+    LogErr(ERROR_LEVEL,
+           ER_FAILED_TO_INIT_THREAD_ATTR_FOR_GTID_TABLE_COMPRESSION);
     delete thd;
     return;
   }
@@ -956,8 +930,8 @@ void create_compress_gtid_table_thread()
                                   &compress_thread_id, &attr,
                                   compress_gtid_table, (void*) thd)))
   {
-    sql_print_error("Can not create thread to compress gtid_executed table "
-                    "(errno= %d)", error);
+    LogErr(ERROR_LEVEL, ER_FAILED_TO_CREATE_GTID_TABLE_COMPRESSION_THREAD,
+           error);
     /* Delete the created THD after failed to create a compression thread. */
     delete thd;
   }
@@ -987,9 +961,8 @@ void terminate_compress_gtid_table_thread()
   }
 
   if (error != 0)
-    sql_print_warning("Could not join gtid_executed table compression thread. "
-                      "error:%d", error);
+    LogErr(WARNING_LEVEL, ER_FAILED_TO_JOIN_GTID_TABLE_COMPRESSION_THREAD,
+           error);
 
   DBUG_VOID_RETURN;
 }
-

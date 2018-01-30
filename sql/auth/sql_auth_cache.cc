@@ -1,75 +1,85 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "sql_auth_cache.h"
+#include "sql/auth/sql_auth_cache.h"
 
+#include <boost/graph/properties.hpp>
 #include <stdarg.h>
 #include <stdlib.h>
 
-#include "auth_acls.h"
-#include "auth_common.h"        // ACL_internal_schema_access
-#include "auth_internal.h"      // auth_plugin_is_built_in
-#include "current_thd.h"        // current_thd
-#include "debug_sync.h"
-#include "error_handler.h"      // Internal_error_handler
-#include "field.h"              // Field
-#include "item_func.h"          // mqh_used
-#include "log.h"                // sql_print_warning
 #include "m_ctype.h"
 #include "m_string.h"           // LEX_CSTRING
-#include "mdl.h"
 #include "my_base.h"
 #include "my_compiler.h"
-#include "my_config.h"
 #include "my_dbug.h"
-#include "my_decimal.h"
+#include "my_loglevel.h"
+#include "my_macros.h"
+#include "mysql/components/services/log_shared.h"
+#include "mysql/components/services/psi_mutex_bits.h"
 #include "mysql/plugin.h"
 #include "mysql/plugin_auth.h"  // st_mysql_auth
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/psi/psi_base.h"
-#include "mysql/psi/psi_mutex.h"
 #include "mysql/service_mysql_alloc.h"
-#include "mysqld.h"             // my_localhost
 #include "mysqld_error.h"
-#include "psi_memory_key.h"     // key_memory_acl_mem
-#include "records.h"            // READ_RECORD
-#include "session_tracker.h"
-#include "set_var.h"
-#include "sql_authentication.h" // sha256_password_plugin_name
-#include "sql_base.h"           // open_and_lock_tables
-#include "sql_class.h"          // THD
-#include "sql_const.h"
-#include "sql_error.h"
-#include "sql_lex.h"
-#include "sql_plugin.h"         // my_plugin_lock_by_name
-#include "sql_security_ctx.h"
-#include "sql_servers.h"
+#include "prealloced_array.h"
+#include "sql/auth/auth_acls.h"
+#include "sql/auth/auth_common.h" // ACL_internal_schema_access
+#include "sql/auth/auth_internal.h" // auth_plugin_is_built_in
+#include "sql/auth/dynamic_privilege_table.h"
+#include "sql/auth/role_tables.h"
+#include "sql/auth/sql_authentication.h" // sha256_password_plugin_name
+#include "sql/auth/sql_security_ctx.h"
+#include "sql/auth/sql_user_table.h"
+#include "sql/current_thd.h"    // current_thd
+#include "sql/debug_sync.h"
+#include "sql/error_handler.h"  // Internal_error_handler
+#include "sql/field.h"          // Field
+#include "sql/handler.h"
+#include "sql/histograms/value_map.h"
+#include "sql/item_func.h"      // mqh_used
+#include "sql/log.h"
+#include "sql/mdl.h"
+#include "sql/mysqld.h"         // my_localhost
+#include "sql/psi_memory_key.h" // key_memory_acl_mem
+#include "sql/records.h"        // READ_RECORD
+#include "sql/set_var.h"
+#include "sql/sql_base.h"       // open_and_lock_tables
+#include "sql/sql_class.h"      // THD
+#include "sql/sql_const.h"
+#include "sql/sql_error.h"
+#include "sql/sql_lex.h"
+#include "sql/sql_plugin.h"     // my_plugin_lock_by_name
+#include "sql/sql_plugin_ref.h"
+#include "sql/sql_servers.h"
+#include "sql/sql_thd_internal_api.h" // create_thd
+#include "sql/sql_time.h"       // str_to_time_with_warn
+#include "sql/system_variables.h"
+#include "sql/table.h"          // TABLE
+#include "sql/thr_malloc.h"
+#include "sql/xa.h"
 #include "sql_string.h"
-#include "sql_thd_internal_api.h"  // create_thd
-#include "sql_time.h"           // str_to_time_with_warn
-#include "sql_user_table.h"
-#include "system_variables.h"
-#include "table.h"              // TABLE
-#include "template_utils.h"
 #include "thr_lock.h"
-#include "thr_malloc.h"
 #include "thr_mutex.h"
-#include "xa.h"
-#include "mysqld_error.h"
-#include "dynamic_privilege_table.h"
-#include "role_tables.h"        // close_all_role_tables
 
 #define INVALID_DATE "0000-00-00 00:00:00"
 
@@ -79,10 +89,13 @@
 #include <vector>
 
 using std::min;
+using std::move;
+using std::string;
+using std::unique_ptr;
 
 PSI_mutex_key key_LOCK_acl_cache_flush;
 PSI_mutex_info all_acl_cache_mutexes[]=
-{ {&key_LOCK_acl_cache_flush, "LOCK_acl_cache_flush", PSI_FLAG_GLOBAL, 0} };
+{ {&key_LOCK_acl_cache_flush, "LOCK_acl_cache_flush", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME} };
 Acl_cache *g_acl_cache= NULL;
 Acl_cache *get_global_acl_cache() { return g_acl_cache; }
 ulong get_global_acl_cache_size() { return g_acl_cache->size(); }
@@ -115,10 +128,16 @@ Prealloced_array<ACL_DB, ACL_PREALLOC_SIZE> *acl_dbs= NULL;
 Prealloced_array<ACL_HOST_AND_IP, ACL_PREALLOC_SIZE> *acl_wild_hosts= NULL;
 Db_access_map acl_db_map;
 Default_roles *g_default_roles= NULL;
+std::vector<Role_id > *g_mandatory_roles= NULL;
 
-HASH column_priv_hash, proc_priv_hash, func_priv_hash;
-HASH db_cache;
-HASH acl_check_hosts;
+unique_ptr<malloc_unordered_multimap<string, unique_ptr_destroy_only<GRANT_TABLE>>>
+  column_priv_hash;
+unique_ptr<malloc_unordered_multimap<string, unique_ptr_destroy_only<GRANT_NAME>>>
+  proc_priv_hash, func_priv_hash;
+malloc_unordered_map<std::string, unique_ptr_my_free<acl_entry>>
+  db_cache{key_memory_acl_cache};
+collation_unordered_map<std::string, ACL_USER *>
+  *acl_check_hosts= nullptr;
 
 bool initialized=0;
 bool acl_cache_initialized= false;
@@ -318,12 +337,11 @@ ACL_PROXY_USER::check_validity(bool check_no_resolve)
       (hostname_requires_resolving(host.get_host()) ||
        hostname_requires_resolving(proxied_host.get_host())))
   {
-    sql_print_warning("'proxies_priv' entry '%s@%s %s@%s' "
-                      "ignored in --skip-name-resolve mode.",
-                      proxied_user ? proxied_user : "",
-                      proxied_host.get_host() ? proxied_host.get_host() : "",
-                      user ? user : "",
-                      host.get_host() ? host.get_host() : "");
+    LogErr(WARNING_LEVEL, ER_AUTHCACHE_PROXIES_PRIV_SKIPPED_NEEDS_RESOLVE,
+           proxied_user ? proxied_user : "",
+           proxied_host.get_host() ? proxied_host.get_host() : "",
+           user ? user : "",
+           host.get_host() ? host.get_host() : "");
   }
   return FALSE;
 }
@@ -470,6 +488,20 @@ ACL_PROXY_USER::store_data_record(TABLE *table,
   DBUG_RETURN(FALSE);
 }
 
+/**
+  Performs wildcard matching, aka globbing, on the input string with
+  the given wildcard pattern, and the specified wildcard characters.
+  This method does case insensitive comparisons.
+
+  @param[in] cs character set of the input string and wildcard pattern
+  @param[in] str input which should be matched against pattern
+  @param[in] str_len length of the input string
+  @param[in] wildstr pattern with wildcards
+  @param[in] wildstr_len length of the wildcards pattern
+
+  @return 0 if input string match with the pattern
+  @return 1 otherwise
+*/
 int wild_case_compare(CHARSET_INFO *cs, const char *str, size_t str_len,
                       const char *wildstr, size_t wildstr_len)
 {
@@ -478,6 +510,21 @@ int wild_case_compare(CHARSET_INFO *cs, const char *str, size_t str_len,
   DBUG_PRINT("enter",("str: '%s'  wildstr: '%s'",str,wildstr));
   const char *wildstr_end= wildstr + wildstr_len;
   const char *str_end= str + str_len;
+
+  /*
+    Empty string matches only if there is only a wild_many(%) char
+    in the string to be matched with.
+  */
+  if (str_len == 0)
+  {
+    bool ret_value = true;
+    if (wildstr_len == 1)
+    {
+      ret_value = !(*wildstr == wild_many);
+    }
+    DBUG_RETURN(ret_value);
+  }
+
   while (wildstr != wildstr_end && str != str_end)
   {
     while (wildstr != wildstr_end &&
@@ -488,15 +535,24 @@ int wild_case_compare(CHARSET_INFO *cs, const char *str, size_t str_len,
       if (my_toupper(cs, *wildstr++) != my_toupper(cs, *str++))
         DBUG_RETURN(1);
     }
-    if (wildstr == wildstr_end) DBUG_RETURN (str != str_end);
+    if (wildstr == wildstr_end)
+    {
+      DBUG_RETURN(str != str_end);
+    }
     if (*wildstr++ == wild_one)
     {
       ++str;
-      if (str == str_end) DBUG_RETURN (wildstr != wildstr_end);    /* One char; skip */
+      if (str == str_end) /* One char; skip */
+      {
+        DBUG_RETURN(wildstr != wildstr_end);
+      }
     }
     else
     {                                           /* Found '*' */
-      if (wildstr == wildstr_end) DBUG_RETURN(0);            /* '*' as last char: OK */
+      if (wildstr == wildstr_end)
+      {
+         DBUG_RETURN(0);  /* '*' as last char: OK */
+      }
       flag=(*wildstr != wild_many && *wildstr != wild_one);
       do
       {
@@ -652,25 +708,9 @@ bool hostname_requires_resolving(const char *hostname)
 }
 
 
-static const uchar* get_key_column(const uchar *arg, size_t *length)
+GRANT_COLUMN::GRANT_COLUMN(String &c,  ulong y)
+  : rights(y), column(c.ptr(), c.length())
 {
-  const GRANT_COLUMN *buff= pointer_cast<const GRANT_COLUMN*>(arg);
-  *length=buff->key_length;
-  return (uchar*) buff->column;
-}
-
-
-static const uchar* get_grant_table(const uchar *arg, size_t *length)
-{
-  const GRANT_NAME *buff= pointer_cast<const GRANT_NAME*>(arg);
-  *length=buff->key_length;
-  return (uchar*) buff->hash_key;
-}
-
-
-GRANT_COLUMN::GRANT_COLUMN(String &c,  ulong y) :rights (y)
-{
-  column= (char*) memdup_root(&memex,c.ptr(), key_length=c.length());
 }
 
 
@@ -694,9 +734,13 @@ void GRANT_NAME::set_user_details(const char *h, const char *d,
     if (lower_case_table_names || is_routine)
       my_casedn_str(files_charset_info, tname);
   }
-  key_length= strlen(d) + strlen(u)+ strlen(t)+3;
-  hash_key=   (char*) alloc_root(&memex,key_length);
-  my_stpcpy(my_stpcpy(my_stpcpy(hash_key,user)+1,db)+1,tname);
+
+  hash_key= user;
+  hash_key.push_back('\0');
+  hash_key.append(db);
+  hash_key.push_back('\0');
+  hash_key.append(tname);
+  hash_key.push_back('\0');
 }
 
 GRANT_NAME::GRANT_NAME(const char *h, const char *d,const char *u,
@@ -708,11 +752,9 @@ GRANT_NAME::GRANT_NAME(const char *h, const char *d,const char *u,
 
 GRANT_TABLE::GRANT_TABLE(const char *h, const char *d,const char *u,
                          const char *t, ulong p, ulong c)
-  :GRANT_NAME(h,d,u,t,p, FALSE), cols(c)
+  : GRANT_NAME(h,d,u,t,p, FALSE), cols(c),
+    hash_columns(system_charset_info, key_memory_acl_memex)
 {
-  (void) my_hash_init(&hash_columns,system_charset_info,
-                      0, 0, get_key_column, nullptr, 0,
-                      key_memory_acl_memex);
 }
 
 
@@ -738,9 +780,13 @@ GRANT_NAME::GRANT_NAME(TABLE *form, bool is_routine)
   {
     my_casedn_str(files_charset_info, tname);
   }
-  key_length= (strlen(db) + strlen(user) + strlen(tname) + 3);
-  hash_key=   (char*) alloc_root(&memex, key_length);
-  my_stpcpy(my_stpcpy(my_stpcpy(hash_key,user)+1,db)+1,tname);
+
+  hash_key= user;
+  hash_key.push_back('\0');
+  hash_key.append(db);
+  hash_key.push_back('\0');
+  hash_key.append(tname);
+  hash_key.push_back('\0');
 
   if (form->field[MYSQL_TABLES_PRIV_FIELD_TABLE_PRIV])
   {
@@ -751,7 +797,8 @@ GRANT_NAME::GRANT_NAME(TABLE *form, bool is_routine)
 
 
 GRANT_TABLE::GRANT_TABLE(TABLE *form)
-  :GRANT_NAME(form, false)
+  : GRANT_NAME(form, false),
+    hash_columns(system_charset_info, key_memory_acl_memex)
 {
   if (!db || !tname)
   {
@@ -767,16 +814,11 @@ GRANT_TABLE::GRANT_TABLE(TABLE *form)
   }
   else
     cols= 0;
-
-  (void) my_hash_init(&hash_columns,system_charset_info,
-                      0, 0, get_key_column, nullptr, 0,
-                      key_memory_acl_memex);
 }
 
 
 GRANT_TABLE::~GRANT_TABLE()
 {
-  my_hash_free(&hash_columns);
 }
 
 
@@ -852,9 +894,8 @@ bool GRANT_TABLE::init(TABLE *col_privs)
       ulong priv= (ulong) col_privs->field[6]->val_int();
       DBUG_EXECUTE_IF("mysql_grant_table_init_out_of_memory",
                       DBUG_SET("+d,simulate_out_of_memory"););
-      if (!(mem_check= new GRANT_COLUMN(*res,
-                                        fix_rights_for_column(priv))) ||
-            my_hash_insert(&hash_columns, (uchar *) mem_check))
+      if (!(mem_check= new (*THR_MALLOC)
+              GRANT_COLUMN(*res, fix_rights_for_column(priv))))
       {
         /* Don't use this entry */
         col_privs->file->ha_index_end();
@@ -863,6 +904,8 @@ bool GRANT_TABLE::init(TABLE *col_privs)
                         DBUG_SET("-d,simulate_out_of_memory"););
         return true;
       }
+      hash_columns.emplace(mem_check->column,
+                           unique_ptr_destroy_only<GRANT_COLUMN>(mem_check));
 
       error= col_privs->file->ha_index_next(col_privs->record[0]);
       DBUG_ASSERT(col_privs->file->ht->db_type == DB_TYPE_NDBCLUSTER ||
@@ -1040,25 +1083,9 @@ acl_find_proxy_user(const char *user, const char *host, const char *ip,
 }
 
 
-static const uchar* get_grant_db(const uchar *arg, size_t *length)
-{
-  const acl_entry *entry= pointer_cast<const acl_entry*>(arg);
-  *length=(uint) entry->length;
-  return (uchar*) entry->key;
-}
-
-
-static const uchar* check_get_key(const uchar *arg, size_t *length)
-{
-  const ACL_USER *buff= pointer_cast<const ACL_USER*>(arg);
-  *length=buff->host.get_host_len();
-  return (uchar*) buff->host.get_host();
-}
-
-
 void clear_and_init_db_cache()
 {
-  my_hash_reset(&db_cache);
+  db_cache.clear();
 }
 
 
@@ -1083,12 +1110,13 @@ insert_entry_in_db_cache(THD *thd, acl_entry *entry)
     In following cases release memory and return
     1. Could not lock cache : This is ok because db_cache
        second level cache anyways.
-    2. my_hash_insert returned error. This is likely because
-       someone already inserted a similar entry.
+    2. Someone already inserted a similar entry.
   */
-  if (!acl_cache_lock.lock(false) ||
-      my_hash_insert(&db_cache, (uchar *)entry))
-    my_free(entry);
+  unique_ptr_my_free<acl_entry> entry_ptr(entry);
+  if (!acl_cache_lock.lock(false))
+    DBUG_VOID_RETURN;
+  db_cache.emplace(std::string(entry->key, entry->length),
+                   std::move(entry_ptr));
   DBUG_VOID_RETURN;
 }
 
@@ -1139,13 +1167,15 @@ ulong acl_get(THD *thd, const char *host, const char *ip,
     db=tmp_db;
   }
   key_length= (size_t) (end-key);
-  if (!db_is_pattern && (entry=(acl_entry*) my_hash_search(&db_cache,
-                                                           (uchar*) key,
-                                                           key_length)))
+  if (!db_is_pattern)
   {
-    db_access=entry->access;
-    DBUG_PRINT("exit", ("access: 0x%lx", db_access));
-    DBUG_RETURN(db_access);
+    const auto it= db_cache.find(std::string(key, key_length));
+    if (it != db_cache.end())
+    {
+      db_access= it->second->access;
+      DBUG_PRINT("exit", ("access: 0x%lx", db_access));
+      DBUG_RETURN(db_access);
+    }
   }
 
   /*
@@ -1207,10 +1237,8 @@ static void init_check_host(void)
 
   size_t acl_users_size= acl_users ? acl_users->size() : 0;
 
-  (void) my_hash_init(&acl_check_hosts,system_charset_info,
-                      acl_users_size, 0,
-                      check_get_key, nullptr, 0,
-                      key_memory_acl_mem);
+  acl_check_hosts= new collation_unordered_map<std::string, ACL_USER *>
+    (system_charset_info, key_memory_acl_mem);
   if (acl_users_size && !allow_all_hosts)
   {
     for (ACL_USER *acl_user= acl_users->begin();
@@ -1228,20 +1256,14 @@ static void init_check_host(void)
         if (acl == acl_wild_hosts->end())       // If new
           acl_wild_hosts->push_back(acl_user->host);
       }
-      else if (!my_hash_search(&acl_check_hosts,(uchar*)
-                               acl_user->host.get_host(),
-                               strlen(acl_user->host.get_host())))
+      else
       {
-        if (my_hash_insert(&acl_check_hosts,(uchar*) acl_user))
-        {                                       // End of memory
-          allow_all_hosts=1;                    // Should never happen
-          DBUG_VOID_RETURN;
-        }
+        // Will be ignored if there's already an entry.
+        acl_check_hosts->emplace(acl_user->host.get_host(), acl_user);
       }
     }
   }
   acl_wild_hosts->shrink_to_fit();
-  freeze_size(&acl_check_hosts.array);
   DBUG_VOID_RETURN;
 }
 
@@ -1258,7 +1280,8 @@ void rebuild_check_host(void)
 {
   delete acl_wild_hosts;
   acl_wild_hosts= NULL;
-  my_hash_free(&acl_check_hosts);
+  delete acl_check_hosts;
+  acl_check_hosts= nullptr;
   init_check_host();
 }
 
@@ -1379,8 +1402,9 @@ bool acl_getroot(THD *thd, Security_context *sctx, char *user, char *host,
                            strlen(acl_user->host.get_host()) : 0);
 
     sctx->set_password_expired(acl_user->password_expired);
+    sctx->lock_account(acl_user->account_locked);
   } // end if
- 
+
   if (acl_user && sctx->get_active_roles()->size() > 0)
   {
     sctx->checkout_access_maps();
@@ -1472,36 +1496,45 @@ validate_user_plugin_records()
 
         if (!plugin)
         {
-          sql_print_warning("The plugin '%.*s' used to authenticate "
-                            "user '%s'@'%.*s' is not loaded."
-                            " Nobody can currently login using this account.",
-                            (int) acl_user->plugin.length, acl_user->plugin.str,
-                            acl_user->user,
-                            static_cast<int>(acl_user->host.get_host_len()),
-                            acl_user->host.get_host());
+          LogErr(WARNING_LEVEL, ER_AUTHCACHE_PLUGIN_MISSING,
+                 (int) acl_user->plugin.length, acl_user->plugin.str,
+                 acl_user->user,
+                 static_cast<int>(acl_user->host.get_host_len()),
+                 acl_user->host.get_host());
         }
       }
       if (acl_user->plugin.str == sha256_password_plugin_name.str &&
-          rsa_auth_status() && !ssl_acceptor_fd)
+          sha256_rsa_auth_status() && !ssl_acceptor_fd)
       {
-          sql_print_warning("The plugin '%s' is used to authenticate "
-                            "user '%s'@'%.*s', "
 #if !defined(HAVE_YASSL)
-                            "but neither SSL nor RSA keys are "
+        const char *missing= "but neither SSL nor RSA keys are";
 #else
-                            "but no SSL is "
+        const char *missing= "but no SSL is";
 #endif
-                            "configured. "
-                            "Nobody can currently login using this account.",
-                            sha256_password_plugin_name.str,
-                            acl_user->user,
-                            static_cast<int>(acl_user->host.get_host_len()),
-                            acl_user->host.get_host());
+
+        LogErr(WARNING_LEVEL, ER_AUTHCACHE_PLUGIN_CONFIG,
+               sha256_password_plugin_name.str,
+               acl_user->user,
+               static_cast<int>(acl_user->host.get_host_len()),
+               acl_user->host.get_host(), missing);
       }
     }
   }
   unlock_plugin_data();
   DBUG_VOID_RETURN;
+}
+
+
+/**
+  Audit notification for flush
+
+  @param [in] thd Handle to THD
+*/
+
+void notify_flush_event(THD *thd)
+{
+  mysql_audit_notify(thd, AUDIT_EVENT(MYSQL_AUDIT_AUTHENTICATION_FLUSH),
+                     0, NULL, NULL, NULL, false, NULL, NULL);
 }
 
 
@@ -1544,10 +1577,7 @@ void roles_init(THD *thd)
 
   if (result)
   {
-   sql_print_warning("Could not load mysql.role_edges and "
-                     "mysql.default_roles tables. ACL DDLs "
-                     "will not work unless mysql_upgrade is "
-                     "executed.");
+    LogErr(WARNING_LEVEL, ER_AUTHCACHE_ROLE_TABLES_DODGY);
   }
 }
 
@@ -1577,10 +1607,6 @@ bool acl_init(bool dont_read_acl_tables)
   DBUG_ENTER("acl_init");
 
   init_acl_cache();
-
-  (void)my_hash_init(&db_cache, &my_charset_utf8_bin,
-                     0, 0, get_grant_db, my_free,
-                     0, key_memory_acl_cache);
 
   acl_cache_initialized= true;
 
@@ -1630,6 +1656,7 @@ bool acl_init(bool dont_read_acl_tables)
   */
   return_val|= acl_reload(thd);
   roles_init(thd);
+  notify_flush_event(thd);
   thd->release_resources();
   delete thd;
 
@@ -1738,10 +1765,9 @@ static bool acl_load(THD *thd, TABLE_LIST *tables)
                          table->field[table_schema->user_idx()]);
     if (check_no_resolve && hostname_requires_resolving(user.host.get_host()))
     {
-      sql_print_warning("'user' entry '%s@%s' "
-                        "ignored in --skip-name-resolve mode.",
-                        user.user ? user.user : "",
-                        user.host.get_host() ? user.host.get_host() : "");
+      LogErr(WARNING_LEVEL, ER_AUTHCACHE_USER_SKIPPED_NEEDS_RESOLVE,
+             user.user ? user.user : "",
+             user.host.get_host() ? user.host.get_host() : "");
     }
 
     /* Read password from authentication_string field */
@@ -1751,8 +1777,7 @@ static bool acl_load(THD *thd, TABLE_LIST *tables)
                   table->field[table_schema->authentication_string_idx()]);
     else
     {
-      sql_print_error("Fatal error: mysql.user table is damaged. "
-                      "Please run mysql_upgrade.");
+      LogErr(ERROR_LEVEL, ER_AUTHCACHE_USER_TABLE_DODGY);
 
       end_read_record(&read_record_info);
       goto end;
@@ -1896,11 +1921,10 @@ static bool acl_load(THD *thd, TABLE_LIST *tables)
                     && (tmpstr == NULL || strlen(tmpstr) == 0))
                   super_users_with_empty_plugin= true;
 
-                sql_print_warning("User entry '%s'@'%s' has a deprecated "
-                "pre-4.1 password. The user will be ignored and no one can "
-                "login with this user anymore.",
-                user.user ? user.user : "",
-                user.host.get_host() ? user.host.get_host() : "");
+                LogErr(WARNING_LEVEL,
+                       ER_AUTHCACHE_USER_IGNORED_DEPRECATED_PASSWORD,
+                       user.user ? user.user : "",
+                       user.host.get_host() ? user.host.get_host() : "");
                 plugin_unlock(0, native_plugin);
                 continue;
               }
@@ -1916,11 +1940,9 @@ static bool acl_load(THD *thd, TABLE_LIST *tables)
           {
             if ((user.access & SUPER_ACL) && !super_users_with_empty_plugin)
                       super_users_with_empty_plugin= true;
-            sql_print_warning("User entry '%s'@'%s' has an empty plugin "
-      			"value. The user will be ignored and no one can login "
-      			"with this user anymore.",
-      			user.user ? user.user : "",
-      			user.host.get_host() ? user.host.get_host() : "");
+            LogErr(WARNING_LEVEL, ER_AUTHCACHE_USER_IGNORED_NEEDS_PLUGIN,
+                   user.user ? user.user : "",
+                   user.host.get_host() ? user.host.get_host() : "");
             continue;
           }
           /*
@@ -1931,11 +1953,13 @@ static bool acl_load(THD *thd, TABLE_LIST *tables)
                             native_password_plugin_name.str) == 0)
             user.plugin= native_password_plugin_name;
 #if defined(HAVE_OPENSSL)
-          else
-            if (my_strcasecmp(system_charset_info, tmpstr,
-                              sha256_password_plugin_name.str) == 0)
+          else if(my_strcasecmp(system_charset_info, tmpstr,
+                                sha256_password_plugin_name.str) == 0)
               user.plugin= sha256_password_plugin_name;
 #endif
+          else if(my_strcasecmp(system_charset_info, tmpstr,
+                                caching_sha2_password_plugin_name.str) == 0)
+            user.plugin= caching_sha2_password_plugin_name;
           else
             {
               user.plugin.str= tmpstr;
@@ -1953,9 +1977,9 @@ static bool acl_load(THD *thd, TABLE_LIST *tables)
           if (auth->validate_authentication_string(user.auth_string.str,
                                                    user.auth_string.length))
           {
-            sql_print_warning("Found invalid password for user: '%s@%s'; "
-                              "Ignoring user", user.user ? user.user : "",
-                              user.host.get_host() ? user.host.get_host() : "");
+            LogErr(WARNING_LEVEL, ER_AUTHCACHE_USER_IGNORED_INVALID_PASSWORD,
+                   user.user ? user.user : "",
+                   user.host.get_host() ? user.host.get_host() : "");
             plugin_unlock(0, plugin);
             continue;
           }
@@ -1972,12 +1996,10 @@ static bool acl_load(THD *thd, TABLE_LIST *tables)
 
             if (!auth_plugin_supports_expiration(user.plugin.str))
             {
-              sql_print_warning("'user' entry '%s@%s' has the password ignore "
-                                "flag raised, but its authentication plugin "
-                                "doesn't support password expiration. "
-                                "The user id will be ignored.",
-                                user.user ? user.user : "",
-                                user.host.get_host() ? user.host.get_host() : "");
+              LogErr(WARNING_LEVEL,
+                     ER_AUTHCACHE_EXPIRED_PASSWORD_UNSUPPORTED,
+                     user.user ? user.user : "",
+                     user.host.get_host() ? user.host.get_host() : "");
               continue;
             }
             password_expired= true;
@@ -2005,7 +2027,7 @@ static bool acl_load(THD *thd, TABLE_LIST *tables)
           {
             user.access |= CREATE_ROLE_ACL;
           }
-          
+
           priv= get_field(&global_acl_memory,
                           table->field[table_schema->drop_role_priv_idx()]);
 
@@ -2068,6 +2090,36 @@ static bool acl_load(THD *thd, TABLE_LIST *tables)
           user.access|= SUPER_ACL | EXECUTE_ACL;
       }
 
+      if (table->s->fields > table_schema->password_reuse_history_idx())
+      {
+        if (table->field[table_schema->password_reuse_history_idx()]->is_null(0))
+          user.use_default_password_history= true;
+        else
+        {
+          char *ptr=
+            get_field(thd->mem_root,
+                      table->field[table_schema->password_reuse_history_idx()]);
+          /* ptr is NULL in case of DB NULL. Take the default in that case */
+          user.password_history_length= ptr ? atoi(ptr) : 0;
+          user.use_default_password_history= ptr == NULL;
+        }
+      }
+
+      if (table->s->fields > table_schema->password_reuse_time_idx())
+      {
+        if (table->field[table_schema->password_reuse_time_idx()]->is_null(0))
+          user.use_default_password_reuse_interval= true;
+        else
+        {
+          char *ptr=
+            get_field(thd->mem_root,
+                      table->field[table_schema->password_reuse_time_idx()]);
+          /* ptr is NULL in case of DB NULL. Take the default in that case */
+          user.password_reuse_interval= ptr ? atoi(ptr) : 0;
+          user.use_default_password_reuse_interval= ptr == NULL;
+        }
+      }
+
       set_user_salt(&user);
       user.password_expired= password_expired;
 
@@ -2087,20 +2139,7 @@ static bool acl_load(THD *thd, TABLE_LIST *tables)
 
   if (super_users_with_empty_plugin)
   {
-    sql_print_warning("Some of the user accounts with SUPER privileges were "
-                      "disabled because of empty mysql.user.plugin value. "
-                      "If you are upgrading from MySQL 5.6 to MySQL 5.7 it "
-                      "means we were not able to substitute for empty plugin "
-                      "column. Probably because of pre 4.1 password hash. "
-                      "If your account is disabled you will need to:");
-    sql_print_warning("1. Stop the server and restart it with "
-                      "--skip-grant-tables.");
-    sql_print_warning("2. Run mysql_upgrade.");
-    sql_print_warning("3. Restart the server with the parameters you "
-                      "normally use.");
-    sql_print_warning("For complete instructions on how to upgrade MySQL "
-                      "to a new version please see the 'Upgrading MySQL' "
-                      "section from the MySQL manual");
+    LogErr(WARNING_LEVEL, ER_NO_SUPER_WITHOUT_USER_PLUGIN);
   }
 
   /*
@@ -2121,17 +2160,16 @@ static bool acl_load(THD *thd, TABLE_LIST *tables)
     db.db=get_field(&global_acl_memory, table->field[MYSQL_DB_FIELD_DB]);
     if (!db.db)
     {
-      sql_print_warning("Found an entry in the 'db' table with empty database name; Skipped");
+      LogErr(WARNING_LEVEL, ER_AUTHCACHE_DB_IGNORED_EMPTY_NAME);
       continue;
     }
     db.user=get_field(&global_acl_memory, table->field[MYSQL_DB_FIELD_USER]);
     if (check_no_resolve && hostname_requires_resolving(db.host.get_host()))
     {
-      sql_print_warning("'db' entry '%s %s@%s' "
-                        "ignored in --skip-name-resolve mode.",
-                        db.db,
-                        db.user ? db.user : "",
-                        db.host.get_host() ? db.host.get_host() : "");
+      LogErr(WARNING_LEVEL, ER_AUTHCACHE_DB_SKIPPED_NEEDS_RESOLVE,
+             db.db,
+             db.user ? db.user : "",
+             db.host.get_host() ? db.host.get_host() : "");
     }
     db.access=get_access(table,3,0);
     db.access=fix_rights_for_db(db.access);
@@ -2145,13 +2183,11 @@ static bool acl_load(THD *thd, TABLE_LIST *tables)
       my_casedn_str(files_charset_info, db.db);
       if (strcmp(db.db, tmp_name) != 0)
       {
-        sql_print_warning("'db' entry '%s %s@%s' had database in mixed "
-                          "case that has been forced to lowercase because "
-                          "lower_case_table_names is set. It will not be "
-                          "possible to remove this privilege using REVOKE.",
-                          db.db,
-                          db.user ? db.user : "",
-                          db.host.get_host() ? db.host.get_host() : "");
+        LogErr(WARNING_LEVEL,
+               ER_AUTHCACHE_DB_ENTRY_LOWERCASED_REVOKE_WILL_FAIL,
+               db.db,
+               db.user ? db.user : "",
+               db.host.get_host() ? db.host.get_host() : "");
       }
     }
     db.sort=get_sort(3,db.host.get_host(),db.db,db.user);
@@ -2201,8 +2237,7 @@ static bool acl_load(THD *thd, TABLE_LIST *tables)
   }
   else
   {
-    sql_print_error("Missing system table mysql.proxies_priv; "
-                    "please run mysql_upgrade to create it");
+    LogErr(ERROR_LEVEL, ER_AUTHCACHE_TABLE_PROXIES_PRIV_MISSING);
   }
   acl_proxy_users->shrink_to_fit();
   validate_user_plugin_records();
@@ -2219,8 +2254,7 @@ static bool acl_load(THD *thd, TABLE_LIST *tables)
   }
   else
   {
-    sql_print_error("Missing system table mysql.global_grants; "
-                    "please run mysql_upgrade to create it");
+    LogErr(ERROR_LEVEL, ER_MISSING_GRANT_SYSTEM_TABLE);
   }
 
   initialized=1;
@@ -2249,7 +2283,8 @@ void acl_free(bool end)
   acl_wild_hosts= NULL;
   delete acl_proxy_users;
   acl_proxy_users= NULL;
-  my_hash_free(&acl_check_hosts);
+  delete acl_check_hosts;
+  acl_check_hosts= nullptr;
   if (!end)
     clear_and_init_db_cache();
   else
@@ -2257,7 +2292,7 @@ void acl_free(bool end)
     shutdown_acl_cache();
     if (acl_cache_initialized == true)
     {
-      my_hash_free(&db_cache);
+      db_cache.clear();
       plugin_unlock(0, native_password_plugin);
       acl_cache_initialized= false;
     }
@@ -2267,7 +2302,7 @@ void acl_free(bool end)
 
 bool check_engine_type_for_acl_table(THD *thd)
 {
-  TABLE_LIST tables[6];
+  TABLE_LIST tables[ACL_TABLES::LAST_ENTRY];
 
   /*
     Open the following ACL tables to check their consistency.
@@ -2276,49 +2311,7 @@ bool check_engine_type_for_acl_table(THD *thd)
     with other code.
   */
 
-  tables[ACL_TABLES::TABLE_USER].init_one_table(C_STRING_WITH_LEN("mysql"),
-                           C_STRING_WITH_LEN("user"),
-                           "user", TL_READ, MDL_SHARED_READ_ONLY);
-
-  tables[ACL_TABLES::TABLE_DB].init_one_table(C_STRING_WITH_LEN("mysql"),
-                           C_STRING_WITH_LEN("db"),
-                           "db", TL_READ, MDL_SHARED_READ_ONLY);
-
-  tables[ACL_TABLES::TABLE_TABLES_PRIV].init_one_table(C_STRING_WITH_LEN("mysql"),
-                           C_STRING_WITH_LEN("proxies_priv"),
-                           "proxies_priv", TL_READ, MDL_SHARED_READ_ONLY);
-
-  tables[ACL_TABLES::TABLE_COLUMNS_PRIV].init_one_table(C_STRING_WITH_LEN("mysql"),
-                           C_STRING_WITH_LEN("tables_priv"),
-                           "tables_priv", TL_READ, MDL_SHARED_READ_ONLY);
-
-  tables[ACL_TABLES::TABLE_PROCS_PRIV].init_one_table(C_STRING_WITH_LEN("mysql"),
-                           C_STRING_WITH_LEN("columns_priv"),
-                           "columns_priv", TL_READ, MDL_SHARED_READ_ONLY);
-
-  tables[ACL_TABLES::TABLE_PROXIES_PRIV].init_one_table(C_STRING_WITH_LEN("mysql"),
-                           C_STRING_WITH_LEN("procs_priv"),
-                           "procs_priv", TL_READ, MDL_SHARED_READ_ONLY);
-
-  tables[ACL_TABLES::TABLE_USER].next_local=
-    tables[ACL_TABLES::TABLE_USER].next_global= tables + 1;
-  tables[ACL_TABLES::TABLE_DB].next_local=
-    tables[ACL_TABLES::TABLE_DB].next_global= tables + 2;
-  tables[ACL_TABLES::TABLE_TABLES_PRIV].next_local=
-    tables[ACL_TABLES::TABLE_TABLES_PRIV].next_global= tables + 3;
-  tables[ACL_TABLES::TABLE_COLUMNS_PRIV].next_local=
-    tables[ACL_TABLES::TABLE_COLUMNS_PRIV].next_global= tables + 4;
-  tables[ACL_TABLES::TABLE_PROCS_PRIV].next_local=
-    tables[ACL_TABLES::TABLE_PROCS_PRIV].next_global= tables + 5;
-  tables[ACL_TABLES::TABLE_PROXIES_PRIV].next_local=
-    tables[ACL_TABLES::TABLE_PROXIES_PRIV].next_global= 0;
-
-  tables[ACL_TABLES::TABLE_USER].open_type=
-    tables[ACL_TABLES::TABLE_DB].open_type=
-    tables[ACL_TABLES::TABLE_TABLES_PRIV].open_type=
-    tables[ACL_TABLES::TABLE_COLUMNS_PRIV].open_type=
-    tables[ACL_TABLES::TABLE_PROCS_PRIV].open_type=
-    tables[ACL_TABLES::TABLE_PROXIES_PRIV].open_type= OT_BASE_ONLY;
+  grant_tables_setup_for_open(tables, TL_READ, MDL_SHARED_READ_ONLY);
 
   bool result= open_and_lock_tables(thd, tables, MYSQL_LOCK_IGNORE_TIMEOUT);
   if (!result)
@@ -2360,110 +2353,28 @@ public:
 
 bool check_acl_tables_intact(THD *thd)
 {
-  TABLE_LIST tables[6];
-  TABLE_LIST role_tables[2];
+  TABLE_LIST tables[ACL_TABLES::LAST_ENTRY];
   Acl_table_intact table_intact(thd);
   Acl_ignore_error_handler acl_ignore_handler;
 
-  /*
-    Open all the ACL tables to check their intactness. Although we don't
-    read here from the tables being opened we still request a lock type
-    MDL_SHARED_READ_ONLY for the sake of consistency with other code.
-  */
-
-  tables[ACL_TABLES::TABLE_USER].init_one_table(C_STRING_WITH_LEN("mysql"),
-                           C_STRING_WITH_LEN("user"),
-                           "user", TL_READ, MDL_SHARED_READ_ONLY);
-
-  tables[ACL_TABLES::TABLE_DB].init_one_table(C_STRING_WITH_LEN("mysql"),
-                           C_STRING_WITH_LEN("db"),
-                           "db", TL_READ, MDL_SHARED_READ_ONLY);
-
-  tables[ACL_TABLES::TABLE_TABLES_PRIV].init_one_table(C_STRING_WITH_LEN("mysql"),
-                           C_STRING_WITH_LEN("tables_priv"),
-                           "tables_priv", TL_READ, MDL_SHARED_READ_ONLY);
-
-  tables[ACL_TABLES::TABLE_COLUMNS_PRIV].init_one_table(C_STRING_WITH_LEN("mysql"),
-                           C_STRING_WITH_LEN("columns_priv"),
-                           "columns_priv", TL_READ, MDL_SHARED_READ_ONLY);
-
-  tables[ACL_TABLES::TABLE_PROCS_PRIV].init_one_table(C_STRING_WITH_LEN("mysql"),
-                           C_STRING_WITH_LEN("procs_priv"),
-                           "procs_priv", TL_READ, MDL_SHARED_READ_ONLY);
-
-  tables[ACL_TABLES::TABLE_PROXIES_PRIV].init_one_table(C_STRING_WITH_LEN("mysql"),
-                           C_STRING_WITH_LEN("proxies_priv"),
-                           "proxies_priv", TL_READ, MDL_SHARED_READ_ONLY);
-
-  tables[ACL_TABLES::TABLE_USER].next_local=
-    tables[ACL_TABLES::TABLE_USER].next_global= tables + 1;
-  tables[ACL_TABLES::TABLE_DB].next_local=
-    tables[ACL_TABLES::TABLE_DB].next_global= tables + 2;
-  tables[ACL_TABLES::TABLE_TABLES_PRIV].next_local=
-    tables[ACL_TABLES::TABLE_TABLES_PRIV].next_global= tables + 3;
-  tables[ACL_TABLES::TABLE_COLUMNS_PRIV].next_local=
-    tables[ACL_TABLES::TABLE_COLUMNS_PRIV].next_global= tables + 4;
-  tables[ACL_TABLES::TABLE_PROCS_PRIV].next_local=
-    tables[ACL_TABLES::TABLE_PROCS_PRIV].next_global= tables + 5;
-  tables[ACL_TABLES::TABLE_PROXIES_PRIV].next_local=
-    tables[ACL_TABLES::TABLE_PROXIES_PRIV].next_global= 0;
-
-  tables[ACL_TABLES::TABLE_USER].open_type=
-    tables[ACL_TABLES::TABLE_DB].open_type=
-    tables[ACL_TABLES::TABLE_TABLES_PRIV].open_type=
-    tables[ACL_TABLES::TABLE_COLUMNS_PRIV].open_type=
-    tables[ACL_TABLES::TABLE_PROCS_PRIV].open_type=
-    tables[ACL_TABLES::TABLE_PROXIES_PRIV].open_type= OT_BASE_ONLY;
+  grant_tables_setup_for_open(tables, TL_READ, MDL_SHARED_READ_ONLY);
 
   bool result_acl= open_and_lock_tables(thd, tables, MYSQL_LOCK_IGNORE_TIMEOUT);
 
   thd->push_internal_handler(&acl_ignore_handler);
   if (!result_acl)
   {
-    table_intact.check(thd, tables[ACL_TABLES::TABLE_USER].table,
-                       &mysql_user_table_def);
-    table_intact.check(thd, tables[ACL_TABLES::TABLE_DB].table,
-                       &mysql_db_table_def);
-    table_intact.check(thd, tables[ACL_TABLES::TABLE_TABLES_PRIV].table,
-                       &mysql_tables_priv_table_def);
-    table_intact.check(thd, tables[ACL_TABLES::TABLE_COLUMNS_PRIV].table,
-                       &mysql_columns_priv_table_def);
-    table_intact.check(thd, tables[ACL_TABLES::TABLE_PROCS_PRIV].table,
-                       &mysql_procs_priv_table_def);
-    table_intact.check(thd, tables[ACL_TABLES::TABLE_PROXIES_PRIV].table,
-                       &mysql_proxies_priv_table_def);
+    for (auto idx =0; idx < ACL_TABLES::LAST_ENTRY; idx++)
+      if (tables[idx].table)
+        table_intact.check(tables[idx].table, (ACL_TABLES) idx);
+      else
+        LogErr(WARNING_LEVEL, ER_MISSING_ACL_SYSTEM_TABLE,
+               tables[idx].table_name_length, tables[idx].table_name);
     commit_and_close_mysql_tables(thd);
   }
   thd->pop_internal_handler();
 
-  role_tables[0].init_one_table(C_STRING_WITH_LEN("mysql"),
-                                C_STRING_WITH_LEN("role_edges"),
-                                "role_edges", TL_READ, MDL_SHARED_READ_ONLY);
-
-  role_tables[1].init_one_table(C_STRING_WITH_LEN("mysql"),
-                                C_STRING_WITH_LEN("default_roles"),
-                                "default_roles", TL_READ, MDL_SHARED_READ_ONLY);
-
-  role_tables[0].next_local=
-    role_tables[0].next_global= role_tables + 1;
-  role_tables[1].next_local=
-    role_tables[1].next_global= 0;
-
-  role_tables[0].open_type=
-  role_tables[1].open_type= OT_BASE_ONLY;
-
-  bool result_role= open_and_lock_tables(thd, role_tables, MYSQL_LOCK_IGNORE_TIMEOUT);
-
-  thd->push_internal_handler(&acl_ignore_handler);
-  if (!result_role)
-  {
-    table_intact.check(thd, role_tables[0].table, &mysql_role_edges_table_def);
-    table_intact.check(thd, role_tables[1].table, &mysql_default_roles_table_def);
-    close_all_role_tables(thd);
-  }
-  thd->pop_internal_handler();
-
-  return (result_acl || result_role);
+  return result_acl;
 }
 
 
@@ -2544,7 +2455,7 @@ bool acl_reload(THD *thd)
   tables[1].next_local= tables[1].next_global= tables + 2;
   tables[2].next_local= tables[2].next_global= tables + 3;
 
-  tables[0].open_type= tables[1].open_type= tables[2].open_type= 
+  tables[0].open_type= tables[1].open_type= tables[2].open_type=
     tables[3].open_type= OT_BASE_ONLY;
   tables[3].open_strategy= TABLE_LIST::OPEN_IF_EXISTS;
 
@@ -2559,8 +2470,8 @@ bool acl_reload(THD *thd)
     */
     if (! is_expected_or_transient_error(thd))
     {
-      sql_print_error("Fatal error: Can't open and lock privilege tables: %s",
-                      thd->get_stmt_da()->message_text());
+      LogErr(ERROR_LEVEL, ER_AUTHCACHE_CANT_OPEN_AND_LOCK_PRIVILEGE_TABLES,
+             thd->get_stmt_da()->message_text());
     }
     goto end;
   }
@@ -2583,10 +2494,11 @@ bool acl_reload(THD *thd)
   // acl_load() overwrites global_acl_memory, so we need to free it.
   // However, we can't do that immediately, because acl_load() might fail,
   // and then we'd need to keep it.
-  old_mem= std::move(global_acl_memory);
+  old_mem= move(global_acl_memory);
   delete acl_wild_hosts;
   acl_wild_hosts= NULL;
-  my_hash_free(&acl_check_hosts);
+  delete acl_check_hosts;
+  acl_check_hosts= NULL;
   old_dyn_priv_map=
     swap_dynamic_privileges_map(new User_to_dynamic_privileges_map());
   if ((return_val= acl_load(thd, tables)))
@@ -2596,7 +2508,7 @@ bool acl_reload(THD *thd)
     acl_users= old_acl_users;
     acl_dbs= old_acl_dbs;
     acl_proxy_users= old_acl_proxy_users;
-    global_acl_memory= std::move(old_mem);
+    global_acl_memory= move(old_mem);
     init_check_host();
     delete swap_dynamic_privileges_map(old_dyn_priv_map);
   }
@@ -2627,54 +2539,13 @@ void acl_insert_proxy_user(ACL_PROXY_USER *new_value)
 }
 
 
-static void free_grant_table(void *arg)
+struct Free_grant_table
 {
-  GRANT_TABLE *grant_table= pointer_cast<GRANT_TABLE*>(arg);
-  my_hash_free(&grant_table->hash_columns);
-}
-
-
-/* Search after a matching grant. Prefer exact grants before not exact ones */
-
-GRANT_NAME *name_hash_search(HASH *name_hash,
-                             const char *host,const char* ip,
-                             const char *db,
-                             const char *user, const char *tname,
-                             bool exact, bool name_tolower)
-{
-  char helping [NAME_LEN*2+USERNAME_LENGTH+3], *name_ptr;
-  uint len;
-  GRANT_NAME *grant_name,*found=0;
-  HASH_SEARCH_STATE state;
-
-  name_ptr= my_stpcpy(my_stpcpy(helping, user) + 1, db) + 1;
-  len  = (uint) (my_stpcpy(name_ptr, tname) - helping) + 1;
-  if (name_tolower)
-    my_casedn_str(files_charset_info, name_ptr);
-  for (grant_name= (GRANT_NAME*) my_hash_first(name_hash, (uchar*) helping,
-                                               len, &state);
-       grant_name ;
-       grant_name= (GRANT_NAME*) my_hash_next(name_hash,(uchar*) helping,
-                                              len, &state))
+  void operator() (GRANT_TABLE *grant_table) const
   {
-    if (exact)
-    {
-      if (!grant_name->host.get_host() ||
-          (host &&
-           !my_strcasecmp(system_charset_info, host,
-                          grant_name->host.get_host())) ||
-          (ip && !strcmp(ip, grant_name->host.get_host())))
-        return grant_name;
-    }
-    else
-    {
-      if (grant_name->host.compare_hostname(host, ip) &&
-          (!found || found->sort < grant_name->sort))
-        found=grant_name;                                       // Host ok
-    }
+    grant_table->~GRANT_TABLE();
   }
-  return found;
-}
+};
 
 
 /* Free grant array if possible */
@@ -2682,9 +2553,9 @@ GRANT_NAME *name_hash_search(HASH *name_hash,
 void  grant_free(void)
 {
   DBUG_ENTER("grant_free");
-  my_hash_free(&column_priv_hash);
-  my_hash_free(&proc_priv_hash);
-  my_hash_free(&func_priv_hash);
+  column_priv_hash.reset();
+  proc_priv_hash.reset();
+  func_priv_hash.reset();
   free_root(&memex,MYF(0));
   DBUG_VOID_RETURN;
 }
@@ -2719,8 +2590,8 @@ bool grant_init(bool skip_grant_tables)
   return_val=  grant_reload(thd);
 
   if (return_val && thd->get_stmt_da()->is_error())
-    sql_print_error("Fatal: can't initialize grant subsystem - '%s'",
-                    thd->get_stmt_da()->message_text());
+    LogErr(ERROR_LEVEL, ER_AUTHCACHE_CANT_INIT_GRANT_SUBSYSTEM,
+           thd->get_stmt_da()->message_text());
 
   thd->release_resources();
   delete thd;
@@ -2750,14 +2621,14 @@ static bool grant_load_procs_priv(TABLE *p_table)
   bool return_val= 1;
   int error;
   bool check_no_resolve= specialflag & SPECIAL_NO_RESOLVE;
-  MEM_ROOT **save_mem_root_ptr= my_thread_get_THR_MALLOC();
+  MEM_ROOT **save_mem_root_ptr= THR_MALLOC;
   DBUG_ENTER("grant_load_procs_priv");
-  (void) my_hash_init(&proc_priv_hash, &my_charset_utf8_bin,
-                      0, 0, get_grant_table,
-                      nullptr, 0, key_memory_acl_memex);
-  (void) my_hash_init(&func_priv_hash, &my_charset_utf8_bin,
-                      0, 0, get_grant_table,
-                      nullptr, 0, key_memory_acl_memex);
+  proc_priv_hash.reset
+    (new malloc_unordered_multimap<string, unique_ptr_destroy_only<GRANT_NAME>>
+       (key_memory_acl_memex));
+  func_priv_hash.reset
+    (new malloc_unordered_multimap<string, unique_ptr_destroy_only<GRANT_NAME>>
+       (key_memory_acl_memex));
   error= p_table->file->ha_index_init(0, 1);
   DBUG_EXECUTE_IF("wl7158_grant_load_proc_1",
                   p_table->file->ha_index_end();
@@ -2787,11 +2658,12 @@ static bool grant_load_procs_priv(TABLE *p_table)
   else
   {
     memex_ptr= &memex;
-    my_thread_set_THR_MALLOC(&memex_ptr);
+    THR_MALLOC= &memex_ptr;
     do
     {
       GRANT_NAME *mem_check;
-      HASH *hash;
+      malloc_unordered_multimap<string, unique_ptr_destroy_only<GRANT_NAME>>
+        *hash;
       if (!(mem_check=new (memex_ptr) GRANT_NAME(p_table, TRUE)))
       {
         /* This could only happen if we are out memory */
@@ -2802,37 +2674,38 @@ static bool grant_load_procs_priv(TABLE *p_table)
       {
         if (hostname_requires_resolving(mem_check->host.get_host()))
         {
-          sql_print_warning("'procs_priv' entry '%s %s@%s' "
-                            "ignored in --skip-name-resolve mode.",
-                            mem_check->tname, mem_check->user,
-                            mem_check->host.get_host() ?
-                            mem_check->host.get_host() : "");
+          LogErr(WARNING_LEVEL, ER_AUTHCACHE_PROCS_PRIV_SKIPPED_NEEDS_RESOLVE,
+                 mem_check->tname, mem_check->user,
+                 mem_check->host.get_host() ?
+                 mem_check->host.get_host() : "");
         }
       }
       const enum_sp_type sp_type= to_sp_type(p_table->field[4]->val_int());
       if (sp_type == enum_sp_type::PROCEDURE)
       {
-        hash= &proc_priv_hash;
+        hash= proc_priv_hash.get();
       }
       else if (sp_type == enum_sp_type::FUNCTION)
       {
-        hash= &func_priv_hash;
+        hash= func_priv_hash.get();
       }
       else
       {
-        sql_print_warning("'procs_priv' entry '%s' "
-                          "ignored, bad routine type",
-                          mem_check->tname);
+        LogErr(WARNING_LEVEL,
+               ER_AUTHCACHE_PROCS_PRIV_ENTRY_IGNORED_BAD_ROUTINE_TYPE,
+               mem_check->tname);
         continue;
       }
 
       mem_check->privs= fix_rights_for_procedure(mem_check->privs);
       if (! mem_check->ok())
-        delete mem_check;
-      else if (my_hash_insert(hash, (uchar*) mem_check))
       {
-        delete mem_check;
-        goto end_unlock;
+        destroy(mem_check);
+      }
+      else
+      {
+        hash->emplace(mem_check->hash_key,
+                      unique_ptr_destroy_only<GRANT_NAME>(mem_check));
       }
       error= p_table->file->ha_index_next(p_table->record[0]);
       DBUG_ASSERT(p_table->file->ht->db_type == DB_TYPE_NDBCLUSTER ||
@@ -2855,7 +2728,7 @@ static bool grant_load_procs_priv(TABLE *p_table)
 
 end_unlock:
   p_table->file->ha_index_end();
-  my_thread_set_THR_MALLOC(save_mem_root_ptr);
+  THR_MALLOC= save_mem_root_ptr;
   DBUG_RETURN(return_val);
 }
 
@@ -2882,17 +2755,15 @@ static bool grant_load(THD *thd, TABLE_LIST *tables)
   int error;
   TABLE *t_table= 0, *c_table= 0;
   bool check_no_resolve= specialflag & SPECIAL_NO_RESOLVE;
-  MEM_ROOT **save_mem_root_ptr= my_thread_get_THR_MALLOC();
+  MEM_ROOT **save_mem_root_ptr= THR_MALLOC;
   sql_mode_t old_sql_mode= thd->variables.sql_mode;
   DBUG_ENTER("grant_load");
 
   thd->variables.sql_mode&= ~MODE_PAD_CHAR_TO_FULL_LENGTH;
 
-  (void) my_hash_init(&column_priv_hash, &my_charset_utf8_bin,
-                      0, 0,
-                      get_grant_table,
-                      free_grant_table, 0,
-                      key_memory_acl_memex);
+  column_priv_hash.reset
+    (new malloc_unordered_multimap<string, unique_ptr_destroy_only<GRANT_TABLE>>
+       (key_memory_acl_memex));
 
   t_table = tables[0].table;
   c_table = tables[1].table;
@@ -2925,7 +2796,7 @@ static bool grant_load(THD *thd, TABLE_LIST *tables)
   else
   {
     memex_ptr= &memex;
-    my_thread_set_THR_MALLOC(&memex_ptr);
+    THR_MALLOC= &memex_ptr;
     do
     {
       GRANT_TABLE *mem_check;
@@ -2939,7 +2810,7 @@ static bool grant_load(THD *thd, TABLE_LIST *tables)
 
       if (mem_check->init(c_table))
       {
-        delete mem_check;
+        destroy(mem_check);
         goto end_unlock;
       }
 
@@ -2947,21 +2818,23 @@ static bool grant_load(THD *thd, TABLE_LIST *tables)
       {
         if (hostname_requires_resolving(mem_check->host.get_host()))
         {
-          sql_print_warning("'tables_priv' entry '%s %s@%s' "
-                            "ignored in --skip-name-resolve mode.",
-                            mem_check->tname,
-                            mem_check->user ? mem_check->user : "",
-                            mem_check->host.get_host() ?
-                            mem_check->host.get_host() : "");
+          LogErr(WARNING_LEVEL, ER_AUTHCACHE_TABLES_PRIV_SKIPPED_NEEDS_RESOLVE,
+                 mem_check->tname,
+                 mem_check->user ? mem_check->user : "",
+                 mem_check->host.get_host() ?
+                 mem_check->host.get_host() : "");
         }
       }
 
       if (! mem_check->ok())
-        delete mem_check;
-      else if (my_hash_insert(&column_priv_hash,(uchar*) mem_check))
       {
-        delete mem_check;
-        goto end_unlock;
+        destroy(mem_check);
+      }
+      else
+      {
+        column_priv_hash->emplace
+          (mem_check->hash_key,
+           unique_ptr_destroy_only<GRANT_TABLE>(mem_check));
       }
       error= t_table->file->ha_index_next(t_table->record[0]);
       DBUG_ASSERT(t_table->file->ht->db_type == DB_TYPE_NDBCLUSTER ||
@@ -2985,7 +2858,7 @@ static bool grant_load(THD *thd, TABLE_LIST *tables)
 
 end_unlock:
   t_table->file->ha_index_end();
-  my_thread_set_THR_MALLOC(save_mem_root_ptr);
+  THR_MALLOC= save_mem_root_ptr;
 end_index_init:
   thd->variables.sql_mode= old_sql_mode;
   DBUG_RETURN(return_val);
@@ -3008,27 +2881,23 @@ end_index_init:
 
 static bool grant_reload_procs_priv(THD *thd, TABLE_LIST *table)
 {
-  HASH old_proc_priv_hash, old_func_priv_hash;
-  bool return_val= FALSE;
   DBUG_ENTER("grant_reload_procs_priv");
 
   /* Save a copy of the current hash if we need to undo the grant load */
-  old_proc_priv_hash= proc_priv_hash;
-  old_func_priv_hash= func_priv_hash;
+  unique_ptr<
+    malloc_unordered_multimap<string, unique_ptr_destroy_only<GRANT_NAME>>>
+      old_proc_priv_hash(move(proc_priv_hash));
+  unique_ptr<
+    malloc_unordered_multimap<string, unique_ptr_destroy_only<GRANT_NAME>>>
+      old_func_priv_hash(move(func_priv_hash));
+  bool return_val= FALSE;
 
   if ((return_val= grant_load_procs_priv(table->table)))
   {
     /* Error; Reverting to old hash */
     DBUG_PRINT("error",("Reverting to old privileges"));
-    my_hash_free(&proc_priv_hash);
-    my_hash_free(&func_priv_hash);
-    proc_priv_hash= old_proc_priv_hash;
-    func_priv_hash= old_func_priv_hash;
-  }
-  else
-  {
-    my_hash_free(&old_proc_priv_hash);
-    my_hash_free(&old_func_priv_hash);
+    proc_priv_hash= move(old_proc_priv_hash);
+    func_priv_hash= move(old_func_priv_hash);
   }
 
   DBUG_RETURN(return_val);
@@ -3053,12 +2922,11 @@ static bool grant_reload_procs_priv(THD *thd, TABLE_LIST *table)
 bool grant_reload(THD *thd)
 {
   TABLE_LIST tables[3];
-  HASH old_column_priv_hash;
   MEM_ROOT old_mem;
   bool return_val= 1;
   Acl_cache_lock_guard acl_cache_lock(thd,
                                       Acl_cache_lock_mode::WRITE_MODE);
-  
+
   DBUG_ENTER("grant_reload");
 
   /* Don't do anything if running with --skip-grant-tables */
@@ -3087,8 +2955,9 @@ bool grant_reload(THD *thd)
   {
     if (! is_expected_or_transient_error(thd))
     {
-      sql_print_error("Fatal error: Can't open and lock privilege tables: %s",
-                      thd->get_stmt_da()->message_text());
+      LogErr(ERROR_LEVEL,
+             ER_AUTHCACHE_CANT_OPEN_AND_LOCK_PRIVILEGE_TABLES,
+             thd->get_stmt_da()->message_text());
     }
     goto end;
   }
@@ -3096,35 +2965,38 @@ bool grant_reload(THD *thd)
   if (!acl_cache_lock.lock())
     goto end;
 
-  old_column_priv_hash= column_priv_hash;
+  {
+    unique_ptr<
+      malloc_unordered_multimap<string, unique_ptr_destroy_only<GRANT_TABLE>>>
+        old_column_priv_hash(move(column_priv_hash));
 
-  /*
-    Create a new memory pool but save the current memory pool to make an undo
-    opertion possible in case of failure.
-  */
-  old_mem= std::move(memex);
-  init_sql_alloc(key_memory_acl_memex,
-                 &memex, ACL_ALLOC_BLOCK_SIZE, 0);
-  /*
-    tables[2].table i.e. procs_priv can be null if we are working with
-    pre 4.1 privilage tables
-  */
-  if ((return_val= (grant_load(thd, tables) ||
-                    grant_reload_procs_priv(thd, &tables[2]))
-     ))
-  {                                             // Error. Revert to old hash
-    DBUG_PRINT("error",("Reverting to old privileges"));
-    my_hash_free(&column_priv_hash);
-    free_root(&memex,MYF(0));
-    column_priv_hash= old_column_priv_hash;     /* purecov: deadcode */
-    memex= std::move(old_mem);                  /* purecov: deadcode */
-  }
-  else
-  {                                             //Reload successful
-    my_hash_free(&old_column_priv_hash);
-    free_root(&old_mem,MYF(0));
-    grant_version++;
-    get_global_acl_cache()->increase_version();
+    /*
+      Create a new memory pool but save the current memory pool to make an undo
+      opertion possible in case of failure.
+    */
+    old_mem= move(memex);
+    init_sql_alloc(key_memory_acl_memex,
+                   &memex, ACL_ALLOC_BLOCK_SIZE, 0);
+    /*
+      tables[2].table i.e. procs_priv can be null if we are working with
+      pre 4.1 privilage tables
+    */
+    if ((return_val= (grant_load(thd, tables) ||
+                      grant_reload_procs_priv(thd, &tables[2]))
+       ))
+    {                                             // Error. Revert to old hash
+      DBUG_PRINT("error",("Reverting to old privileges"));
+      column_priv_hash= move(old_column_priv_hash);    /* purecov: deadcode */
+      free_root(&memex,MYF(0));
+      memex= move(old_mem);                  /* purecov: deadcode */
+    }
+    else
+    {                                             //Reload successful
+      old_column_priv_hash.reset();
+      free_root(&old_mem,MYF(0));
+      grant_version++;
+      get_global_acl_cache()->increase_version();
+    }
   }
 
 end:
@@ -3223,7 +3095,7 @@ void acl_update_user(const char *user, const char *host,
         }
 
         /* Update role graph  */
-        std::string authid_role= create_authid_str_from(acl_user);
+        string authid_role= create_authid_str_from(acl_user);
         Role_index_map:: iterator it= g_authid_to_vertex->find(authid_role);
         if (it !=g_authid_to_vertex->end())
         {
@@ -3232,6 +3104,25 @@ void acl_update_user(const char *user, const char *host,
           user_pacl_user= boost::get(boost::vertex_acl_user_t(),
                                      *g_granted_roles);
           boost::put(user_pacl_user, it->second, *acl_user);
+        }
+
+        /* update password history */
+        if (password_life.update_password_history)
+        {
+          acl_user->use_default_password_history=
+            password_life.use_default_password_history;
+          acl_user->password_history_length=
+            password_life.use_default_password_history ?
+            0 : password_life.password_history_length;
+        }
+        /* update password history */
+        if (password_life.update_password_reuse_interval)
+        {
+          acl_user->use_default_password_reuse_interval=
+            password_life.use_default_password_reuse_interval;
+          acl_user->password_reuse_interval=
+            password_life.use_default_password_reuse_interval ?
+            0 : password_life.password_reuse_interval;
         }
         /* search complete: */
         break;
@@ -3242,7 +3133,7 @@ void acl_update_user(const char *user, const char *host,
 }
 
 
-void acl_insert_user(const char *user, const char *host,
+void acl_insert_user(THD *thd, const char *user, const char *host,
                      enum SSL_type ssl_type,
                      const char *ssl_cipher,
                      const char *x509_issuer,
@@ -3257,7 +3148,7 @@ void acl_insert_user(const char *user, const char *host,
   DBUG_ENTER("acl_insert_user");
   ACL_USER acl_user;
 
-  DBUG_ASSERT(assert_acl_cache_write_lock(current_thd));
+  DBUG_ASSERT(assert_acl_cache_write_lock(thd));
   /*
      All accounts can authenticate per default. This will change when
      we add a new field to the user table.
@@ -3302,12 +3193,22 @@ void acl_insert_user(const char *user, const char *host,
     x509_issuer ? strdup_root(&global_acl_memory, x509_issuer) : 0;
   acl_user.x509_subject=
     x509_subject ? strdup_root(&global_acl_memory, x509_subject) : 0;
-  /* update details related to password lifetime, password expiry */
+  /* update details related to password lifetime, password expiry, history */
   acl_user.password_expired= password_life.update_password_expired_column;
   acl_user.password_lifetime= password_life.expire_after_days;
   acl_user.use_default_password_lifetime= password_life.use_default_password_lifetime;
   acl_user.password_last_changed= password_change_time;
   acl_user.account_locked= password_life.account_locked;
+  acl_user.password_history_length=
+    password_life.use_default_password_history ?
+    0 : password_life.password_history_length;
+  acl_user.use_default_password_history=
+    password_life.use_default_password_history;
+  acl_user.password_reuse_interval=
+    password_life.use_default_password_reuse_interval ?
+    0 : password_life.password_reuse_interval;
+  acl_user.use_default_password_reuse_interval=
+    password_life.use_default_password_reuse_interval;
 
   set_user_salt(&acl_user);
   /* New user is not a role by default. */
@@ -3319,6 +3220,10 @@ void acl_insert_user(const char *user, const char *host,
 
   /* Rebuild 'acl_check_hosts' since 'acl_users' has been modified */
   rebuild_check_host();
+  /* Add vertex to role graph. ACL_USER object is copied with a shallow copy */
+  create_role_vertex(&acl_user);
+  /* reparse mandatory roles variable */
+  opt_mandatory_roles_cache= false;
   DBUG_VOID_RETURN;
 }
 
@@ -3493,13 +3398,13 @@ const uchar *hash_key(const uchar *el, size_t *length)
 /**
   Allocate a new cache key based on active roles, current user and
   global cache version
- 
+
   @param [out] out_key The resulting key
   @param [out] key_len Key length
   @param version Global Acl_cache version
   @param uid The authorization ID of the current user
   @param active_roles The active roles of the current user
- 
+
   @return Success state
     @retval true OK
     @retval false Fatal error occurred.
@@ -3532,7 +3437,7 @@ bool create_acl_cache_hash_key(uchar **out_key, unsigned *key_len,
   memcpy(*out_key + offset, reinterpret_cast<void *>(&version), sizeof(uint64));
   it= active_roles.begin();
   offset += sizeof(uint64);
-  
+
   for(; it != active_roles.end(); ++it)
   {
     memcpy(*out_key + offset, it->first.str, it->first.length);
@@ -3629,13 +3534,13 @@ Acl_map::Acl_map(const Acl_map &&map)
 
 Acl_map &Acl_map::operator=(Acl_map &&map)
 {
-  m_db_acls= std::move(map.m_db_acls);
+  m_db_acls= move(map.m_db_acls);
   m_global_acl= map.m_global_acl;
-  m_reference_count= map.m_reference_count;
-  m_table_acls= std::move(map.m_table_acls);
-  m_sp_acls= std::move(map.m_sp_acls);
-  m_func_acls= std::move(map.m_func_acls);
-  m_with_admin_acls= std::move(map.m_with_admin_acls);
+  m_reference_count= map.m_reference_count.load();
+  m_table_acls= move(map.m_table_acls);
+  m_sp_acls= move(map.m_sp_acls);
+  m_func_acls= move(map.m_func_acls);
+  m_with_admin_acls= move(map.m_with_admin_acls);
   m_version= map.m_version;
   map.m_reference_count= 0;
   return *this;
@@ -3691,39 +3596,37 @@ Acl_map::func_acls()
 Dynamic_privileges *
 Acl_map::dynamic_privileges()
 {
-  return &m_dynamic_privileges;  
+  return &m_dynamic_privileges;
 }
 
 void
 Acl_map::increase_reference_count()
 {
-  my_atomic_add32(&m_reference_count, 1);
+  ++m_reference_count;
 }
 
 void
 Acl_map::decrease_reference_count()
 {
-  my_atomic_add32(&m_reference_count, -1);
+  --m_reference_count;
 }
 
 void Acl_cache::increase_version()
 {
   DBUG_ENTER("Acl_cache::increase_version");
-  my_atomic_add64((volatile int64 *)&m_role_graph_version, 1);
+  ++m_role_graph_version;
   flush_cache();
   DBUG_VOID_RETURN;
 }
 
 uint64 Acl_cache::version()
 {
-  uint64 version= (uint64)my_atomic_load64((volatile int64 *)&m_role_graph_version);
-  return version;
+  return m_role_graph_version.load();
 }
 
 int32 Acl_cache::size()
 {
-  uint32 size= (uint32)my_atomic_load32((volatile int32 *)&m_cache.count);
-  return size;
+  return m_cache.count.load();
 }
 
 /**
@@ -3748,7 +3651,7 @@ Acl_cache::checkout_acl_map(Security_context *sctx, Auth_id_ref &uid,
   // CREATE KEY
   uchar *key; // allocated by create_hash_key and released by Acl_cache::flush_cache
   unsigned key_len;
-  uint64 version= my_atomic_load64((volatile int64 *)&m_role_graph_version);
+  uint64 version= m_role_graph_version.load();
   if (!create_acl_cache_hash_key(&key, &key_len, version, uid,
                                  active_roles))
   {
@@ -3832,7 +3735,7 @@ void Acl_cache::flush_cache()
   Acl_hash_entry *entry= 0;
   mysql_mutex_lock(&m_cache_flush_mutex);
   l_cache_flusher_global_version= version();
-  do 
+  do
   {
     entry=
       static_cast<Acl_hash_entry*>(lf_hash_random_match(&m_cache,
@@ -3867,13 +3770,15 @@ void Acl_map::operator delete(void* p)
 {
   my_free(p);
 }
-        
+
 void init_acl_cache()
 {
   g_default_roles= new Default_roles;
   roles_init_graph();
   dynamic_privileges_init();
   g_acl_cache= new Acl_cache();
+  g_mandatory_roles= new std::vector<Role_id >;
+  opt_mandatory_roles_cache= false;
 }
 
 
@@ -3897,6 +3802,7 @@ void shutdown_acl_cache()
   g_default_roles= NULL;
   roles_delete_graph();
   dynamic_privileges_delete();
+  delete g_mandatory_roles;
 }
 
 
@@ -3905,8 +3811,8 @@ static const ulong ACL_CACHE_LOCK_TIMEOUT= 3600UL;
 static const MDL_key ACL_CACHE_KEY(MDL_key::ACL_CACHE, "", "");
 
 /**
-  Internal_error_hanlder subclass to suppress ER_LOCK_DEADLOCK and
-  ER_LOCK_WAIT_TIMEOUT.
+  Internal_error_handler subclass to suppress ER_LOCK_DEADLOCK,
+  ER_LOCK_WAIT_TIMEOUT, ER_QUERY_INTERRUPTED and ER_QUERY_TIMEOUT.
   Instead, we will use Acl_cache_lock_guard::lock()
   to raise ER_CANNOT_LOCK_USER_MANAGEMENT_CACHES error.
 */
@@ -3931,7 +3837,9 @@ public:
                                 const char *msg MY_ATTRIBUTE((unused)))
   {
     return (sql_errno == ER_LOCK_DEADLOCK ||
-            sql_errno == ER_LOCK_WAIT_TIMEOUT);
+            sql_errno == ER_LOCK_WAIT_TIMEOUT ||
+            sql_errno == ER_QUERY_INTERRUPTED ||
+            sql_errno == ER_QUERY_TIMEOUT);
   }
 };
 
@@ -4103,3 +4011,8 @@ bool assert_acl_cache_write_lock(THD *thd)
                                                       "", "",
                                                       MDL_EXCLUSIVE);
 }
+
+/** Global sysvar: the number of old passwords to check in the history. */
+volatile uint32 global_password_history= 0;
+/** Global sysvar: the number of days before a password can be reused. */
+volatile uint32 global_password_reuse_interval= 0;

@@ -4,29 +4,37 @@
 /* Copyright (c) 2002, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include <sys/types.h>
 
-#include "enum_query_type.h"
-#include "item.h"  // Item
 #include "my_compiler.h"
-#include "my_decimal.h"
 #include "my_inttypes.h"
 #include "my_table_map.h"
 #include "my_time.h"
+#include "mysql/udf_registration_types.h"
 #include "mysql_com.h"
-#include "parse_tree_node_base.h"
+#include "sql/enum_query_type.h"
+#include "sql/item.h" // Item
+#include "sql/my_decimal.h"
+#include "sql/parse_tree_node_base.h"
 
 class SELECT_LEX;
 class Send_field;
@@ -45,7 +53,6 @@ class Item_row: public Item
   Item **items;
   table_map used_tables_cache, not_null_tables_cache;
   uint arg_count;
-  bool const_item_cache;
   /**
      If elements are made only of constants, of which one or more are
      NULL. For example, this item is (1,2,NULL), or ( (1,NULL), (2,3) ).
@@ -77,7 +84,6 @@ public:
     used_tables_cache(item->used_tables_cache),
     not_null_tables_cache(0),
     arg_count(item->arg_count),
-    const_item_cache(item->const_item_cache),
     with_null(0)
   {}
 
@@ -128,7 +134,6 @@ public:
   void split_sum_func(THD *thd, Ref_item_array ref_item_array,
                       List<Item> &fields) override;
   table_map used_tables() const override { return used_tables_cache; };
-  bool const_item() const override { return const_item_cache; };
   enum Item_result result_type() const override { return ROW_RESULT; }
   void update_used_tables() override;
   table_map not_null_tables() const override { return not_null_tables_cache; }

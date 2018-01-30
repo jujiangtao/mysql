@@ -4,13 +4,20 @@
 /* Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -29,7 +36,10 @@
 */
 
 #include "my_base.h"      // ha_rows
-#include "my_decimal.h"
+#include "my_inttypes.h"
+#include "mysql/udf_registration_types.h"
+#include "mysql_time.h"
+#include "sql/my_decimal.h"
 #include "sql_string.h"
 
 class Json_array;
@@ -53,7 +63,7 @@ private:
   /// The cumulative frequency. 0.0 <= m_cumulative_frequency <= 1.0
   const double m_cumulative_frequency;
 
-  /// Number of distinct values in this bucket. m_num_distinct >= 1
+  /// Number of distinct values in this bucket.
   const ha_rows m_num_distinct;
 
   /**
@@ -80,7 +90,7 @@ public:
     @param lower         lower inclusive value
     @param upper         upper inclusive value
     @param freq          the cumulative frequency
-    @param num_distinct  number of distinct/unique values in this bucket
+    @param num_distinct  number of distinct values in this bucket
   */
   Bucket(T lower, T upper, double freq, ha_rows num_distinct);
 
@@ -120,6 +130,35 @@ public:
     @return     true on error, false otherwise
   */
   bool bucket_to_json(Json_array *json_array) const;
+
+  /**
+    Returns the "distance" between lower inclusive value and the argument
+    "value".
+
+    The return value is a number between 0.0 and 1.0. A value of 0.0 indicates
+    that "value" is equal to or less than the lower inclusive value. A value of
+    1.0 indicates that "value" is equal or greater to the upper inclusive value.
+
+    @param value The value to caluclate the distance for
+
+    @return The distance between "value" and lower inclusive value.
+  */
+  double get_distance_from_lower(const T &value) const;
+
+  /**
+    Calculate how high the probability is for a single value existing in the
+    bucket.
+
+    This is basically equal to the number of distinct values in the bucket
+    divided by the number of possible values in the bucket range. For strings,
+    double, decimals and such, the probability will be very low since the number
+    of possible values is VERY big. For integer values, the probability may
+    be rather high if the difference between the lower and upper value is low.
+
+    @return Probability of a value existing in the bucket, between 0.0 and 1.0
+            inclusive.
+  */
+  double value_probability() const;
 };
 
 } // namespace equi_height

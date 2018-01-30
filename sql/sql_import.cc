@@ -1,50 +1,59 @@
 /* Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 
-#include "sql_import.h"
+#include "sql/sql_import.h"
 
-#include "mdl.h"                   // MDL_request
-#include "my_dir.h"                // my_dir
-#include "my_sys.h"                // dirname_part
-#include "mysqld.h"                // is_secure_file_path
-#include "mysqld_error.h"          // my_error
+#include <sys/types.h>
+#include <algorithm>
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "my_dbug.h"
+#include "my_inttypes.h"
+#include "mysql/mysql_lex_string.h"
 #include "prealloced_array.h"      // Prealloced_array
-#include "psi_memory_key.h"        // key_memory_DD_import
-#include "sql_class.h"             // THD
-#include "sql_table.h"             // write_bin_log
-#include "transaction.h"           // trans_rollback_stmt
-#include "mysql/psi/mysql_file.h"  // mysql_file_x
-
-#include "dd/string_type.h"        // dd::String_type
-#include "dd/sdi_api.h"            // dd::sdi::Import_target
-#include "dd/sdi_file.h"           // dd::sdi_file::expand_pattern
-
-#include "dd/cache/dictionary_client.h" // dd::cache::Dictionary_client::Auto_releaser
-#include "dd/types/table.h"        // dd::Table
-#include "dd/impl/sdi_utils.h"     // dd::sdi_utils::handle_errors
+#include "sql/auth/auth_acls.h"
+#include "sql/auth/auth_common.h"
+#include "sql/dd/cache/dictionary_client.h" // dd::cache::Dictionary_client::Auto_releaser
+#include "sql/dd/impl/sdi_utils.h" // dd::sdi_utils::handle_errors
+#include "sql/dd/sdi_api.h"        // dd::sdi::Import_target
+#include "sql/dd/sdi_file.h"       // dd::sdi_file::expand_pattern
+#include "sql/dd/string_type.h"    // dd::String_type
+#include "sql/mdl.h"               // MDL_request
+#include "sql/mysqld.h"            // is_secure_file_path
+#include "sql/psi_memory_key.h"    // key_memory_DD_import
+#include "sql/sql_class.h"         // THD
+#include "sql/sql_error.h"
+#include "sql/stateless_allocator.h"
+#include "sql/system_variables.h"
+#include "sql/transaction.h"       // trans_rollback_stmt
 
 namespace {
 
 typedef Prealloced_array<dd::sdi::Import_target, 5> Targets_type;
 
-template <typename P_TYPE, typename CLOS_TYPE>
-std::unique_ptr<P_TYPE, CLOS_TYPE> make_guard(P_TYPE *p, CLOS_TYPE &&clos)
-{
-  return std::unique_ptr<P_TYPE, CLOS_TYPE>(p, std::forward<CLOS_TYPE>(clos));
-}
 } // namepspace
 
 
@@ -57,7 +66,7 @@ bool Sql_cmd_import_table::execute(THD *thd)
 {
   DBUG_ASSERT(!m_sdi_patterns.empty());
 
-  auto rbgrd= make_guard(thd, [] (THD *thd) {
+  auto rbgrd= dd::sdi_utils::make_guard(thd, [] (THD *thd) {
       trans_rollback_stmt(thd);
       trans_rollback(thd);
     });
@@ -100,7 +109,7 @@ bool Sql_cmd_import_table::execute(THD *thd)
   Targets_type targets{key_memory_DD_import};
 
   auto tgtgrd=
-    make_guard(thd, [&] (THD*)
+    dd::sdi_utils::make_guard(thd, [&] (THD*)
                {
                  for (auto &tgt : targets)
                  {

@@ -3,16 +3,24 @@
 Copyright (c) 1994, 2017, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+the terms of the GNU General Public License, version 2.0, as published by the
+Free Software Foundation.
+
+This program is also distributed with certain software (including but not
+limited to OpenSSL) that is licensed under separate terms, as designated in a
+particular file or component or in included license documentation. The authors
+of MySQL hereby grant you an additional permission to link the program and
+your derivative works with the separately licensed software that they have
+included with MySQL.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+FOR A PARTICULAR PURPOSE. See the GNU General Public License, version 2.0,
+for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 *****************************************************************************/
 
@@ -35,6 +43,10 @@ Created 7/1/1994 Heikki Tuuri
 #include "my_inttypes.h"
 #include "rem0cmp.h"
 #include "srv0srv.h"
+
+namespace dd {
+class Spatial_reference_system;
+}
 
 /*		ALPHABETICAL ORDER
 		==================
@@ -68,9 +80,9 @@ int
 innobase_mysql_cmp(
 	ulint		prtype,
 	const byte*	a,
-	unsigned int	a_length,
+	size_t		a_length,
 	const byte*	b,
-	unsigned int	b_length)
+	size_t		b_length)
 {
 #ifdef UNIV_DEBUG
 	switch (prtype & DATA_MYSQL_TYPE_MASK) {
@@ -313,8 +325,9 @@ cmp_gis_field(
 	unsigned int	a_length,	/*!< in: data field length,
 					not UNIV_SQL_NULL */
 	const byte*	b,		/*!< in: data field */
-	unsigned int	b_length)	/*!< in: data field length,
+	unsigned int	b_length,	/*!< in: data field length,
 					not UNIV_SQL_NULL */
+	const dd::Spatial_reference_system*	srs) /*!< in: SRS of R-tree */
 {
 	if (mode == PAGE_CUR_MBR_EQUAL) {
 		/* TODO: Since the DATA_GEOMETRY is not used in compare
@@ -322,7 +335,7 @@ cmp_gis_field(
 		return(cmp_geometry_field(DATA_GEOMETRY, DATA_GIS_MBR,
 					  a, a_length, b, b_length));
 	} else {
-		return(rtree_key_cmp(mode, a, a_length, b, b_length));
+		return(rtree_key_cmp(mode, a, a_length, b, b_length, srs));
 	}
 }
 
@@ -395,7 +408,7 @@ cmp_whole_field(
 	case DATA_MYSQL:
 		cmp = innobase_mysql_cmp(prtype,
 					 a, a_length, b, b_length);
-                break;
+		break;
 	case DATA_POINT:
 	case DATA_VAR_POINT:
 	case DATA_GEOMETRY:
@@ -403,7 +416,7 @@ cmp_whole_field(
 				b_length));
 	default:
 		ib::fatal() << "Unknown data type number " << mtype;
-                cmp = 0;
+		cmp = 0;
 	}
 	if (!is_asc) {
 		cmp = -cmp;
@@ -579,6 +592,7 @@ func_exit:
 @param[in] rec B-tree record
 @param[in] offsets rec_get_offsets(rec)
 @param[in] mode compare mode
+@param[in] srs Spatial reference system of R-tree
 @retval negative if dtuple is less than rec */
 int
 cmp_dtuple_rec_with_gis(
@@ -589,7 +603,8 @@ cmp_dtuple_rec_with_gis(
 				has an equal number or more fields than
 				dtuple */
 	const ulint*	offsets,/*!< in: array returned by rec_get_offsets() */
-	page_cur_mode_t	mode)	/*!< in: compare mode */
+	page_cur_mode_t	mode,	/*!< in: compare mode */
+        const dd::Spatial_reference_system* srs) /*!< in: SRS of R-tree */
 {
 	const dfield_t*	dtuple_field;	/* current field in logical record */
 	ulint		dtuple_f_len;	/* the length of the current field
@@ -605,7 +620,8 @@ cmp_dtuple_rec_with_gis(
 	rec_b_ptr = rec_get_nth_field(rec, offsets, 0, &rec_f_len);
 	ret = cmp_gis_field(
 		mode, static_cast<const byte*>(dfield_get_data(dtuple_field)),
-		(unsigned) dtuple_f_len, rec_b_ptr, (unsigned) rec_f_len);
+		(unsigned) dtuple_f_len, rec_b_ptr, (unsigned) rec_f_len,
+		srs);
 
 	return(ret);
 }
@@ -616,12 +632,14 @@ rtree non-leaf node.
 @param[in]	dtuple		data tuple
 @param[in]	rec		R-tree record
 @param[in]	offsets		rec_get_offsets(rec)
+@param[in]	srs	        Spatial reference system of R-tree
 @retval negative if dtuple is less than rec */
 int
 cmp_dtuple_rec_with_gis_internal(
 	const dtuple_t*	dtuple,
 	const rec_t*	rec,
-	const ulint*	offsets)
+	const ulint*	offsets,
+        const dd::Spatial_reference_system* srs)
 {
 	const dfield_t*	dtuple_field;	/* current field in logical record */
 	ulint		dtuple_f_len;	/* the length of the current field
@@ -638,7 +656,8 @@ cmp_dtuple_rec_with_gis_internal(
 	ret = cmp_gis_field(
 		PAGE_CUR_WITHIN,
 		static_cast<const byte*>(dfield_get_data(dtuple_field)),
-		(unsigned) dtuple_f_len, rec_b_ptr, (unsigned) rec_f_len);
+		(unsigned) dtuple_f_len, rec_b_ptr, (unsigned) rec_f_len,
+		srs);
 	if (ret != 0) {
 		return(ret);
 	}
@@ -803,8 +822,8 @@ cmp_get_pad_char(
 		strings, and starting from 5.0.3, also for TEXT strings. */
 		return(0x20);
 	case DATA_GEOMETRY:
-                /* DATA_GEOMETRY is binary data, not ASCII-based. */
-	        return(ULINT_UNDEFINED);
+		/* DATA_GEOMETRY is binary data, not ASCII-based. */
+		return(ULINT_UNDEFINED);
 	case DATA_BLOB:
 		if (!(type->prtype & DATA_BINARY_TYPE)) {
 			return(0x20);

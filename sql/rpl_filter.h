@@ -1,39 +1,77 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef RPL_FILTER_H
 #define RPL_FILTER_H
 
+#include "my_config.h"
+
 #include <stddef.h>
 #include <sys/types.h>
 #include <atomic>
+#include <memory>
+#include <string>
+#include <vector>
 
-#include "hash.h"                               // HASH
+#include "map_helpers.h"
+#include "my_inttypes.h"
 #include "my_sqlcommand.h"
-#include "options_mysqld.h"                     // options_mysqld
 #include "prealloced_array.h"                   // Prealloced_arrray
-#include "sql_cmd.h"                            // Sql_cmd
-#include "sql_list.h"                           // I_List
+#include "sql/options_mysqld.h"                 // options_mysqld
+#include "sql/rpl_gtid.h"
+#include "sql/sql_cmd.h"                        // Sql_cmd
+#include "sql/sql_list.h"                       // I_List
 #include "sql_string.h"
-#include "rpl_gtid.h"
 
 class Item;
 class String;
 class THD;
 struct TABLE_LIST;
 
+
+/*
+There are five classes related to replication filters:
+- Rpl_filter contains all the seven filters do-db, ignore-db, do-table,
+  ignore-table, wild-do-table, wild-ignore-table, rewrite-db. We
+  instantiate one Rpl_filter for each replication channel and one for
+  the binlog. This contains member functions to apply the filters.
+- Rpl_pfs_filter has one instance for each row in
+  P_S.replication_applier_filters and one instance for each row of
+  P_S.replication_applier_global_filters.
+- Rpl_filter_statistics contains the data other than the key for each
+  P_S row. Each Rpl_filter object owns seven instances of this class
+  (one for each filter type) and each Rpl_pfs_filter points to one of
+  those instances.
+- Rpl_channel_filters contains a map that maps channel names to
+  Rpl_filter objects, as well as a vector that references all
+  the Rpl_pfs_filter objects used to represent
+  P_S.replication_applier_filters.
+- Rpl_global_filter is a Rpl_filter representing global replication
+  filters, with a vector that references all Rpl_pfs_filter objects
+  used to represent P_S.replication_applier_global_filters table.
+
+The vectors of Rpl_pfs_filters objects are rebuilt whenever filters
+are modified (i.e., channels created/dropped or filters changed).
+*/
 
 typedef struct st_table_rule_ent
 {
@@ -53,25 +91,35 @@ enum enum_configured_by
 };
 
 
-/*
-  Rpl_filter_statistics
-
-  The statistics for replication filter
+/**
+  The class Rpl_filter_statistics encapsulates the following three
+  statistics of replication filter:
+  The configured_by indicates that how the rpl filter is configured.
+  The active_since indicates when the configuration took place.
+  The counter indicates the hit amount of the filter since last
+  configuration.
+  Instances of this class are created in Rpl_filter for each filter
+  type for each channel and the global filter, and have the same
+  life cycle as the instance of Rpl_filter.
+  The reference of this class is used in Rpl_pfs_filter for
+  displaying the three statistics of replication filter in
+  performance_schema.replication_applier_filters table and
+  performance_schema.replication_applier_global_filters table.
 */
 class Rpl_filter_statistics
 {
 public:
   Rpl_filter_statistics();
   ~Rpl_filter_statistics();
-  void set_all(enum_configured_by configured_by, ulonglong counter);
+  void reset();
+  /*
+    Set all member variables. The caller just needs to pass argument
+    for configured_by, since counter and active_since are set in the
+    funtion. We do that, since counter must be set to 0 and
+    active_since must be set to current time for any case.
+  */
+  void set_all(enum_configured_by configured_by);
 
-  void set_all(enum_configured_by configured_by, ulonglong counter,
-               ulonglong active_since)
-  {
-    m_configured_by= configured_by;
-    m_atomic_counter= counter;
-    m_active_since= active_since;
-  }
   enum_configured_by get_configured_by()
   {
     return m_configured_by;
@@ -104,7 +152,7 @@ private:
   ulonglong m_active_since;
 
   /*
-    The hit counter of the filter since last configuration.
+    The hit amount of the filter since last configuration.
     The m_atomic_counter may be increased by concurrent slave
     workers, so we use the atomic<uint64>.
   */
@@ -118,31 +166,30 @@ private:
 };
 
 
-/*
-  Rpl_pfs_filter
-
-  The helper class for filling the replication
-  performance_schema.replication_applier_filters table and
-  performance_schema.replication_applier_global_filters table.
+/**
+  The class Rpl_pfs_filter is introduced to serve the
+  performance_schema.replication_applier_filters table
+  and performance_schema.replication_applier_global_filters
+  table to collect data for a row. The class Rpl_filter
+  does not use it directly, since it contains channel_name,
+  which does not belong to Rpl_filter. To decouple code,
+  it depends on Rpl_filter_statistics, does not inherit
+  Rpl_filter_statistics.
+  Instances of this class are created in Rpl_filter for
+  each filter type for each channel and the global filter.
+  Each instance is created when creating, changing or
+  deleting the filter, destroyed when creating, changing
+  or deleting the filter next time.
 */
 class Rpl_pfs_filter
 {
 public:
   Rpl_pfs_filter();
+  Rpl_pfs_filter(const char* channel_name, const char* filter_name,
+                 const String& filter_rule,
+                 Rpl_filter_statistics* rpl_filter_statistics);
+  Rpl_pfs_filter(const Rpl_pfs_filter &other);
   ~Rpl_pfs_filter();
-
-  void set_channel_name(const char* channel_name)
-  {
-    m_channel_name= channel_name;
-  }
-  void set_filter_name(const char* filter_name)
-  {
-    m_filter_name= filter_name;
-  }
-  void set_filter_rule(const String& filter_rule)
-  {
-    m_filter_rule.copy(filter_rule);
-  }
 
   const char* get_channel_name()
   {
@@ -156,9 +203,10 @@ public:
   {
     return m_filter_rule;
   }
-
-  /* An object to replication filter statistics. */
-  Rpl_filter_statistics m_rpl_filter_statistics;
+  Rpl_filter_statistics* get_rpl_filter_statistics()
+  {
+    return m_rpl_filter_statistics;
+  }
 
 private:
 
@@ -168,29 +216,36 @@ private:
   /* A pointer to the filer name. */
   const char* m_filter_name;
 
+  /* A pointer to replication filter statistics. */
+  Rpl_filter_statistics* m_rpl_filter_statistics;
+
   /* A filter rule. */
   String m_filter_rule;
-
-  /* Prevent user from invoking default constructor function. */
-  Rpl_pfs_filter(Rpl_pfs_filter const&);
 
   /* Prevent user from invoking default assignment function. */
   Rpl_pfs_filter& operator=(Rpl_pfs_filter const&);
 };
 
 
-/*
+/**
   Rpl_filter
 
   Inclusion and exclusion rules of tables and databases.
   Also handles rewrites of db.
   Used for replication and binlogging.
+  - Instances of this class are created in Rpl_channel_filters
+    for replication filter for each channel. Each instance is
+    created when the channel is configured, destroyed when the
+    channel is removed.
+  - There is one instance, binlog_filter, created for binlog filter.
+    The instance is created when the server is started, destroyed
+    when the server is stopped.
  */
 class Rpl_filter 
 {
 public:
   Rpl_filter();
-  ~Rpl_filter();
+  virtual ~Rpl_filter();
   Rpl_filter(Rpl_filter const&);
   Rpl_filter& operator=(Rpl_filter const&);
  
@@ -298,13 +353,6 @@ public:
 
 #ifdef WITH_PERFSCHEMA_STORAGE_ENGINE
   /**
-    Used only by replication performance schema indices to get the count
-    of replication filters.
-
-    @retval the count of global replication filters.
-  */
-  uint get_filter_count();
-  /**
     Put replication filters with attached channel name into a vector.
 
     @param rpl_pfs_filter_vec the vector.
@@ -312,44 +360,9 @@ public:
                         there is no channel attached.
   */
   void put_filters_into_vector(
-    std::vector<Rpl_pfs_filter*>& rpl_pfs_filter_vec,
+    std::vector<Rpl_pfs_filter>& rpl_pfs_filter_vec,
     const char* channel_name);
-  /**
-    Used only by replication performance schema indices to get the global
-    replication filter at the position 'pos' from the
-    rpl_pfs_global_filter_vec vector.
-
-    @param pos the index in the rpl_pfs_filter_vec vector.
-
-    @retval Rpl_filter A pointer to a Rpl_pfs_filter, or NULL if it
-                       arrived the end of the rpl_pfs_filter_vec.
-  */
-  Rpl_pfs_filter* get_global_filter_at_pos(uint pos);
-
-  /**
-    This member function shall reset the P_S view associated
-    with the filters.
-   */
-  void reset_pfs_view();
 #endif /* WITH_PERFSCHEMA_STORAGE_ENGINE */
-
-  /**
-    Delete all objects in the rpl_pfs_global_filter_vec vector
-    and then clear the vector.
-  */
-  void cleanup_rpl_pfs_global_filter_vec()
-  {
-    /* Delete all objects in the rpl_pfs_global_filter_vec vector. */
-    std::vector<Rpl_pfs_filter*>::iterator it;
-    for(it= rpl_pfs_global_filter_vec.begin();
-        it != rpl_pfs_global_filter_vec.end(); ++it)
-    {
-      delete(*it);
-      *it= NULL;
-    }
-
-    rpl_pfs_global_filter_vec.clear();
-  }
 
   /**
     Acquire the write lock.
@@ -368,6 +381,18 @@ public:
   */
   void unlock()
   { m_rpl_filter_lock->unlock(); }
+
+  /**
+    Assert that some thread holds the write lock.
+  */
+  void assert_some_wrlock()
+  { m_rpl_filter_lock->assert_some_wrlock(); }
+
+  /**
+    Assert that some thread holds the read lock.
+  */
+  void assert_some_rdlock()
+  { m_rpl_filter_lock->assert_some_rdlock(); }
 
   /**
     Check if the relation between the per-channel filter and
@@ -390,6 +415,8 @@ public:
     attached= true;
   }
 
+  void reset();
+
   Rpl_filter_statistics do_table_statistics;
   Rpl_filter_statistics ignore_table_statistics;
   Rpl_filter_statistics wild_do_table_statistics;
@@ -406,11 +433,6 @@ private:
     and the channel's Relay_log_info is established.
   */
   bool attached;
-  /*
-    Store pointers of all Rpl_pfs_filter objects in
-    global replication filter.
-  */
-  std::vector<Rpl_pfs_filter*> rpl_pfs_global_filter_vec;
 
   /*
     While slave is not running after server startup, the replication filter
@@ -462,29 +484,37 @@ private:
   Checkable_rwlock *m_rpl_filter_lock;
 
   typedef Prealloced_array<TABLE_RULE_ENT*, 16> Table_rule_array;
+  typedef collation_unordered_map<
+    std::string, unique_ptr_my_free<TABLE_RULE_ENT>> Table_rule_hash;
 
-  void init_table_rule_hash(HASH* h, bool* h_inited);
+  void init_table_rule_hash(Table_rule_hash** h, bool* h_inited);
   void init_table_rule_array(Table_rule_array*, bool* a_inited);
 
   int add_table_rule_to_array(Table_rule_array* a, const char* table_spec);
-  int add_table_rule_to_hash(HASH* h, const char* table_spec, uint len);
+  int add_table_rule_to_hash(
+     Table_rule_hash* h, const char* table_spec, uint len);
 
   void free_string_array(Table_rule_array *a);
 
-  void table_rule_ent_hash_to_str(String* s, HASH* h, bool inited);
+  void table_rule_ent_hash_to_str(
+    String* s,
+    Table_rule_hash* h,
+    bool inited);
   /**
-    Builds a Table_rule_array from a HASH of TABLE_RULE_ENT. Cannot be used for
+    Builds a Table_rule_array from a hash of TABLE_RULE_ENT. Cannot be used for
     any other hash, as it assumes that the hash entries are TABLE_RULE_ENT.
 
     @param table_array Pointer to the Table_rule_array to fill
-    @param h Pointer to the HASH to read
-    @param inited True if the HASH is initialized
+    @param h Pointer to the hash to read
+    @param inited True if the hash is initialized
 
     @retval 0 OK
     @retval 1 Error
   */
-  int table_rule_ent_hash_to_array(Table_rule_array* table_array,
-                                   HASH* h, bool inited);
+  int table_rule_ent_hash_to_array(
+    Table_rule_array* table_array,
+    Table_rule_hash* h,
+    bool inited);
   /**
     Builds a destination Table_rule_array from a source Table_rule_array
     of TABLE_RULE_ENT.
@@ -503,17 +533,18 @@ private:
                                            bool inited);
   TABLE_RULE_ENT* find_wild(Table_rule_array *a, const char* key, size_t len);
 
-  int build_table_hash_from_array(Table_rule_array *table_array,
-                                  HASH *table_hash,
-                                  bool array_inited, bool *hash_inited);
+  int build_table_hash_from_array(
+    Table_rule_array *table_array,
+    Table_rule_hash **table_hash,
+    bool array_inited, bool *hash_inited);
 
   /*
     Those 6 structures below are uninitialized memory unless the
     corresponding *_inited variables are "true".
   */
   /* For quick search */
-  HASH do_table_hash;
-  HASH ignore_table_hash;
+  Table_rule_hash *do_table_hash{nullptr};
+  Table_rule_hash *ignore_table_hash{nullptr};
 
   Table_rule_array do_table_array;
   Table_rule_array ignore_table_array;
@@ -532,6 +563,60 @@ private:
   I_List<i_string> ignore_db;
 
   I_List<i_string_pair> rewrite_db;
+};
+
+
+/**
+  The class is a Rpl_filter representing global replication filters,
+  with a vector that references all Rpl_pfs_filter objects used to
+  represent P_S.replication_applier_global_filters table.
+  There is one instance, rpl_global_filter, created globally for
+  replication global filter. The rpl_global_filter is created when
+  the server is started, destroyed when the server is stopped.
+*/
+class Rpl_global_filter : public Rpl_filter
+{
+public:
+  Rpl_global_filter() {}
+  ~Rpl_global_filter() {}
+
+#ifdef WITH_PERFSCHEMA_STORAGE_ENGINE
+  /**
+    Used only by replication performance schema indices to get the count
+    of global replication filters.
+
+    @retval the count of global replication filters.
+  */
+  uint get_filter_count();
+  /**
+    Used only by replication performance schema indices to get the global
+    replication filter at the position 'pos' from the
+    rpl_pfs_filter_vec vector.
+
+    @param pos the index in the rpl_pfs_filter_vec vector.
+
+    @retval Rpl_pfs_filter A pointer to a Rpl_pfs_filter, or NULL if it
+                           arrived the end of the rpl_pfs_filter_vec.
+  */
+  Rpl_pfs_filter* get_filter_at_pos(uint pos);
+  /**
+    This member function is called everytime the rules of the global
+    repliation filter are changed. Once that happens the PFS view of
+    global repliation filter is recreated.
+  */
+  void reset_pfs_view();
+#endif /* WITH_PERFSCHEMA_STORAGE_ENGINE */
+
+private:
+  /*
+    Store pointers of all Rpl_pfs_filter objects in
+    replication filter.
+  */
+  std::vector<Rpl_pfs_filter> rpl_pfs_filter_vec;
+  /* Prevent user from invoking default assignment function. */
+  Rpl_global_filter &operator=(const Rpl_global_filter &info);
+  /* Prevent user from invoking default copy constructor function. */
+  Rpl_global_filter(const Rpl_global_filter &info);
 };
 
 

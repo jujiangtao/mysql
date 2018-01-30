@@ -2,13 +2,20 @@
    Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -17,23 +24,23 @@
 /* Create a MyISAM table */
 
 #include <fcntl.h>
-#include <my_bit.h>
 #include <sys/types.h>
 #include <time.h>
 
-#include "ftdefs.h"
+#include "my_bit.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_io.h"
 #include "my_macros.h"
 #include "my_pointer_arithmetic.h"
-#include "sp_defs.h"
+#include "storage/myisam/ftdefs.h"
+#include "storage/myisam/sp_defs.h"
 
 #ifdef _WIN32
 #include <fcntl.h>
 #include <process.h>
 #endif
-#include <m_ctype.h>
+#include "m_ctype.h"
 
 /*
   Old options is used when recreating database, from myisamchk
@@ -146,7 +153,7 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
 	pack_reclength++;
         min_pack_length++;
         /* We must test for 257 as length includes pack-length */
-        if (MY_TEST(rec->length >= 257))
+        if (rec->length >= 257)
 	{
 	  long_varchar_count++;
 	  pack_reclength+= 2;			/* May be packed on 3 bytes */
@@ -205,7 +212,7 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
   packed=(packed+7)/8;
   if (pack_reclength != INT_MAX32)
     pack_reclength+= reclength+packed +
-      MY_TEST(test_all_bits(options, HA_OPTION_CHECKSUM | HA_OPTION_PACK_RECORD));
+      test_all_bits(options, HA_OPTION_CHECKSUM | HA_OPTION_PACK_RECORD);
   min_pack_length+=packed;
 
   if (!ci->data_file_length && ci->max_rows)
@@ -551,7 +558,7 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
   share.base.records=ci->max_rows;
   share.base.reloc=  ci->reloc_rows;
   share.base.reclength=real_reclength;
-  share.base.pack_reclength=reclength+ MY_TEST(options & HA_OPTION_CHECKSUM);
+  share.base.pack_reclength=reclength+ (options & HA_OPTION_CHECKSUM ? 1 : 0);
   share.base.max_pack_length=pack_reclength;
   share.base.min_pack_length=min_pack_length;
   share.base.pack_bits=packed;

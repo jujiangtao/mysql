@@ -1,17 +1,24 @@
 /* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef DD__TABLE_STAT_IMPL_INCLUDED
 #define DD__TABLE_STAT_IMPL_INCLUDED
@@ -20,23 +27,26 @@
 #include <new>
 #include <string>
 
-#include "dd/impl/raw/raw_record.h"
-#include "dd/impl/types/entity_object_impl.h" // dd::Entity_object_impl
-#include "dd/types/dictionary_object_table.h" // dd::Dictionary_object_table
-#include "dd/types/object_type.h"             // dd::Object_type
-#include "dd/types/table_stat.h"              // dd::Table_stat
 #include "my_inttypes.h"
+#include "sql/dd/impl/raw/raw_record.h"
+#include "sql/dd/impl/types/entity_object_impl.h" // dd::Entity_object_impl
+#include "sql/dd/object_id.h"
+#include "sql/dd/string_type.h"
+#include "sql/dd/types/entity_object_table.h"
+#include "sql/dd/types/table_stat.h"          // dd::Table_stat
 
 namespace dd {
 
 ///////////////////////////////////////////////////////////////////////////
 
 class Charset;
+class Object_key;
+class Object_table;
+class Open_dictionary_tables_ctx;
 class Raw_table;
 class Transaction;
-class Object_key;
-class Open_dictionary_tables_ctx;
 class Weak_object;
+class Object_table;
 
 ///////////////////////////////////////////////////////////////////////////
 
@@ -54,14 +64,14 @@ public:
     m_auto_increment(0),
     m_checksum(0),
     m_update_time(0),
-    m_check_time(0)
+    m_check_time(0),
+    m_cached_time(0)
   { }
 
 public:
   virtual void debug_print(String_type &outb) const;
 
-  virtual const Dictionary_object_table &object_table() const
-  { return Table_stat::OBJECT_TABLE(); }
+  virtual const Object_table &object_table() const;
 
   virtual bool validate() const;
 
@@ -69,6 +79,7 @@ public:
   virtual bool store_attributes(Raw_record *r);
 
 public:
+  static void register_tables(Open_dictionary_tables_ctx *otx);
 
   /////////////////////////////////////////////////////////////////////////
   // schema name.
@@ -190,16 +201,26 @@ public:
   virtual void set_check_time(ulonglong check_time)
   { m_check_time= check_time; }
 
+  /////////////////////////////////////////////////////////////////////////
+  // cached_time.
+  /////////////////////////////////////////////////////////////////////////
+
+  virtual ulonglong cached_time() const
+  { return m_cached_time; }
+
+  virtual void set_cached_time(ulonglong cached_time)
+  { m_cached_time= cached_time; }
+
 
 public:
   virtual Object_key *create_primary_key() const;
   virtual bool has_new_primary_key() const;
 
   // Fix "inherits ... via dominance" warnings
-  virtual Weak_object_impl *impl()
-  { return Weak_object_impl::impl(); }
-  virtual const Weak_object_impl *impl() const
-  { return Weak_object_impl::impl(); }
+  virtual Entity_object_impl *impl()
+  { return Entity_object_impl::impl(); }
+  virtual const Entity_object_impl *impl() const
+  { return Entity_object_impl::impl(); }
   virtual Object_id id() const
   { return Entity_object_impl::id(); }
   virtual bool is_persistent() const
@@ -224,18 +245,8 @@ private:
   ulonglong m_checksum;
   ulonglong m_update_time;
   ulonglong m_check_time;
+  ulonglong m_cached_time;
 
-};
-
-///////////////////////////////////////////////////////////////////////////
-
-class Table_stat_type : public Object_type
-{
-public:
-  virtual Weak_object *create_object() const
-  { return new (std::nothrow) Table_stat_impl(); }
-
-  virtual void register_tables(Open_dictionary_tables_ctx *otx) const;
 };
 
 ///////////////////////////////////////////////////////////////////////////

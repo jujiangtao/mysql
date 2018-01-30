@@ -1,13 +1,25 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
+
+   Without limiting anything contained in the foregoing, this file,
+   which is part of C Driver for MySQL (Connector/C), is also subject to the
+   Universal FOSS Exception, version 1.0, a copy of which can be found at
+   http://oss.oracle.com/licenses/universal-foss-exception.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -19,21 +31,21 @@
   a shared library.
 */
 
+#include "mysys/my_static.h"
+
 #include "my_config.h"
 
-#include <stdarg.h>
 #include <stdarg.h>
 #include <stddef.h>
 
 #include "my_compiler.h"
 #include "my_loglevel.h"
-#include "my_static.h"
 #include "mysql/psi/mysql_cond.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/psi/psi_base.h"
 #include "mysql/psi/psi_memory.h"
 #include "mysql/psi/psi_stage.h"
-#include "mysys_priv.h"  // IWYU pragma: keep
+#include "mysys/mysys_priv.h" // IWYU pragma: keep
 
 /* get memory in hunks */
 constexpr uint ONCE_ALLOC_INIT= 4096 - MALLOC_OVERHEAD;
@@ -117,6 +129,18 @@ static void exit_cond_dummy(void *a MY_ATTRIBUTE((unused)),
                             int e MY_ATTRIBUTE((unused)))
 { }
 
+static void enter_stage_dummy(void *a MY_ATTRIBUTE((unused)),
+                              const PSI_stage_info *b MY_ATTRIBUTE((unused)),
+                              PSI_stage_info *c MY_ATTRIBUTE((unused)),
+                              const char *d MY_ATTRIBUTE((unused)),
+                              const char *e MY_ATTRIBUTE((unused)),
+                              int f MY_ATTRIBUTE((unused)))
+{ }
+
+static void set_waiting_for_disk_space_dummy(void *a MY_ATTRIBUTE((unused)),
+                                             bool b MY_ATTRIBUTE((unused)))
+{ }
+
 static int is_killed_dummy(const void *a MY_ATTRIBUTE((unused)))
 {
   return 0;
@@ -133,6 +157,13 @@ void (*enter_cond_hook)(void *, mysql_cond_t *, mysql_mutex_t *,
 
 void (*exit_cond_hook)(void *, const PSI_stage_info *,
                        const char *, const char *, int)= exit_cond_dummy;
+
+void (*enter_stage_hook)(void *, const PSI_stage_info *,
+                         PSI_stage_info *,
+                         const char *, const char *, int)= enter_stage_dummy;
+
+void (*set_waiting_for_disk_space_hook)(void *,
+                                        bool)= set_waiting_for_disk_space_dummy;
 
 int (*is_killed_hook)(const void *)= is_killed_dummy;
 
@@ -153,5 +184,5 @@ ulonglong query_performance_frequency, query_performance_offset,
 
 	/* How to disable options */
 bool my_disable_locking=0;
-bool my_enable_symlinks= 1;
+bool my_enable_symlinks= false;
 

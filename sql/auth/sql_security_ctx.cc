@@ -1,28 +1,34 @@
 /* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "sql_security_ctx.h"
+#include "sql/auth/sql_security_ctx.h"
 
 #include <map>
 #include <string>
+#include <tuple>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
-#include "auth_acls.h"
-#include "auth_common.h"
-#include "auth_internal.h"
 #include "m_ctype.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
@@ -30,12 +36,16 @@
 #include "mysql/mysql_lex_string.h"
 #include "mysql/psi/psi_base.h"
 #include "mysql/service_mysql_alloc.h"
-#include "mysqld.h"
 #include "mysqld_error.h"
-#include "sql_auth_cache.h"
-#include "sql_authorization.h"
-#include "sql_class.h"
-#include "current_thd.h"
+#include "sql/auth/auth_acls.h"
+#include "sql/auth/auth_common.h"
+#include "sql/auth/auth_internal.h"
+#include "sql/auth/sql_auth_cache.h"
+#include "sql/auth/sql_authorization.h"
+#include "sql/current_thd.h"
+#include "sql/key.h"
+#include "sql/mysqld.h"
+#include "sql/sql_class.h"
 
 void Security_context::init()
 {
@@ -53,6 +63,7 @@ void Security_context::init()
   m_acl_map= 0;
   m_map_checkout_count= 0;
   m_password_expired= false;
+  m_is_locked= false;
   DBUG_VOID_RETURN;
 }
 
@@ -268,9 +279,9 @@ bool Security_context::check_access(ulong want_access, bool match_any)
 /**
   This method pushes a role to the list of active roles. It requires
   Acl_cache_lock_guard.
- 
+
   This method allocates memory which must be freed when the role is deactivated.
- 
+
   @param role The role name
   @param role_host The role hostname-part.
   @param validate_access True if access validation should be performed.
@@ -280,6 +291,11 @@ int Security_context::activate_role(LEX_CSTRING role,
                                     LEX_CSTRING role_host,
                                     bool validate_access)
 {
+  auto res= std::find(m_active_roles.begin(), m_active_roles.end(),
+                      create_authid_from(role, role_host));
+  /* silently ignore requests of activating an already active role */
+  if (res != m_active_roles.end())
+    return 0;
   LEX_CSTRING dup_role= {my_strdup(PSI_NOT_INSTRUMENTED, role.str, MYF(MY_WME)),
                          role.length};
   LEX_CSTRING dup_role_host= {my_strdup(PSI_NOT_INSTRUMENTED, role_host.str,

@@ -1,19 +1,25 @@
 /*
-   Copyright (c) 2005, 2014, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2005, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; see the file COPYING. If not, write to the
-   Free Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston,
-   MA  02110-1301  USA.
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA.
  */
 
 /*  ssl.h defines openssl compatibility layer 
@@ -34,7 +40,7 @@
 #include "rsa.h"
 
 
-#define YASSL_VERSION "2.4.2"
+#define YASSL_VERSION "2.4.4"
 
 
 #if defined(__cplusplus)
@@ -98,10 +104,23 @@ typedef struct DH {
 DH*  DH_new(void);
 void DH_free(DH*);
 
+typedef int (*pem_password_cb)(char*, int, int, void*);
 /* RSA stuff */
 
-void RSA_free(RSA*);
+enum /* Padding types */
+{
+  RSA_PKCS1_PADDING=1
+};
+
 RSA* RSA_generate_key(int, unsigned long, void(*)(int, int, void*), void*);
+RSA *PEM_read_RSAPrivateKey(FILE *fp, RSA **x, pem_password_cb *cb, void *u);
+RSA *PEM_read_RSA_PUBKEY(FILE *fp, RSA **x, pem_password_cb *cb, void *u);
+RSA *PEM_read_mem_RSA_PUBKEY(void *buffer, long buffer_size);
+void RSA_free(RSA *rsa);
+int RSA_public_encrypt(int flen, unsigned char *from, unsigned char *to, RSA *rsa, int padding);
+int RSA_private_decrypt(int flen, unsigned char *from, unsigned char *to, RSA *rsa, int padding);
+int RSA_size(RSA *rsa);
+
 
 
 /* X509 stuff, different file? */
@@ -179,7 +198,7 @@ enum { /* X509 Constants */
 unsigned long ERR_get_error_line_data(const char**, int*, const char**, int *);
 void          ERR_print_errors_fp(FILE*);
 char*         ERR_error_string(unsigned long,char*);
-void          ERR_remove_state(unsigned long);
+void          ERR_remove_thread_state(const void *);
 unsigned long ERR_get_error(void);
 unsigned long ERR_peek_error(void);
 int           ERR_GET_REASON(int);
@@ -235,7 +254,6 @@ long         SSL_get_verify_result(SSL*);
 
 
 typedef int (*VerifyCallback)(int, X509_STORE_CTX*);
-typedef int (*pem_password_cb)(char*, int, int, void*);
 int default_password_callback(char * buffer, int size_arg, int rwflag,
                               void * u);
 
@@ -559,8 +577,8 @@ void yaSSL_transport_set_recv_function(SSL *, yaSSL_recv_func_t);
 void yaSSL_transport_set_send_function(SSL *, yaSSL_send_func_t);
 
 #if defined(__cplusplus) && !defined(YASSL_MYSQL_COMPATIBLE)
-}      /* namespace  */
 }      /* extern "C" */
+}      /* namespace  */
 #endif
 
 

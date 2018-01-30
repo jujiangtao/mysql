@@ -1,17 +1,24 @@
 /* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "my_config.h"
 
@@ -22,29 +29,32 @@
 #include <typeinfo>
 #include <vector>
 
-#include "dd.h"
-#include "dd/cache/dictionary_client.h"
-#include "dd/cache/element_map.h"
-#include "dd/dd.h"
-#include "dd/impl/cache/cache_element.h"
-#include "dd/impl/cache/free_list.h"
-#include "dd/impl/cache/shared_dictionary_cache.h"
-#include "dd/impl/cache/storage_adapter.h"
-#include "dd/impl/types/charset_impl.h"
-#include "dd/impl/types/collation_impl.h"
-#include "dd/impl/types/event_impl.h"
-#include "dd/impl/types/procedure_impl.h"
-#include "dd/impl/types/schema_impl.h"
-#include "dd/impl/types/table_impl.h"
-#include "dd/impl/types/tablespace_impl.h"
-#include "dd/impl/types/view_impl.h"
-// Avoid warning about deleting ptr to incomplete type on Win
-#include "dd/properties.h"
 #include "lex_string.h"
-#include "mdl.h"
 #include "my_compiler.h"
-#include "test_mdl_context_owner.h"
-#include "test_utils.h"
+#include "sql/dd/cache/dictionary_client.h"
+#include "sql/dd/cache/element_map.h"
+#include "sql/dd/dd.h"
+#include "sql/dd/impl/cache/cache_element.h"
+#include "sql/dd/impl/cache/free_list.h"
+#include "sql/dd/impl/cache/shared_dictionary_cache.h"
+#include "sql/dd/impl/cache/storage_adapter.h"
+#include "sql/dd/impl/tables/tables.h"
+#include "sql/dd/impl/types/charset_impl.h"
+#include "sql/dd/impl/types/collation_impl.h"
+#include "sql/dd/impl/types/column_statistics_impl.h"
+#include "sql/dd/impl/types/event_impl.h"
+#include "sql/dd/impl/types/procedure_impl.h"
+#include "sql/dd/impl/types/schema_impl.h"
+#include "sql/dd/impl/types/table_impl.h"
+#include "sql/dd/impl/types/tablespace_impl.h"
+#include "sql/dd/impl/types/view_impl.h"
+// Avoid warning about deleting ptr to incomplete type on Win
+#include "sql/dd/properties.h"
+#include "sql/mdl.h"
+#include "sql/sql_base.h"
+#include "unittest/gunit/dd.h"
+#include "unittest/gunit/test_mdl_context_owner.h"
+#include "unittest/gunit/test_utils.h"
 
 
 namespace dd {
@@ -101,11 +111,11 @@ class CacheStorageTest: public ::testing::Test, public Test_MDL_context_owner
 public:
   dd::Schema_impl *mysql;
 
-  void lock_object(const dd::Entity_object &eo)
+  void lock_object(const dd::String_type &name)
   {
     MDL_request mdl_request;
     MDL_REQUEST_INIT(&mdl_request, MDL_key::TABLE,
-                     MYSQL_SCHEMA_NAME.str, eo.name().c_str(),
+                     MYSQL_SCHEMA_NAME.str, name.c_str(),
                      MDL_EXCLUSIVE, MDL_TRANSACTION);
     EXPECT_FALSE(m_mdl_context.
                  acquire_lock(&mdl_request,
@@ -121,11 +131,13 @@ protected:
   static void SetUpTestCase()
   {
     mdl_init();
+    table_def_init();
   }
 
   static void TearDownTestCase()
   {
     dd::cache::Shared_dictionary_cache::shutdown();
+    table_def_free();
     mdl_destroy();
   }
 
@@ -211,6 +223,7 @@ typedef ::testing::Types
 <
   dd::Charset_impl,
   dd::Collation_impl,
+  dd::Column_statistics_impl,
   dd::Schema_impl,
   dd::Table_impl,
   dd::Tablespace_impl,
@@ -226,20 +239,20 @@ class CacheTestHelper
 public:
   template <typename T>
   static
-  std::vector<dd::cache::Cache_element<typename T::cache_partition_type>*>
+  std::vector<dd::cache::Cache_element<typename T::Cache_partition>*>
     *create_elements(uint num)
   {
     char name[2]= {'a', '\0'};
-    std::vector<dd::cache::Cache_element<typename T::cache_partition_type>*>
+    std::vector<dd::cache::Cache_element<typename T::Cache_partition>*>
       *objects= new std::vector<
-        dd::cache::Cache_element<typename T::cache_partition_type>*>();
+        dd::cache::Cache_element<typename T::Cache_partition>*>();
     for (uint id= 1; id <= num; id++, name[0]++)
     {
       T *object= new T();
       object->set_id(id);
       object->set_name(dd::String_type(name));
-      dd::cache::Cache_element<typename T::cache_partition_type> *element=
-        new dd::cache::Cache_element<typename T::cache_partition_type>();
+      dd::cache::Cache_element<typename T::Cache_partition> *element=
+        new dd::cache::Cache_element<typename T::Cache_partition>();
       element->set_object(object);
       element->recreate_keys();
       objects->push_back(element);
@@ -250,17 +263,17 @@ public:
   template <typename T>
   static
   void delete_elements(std::vector<dd::cache::Cache_element
-                       <typename T::cache_partition_type>*> *objects)
+                       <typename T::Cache_partition>*> *objects)
   {
     // Delete the objects and elements.
     for (typename std::vector<dd::cache::Cache_element
-           <typename T::cache_partition_type>*>::iterator it=
+           <typename T::Cache_partition>*>::iterator it=
              objects->begin();
          it != objects->end();)
     {
       // Careful about iterator invalidation.
       dd::cache::Cache_element
-           <typename T::cache_partition_type> *element= *it;
+           <typename T::Cache_partition> *element= *it;
       it++;
       delete(element->object());
       delete(element);
@@ -276,17 +289,17 @@ TYPED_TEST(CacheTest, FreeList)
 {
   // Create a free list and assert that it is empty.
   dd::cache::Free_list<dd::cache::Cache_element
-    <typename TypeParam::cache_partition_type> > free_list;
+    <typename TypeParam::Cache_partition> > free_list;
   ASSERT_EQ(0U, free_list.length());
 
   // Create objects and wrap them in elements, add to vector of pointers.
   std::vector<dd::cache::Cache_element
-    <typename TypeParam::cache_partition_type>*>
+    <typename TypeParam::Cache_partition>*>
       *objects= CacheTestHelper::create_elements<TypeParam>(4);
 
   // Add the elements to the free list.
   for (typename std::vector<dd::cache::Cache_element
-         <typename TypeParam::cache_partition_type>*>::iterator it=
+         <typename TypeParam::Cache_partition>*>::iterator it=
            objects->begin();
        it != objects->end(); ++it)
     free_list.add_last(*it);
@@ -295,7 +308,7 @@ TYPED_TEST(CacheTest, FreeList)
   ASSERT_EQ(4U, free_list.length());
 
   // Retrieving the least recently used element should return the first one.
-  dd::cache::Cache_element<typename TypeParam::cache_partition_type>
+  dd::cache::Cache_element<typename TypeParam::Cache_partition>
           *element= free_list.get_lru();
   free_list.remove(element);
   ASSERT_EQ(3U, free_list.length());
@@ -332,18 +345,18 @@ void element_map_test()
 {
   // Create an element map and assert that it is empty.
   dd::cache::Element_map<K, dd::cache::Cache_element
-                              <typename T::cache_partition_type> >
+                              <typename T::Cache_partition> >
     element_map;
   ASSERT_EQ(0U, element_map.size());
 
   // Create objects and wrap them in elements.
   std::vector<dd::cache::Cache_element
-    <typename T::cache_partition_type>*>
+    <typename T::Cache_partition>*>
       *objects= CacheTestHelper::create_elements<T>(4);
 
   // Add the elements to the map.
   for (typename std::vector<dd::cache::Cache_element
-         <typename T::cache_partition_type>*>::iterator it=
+         <typename T::Cache_partition>*>::iterator it=
            objects->begin();
        it != objects->end(); ++it)
   {
@@ -360,7 +373,7 @@ void element_map_test()
   // get the same element in return.
   // Add the elements to the map.
   for (typename std::vector<dd::cache::Cache_element
-         <typename T::cache_partition_type>*>::iterator it=
+         <typename T::Cache_partition>*>::iterator it=
            objects->begin();
        it != objects->end(); ++it)
   {
@@ -382,17 +395,17 @@ void element_map_test()
 TYPED_TEST(CacheTest, Element_map_reverse)
 {
   element_map_test<TypeParam,
-                   const typename TypeParam::cache_partition_type*>();
+                   const typename TypeParam::Cache_partition*>();
 }
 
 TYPED_TEST(CacheTest, Element_map_id_key)
 {
-  element_map_test<TypeParam, typename TypeParam::id_key_type>();
+  element_map_test<TypeParam, typename TypeParam::Id_key>();
 }
 
 TYPED_TEST(CacheTest, Element_map_name_key)
 {
-  element_map_test<TypeParam, typename TypeParam::name_key_type>();
+  element_map_test<TypeParam, typename TypeParam::Name_key>();
 }
 
 TYPED_TEST(CacheTest, Element_map_aux_key)
@@ -412,7 +425,7 @@ void test_basic_store_and_get(CacheStorageTest *tst, THD *thd)
   Intrfc_type *icreated= created.get();
   dd_unittest::set_attributes(created.get(), "global_test_object");
 
-  tst->lock_object(*created.get());
+  tst->lock_object(created->name());
   EXPECT_FALSE(dc->store(icreated));
   EXPECT_LT(9999u, icreated->id());
 
@@ -442,6 +455,21 @@ TEST_F(CacheStorageTest, BasicStoreAndGetCollation)
   test_basic_store_and_get<dd::Collation, dd::Collation_impl>(this, thd());
 }
 
+TEST_F(CacheStorageTest, BasicStoreAndGetColumnStatistics)
+{
+  test_basic_store_and_get<dd::Column_statistics,
+                           dd::Column_statistics_impl>(this, thd());
+}
+
+TEST_F(CacheStorageTest, BasicStoreAndGetColumnStatisticWithCloneFail)
+{
+  // Verify that we don't crash even if cloning of the histogram fails.
+  DBUG_SET("+d,fail_histogram_clone");
+  test_basic_store_and_get<dd::Column_statistics,
+                           dd::Column_statistics_impl>(this, thd());
+  DBUG_SET("-d,fail_histogram_clone");
+}
+
 TEST_F(CacheStorageTest, BasicStoreAndGetSchema)
 {
   test_basic_store_and_get<dd::Schema, dd::Schema_impl>(this, thd());
@@ -465,7 +493,7 @@ void test_basic_store_and_get_with_schema(CacheStorageTest *tst, THD *thd)
   dd_unittest::set_attributes(created.get(), "schema_qualified_test_object",
                               *tst->mysql);
 
-  tst->lock_object(*created.get());
+  tst->lock_object(created->name());
   EXPECT_FALSE(dc->store(icreated));
   EXPECT_LT(9999u, icreated->id());
 
@@ -519,7 +547,7 @@ void test_acquire_for_modification(CacheStorageTest *tst, THD *thd)
   Intrfc_type *icreated= created.get();
   dd_unittest::set_attributes(created.get(), "global_test_object");
 
-  tst->lock_object(*created.get());
+  tst->lock_object(created->name());
   EXPECT_FALSE(dc->store(icreated));
   EXPECT_LT(9999u, icreated->id());
 
@@ -563,6 +591,12 @@ TEST_F(CacheStorageTest, AquireForModificationCollation)
   test_acquire_for_modification<dd::Collation, dd::Collation_impl>(this, thd());
 }
 
+TEST_F(CacheStorageTest, AquireForModificationColumnStatistic)
+{
+  test_acquire_for_modification<dd::Column_statistics,
+                                dd::Column_statistics_impl>(this, thd());
+}
+
 TEST_F(CacheStorageTest, AquireForModificationSchema)
 {
   test_acquire_for_modification<dd::Schema, dd::Schema_impl>(this, thd());
@@ -586,7 +620,7 @@ void test_acquire_for_modification_with_schema(CacheStorageTest *tst, THD *thd)
   dd_unittest::set_attributes(created.get(), "schema_qualified_test_object",
                               *tst->mysql);
 
-  tst->lock_object(*created.get());
+  tst->lock_object(created->name());
   EXPECT_FALSE(dc->store(icreated));
   EXPECT_LT(9999u, icreated->id());
 
@@ -651,7 +685,7 @@ void test_acquire_and_rename(CacheStorageTest *tst, THD *thd)
   Intrfc_type *icreated= created.get();
   dd_unittest::set_attributes(created.get(), "old_name");
 
-  tst->lock_object(*created.get());
+  tst->lock_object(created->name());
   EXPECT_FALSE(dc->store(icreated));
   EXPECT_LT(9999u, icreated->id());
 
@@ -662,7 +696,7 @@ void test_acquire_and_rename(CacheStorageTest *tst, THD *thd)
                                                          &old_modified));
 
   dd_unittest::set_attributes(old_modified, "new_name");
-  dc->update(old_modified);
+  EXPECT_FALSE(dc->update(old_modified));
 
   // Should be possible to acquire with the new name.
   Intrfc_type *new_modified= NULL;
@@ -702,6 +736,12 @@ TEST_F(CacheStorageTest, AquireAndRenameCollation)
   test_acquire_and_rename<dd::Collation, dd::Collation_impl>(this, thd());
 }
 
+TEST_F(CacheStorageTest, AquireAndRenameColumnStatistic)
+{
+  test_acquire_and_rename<dd::Column_statistics,
+                          dd::Column_statistics_impl>(this, thd());
+}
+
 TEST_F(CacheStorageTest, AquireAndRenameSchema)
 {
   test_acquire_and_rename<dd::Schema, dd::Schema_impl>(this, thd());
@@ -725,7 +765,7 @@ void test_acquire_and_rename_with_schema(CacheStorageTest *tst, THD *thd)
   dd_unittest::set_attributes(created.get(), "schema_old_name",
                               *tst->mysql);
 
-  tst->lock_object(*created.get());
+  tst->lock_object(created->name());
   EXPECT_FALSE(dc->store(icreated));
   EXPECT_LT(9999u, icreated->id());
 
@@ -736,7 +776,7 @@ void test_acquire_and_rename_with_schema(CacheStorageTest *tst, THD *thd)
 
   dd_unittest::set_attributes(old_modified, "schema_new_name",
                               *tst->mysql);
-  dc->update(old_modified);
+  EXPECT_FALSE(dc->update(old_modified));
 
   // Should be possible to acquire with the new name.
   Intrfc_type *new_modified= NULL;
@@ -802,7 +842,7 @@ void test_acquire_and_move(CacheStorageTest *tst, THD *thd)
   dd_unittest::set_attributes(created.get(), "schema_name",
                               *tst->mysql);
 
-  tst->lock_object(*created.get());
+  tst->lock_object(created->name());
   EXPECT_FALSE(dc->store(icreated));
   EXPECT_LT(9999u, icreated->id());
 
@@ -819,7 +859,7 @@ void test_acquire_and_move(CacheStorageTest *tst, THD *thd)
   // Move object to a new schema, but keep object name.
   dd_unittest::set_attributes(old_modified, created->name(),
                               *new_schema);
-  dc->update(old_modified);
+  EXPECT_FALSE(dc->update(old_modified));
 
   // Should be possible to acquire in the new schema.
   Intrfc_type *new_modified= NULL;
@@ -889,7 +929,7 @@ void test_acquire_and_drop(CacheStorageTest *tst, THD *thd)
   Intrfc_type *icreated= created.get();
   dd_unittest::set_attributes(created.get(), "drop_test_object");
 
-  tst->lock_object(*created.get());
+  tst->lock_object(created->name());
   EXPECT_FALSE(dc->store(icreated));
   EXPECT_LT(9999u, icreated->id());
 
@@ -921,6 +961,12 @@ TEST_F(CacheStorageTest, AquireAndDropCollation)
   test_acquire_and_drop<dd::Collation, dd::Collation_impl>(this, thd());
 }
 
+TEST_F(CacheStorageTest, AquireAndDropColumnStatistic)
+{
+  test_acquire_and_drop<dd::Column_statistics,
+                        dd::Column_statistics_impl>(this, thd());
+}
+
 TEST_F(CacheStorageTest, AquireAndDropSchema)
 {
   test_acquire_and_drop<dd::Schema, dd::Schema_impl>(this, thd());
@@ -944,7 +990,7 @@ void test_acquire_and_drop_with_schema(CacheStorageTest *tst, THD *thd)
   dd_unittest::set_attributes(created.get(), "schema_drop_test_object",
                               *tst->mysql);
 
-  tst->lock_object(*created.get());
+  tst->lock_object(created->name());
   EXPECT_FALSE(dc->store(icreated));
   EXPECT_LT(9999u, icreated->id());
 
@@ -997,12 +1043,72 @@ TEST_F(CacheStorageTest, CommitNewObject)
   dd::Table *icreated= created;
   created->set_schema_id(mysql->id());
   dd_unittest::set_attributes(created, "new_object", *mysql);
-  lock_object(*created);
+  lock_object(created->name());
   EXPECT_FALSE(dc->store(icreated));
   EXPECT_LT(9999u, icreated->id());
 
   dc->commit_modified_objects();
   delete created;
+}
+
+
+TEST_F(CacheStorageTest, DoubleUpdate)
+{
+  dd::cache::Dictionary_client *dc= thd()->dd_client();
+  dd::cache::Dictionary_client::Auto_releaser releaser(dc);
+
+  std::unique_ptr<dd::Table> created(new dd::Table_impl());
+  created->set_name("old_name");
+  created->set_engine("innodb");
+  lock_object(created->name());
+  EXPECT_FALSE(dc->store(created.get()));
+  EXPECT_LT(9999u, created->id());
+
+  dd::Table *new_obj= nullptr;
+  EXPECT_FALSE(dc->acquire_for_modification(created->id(), &new_obj));
+
+  new_obj->set_name("new name");
+  EXPECT_FALSE(dc->update(new_obj));
+
+  new_obj->set_name("newer name");
+  EXPECT_FALSE(dc->update(new_obj));
+
+  dc->commit_modified_objects();
+}
+
+
+TEST_F(CacheStorageTest, DuplicateSePrivateId)
+{
+  dd::cache::Dictionary_client *dc= thd()->dd_client();
+  dd::cache::Dictionary_client::Auto_releaser releaser(dc);
+
+  std::unique_ptr<dd::Table> ibd_tab(dd::create_object<dd::Table>());
+  dd_unittest::set_attributes(ibd_tab.get(), "innodb_table_object", *mysql);
+  ibd_tab->set_engine("innodb");
+  ibd_tab->set_se_private_id(123);
+  lock_object(ibd_tab->name());
+
+  std::unique_ptr<dd::Table> ndb_tab(dd::create_object<dd::Table>());
+  dd_unittest::set_attributes(ndb_tab.get(), "ndb_table_object", *mysql);
+  ndb_tab->set_engine("ndb");
+  ndb_tab->set_se_private_id(123);
+  lock_object(ndb_tab->name());
+
+  EXPECT_FALSE(dc->store(ibd_tab.get()));
+  EXPECT_FALSE(dc->store(ndb_tab.get()));
+
+  // Acquire and drop the objects
+  const dd::Table *ibd_tab_ptr= NULL;
+  EXPECT_FALSE(dc->acquire<dd::Table>("mysql", "innodb_table_object", &ibd_tab_ptr));
+  EXPECT_NE(nullp<const dd::Table>(), ibd_tab_ptr);
+  EXPECT_FALSE(dc->drop(ibd_tab_ptr));
+
+  const dd::Table *ndb_tab_ptr= NULL;
+  EXPECT_FALSE(dc->acquire<dd::Table>("mysql", "ndb_table_object", &ndb_tab_ptr));
+  EXPECT_NE(nullp<const dd::Table>(), ndb_tab_ptr);
+  EXPECT_FALSE(dc->drop(ndb_tab_ptr));
+
+  dc->commit_modified_objects();
 }
 
 
@@ -1018,14 +1124,13 @@ TEST_F(CacheStorageTest, GetTableBySePrivateId)
 
   dd::Partition *part_obj= obj->add_partition();
   part_obj->set_name("table_part2");
-  part_obj->set_level(1);
   part_obj->set_se_private_id(0xAFFF);
   part_obj->set_engine("innodb");
   part_obj->set_number(3);
   part_obj->set_comment("Partition comment");
   part_obj->set_tablespace_id(1);
 
-  lock_object(*obj.get());
+  lock_object(obj->name());
   EXPECT_FALSE(dc->store(obj.get()));
 
   dd::String_type schema_name;
@@ -1064,7 +1169,7 @@ TEST_F(CacheStorageTest, TestRename)
   std::unique_ptr<dd::Table> temp_table(dd::create_object<dd::Table>());
   dd_unittest::set_attributes(temp_table.get(), "temp_table", *mysql);
 
-  lock_object(*temp_table.get());
+  lock_object(temp_table->name());
   EXPECT_FALSE(dc.store(temp_table.get()));
 
   {
@@ -1096,8 +1201,8 @@ TEST_F(CacheStorageTest, TestRename)
         i->set_name(i->name() + "_changed");
 
       // Store the object.
-      lock_object(*temp_table);
-      dc.update(temp_table);
+      lock_object(temp_table->name());
+      EXPECT_FALSE(dc.update(temp_table));
 
       // Enable foreign key checks
       thd()->variables.option_bits&= ~OPTION_NO_FOREIGN_KEY_CHECKS;
@@ -1199,27 +1304,20 @@ TEST_F(CacheStorageTest, TestTransactionMaxSePrivateId)
   dd_unittest::set_attributes(tab1.get(), "table1", *mysql);
   tab1->set_se_private_id(5);
   tab1->set_engine("innodb");
-  lock_object(*tab1.get());
-  dc.store(tab1.get());
+  lock_object(tab1->name());
+  EXPECT_FALSE(dc.store(tab1.get()));
 
   dd_unittest::set_attributes(tab2.get(), "table2", *mysql);
   tab2->set_se_private_id(10);
   tab2->set_engine("innodb");
-  lock_object(*tab2.get());
+  lock_object(tab2->name());
   EXPECT_FALSE(dc.store(tab2.get()));
 
   dd_unittest::set_attributes(tab3.get(), "table3", *mysql);
   tab3->set_se_private_id(20);
   tab3->set_engine("unknown");
-  lock_object(*tab3.get());
-  dc.store(tab3.get());
-
-  // Needs working dd::get_dictionary()
-  //dd::Object_id max_id;
-  //EXPECT_FALSE(dc.get_tables_max_se_private_id("innodb", &max_id));
-  //EXPECT_EQ(10u, max_id);
-  //EXPECT_FALSE(dc.get_tables_max_se_private_id("unknown", &max_id));
-  //EXPECT_EQ(20u, max_id);
+  lock_object(tab3->name());
+  EXPECT_FALSE(dc.store(tab3.get()));
 
   dd::Table *tab1_new= NULL;
   EXPECT_FALSE(dc.acquire_uncached_table_by_se_private_id("innodb", 5, &tab1_new));
@@ -1357,8 +1455,8 @@ TEST_F(CacheStorageTest, TestCacheLookup)
   dd::cache::Dictionary_client &dc= *thd()->dd_client();
   dd::cache::Dictionary_client::Auto_releaser releaser(&dc);
 
-  dd::String_type obj_name= dd::Table::OBJECT_TABLE().name() +
-    dd::String_type("_cacheissue");
+  dd::String_type obj_name= dd::Table::DD_table::instance().
+          name() + dd::String_type("_cacheissue");
   dd::Object_id id;
   //
   // Create table object
@@ -1370,7 +1468,7 @@ TEST_F(CacheStorageTest, TestCacheLookup)
     obj->set_engine("innodb");
     obj->set_se_private_id(0xFFFA); // Storing some magic number
 
-    lock_object(*obj.get());
+    lock_object(obj->name());
     EXPECT_FALSE(dc.store(obj.get()));
   }
 
@@ -1434,8 +1532,8 @@ TEST_F(CacheStorageTest, TestTriggers)
   dd::cache::Dictionary_client &dc= *thd()->dd_client();
   dd::cache::Dictionary_client::Auto_releaser releaser(&dc);
 
-  dd::String_type obj_name= dd::Table::OBJECT_TABLE().name() +
-    dd::String_type("_trigs");
+  dd::String_type obj_name= dd::Table::DD_table::instance().
+          name() + dd::String_type("_trigs");
   dd::Object_id id MY_ATTRIBUTE((unused));
 
   //
@@ -1486,7 +1584,7 @@ TEST_F(CacheStorageTest, TestTriggers)
     trig_obj1->set_connection_collation_id(1);
     trig_obj1->set_schema_collation_id(1);
 
-    lock_object(*obj.get());
+    lock_object(obj->name());
     EXPECT_FALSE(dc.store(obj.get()));
     id= obj->id();
   }
@@ -1516,5 +1614,117 @@ TEST_F(CacheStorageTest, TestTriggers)
   dc.commit_modified_objects();
 
 }
+
+
+TEST_F(CacheStorageTest, PartitionTest)
+{
+  dd::cache::Dictionary_client *dc= thd()->dd_client();
+  dd::cache::Dictionary_client::Auto_releaser releaser(dc);
+
+  std::unique_ptr<dd::Table> obj(dd::create_object<dd::Table>());
+//  dd_unittest::set_attributes(obj.get(), "part_table1", *mysql);
+  dd::String_type table_name="part_table1";
+  obj->set_name(table_name);
+
+  obj->set_schema_id(mysql->id());
+  obj->set_collation_id(1);
+  obj->set_tablespace_id(1);
+  obj->set_engine("innodb");
+
+  //
+  // Create a new column
+  //
+  dd::Column *col_obj1= obj->add_column();
+  col_obj1->set_name(table_name + "col2");
+  col_obj1->set_default_value_null(true);
+  col_obj1->set_collation_id(1);
+
+  dd::Partition *part_obj1= obj->add_partition();
+  part_obj1->set_name("p1");
+  part_obj1->set_se_private_id(0xAFFF);
+  part_obj1->set_engine("innodb");
+  part_obj1->set_number(0);
+  part_obj1->set_comment("Partition comment");
+  part_obj1->set_tablespace_id(1);
+
+  dd::Partition *sub_part_obj1= part_obj1->add_sub_partition();
+  sub_part_obj1->set_name("p1s1");
+  sub_part_obj1->set_se_private_id(0xAFFF);
+  sub_part_obj1->set_engine("innodb");
+  sub_part_obj1->set_number(0);
+  sub_part_obj1->set_comment("Partition comment");
+  sub_part_obj1->set_tablespace_id(1);
+
+  dd::Partition *sub_part_obj2= part_obj1->add_sub_partition();
+  sub_part_obj2->set_name("p1s2");
+  sub_part_obj2->set_se_private_id(0xAFFF);
+  sub_part_obj2->set_engine("innodb");
+  sub_part_obj2->set_number(1);
+  sub_part_obj2->set_comment("Partition comment");
+  sub_part_obj2->set_tablespace_id(1);
+
+  dd::Partition *part_obj2= obj->add_partition();
+  part_obj2->set_name("p2");
+  part_obj2->set_se_private_id(0xAFFF);
+  part_obj2->set_engine("innodb");
+  part_obj2->set_number(1);
+  part_obj2->set_comment("Partition comment");
+  part_obj2->set_tablespace_id(1);
+
+  sub_part_obj1= part_obj2->add_sub_partition();
+  sub_part_obj1->set_name("p2s1");
+  sub_part_obj1->set_se_private_id(0xAFFF);
+  sub_part_obj1->set_engine("innodb");
+  sub_part_obj1->set_number(0);
+  sub_part_obj1->set_comment("Partition comment");
+  sub_part_obj1->set_tablespace_id(1);
+
+  sub_part_obj2= part_obj2->add_sub_partition();
+  sub_part_obj2->set_name("p2s2");
+  sub_part_obj2->set_se_private_id(0xAFFF);
+  sub_part_obj2->set_engine("innodb");
+  sub_part_obj2->set_number(1);
+  sub_part_obj2->set_comment("Partition comment");
+  sub_part_obj2->set_tablespace_id(1);
+
+  lock_object(obj->name());
+  EXPECT_FALSE(dc->store(obj.get()));
+
+  // Get table object.
+  const dd::Table *tab= NULL;
+
+  EXPECT_FALSE(dc->acquire<dd::Table>("mysql", table_name, &tab));
+  EXPECT_NE(nullp<const dd::Table>(), tab);
+  if (tab)
+  {
+    EXPECT_EQ(tab->name(), table_name);
+    EXPECT_EQ(*obj, *tab);
+
+    int i=1;
+    // Verify the partition info
+    for (const dd::Partition *p : tab->partitions())
+    {
+      dd::Stringstream_type part_name;
+      part_name << "p" << i++;
+      EXPECT_EQ(p->name(), part_name.str());
+      int j=1;
+      for (const dd::Partition *s : p->sub_partitions())
+      {
+        dd::Stringstream_type sub_part_name;
+        sub_part_name << part_name.str() << "s" << j++;
+        EXPECT_EQ(s->name(), sub_part_name.str());
+      }
+    }
+
+    const dd::Table *obj2= NULL;
+    EXPECT_FALSE(dc->acquire<dd::Table>("mysql", table_name, &obj2));
+    EXPECT_NE(nullp<const dd::Table>(), tab);
+    EXPECT_EQ(*obj, *obj2);
+
+    EXPECT_FALSE(dc->drop(obj2));
+    dc->commit_modified_objects();
+  }
+}
+
 #endif /* !DBUG_OFF */
 }

@@ -1,74 +1,82 @@
 /*
    Copyright (c) 2005, 2017, Oracle and/or its affiliates. All rights reserved.
 
-   This program is free software; you can redistribute it and/or
-   modify it under the terms of the GNU General Public License
-   as published by the Free Software Foundation; version 2 of
-   the License.
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-   GNU General Public License for more details.
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 */
 
+#include "sql/partitioning/partition_handler.h"
+
 #include <fcntl.h>
 #include <limits.h>
 #include <stdarg.h>
+#include <utility>
 
-#include "auth_common.h"
 #include "binary_log_types.h"
-#include "binlog_event.h"
-#include "derror.h"
-#include "discrete_interval.h"
-#include "field.h"
-#include "hash.h"
-#include "key.h"                             // key_rec_cmp
 #include "lex_string.h"
-#include "log.h"                             // sql_print_error
 #include "m_ctype.h"
 #include "m_string.h"
 #include "my_bitmap.h"
 #include "my_byteorder.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
-#include "my_io.h"
+#include "my_loglevel.h"
 #include "my_macros.h"
 #include "my_psi_config.h"
 #include "my_sqlcommand.h"
 #include "myisam.h"                          // MI_MAX_MSG_BUF
+#include "mysql/components/services/psi_memory_bits.h"
+#include "mysql/components/services/psi_mutex_bits.h"
 #include "mysql/plugin.h"
 #include "mysql/psi/mysql_memory.h"
-#include "mysql/psi/psi_base.h"
-#include "mysql/psi/psi_memory.h"
-#include "mysql/psi/psi_mutex.h"
-#include "mysql/service_locking.h"
 #include "mysql/service_my_snprintf.h"
 #include "mysql/service_mysql_alloc.h"
 #include "mysql_com.h"
-#include "partition_element.h"
-#include "partition_handler.h"
-#include "partition_info.h"                  // NOT_A_PARTITION_ID
-#include "protocol.h"
-#include "set_var.h"
-#include "sql_alter.h"
-#include "sql_class.h"                       // THD
-#include "sql_const.h"
-#include "sql_lex.h"
-#include "sql_list.h"
-#include "sql_partition.h"          // LIST_PART_ENTRY, part_id_range
-#include "sql_plugin_ref.h"
-#include "sql_security_ctx.h"
+#include "mysqld_error.h"
+#include "sql/auth/sql_security_ctx.h"
+#include "sql/derror.h"
+#include "sql/discrete_interval.h"
+#include "sql/field.h"
+#include "sql/key.h"                         // key_rec_cmp
+#include "sql/log.h"
+#include "sql/partition_element.h"
+#include "sql/partition_info.h"              // NOT_A_PARTITION_ID
+#include "sql/protocol.h"
+#include "sql/protocol_classic.h"
+#include "sql/psi_memory_key.h"
+#include "sql/set_var.h"
+#include "sql/sql_alter.h"
+#include "sql/sql_class.h"                   // THD
+#include "sql/sql_const.h"
+#include "sql/sql_lex.h"
+#include "sql/sql_list.h"
+#include "sql/sql_partition.h"      // LIST_PART_ENTRY, part_id_range
+#include "sql/system_variables.h"
+#include "sql/table.h"                       // TABLE_SHARE
 #include "sql_string.h"
-#include "system_variables.h"
-#include "table.h"                           // TABLE_SHARE
 #include "template_utils.h"
-#include "thr_malloc.h"
 #include "thr_mutex.h"
+
+namespace dd {
+class Table;
+}  // namespace dd
 
 // In sql_class.cc:
 int thd_binlog_format(const MYSQL_THD thd);
@@ -84,13 +92,13 @@ static PSI_memory_key key_memory_Partition_admin;
 PSI_mutex_key key_partition_auto_inc_mutex;
 static PSI_memory_info all_partitioning_memory[]=
 {
-  { &key_memory_Partition_share, "Partition_share", 0},
-  { &key_memory_partition_sort_buffer, "partition_sort_buffer", 0},
-  { &key_memory_Partition_admin, "Partition_admin", 0}
+  { &key_memory_Partition_share, "Partition_share", 0, 0, PSI_DOCUMENT_ME},
+  { &key_memory_partition_sort_buffer, "partition_sort_buffer", 0, 0, PSI_DOCUMENT_ME},
+  { &key_memory_Partition_admin, "Partition_admin", 0, 0, PSI_DOCUMENT_ME}
 };
 static PSI_mutex_info all_partitioning_mutex[]=
 {
-  { &key_partition_auto_inc_mutex, "Partiton_share::auto_inc_mutex", 0, 0}
+  { &key_partition_auto_inc_mutex, "Partition_share::auto_inc_mutex", 0, 0, PSI_DOCUMENT_ME}
 };
 #endif
 
@@ -113,7 +121,6 @@ void partitioning_init()
 Partition_share::Partition_share()
   : auto_inc_initialized(false),
   auto_inc_mutex(NULL), next_auto_inc_val(0),
-  partition_name_hash_initialized(false),
   partition_names(NULL)
 {}
 
@@ -128,10 +135,6 @@ Partition_share::~Partition_share()
   {
     my_free(partition_names);
   }
-  if (partition_name_hash_initialized)
-  {
-    my_hash_free(&partition_name_hash);
-  }
 }
 
 
@@ -143,7 +146,8 @@ Partition_share::~Partition_share()
     @retval false Success.
 */
 
-bool Partition_share::init_auto_inc_mutex(TABLE_SHARE *table_share)
+bool Partition_share::
+init_auto_inc_mutex(TABLE_SHARE *table_share MY_ATTRIBUTE((unused)))
 {
   DBUG_ENTER("Partition_share::init_auto_inc_mutex");
   DBUG_ASSERT(!auto_inc_mutex);
@@ -175,10 +179,11 @@ bool Partition_share::init_auto_inc_mutex(TABLE_SHARE *table_share)
   @param next_insert_id  Next insert id (first non used auto inc value).
   @param max_reserved    End of reserved auto inc range.
 */
-void
-Partition_share::release_auto_inc_if_possible(THD *thd, TABLE_SHARE *table_share,
-                                              const ulonglong next_insert_id,
-                                              const ulonglong max_reserved)
+void Partition_share::
+release_auto_inc_if_possible(THD *thd,
+                             TABLE_SHARE *table_share MY_ATTRIBUTE((unused)),
+                             const ulonglong next_insert_id,
+                             const ulonglong max_reserved)
 {
   DBUG_ASSERT(auto_inc_mutex);
 
@@ -201,23 +206,6 @@ Partition_share::release_auto_inc_if_possible(THD *thd, TABLE_SHARE *table_share
   {
     next_auto_inc_val= next_insert_id;
   }
-}
-
-
-/**
-  Get the partition name.
-
-  @param       arg    Struct containing name and length
-  @param[out]  length Length of the name
-
-  @return Partition name
-*/
-
-static const uchar *get_part_name_from_def(const uchar *arg, size_t *length)
-{
-  const PART_NAME_DEF *part= pointer_cast<const PART_NAME_DEF*>(arg);
-  *length= part->length;
-  return part->partition_name;
 }
 
 
@@ -248,7 +236,7 @@ bool Partition_share::populate_partition_name_hash(partition_info *part_info)
     mysql_mutex_assert_owner(&part_info->table->s->LOCK_ha_data);
   }
 #endif
-  if (partition_name_hash_initialized)
+  if (partition_name_hash != nullptr)
   {
     DBUG_RETURN(false);
   }
@@ -266,16 +254,9 @@ bool Partition_share::populate_partition_name_hash(partition_info *part_info)
   {
     DBUG_RETURN(true);
   }
-  if (my_hash_init(&partition_name_hash,
-                   system_charset_info, tot_names, 0,
-                   get_part_name_from_def,
-                   my_free, HASH_UNIQUE,
-                   key_memory_Partition_share))
-  {
-    my_free(partition_names);
-    partition_names= NULL;
-    DBUG_RETURN(true);
-  }
+  partition_name_hash.reset
+    (new collation_unordered_map<std::string, unique_ptr_my_free<PART_NAME_DEF>>
+       (system_charset_info, key_memory_Partition_share));
 
   List_iterator<partition_element> part_it(part_info->partitions);
   uint i= 0;
@@ -307,21 +288,18 @@ bool Partition_share::populate_partition_name_hash(partition_info *part_info)
     }
   } while (++i < part_info->num_parts);
 
-  for (i= 0; i < tot_names; i++)
+  for (const auto &key_and_value : *partition_name_hash)
   {
-    PART_NAME_DEF *part_def;
-    part_def= reinterpret_cast<PART_NAME_DEF*>(
-                              my_hash_element(&partition_name_hash, i));
+    PART_NAME_DEF *part_def= key_and_value.second.get();
     if (part_def->is_subpart == part_info->is_sub_partitioned())
     {
       partition_names[part_def->part_id]= part_def->partition_name;
     }
   }
-  partition_name_hash_initialized= true;
 
   DBUG_RETURN(false);
 err:
-  my_hash_free(&partition_name_hash);
+  partition_name_hash.reset();
   my_free(partition_names);
   partition_names= NULL;
 
@@ -346,7 +324,7 @@ bool Partition_share::insert_partition_name_in_hash(const char *name,
                                                     bool is_subpart)
 {
   PART_NAME_DEF *part_def;
-  uchar *part_name;
+  char *part_name;
   uint part_name_length;
   DBUG_ENTER("Partition_share::insert_partition_name_in_hash");
   /*
@@ -369,16 +347,12 @@ bool Partition_share::insert_partition_name_in_hash(const char *name,
     DBUG_RETURN(true);
   }
   memcpy(part_name, name, part_name_length + 1);
-  part_def->partition_name= part_name;
+  part_def->partition_name= pointer_cast<uchar *>(part_name);
   part_def->length= part_name_length;
   part_def->part_id= part_id;
   part_def->is_subpart= is_subpart;
-  if (my_hash_insert(&partition_name_hash, (uchar *) part_def))
-  {
-    my_free(part_def);
-    DBUG_RETURN(true);
-  }
-  DBUG_RETURN(false);
+  DBUG_RETURN(!partition_name_hash->emplace
+               (part_name, unique_ptr_my_free<PART_NAME_DEF>(part_def)).second);
 }
 
 
@@ -403,24 +377,6 @@ int Partition_handler::truncate_partition(dd::Table *table_def)
               file->m_lock_type == F_WRLCK);
   file->mark_trx_read_write();
   return truncate_partition_low(table_def);
-}
-
-
-int Partition_handler::change_partitions(HA_CREATE_INFO *create_info,
-                                         const char *path,
-                                         ulonglong * const copied,
-                                         ulonglong * const deleted)
-{
-  handler *file= get_handler();
-  if (!file)
-  {
-    my_error(ER_ILLEGAL_HA, MYF(0), create_info->alias);
-    return HA_ERR_WRONG_COMMAND;
-  }
-  DBUG_ASSERT(file->table_share->tmp_table != NO_TMP_TABLE ||
-              file->m_lock_type != F_UNLCK);
-  file->mark_trx_read_write();
-  return change_partitions_low(create_info, path, copied, deleted);
 }
 
 
@@ -1010,9 +966,8 @@ uint32 Partition_helper::ph_calculate_key_hash_value(Field **field_array)
 {
   ulong nr1= 1;
   ulong nr2= 4;
-  bool use_51_hash;
-  use_51_hash= MY_TEST((*field_array)->table->part_info->key_algorithm ==
-                       enum_key_algorithm::KEY_ALGORITHM_51);
+  bool use_51_hash= (*field_array)->table->part_info->key_algorithm ==
+                       enum_key_algorithm::KEY_ALGORITHM_51;
 
   do
   {
@@ -1108,7 +1063,8 @@ bool Partition_helper::print_partition_error(int error)
   DBUG_PRINT("enter", ("error: %d", error));
 
   if ((error == HA_ERR_NO_PARTITION_FOUND) &&
-      ! (thd->lex->alter_info.flags & Alter_info::ALTER_TRUNCATE_PARTITION))
+      (thd->lex->alter_info == NULL ||
+       ! (thd->lex->alter_info->flags & Alter_info::ALTER_TRUNCATE_PARTITION)))
   {
     m_part_info->print_no_partition_found(thd, m_table);
     // print_no_partition_found() reports an error, so we can just return here.
@@ -1160,10 +1116,8 @@ bool Partition_helper::print_partition_error(int error)
       append_row_to_str(str, m_err_rec, m_table);
 
       /* Log this error, so the DBA can notice it and fix it! */
-      sql_print_error("Table '%-192s' corrupted: row in wrong partition: %s\n"
-                      "Please REPAIR the table!",
-                      m_table->s->table_name.str,
-                      str.c_ptr_safe());
+      LogErr(ERROR_LEVEL, ER_ROW_IN_WRONG_PARTITION_PLEASE_REPAIR,
+             m_table->s->table_name.str, str.c_ptr_safe());
 
       max_length= (MYSQL_ERRMSG_SIZE -
                    strlen(ER_THD(thd, ER_ROW_IN_WRONG_PARTITION)));
@@ -1236,267 +1190,11 @@ void Partition_helper::prepare_change_partitions()
 
 
 /**
-  Implement the partition changes defined by ALTER TABLE of partitions.
-
-  Add and copy if needed a number of partitions, during this operation
-  only read operation is ongoing in the server. This is used by
-  ADD PARTITION all types as well as by REORGANIZE PARTITION. For
-  one-phased implementations it is used also by DROP and COALESCE
-  PARTITIONs.
-  One-phased implementation needs the new frm file, other handlers will
-  get zero length and a NULL reference here.
-
-  @param[in]  create_info       HA_CREATE_INFO object describing all
-                                fields and indexes in table
-  @param[in]  path              Complete path of db and table name
-  @param[out] deleted           Output parameter where number of deleted
-                                records are added
-
-  @return Operation status
-    @retval    0 Success
-    @retval != 0 Failure
-*/
-
-int Partition_helper::change_partitions(HA_CREATE_INFO *create_info,
-                                        const char *path,
-                                        ulonglong * const deleted)
-{
-  List_iterator<partition_element> part_it(m_part_info->partitions);
-  List_iterator <partition_element> t_it(m_part_info->temp_partitions);
-  char part_name_buff[FN_REFLEN];
-  const char *table_level_data_file_name= create_info->data_file_name;
-  const char *table_level_index_file_name= create_info->index_file_name;
-  const char *table_level_tablespace_name= create_info->tablespace;
-  uint num_parts= m_part_info->partitions.elements;
-  uint num_subparts= m_part_info->num_subparts;
-  uint i= 0;
-  uint num_remain_partitions;
-  uint num_reorged_parts;
-  int error= 1;
-  uint temp_partitions= m_part_info->temp_partitions.elements;
-  THD *thd= get_thd();
-  DBUG_ENTER("Partition_helper::change_partitions");
-
-  /*
-    Assert that it works without HA_FILE_BASED and lower_case_table_name = 2.
-  */
-  DBUG_ASSERT(!strcmp(path, get_canonical_filename(m_handler, path,
-                                                   part_name_buff)));
-  num_reorged_parts= 0;
-  if (!m_part_info->is_sub_partitioned())
-    num_subparts= 1;
-
-  /*
-    Step 1:
-      Calculate number of reorganized partitions.
-  */
-  if (temp_partitions)
-  {
-    num_reorged_parts= temp_partitions * num_subparts;
-  }
-  else
-  {
-    do
-    {
-      partition_element *part_elem= part_it++;
-      if (part_elem->part_state == PART_CHANGED ||
-          part_elem->part_state == PART_REORGED_DROPPED)
-      {
-        num_reorged_parts+= num_subparts;
-      }
-    } while (++i < num_parts);
-  }
-
-  /*
-    Step 2:
-      Calculate number of partitions after change.
-  */
-  num_remain_partitions= 0;
-  if (temp_partitions)
-  {
-    num_remain_partitions= num_parts * num_subparts;
-  }
-  else
-  {
-    part_it.rewind();
-    i= 0;
-    do
-    {
-      partition_element *part_elem= part_it++;
-      if (part_elem->part_state == PART_NORMAL ||
-          part_elem->part_state == PART_TO_BE_ADDED ||
-          part_elem->part_state == PART_CHANGED)
-      {
-        num_remain_partitions+= num_subparts;
-      }
-    } while (++i < num_parts);
-  }
-
-  /*
-    Step 3:
-      Set the read_partition bit for all partitions to be copied.
-  */
-  prepare_change_partitions();
-
-  /*
-    Step 4:
-      Create the new partitions and also open, lock and call
-      external_lock on them (if needed) to prepare them for copy phase
-      and also for later close calls.
-      No need to create PART_NORMAL partitions since they must not
-      be written to!
-      Only PART_CHANGED and PART_TO_BE_ADDED should be written to!
-  */
-
-  error= prepare_for_new_partitions(num_remain_partitions,
-                                    num_reorged_parts == 0);
-
-  i= 0;
-  part_it.rewind();
-  do
-  {
-    partition_element *part_elem= part_it++;
-    DBUG_ASSERT(part_elem->part_state >= PART_NORMAL &&
-                part_elem->part_state <= PART_CHANGED);
-    if (part_elem->part_state == PART_TO_BE_ADDED ||
-        part_elem->part_state == PART_CHANGED)
-    {
-      /*
-        A new partition needs to be created PART_TO_BE_ADDED means an
-        entirely new partition and PART_CHANGED means a changed partition
-        that will still exist with either more or less data in it.
-      */
-      uint name_variant= NORMAL_PART_NAME;
-      if (part_elem->part_state == PART_CHANGED ||
-          (part_elem->part_state == PART_TO_BE_ADDED && temp_partitions))
-        name_variant= TEMP_PART_NAME;
-      if (m_part_info->is_sub_partitioned())
-      {
-        List_iterator<partition_element> sub_it(part_elem->subpartitions);
-        uint j= 0, part;
-        do
-        {
-          partition_element *sub_elem= sub_it++;
-          create_subpartition_name(part_name_buff, path,
-                                   part_elem->partition_name,
-                                   sub_elem->partition_name,
-                                   name_variant);
-          part= i * num_subparts + j;
-          DBUG_PRINT("info", ("Add subpartition %s", part_name_buff));
-          /*
-            update_create_info was called previously in
-            mysql_prepare_alter_table. Which may have set data/index_file_name
-            for the partitions to the full partition name, including
-            '#P#<part_name>[#SP#<subpart_name>] suffix. Remove that suffix
-            if it exists.
-          */
-          truncate_partition_filename(&m_table->mem_root,
-                                      &sub_elem->data_file_name);
-          truncate_partition_filename(&m_table->mem_root,
-                                      &sub_elem->index_file_name);
-          /* Notice that sub_elem is already based on part_elem's defaults. */
-          error= set_up_table_before_create(thd,
-                                            m_table->s,
-                                            part_name_buff,
-                                            create_info,
-                                            sub_elem);
-          if (error)
-          {
-            goto err;
-          }
-          if ((error= create_new_partition(m_table,
-                                           create_info,
-                                           part_name_buff,
-                                           part,
-                                           sub_elem)))
-          {
-            goto err;
-          }
-          /* Reset create_info to table level values. */
-          create_info->data_file_name= table_level_data_file_name;
-          create_info->index_file_name= table_level_index_file_name;
-          create_info->tablespace= table_level_tablespace_name;
-        } while (++j < num_subparts);
-      }
-      else
-      {
-        create_partition_name(part_name_buff, path,
-                              part_elem->partition_name, name_variant,
-                              true);
-        DBUG_PRINT("info", ("Add partition %s", part_name_buff));
-        /* See comment in subpartition branch above! */
-        truncate_partition_filename(&m_table->mem_root,
-                                    &part_elem->data_file_name);
-        truncate_partition_filename(&m_table->mem_root,
-                                    &part_elem->index_file_name);
-        error= set_up_table_before_create(thd,
-                                          m_table->s,
-                                          part_name_buff,
-                                          create_info,
-                                          part_elem);
-        if (error)
-        {
-          goto err;
-        }
-        if ((error= create_new_partition(m_table,
-                                         create_info,
-                                         (const char *)part_name_buff,
-                                         i,
-                                         part_elem)))
-        {
-          goto err;
-        }
-        /* Reset create_info to table level values. */
-        create_info->data_file_name= table_level_data_file_name;
-        create_info->index_file_name= table_level_index_file_name;
-        create_info->tablespace= table_level_tablespace_name;
-      }
-    }
-  } while (++i < num_parts);
-
-  /*
-    Step 5:
-      State update to prepare for next write of the frm file.
-  */
-  i= 0;
-  part_it.rewind();
-  do
-  {
-    partition_element *part_elem= part_it++;
-    if (part_elem->part_state == PART_TO_BE_ADDED)
-      part_elem->part_state= PART_IS_ADDED;
-    else if (part_elem->part_state == PART_CHANGED)
-      part_elem->part_state= PART_IS_CHANGED;
-    else if (part_elem->part_state == PART_REORGED_DROPPED)
-      part_elem->part_state= PART_TO_BE_DROPPED;
-  } while (++i < num_parts);
-  for (i= 0; i < temp_partitions; i++)
-  {
-    partition_element *part_elem= t_it++;
-    DBUG_ASSERT(part_elem->part_state == PART_TO_BE_REORGED);
-    part_elem->part_state= PART_TO_BE_DROPPED;
-  }
-  error= copy_partitions(deleted);
-err:
-  if (error)
-  {
-    m_handler->print_error(error,
-                           MYF(error != ER_OUTOFMEMORY ? 0 : ME_FATALERROR));
-  }
-  /*
-    Close and unlock the new temporary partitions.
-    They will later be deleted or renamed through the ddl-log.
-  */
-  close_new_partitions();
-  DBUG_RETURN(error);
-}
-
-/**
   Copy partitions as part of ALTER TABLE of partitions.
 
-  change_partitions has done all the preparations, now it is time to
-  actually copy the data from the reorganized partitions to the new
-  partitions.
+  SE and prepare_change_partitions has done all the preparations,
+  now it is time to actually copy the data from the reorganized
+  partitions to the new partitions.
 
   @param[out] deleted  Number of records deleted.
 
@@ -1730,12 +1428,9 @@ int Partition_helper::check_misplaced_rows(uint read_part_id, bool repair)
               ignore || result == HA_ADMIN_CORRUPT)
           {
             /* Log this error, so the DBA can notice it and fix it! */
-            sql_print_error("Table '%-192s' failed to move/insert a row"
-                            " from part %d into part %d:\n%s",
-                            m_table->s->table_name.str,
-                            read_part_id,
-                            correct_part_id,
-                            str.c_ptr_safe());
+            LogErr(ERROR_LEVEL, ER_WRITE_ROW_TO_PARTITION_FAILED,
+                   m_table->s->table_name.str, read_part_id,
+                   correct_part_id, str.c_ptr_safe());
           }
           print_admin_msg(thd, MI_MAX_MSG_BUF, "error",
                           m_table->s->db.str, m_table->alias,
@@ -1765,15 +1460,13 @@ int Partition_helper::check_misplaced_rows(uint read_part_id, bool repair)
           append_row_to_str(str, m_err_rec, m_table);
 
           /* Log this error, so the DBA can notice it and fix it! */
-          sql_print_error("Table '%-192s': Delete from part %d failed with"
-                          " error %d. But it was already inserted into"
-                          " part %d, when moving the misplaced row!"
-                          "\nPlease manually fix the duplicate row:\n%s",
-                          m_table->s->table_name.str,
-                          read_part_id,
-                          result,
-                          correct_part_id,
-                          str.c_ptr_safe());
+          LogErr(ERROR_LEVEL,
+                 ER_PARTITION_MOVE_CREATED_DUPLICATE_ROW_PLEASE_FIX,
+                 m_table->s->table_name.str,
+                 read_part_id,
+                 result,
+                 correct_part_id,
+                 str.c_ptr_safe());
           break;
         }
       }
@@ -1817,7 +1510,9 @@ int Partition_helper::ph_rnd_next_in_part(uint part_id, uchar *buf)
 
 bool Partition_helper::set_altered_partitions()
 {
-  Alter_info *alter_info= &get_thd()->lex->alter_info;
+  Alter_info * const alter_info= get_thd()->lex->alter_info;
+
+  DBUG_ASSERT(alter_info != nullptr);
 
   if ((alter_info->flags & Alter_info::ALTER_ADMIN_PARTITION) == 0 ||
       (alter_info->flags & Alter_info::ALTER_ALL_PARTITION))
@@ -1877,7 +1572,7 @@ bool Partition_helper::print_admin_msg(THD* thd,
 
   if (!thd->get_protocol()->connection_alive())
   {
-    sql_print_error("%s", msgbuf);
+    LogErr(ERROR_LEVEL, ER_PARTITION_HANDLER_ADMIN_MSG, msgbuf);
     goto err;
   }
 
@@ -1899,8 +1594,7 @@ bool Partition_helper::print_admin_msg(THD* thd,
   protocol->store(msgbuf, msg_length, system_charset_info);
   if (protocol->end_row())
   {
-    sql_print_error("Failed on my_net_write, writing to stderr instead: %s\n",
-                    msgbuf);
+    LogErr(ERROR_LEVEL, ER_MY_NET_WRITE_FAILED_FALLING_BACK_ON_STDERR, msgbuf);
     goto err;
   }
   error= false;
@@ -1951,10 +1645,12 @@ void Partition_helper::set_partition_read_set()
           m_table->mark_gcol_in_maps(*ptr);
       }
     }
-    // Mark virtual generated columns writable
+    // Mark virtual generated columns writable. This test should be consistent
+    // with the one in update_generated_read_fields().
     for (Field **vf= m_table->vfield; vf && *vf; vf++)
     {
-      if (bitmap_is_set(m_table->read_set, (*vf)->field_index))
+      if ((*vf)->is_virtual_gcol() &&
+          bitmap_is_set(m_table->read_set, (*vf)->field_index))
         bitmap_set_bit(m_table->write_set, (*vf)->field_index);
     }
   }
@@ -2222,40 +1918,6 @@ void Partition_helper::ph_position(const uchar *record)
 }
 
 
-/**
-  Read row using position using given record to find.
-
-  This works as position()+rnd_pos() functions, but does some extra work,
-  calculating m_last_part - the partition to where the 'record' should go.
-
-  Only useful when position is based on primary key
-  (HA_PRIMARY_KEY_REQUIRED_FOR_POSITION).
-
-  @param record  Current record in MySQL Row Format.
-
-  @return Operation status.
-    @retval    0  Success
-    @retval != 0  Error code
-*/
-
-int Partition_helper::ph_rnd_pos_by_record(uchar *record)
-{
-  DBUG_ENTER("Partition_helper::ph_rnd_pos_by_record");
-
-  DBUG_ASSERT(m_handler->ha_table_flags() &
-              HA_PRIMARY_KEY_REQUIRED_FOR_POSITION);
-  /* TODO: Support HA_READ_BEFORE_WRITE_REMOVAL */
-  /* Set m_last_part correctly. */
-  if (unlikely(get_part_for_delete(record,
-                                   m_table->record[0],
-                                   m_part_info,
-                                   &m_last_part)))
-    DBUG_RETURN(HA_ERR_INTERNAL_ERROR);
-
-  DBUG_RETURN(rnd_pos_by_record_in_last_part(record));
-}
-
-
 /****************************************************************************
                 MODULE index scan
 ****************************************************************************/
@@ -2491,7 +2153,6 @@ int Partition_helper::ph_index_read_map(uchar *buf,
                                      enum ha_rkey_function find_flag)
 {
   DBUG_ENTER("Partition_handler::ph_index_read_map");
-  m_handler->end_range= NULL;
   m_index_scan_type= PARTITION_INDEX_READ;
   m_start_key.key= key;
   m_start_key.keypart_map= keypart_map;
@@ -2607,7 +2268,6 @@ int Partition_helper::ph_index_first(uchar *buf)
 {
   DBUG_ENTER("Partition_helper::ph_index_first");
 
-  m_handler->end_range= NULL;
   m_index_scan_type= PARTITION_INDEX_FIRST;
   m_reverse_order= false;
   DBUG_RETURN(common_first_last(buf));
@@ -2633,6 +2293,13 @@ int Partition_helper::ph_index_last(uchar *buf)
 {
   DBUG_ENTER("Partition_helper::ph_index_last");
 
+  int error = HA_ERR_END_OF_FILE;
+  uint part_id = m_part_info->get_first_used_partition();
+  if (part_id == MY_BIT_NONE)
+  {
+     /* No partition to scan. */
+      DBUG_RETURN(error);
+  }
   m_index_scan_type= PARTITION_INDEX_LAST;
   m_reverse_order= true;
   DBUG_RETURN(common_first_last(buf));
@@ -2689,7 +2356,6 @@ int Partition_helper::ph_index_read_last_map(uchar *buf,
   DBUG_ENTER("Partition_helper::ph_index_read_last_map");
 
   m_ordered= true;                              // Safety measure
-  m_handler->end_range= NULL;
   m_index_scan_type= PARTITION_INDEX_READ_LAST;
   m_start_key.key= key;
   m_start_key.keypart_map= keypart_map;
@@ -2830,7 +2496,8 @@ int Partition_helper::ph_index_next(uchar *buf)
     @retval != 0  Error code
 */
 
-int Partition_helper::ph_index_next_same(uchar *buf, uint keylen)
+int Partition_helper::ph_index_next_same(uchar *buf,
+                                         uint keylen MY_ATTRIBUTE((unused)))
 {
   DBUG_ENTER("Partition_helper::ph_index_next_same");
 
@@ -3054,17 +2721,17 @@ int Partition_helper::handle_unordered_next(uchar *buf, bool is_next_same)
     partition_read_range is_next_same are always local constants
   */
 
-  if (m_index_scan_type == PARTITION_READ_RANGE)
+  if(is_next_same)
+  {
+    error= index_next_same_in_part(m_part_spec.start_part,
+				   buf,
+                                   m_start_key.key,
+                                   m_start_key.length);
+  }
+  else if (m_index_scan_type == PARTITION_READ_RANGE)
   {
     DBUG_ASSERT(buf == m_table->record[0]);
     error= read_range_next_in_part(m_part_spec.start_part, NULL);
-  }
-  else if (is_next_same)
-  {
-    error= index_next_same_in_part(m_part_spec.start_part,
-                                   buf,
-                                   m_start_key.key,
-                                   m_start_key.length);
   }
   else
   {

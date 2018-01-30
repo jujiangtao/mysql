@@ -1,17 +1,24 @@
 /* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include <assert.h>
 #include <errno.h>
@@ -19,12 +26,14 @@
 #include <signal.h>
 #include <time.h>
 
-#include "applier.h"
 #include "my_dbug.h"
 #include "my_systime.h"
-#include "plugin.h"
-#include "plugin_log.h"
-#include "single_primary_message.h"
+#include "plugin/group_replication/include/applier.h"
+#include "plugin/group_replication/include/plugin.h"
+#include "plugin/group_replication/include/plugin_log.h"
+#include "plugin/group_replication/include/services/notification/notification.h"
+#include "plugin/group_replication/include/single_primary_message.h"
+#include "plugin/group_replication/include/plugin_server_include.h"
 
 char applier_module_channel_name[] = "group_replication_applier";
 bool applier_thread_is_exiting= false;
@@ -40,7 +49,7 @@ Applier_module::Applier_module()
   :applier_running(false), applier_aborted(false), applier_error(0),
    suspended(false), waiting_for_applier_suspension(false),
    shared_stop_write_lock(NULL), incoming(NULL), pipeline(NULL),
-   fde_evt(BINLOG_VERSION), stop_wait_timeout(LONG_TIMEOUT),
+   stop_wait_timeout(LONG_TIMEOUT),
    applier_channel_observer(NULL)
 {
   mysql_mutex_init(key_GR_LOCK_applier_module_run, &run_lock, MY_MUTEX_INIT_FAST);
@@ -289,6 +298,7 @@ Applier_module::apply_view_change_packet(View_change_packet *view_change_packet,
       = new View_change_log_event((char*)view_change_packet->view_id.c_str());
 
   Pipeline_event* pevent= new Pipeline_event(view_change_event, fde_evt, cache);
+  pevent->mark_event(SINGLE_VIEW_EVENT);
   error= inject_event_into_pipeline(pevent, cont);
   delete pevent;
 
@@ -361,6 +371,10 @@ Applier_module::applier_thread_handle()
   //set the thread context
   set_applier_thread_context();
 
+  mysql_mutex_lock(&run_lock);
+  applier_thread_running=true;
+  mysql_mutex_unlock(&run_lock);
+
   Handler_THD_setup_action *thd_conf_action= NULL;
   Format_description_log_event* fde_evt= NULL;
   Continuation* cont= NULL;
@@ -409,7 +423,7 @@ Applier_module::applier_thread_handle()
   mysql_cond_broadcast(&run_cond);
   mysql_mutex_unlock(&run_lock);
 
-  fde_evt= new Format_description_log_event(BINLOG_VERSION);
+  fde_evt= new Format_description_log_event();
   cont= new Continuation();
 
   //Give the handlers access to the applier THD
@@ -511,6 +525,8 @@ end:
     local_applier_error= applier_error;
 
   applier_running= false;
+  applier_killed_status= false;
+  applier_thread_running= false;
   mysql_cond_broadcast(&run_cond);
   mysql_mutex_unlock(&run_lock);
 
@@ -526,9 +542,14 @@ Applier_module::initialize_applier_thread()
 {
   DBUG_ENTER("Applier_module::initialize_applier_thd");
 
+  struct timespec abstime;
+  set_timespec(&abstime, 1);
+
   //avoid concurrency calls against stop invocations
   mysql_mutex_lock(&run_lock);
 
+  applier_thread_is_exiting= false;
+  applier_killed_status= false;
   applier_error= 0;
 
   if ((mysql_thread_create(key_GR_THD_applier_module_receiver,
@@ -544,7 +565,17 @@ Applier_module::initialize_applier_thread()
   while (!applier_running && !applier_error)
   {
     DBUG_PRINT("sleep",("Waiting for applier thread to start"));
-    mysql_cond_wait(&run_cond, &run_lock);
+    if (current_thd != NULL && current_thd->is_killed())
+    {
+      applier_error= 1;
+      applier_killed_status= true;
+      log_message(MY_WARNING_LEVEL,
+                  "Unblocking the group replication thread waiting for"
+                  " applier to start, as the start group replication"
+                  " was killed.");
+      break;
+    }
+    mysql_cond_timedwait(&run_cond, &run_lock, &abstime);
   }
 
   mysql_mutex_unlock(&run_lock);
@@ -580,18 +611,22 @@ Applier_module::terminate_applier_thread()
 
   applier_aborted= true;
 
-  if (!applier_running)
+  if (!applier_thread_running)
   {
     goto delete_pipeline;
   }
 
-  while (applier_running)
+  while (applier_thread_running)
   {
     DBUG_PRINT("loop", ("killing group replication applier thread"));
 
     mysql_mutex_lock(&applier_thd->LOCK_thd_data);
 
-    applier_thd->awake(THD::NOT_KILLED);
+    if (applier_killed_status)
+      applier_thd->awake(THD::KILL_CONNECTION);
+    else
+      applier_thd->awake(THD::NOT_KILLED);
+
     mysql_mutex_unlock(&applier_thd->LOCK_thd_data);
 
     //before waiting for termination, signal the queue to unlock.
@@ -610,11 +645,12 @@ Applier_module::terminate_applier_thread()
     int error=
 #endif
       mysql_cond_timedwait(&run_cond, &run_lock, &abstime);
+
     if (stop_wait_timeout >= 2)
     {
       stop_wait_timeout= stop_wait_timeout - 2;
     }
-    else if (applier_running) // quit waiting
+    else if (applier_thread_running) // quit waiting
     {
       mysql_mutex_unlock(&run_lock);
       DBUG_RETURN(1);
@@ -622,7 +658,7 @@ Applier_module::terminate_applier_thread()
     DBUG_ASSERT(error == ETIMEDOUT || error == 0);
   }
 
-  DBUG_ASSERT(!applier_running);
+  DBUG_ASSERT(!applier_thread_running);
 
 delete_pipeline:
 
@@ -673,17 +709,44 @@ void Applier_module::inform_of_applier_stop(char* channel_name,
 
 void Applier_module::leave_group_on_failure()
 {
+  Notification_context ctx;
   DBUG_ENTER("Applier_module::leave_group_on_failure");
 
   log_message(MY_ERROR_LEVEL,
               "Fatal error during execution on the Applier process of "
               "Group Replication. The server will now leave the group.");
 
+  /* Notify member status update. */
   group_member_mgr->update_member_status(local_member_info->get_uuid(),
-                                         Group_member_info::MEMBER_ERROR);
+                                         Group_member_info::MEMBER_ERROR,
+                                         ctx);
+
+  /* Single state update. Notify right away. */
+  notify_and_reset_ctx(ctx);
 
   bool set_read_mode= false;
   Gcs_operations::enum_leave_state state= gcs_module->leave();
+
+  char **error_message= NULL;
+  int error= channel_stop_all(CHANNEL_APPLIER_THREAD|CHANNEL_RECEIVER_THREAD,
+                              stop_wait_timeout, error_message);
+  if (error)
+  {
+    if (error_message != NULL && *error_message != NULL)
+    {
+      log_message(MY_ERROR_LEVEL,
+                  "Error stopping all replication channels while server was"
+                  " leaving the group. %s", *error_message);
+      my_free(error_message);
+    }
+    else
+    {
+      log_message(MY_ERROR_LEVEL,
+                  "Error stopping all replication channels while server was"
+                  " leaving the group. Got error: %d. Please check the error"
+                  " log for more details.", error);
+    }
+  }
 
   std::stringstream ss;
   plugin_log_level log_severity= MY_WARNING_LEVEL;
@@ -722,13 +785,24 @@ void Applier_module::kill_pending_transactions(bool set_read_mode,
   bool already_locked= shared_stop_write_lock->try_grab_write_lock();
 
   //kill pending transactions
-  unblock_waiting_transactions();
+  blocked_transaction_handler->unblock_waiting_transactions();
+
+  DBUG_EXECUTE_IF("group_replication_applier_thread_wait_kill_pending_transaction",
+                  {
+                    const char act[]= "now wait_for signal.gr_applier_early_failure";
+                    DBUG_ASSERT(!debug_sync_set_action(current_thd, STRING_WITH_LEN(act)));
+                  });
 
   if (!already_locked)
     shared_stop_write_lock->release_write_lock();
 
   if (set_read_mode)
-    set_server_read_mode(threaded_sql_session);
+  {
+    if (threaded_sql_session)
+      enable_server_read_mode(PSESSION_INIT_THREAD);
+    else
+      enable_server_read_mode(PSESSION_USE_THREAD);
+  }
 
   DBUG_VOID_RETURN;
 }
@@ -776,7 +850,7 @@ Applier_module::wait_for_applier_complete_suspension(bool *abort_flag,
   {
     error= APPLIER_GTID_CHECK_TIMEOUT_ERROR; //timeout error
     while (error == APPLIER_GTID_CHECK_TIMEOUT_ERROR && !(*abort_flag))
-      error= wait_for_applier_event_execution(1); //blocking
+      error= wait_for_applier_event_execution(1, true); //blocking
   }
 
   return (error == APPLIER_RELAY_LOG_NOT_INITED);
@@ -806,7 +880,8 @@ Applier_module::is_applier_thread_waiting()
 }
 
 int
-Applier_module::wait_for_applier_event_execution(double timeout)
+Applier_module::wait_for_applier_event_execution(double timeout,
+                                                 bool check_and_purge_partial_transactions)
 {
   DBUG_ENTER("Applier_module::wait_for_applier_event_execution");
   int error= 0;
@@ -824,7 +899,8 @@ Applier_module::wait_for_applier_event_execution(double timeout)
       the applier thread will release the lock and update the applier thread
       execution position correctly and safely.
     */
-    if (((Applier_handler*)event_applier)->is_partial_transaction_on_relay_log())
+    if (check_and_purge_partial_transactions &&
+        ((Applier_handler*)event_applier)->is_partial_transaction_on_relay_log())
     {
         error= purge_applier_queue_and_restart_applier_module();
     }

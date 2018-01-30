@@ -20,20 +20,7 @@ typedef int myf;
 #include "my_macros.h"
 #include "my_psi_config.h"
 #include "my_sharedlib.h"
-#include "psi_base.h"
-#include "my_psi_config.h"
-typedef unsigned int PSI_mutex_key;
-typedef unsigned int PSI_rwlock_key;
-typedef unsigned int PSI_cond_key;
-typedef unsigned int PSI_thread_key;
-typedef unsigned int PSI_file_key;
-typedef unsigned int PSI_stage_key;
-typedef unsigned int PSI_statement_key;
-typedef unsigned int PSI_socket_key;
-struct PSI_placeholder
-{
-  int m_placeholder;
-};
+#include "mysql/components/services/psi_table_bits.h"
 struct TABLE_SHARE;
 struct PSI_table_locker;
 typedef struct PSI_table_locker PSI_table_locker;
@@ -47,22 +34,17 @@ enum PSI_table_io_operation
 typedef enum PSI_table_io_operation PSI_table_io_operation;
 struct PSI_table_locker_state
 {
-  uint m_flags;
+  unsigned int m_flags;
   enum PSI_table_io_operation m_io_operation;
   struct PSI_table *m_table;
   struct PSI_table_share *m_table_share;
   struct PSI_thread *m_thread;
-  ulonglong m_timer_start;
-  ulonglong (*m_timer)(void);
+  unsigned long long m_timer_start;
+  unsigned long long (*m_timer)(void);
   void *m_wait;
-  uint m_index;
+  unsigned int m_index;
 };
 typedef struct PSI_table_locker_state PSI_table_locker_state;
-struct PSI_table_bootstrap
-{
-  void *(*get_interface)(int version);
-};
-typedef struct PSI_table_bootstrap PSI_table_bootstrap;
 struct PSI_table_share;
 typedef struct PSI_table_share PSI_table_share;
 struct PSI_table;
@@ -93,20 +75,25 @@ typedef struct PSI_table_locker *(*start_table_io_wait_v1_t)(
   struct PSI_table_locker_state *state,
   struct PSI_table *table,
   enum PSI_table_io_operation op,
-  uint index,
+  unsigned int index,
   const char *src_file,
-  uint src_line);
+  unsigned int src_line);
 typedef void (*end_table_io_wait_v1_t)(struct PSI_table_locker *locker,
-                                       ulonglong numrows);
+                                       unsigned long long numrows);
 typedef struct PSI_table_locker *(*start_table_lock_wait_v1_t)(
   struct PSI_table_locker_state *state,
   struct PSI_table *table,
   enum PSI_table_lock_operation op,
-  ulong flags,
+  unsigned long flags,
   const char *src_file,
-  uint src_line);
+  unsigned int src_line);
 typedef void (*end_table_lock_wait_v1_t)(struct PSI_table_locker *locker);
 typedef void (*unlock_table_v1_t)(struct PSI_table *table);
+struct PSI_table_bootstrap
+{
+  void *(*get_interface)(int version);
+};
+typedef struct PSI_table_bootstrap PSI_table_bootstrap;
 struct PSI_table_service_v1
 {
   get_table_share_v1_t get_table_share;

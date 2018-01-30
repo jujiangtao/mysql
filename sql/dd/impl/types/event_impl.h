@@ -1,17 +1,24 @@
-/* Copyright (c) 2017 Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef DD__EVENT_IMPL_INCLUDED
 #define DD__EVENT_IMPL_INCLUDED
@@ -20,14 +27,14 @@
 #include <new>
 #include <string>
 
-#include "dd/impl/raw/raw_record.h"
-#include "dd/impl/types/entity_object_impl.h"  // dd::Entity_object_impl
-#include "dd/impl/types/weak_object_impl.h"
-#include "dd/object_id.h"
-#include "dd/types/dictionary_object_table.h"  // dd::Dictionary_object_table
-#include "dd/types/event.h"                    // dd::Event
-#include "dd/types/object_type.h"              // dd::Object_type
 #include "my_inttypes.h"
+#include "sql/dd/impl/raw/raw_record.h"
+#include "sql/dd/impl/types/entity_object_impl.h" // dd::Entity_object_impl
+#include "sql/dd/impl/types/weak_object_impl.h"
+#include "sql/dd/object_id.h"
+#include "sql/dd/string_type.h"
+#include "sql/dd/types/event.h"                // dd::Event
+#include "sql/sql_time.h"                         // gmt_time_to_local_time
 
 namespace dd {
 
@@ -35,6 +42,7 @@ namespace dd {
 
 class Open_dictionary_tables_ctx;
 class Weak_object;
+class Object_table;
 
 class Event_impl : public Entity_object_impl,
                    public Event
@@ -47,8 +55,9 @@ public:
   { }
 
 public:
-  virtual const Dictionary_object_table &object_table() const
-  { return Event::OBJECT_TABLE(); }
+  virtual const Object_table &object_table() const;
+
+  static void register_tables(Open_dictionary_tables_ctx *otx);
 
   virtual bool validate() const;
 
@@ -232,8 +241,8 @@ public:
   // created.
   /////////////////////////////////////////////////////////////////////////
 
-  virtual ulonglong created() const
-  { return m_created; }
+  virtual ulonglong created(bool convert_time) const
+  { return convert_time ? gmt_time_to_local_time(m_created) : m_created; }
 
   virtual void set_created(ulonglong created)
   { m_created= created; }
@@ -242,8 +251,11 @@ public:
   // last altered.
   /////////////////////////////////////////////////////////////////////////
 
-  virtual ulonglong last_altered() const
-  { return m_last_altered; }
+  virtual ulonglong last_altered(bool convert_time) const
+  {
+    return convert_time ? gmt_time_to_local_time(m_last_altered) :
+                          m_last_altered;
+  }
 
   virtual void set_last_altered(ulonglong last_altered)
   { m_last_altered= last_altered; }
@@ -310,10 +322,10 @@ public:
   { m_schema_collation_id= schema_collation_id; }
 
   // Fix "inherits ... via dominance" warnings
-  virtual Weak_object_impl *impl()
-  { return Weak_object_impl::impl(); }
-  virtual const Weak_object_impl *impl() const
-  { return Weak_object_impl::impl(); }
+  virtual Entity_object_impl *impl()
+  { return Entity_object_impl::impl(); }
+  virtual const Entity_object_impl *impl() const
+  { return Entity_object_impl::impl(); }
   virtual Object_id id() const
   { return Entity_object_impl::id(); }
   virtual bool is_persistent() const
@@ -365,17 +377,6 @@ private:
   {
     return new Event_impl(*this);
   }
-};
-
-///////////////////////////////////////////////////////////////////////////
-
-class Event_type : public Object_type
-{
-public:
-  virtual void register_tables(Open_dictionary_tables_ctx *otx) const;
-
-  virtual Weak_object *create_object() const
-  { return new (std::nothrow) Event_impl(); }
 };
 
 ///////////////////////////////////////////////////////////////////////////

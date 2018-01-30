@@ -1,35 +1,42 @@
 /* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "key_spec.h"
+#include "sql/key_spec.h"
 
 #include <stddef.h>
 #include <algorithm>
 
-#include "dd/dd.h"         // dd::get_dictionary
-#include "dd/dictionary.h" // dd::Dictionary::check_dd...
-#include "derror.h"      // ER_THD
-#include "field.h"       // Create_field
 #include "m_ctype.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_sys.h"
 #include "mysqld_error.h"
-#include "sql_class.h"   // THD
-#include "sql_plugin.h"
-#include "sql_security_ctx.h"
+#include "sql/auth/sql_security_ctx.h"
+#include "sql/dd/dd.h"     // dd::get_dictionary
+#include "sql/dd/dictionary.h" // dd::Dictionary::check_dd...
+#include "sql/derror.h"  // ER_THD
+#include "sql/field.h"   // Create_field
+#include "sql/sql_class.h" // THD
+#include "sql/sql_parse.h" // check_string_char_length
 
 KEY_CREATE_INFO default_key_create_info;
 
@@ -94,26 +101,18 @@ bool Foreign_key_spec::validate(THD *thd, const char *table_name,
 {
   DBUG_ENTER("Foreign_key_spec::validate");
 
-  // Reject FKs to inaccessible DD tables. Use current schema unless
-  // defined explicitly.
-  const char *db_str= ref_db.str;
-  size_t db_length= ref_db.length;
-  if (db_str == nullptr)
-  {
-    db_str= thd->db().str;
-    db_length= thd->db().length;
-  }
-
+  // Reject FKs to inaccessible DD tables.
   const dd::Dictionary *dictionary= dd::get_dictionary();
   if (dictionary && !dictionary->is_dd_table_access_allowed(
                                thd->is_dd_system_thread(),
-                               true, db_str, db_length, ref_table.str))
+                               true, ref_db.str, ref_db.length,
+                               ref_table.str))
   {
     my_error(ER_NO_SYSTEM_TABLE_ACCESS, MYF(0),
              ER_THD(thd,
-                    dictionary->table_type_error_code(db_str,
+                    dictionary->table_type_error_code(ref_db.str,
                                                       ref_table.str)),
-             db_str, ref_table.str);
+             ref_db.str, ref_table.str);
     DBUG_RETURN(true);
   }
 
@@ -167,6 +166,23 @@ bool Foreign_key_spec::validate(THD *thd, const char *table_name,
       }
     }
   }
+
+  if (name.str &&
+      check_string_char_length(name, "", NAME_CHAR_LEN, system_charset_info, 1))
+  {
+    my_error(ER_TOO_LONG_IDENT, MYF(0), name.str);
+    DBUG_RETURN(true);
+  }
+
+  for (const Key_part_spec *fk_col : ref_columns)
+  {
+    if (check_column_name(fk_col->field_name.str))
+    {
+      my_error(ER_WRONG_COLUMN_NAME, MYF(0), fk_col->field_name.str);
+      DBUG_RETURN(true);
+    }
+  }
+
   DBUG_RETURN(false);
 }
 

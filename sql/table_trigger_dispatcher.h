@@ -2,17 +2,24 @@
    Copyright (c) 2013, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef TABLE_TRIGGER_DISPATCHER_H_INCLUDED
 #define TABLE_TRIGGER_DISPATCHER_H_INCLUDED
@@ -25,25 +32,28 @@
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_sys.h"
-#include "mysql/mysql_lex_string.h"       // LEX_STRING
 #include "mysql_com.h"                    // MYSQL_ERRMSG_SIZE
 #include "mysqld_error.h"                 // ER_PARSE_ERROR
-#include "sql_alloc.h"                    // Sql_alloc
-#include "table.h"                        // TABLE
-#include "table_trigger_field_support.h"  // Table_trigger_field_support
-#include "trigger_def.h"                  // enum_trigger_action_time_type
-#include "typelib.h"
+#include "sql/dd/properties.h"
+#include "sql/sql_alloc.h"                // Sql_alloc
+#include "sql/table.h"                    // TABLE
+#include "sql/table_trigger_field_support.h" // Table_trigger_field_support
+#include "sql/thr_malloc.h"
+#include "sql/trigger_def.h"              // enum_trigger_action_time_type
 
 class Field;
-class THD;
-template <class T> class List;
-
-///////////////////////////////////////////////////////////////////////////
-
 class Query_tables_list;
 class String;
+class THD;
 class Trigger;
 class Trigger_chain;
+
+namespace dd {
+class Table;
+}  // namespace dd
+struct TABLE;
+struct TABLE_LIST;
+template <class T> class List;
 
 ///////////////////////////////////////////////////////////////////////////
 
@@ -57,46 +67,17 @@ class Table_trigger_dispatcher : public Sql_alloc,
 public:
   static Table_trigger_dispatcher *create(TABLE *subject_table);
 
-  bool check_n_load(THD *thd, bool names_only);
+  // Only used by NDB - see reload_triggers_for_table().
+  static bool check_n_load(THD *thd, const dd::Table &table,
+                           const char *db_name, const char *table_name);
 
-
-  /**
-    Load triggers without their parsing.
-
-    @param thd          current thread context
-
-    @return Operation status.
-      @retval false Success
-      @retval true  Failure
-  */
-
-  bool load_triggers(THD *thd);
+  bool check_n_load(THD *thd, const dd::Table &table);
 
 private:
   Table_trigger_dispatcher(TABLE *subject_table);
 
 public:
-  Table_trigger_dispatcher(const char *db_name, const char *table_name);
   ~Table_trigger_dispatcher();
-
-  Table_trigger_field_support *get_trigger_field_support()
-  { return this; }
-
-
-  /**
-    Store all trigger objects in a list passed as an argument.
-
-    @param[out] triggers  Pointer to a list that will be filled by instances of
-                          class Trigger.
-
-    @return
-       @retval nullptr in case of OOM error
-       @retval NOT NULL pointer to List<Trigger> passed in argument
-               filled by Trigger objects.
-
-  */
-
-  List<Trigger>* fill_and_return_trigger_list(List<Trigger> *triggers);
 
   /**
     Checks if there is a broken trigger for this table.
@@ -116,10 +97,6 @@ public:
   }
 
   bool create_trigger(THD *thd, String *binlog_create_trigger_stmt);
-
-  bool drop_trigger(THD *thd,
-                    const LEX_STRING &trigger_name,
-                    bool *trigger_found);
 
   bool process_triggers(THD *thd, enum_trigger_event_type event,
                         enum_trigger_action_time_type action_time,
@@ -173,10 +150,8 @@ public:
   void parse_triggers(THD *thd, List<Trigger> *triggers, bool is_upgrade);
 
 private:
-  MEM_ROOT *get_mem_root()
-  { return m_subject_table ? &m_subject_table->mem_root : &m_mem_root; }
-
   Trigger_chain *create_trigger_chain(
+    MEM_ROOT *mem_root,
     enum_trigger_event_type event,
     enum_trigger_action_time_type action_time);
 
@@ -220,46 +195,11 @@ private:
 private:
   /**
     TABLE instance for which this triggers list object was created.
-
-    @note TABLE-instance can be NULL in case when "simple" loading of triggers
-    is requested.
   */
   TABLE *m_subject_table;
 
-  /**
-    Memory root to allocate all the data of this class.
-
-    It either points to the subject table memory root (in case of "full"
-    trigger loading), or it can be a separate mem-root that will be destroyed
-    after trigger loading.
-
-    @note never use this attribute directly! Use get_mem_root() instead.
-  */
-  MEM_ROOT m_mem_root;
-
-  /**
-    Schema (database) name.
-
-    If m_subject_table is not NULL, it should be equal to
-    m_subject_table->s->db. The thing is that m_subject_table can be NULL, so
-    there should be a place to store the schema name.
-  */
-  LEX_STRING m_db_name;
-
-  /**
-    Subject table name.
-
-    If m_subject_table is not NULL, it should be equal to
-    m_subject_table->s->table_name. The thing is that m_subject_table can be
-    NULL, so there should be a place to store the subject table name.
-  */
-  LEX_STRING m_subject_table_name;
-
   /// Triggers grouped by event, action_time.
   Trigger_chain *m_trigger_map[TRG_EVENT_MAX][TRG_ACTION_MAX];
-
-  /// Special trigger chain to store triggers with parse errors.
-  Trigger_chain *m_unparseable_triggers;
 
   /**
     Copy of TABLE::Field array with field pointers set to TABLE::record[1]
@@ -284,11 +224,6 @@ private:
     not safe to add triggers since it is unknown if the broken trigger has the
     same name or event type. Nor is it safe to invoke any trigger. The only
     safe operations are drop_trigger() and drop_all_triggers().
-
-    @note if a trigger is badly damaged its Trigger-object will be destroyed
-    right after parsing, so that it will not get into m_unparseable_triggers
-    list. So, we need this and other similar attributes to preserve error
-    message about bad trigger.
 
     We can't use the value of m_parse_error_message as a flag to inform that
     a trigger has a parse error since for multi-byte locale the first byte of

@@ -4,17 +4,24 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 
 #include <stddef.h>
@@ -22,25 +29,26 @@
 #include <vector>
 
 #include "binary_log_types.h"
-#include "enum_query_type.h"
-#include "field.h"
-#include "gis/srid.h"
-/* This file defines all spatial functions */
-#include "inplace_vector.h"
-#include "item.h"
-#include "item_cmpfunc.h"      // Item_bool_func2
-#include "item_func.h"
-#include "item_json_func.h"    // Item_json_func
-#include "item_strfunc.h"      // Item_str_func
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_sys.h"
 #include "mysql/psi/psi_base.h"
+#include "mysql/udf_registration_types.h"
 #include "mysql_com.h"
 #include "mysqld_error.h"
-#include "parse_tree_node_base.h"
 #include "prealloced_array.h"
-#include "spatial.h"           // gis_wkb_raw_free
+#include "sql/enum_query_type.h"
+#include "sql/field.h"
+#include "sql/gis/srid.h"
+/* This file defines all spatial functions */
+#include "sql/inplace_vector.h"
+#include "sql/item.h"
+#include "sql/item_cmpfunc.h"  // Item_bool_func2
+#include "sql/item_func.h"
+#include "sql/item_json_func.h" // Item_json_func
+#include "sql/item_strfunc.h"  // Item_str_func
+#include "sql/parse_tree_node_base.h"
+#include "sql/spatial.h"       // gis_wkb_raw_free
 #include "sql_string.h"
 
 class Json_array;
@@ -52,6 +60,14 @@ class THD;
 struct TABLE;
 
 enum class enum_json_type;
+
+namespace dd {
+class Spatial_reference_system;
+}  // namespace dd
+
+namespace gis {
+class Geometry;
+}  // namespace gis
 
 /**
    We have to hold result buffers in functions that return a GEOMETRY string,
@@ -488,6 +504,16 @@ private:
     defaults to -1.
   */
   longlong m_srid_found_in_document;
+  /// The minimum allowed longitude value (non-inclusive).
+  double m_min_longitude= -180.0;
+  /// The maximum allowed longitude (inclusive).
+  double m_max_longitude= 180.0;
+  /// The minimum allowed latitude value (inclusive).
+  double m_min_latitude= -90.0;
+  /// The maximum allowed latitude (inclusive).
+  double m_max_latitude= 90.0;
+  /// True if we're currently parsing the top-level object.
+  bool m_toplevel= true;
 };
 
 
@@ -803,8 +829,6 @@ public:
   It returns a point containing the decoded geohash value, where X is the
   longitude in the range of [-180, 180] and Y is the latitude in the range
   of [-90, 90].
-
-  At the moment, SRID can be any 32 bit unsigned integer.
 */
 class Item_func_pointfromgeohash : public Item_geometry_func
 {
@@ -1035,11 +1059,58 @@ private:
 };
 
 
-class Item_func_st_contains final : public Item_func_spatial_rel
+class Item_func_spatial_relation : public Item_bool_func2
+{
+public:
+  Item_func_spatial_relation(const POS &pos, Item *a, Item *b)
+    : Item_bool_func2(pos, a, b)
+  {}
+  bool resolve_type(THD *) override
+  {
+    // Spatial relation functions may return NULL if either parameter is NULL or
+    // an empty geometry. Since we can't check for empty geometries at resolve
+    // time, this item is always nullable.
+    maybe_null= true;
+    return false;
+  }
+  void print(String *str, enum_query_type query_type) override
+  {
+    Item_func::print(str, query_type);
+  }
+  longlong val_int() override;
+  bool is_null() override {
+    // The superclass implementation only checks is_null on the item's
+    // arguments. However, relational functions may return NULL even if the
+    // arguments are not NULL, e.g., if one or more argument is an empty
+    // geometry. Therefore, we must evaluate the item to find out if it is NULL
+    // or not.
+    val_int();
+    return null_value;
+  }
+
+  /**
+    Evaluate the spatial relation function.
+
+    @param[in] srs Spatial reference system common to both g1 and g2.
+    @param[in] g1 First geometry.
+    @param[in] g2 Second geometry.
+    @param[out] result Result of the relational operation.
+    @param[out] null True if the function should return NULL, false otherwise.
+
+    @retval true An error has occured and has been reported with my_error.
+    @retval false Success.
+  */
+  virtual bool eval(const dd::Spatial_reference_system *srs,
+                    const gis::Geometry *g1, const gis::Geometry *g2,
+                    bool *result, bool *null) = 0;
+};
+
+
+class Item_func_st_contains final : public Item_func_spatial_relation
 {
 public:
   Item_func_st_contains(const POS &pos, Item *a, Item *b)
-    : Item_func_spatial_rel(pos, a, b)
+    : Item_func_spatial_relation(pos, a, b)
   {}
   enum Functype functype() const override
   { return SP_CONTAINS_FUNC; }
@@ -1047,23 +1118,16 @@ public:
   { return SP_WITHIN_FUNC; }
   const char *func_name() const override
   { return "st_contains"; }
-  bool resolve_type(THD *) override
-  {
-    maybe_null= true;
-    return false;
-  }
-  void print(String *str, enum_query_type query_type) override
-  {
-    Item_func::print(str, query_type);
-  }
+  bool eval(const dd::Spatial_reference_system *srs, const gis::Geometry *g1,
+            const gis::Geometry *g2, bool *result, bool *null) override;
 };
 
 
-class Item_func_st_crosses final : public Item_func_spatial_rel
+class Item_func_st_crosses final : public Item_func_spatial_relation
 {
 public:
   Item_func_st_crosses(const POS &pos, Item *a, Item *b)
-    : Item_func_spatial_rel(pos, a, b)
+    : Item_func_spatial_relation(pos, a, b)
   {}
   enum Functype functype() const override
   { return SP_CROSSES_FUNC; }
@@ -1071,23 +1135,16 @@ public:
   { return SP_CROSSES_FUNC; }
   const char *func_name() const override
   { return "st_crosses"; }
-  bool resolve_type(THD *) override
-  {
-    maybe_null= true;
-    return false;
-  }
-  void print(String *str, enum_query_type query_type) override
-  {
-    Item_func::print(str, query_type);
-  }
+  bool eval(const dd::Spatial_reference_system *srs, const gis::Geometry *g1,
+            const gis::Geometry *g2, bool *result, bool *null) override;
 };
 
 
-class Item_func_st_disjoint final : public Item_func_spatial_rel
+class Item_func_st_disjoint final : public Item_func_spatial_relation
 {
 public:
   Item_func_st_disjoint(const POS &pos, Item *a, Item *b)
-    : Item_func_spatial_rel(pos, a, b)
+    : Item_func_spatial_relation(pos, a, b)
   {}
   enum Functype functype() const override
   { return SP_DISJOINT_FUNC; }
@@ -1095,23 +1152,16 @@ public:
   { return SP_DISJOINT_FUNC; }
   const char *func_name() const override
   { return "st_disjoint"; }
-  bool resolve_type(THD *) override
-  {
-    maybe_null= true;
-    return false;
-  }
-  void print(String *str, enum_query_type query_type) override
-  {
-    Item_func::print(str, query_type);
-  }
+  bool eval(const dd::Spatial_reference_system *srs, const gis::Geometry *g1,
+            const gis::Geometry *g2, bool *result, bool *null) override;
 };
 
 
-class Item_func_st_equals final : public Item_func_spatial_rel
+class Item_func_st_equals final : public Item_func_spatial_relation
 {
 public:
   Item_func_st_equals(const POS &pos, Item *a, Item *b)
-    : Item_func_spatial_rel(pos, a, b)
+    : Item_func_spatial_relation(pos, a, b)
   {}
   enum Functype functype() const override
   { return SP_EQUALS_FUNC; }
@@ -1119,23 +1169,16 @@ public:
   { return SP_EQUALS_FUNC; }
   const char *func_name() const override
   { return "st_equals"; }
-  bool resolve_type(THD *) override
-  {
-    maybe_null= true;
-    return false;
-  }
-  void print(String *str, enum_query_type query_type) override
-  {
-    Item_func::print(str, query_type);
-  }
+  bool eval(const dd::Spatial_reference_system *srs, const gis::Geometry *g1,
+            const gis::Geometry *g2, bool *result, bool *null) override;
 };
 
 
-class Item_func_st_intersects final : public Item_func_spatial_rel
+class Item_func_st_intersects final : public Item_func_spatial_relation
 {
 public:
   Item_func_st_intersects(const POS &pos, Item *a, Item *b)
-    : Item_func_spatial_rel(pos, a, b)
+    : Item_func_spatial_relation(pos, a, b)
   {}
   enum Functype functype() const override
   { return SP_INTERSECTS_FUNC; }
@@ -1143,23 +1186,169 @@ public:
   { return SP_INTERSECTS_FUNC; }
   const char *func_name() const override
   { return "st_intersects"; }
-  bool resolve_type(THD *) override
-  {
-    maybe_null= true;
-    return false;
-  }
-  void print(String *str, enum_query_type query_type) override
-  {
-    Item_func::print(str, query_type);
-  }
+  bool eval(const dd::Spatial_reference_system *srs, const gis::Geometry *g1,
+            const gis::Geometry *g2, bool *result, bool *null) override;
 };
 
 
-class Item_func_st_overlaps final : public Item_func_spatial_rel
+class Item_func_mbrcontains final : public Item_func_spatial_relation
+{
+public:
+  Item_func_mbrcontains(const POS &pos, Item *a, Item *b)
+    : Item_func_spatial_relation(pos, a, b)
+  {}
+  enum Functype functype() const override
+  { return SP_CONTAINS_FUNC; }
+  enum Functype rev_functype() const override
+  { return SP_WITHIN_FUNC; }
+  const char *func_name() const override
+  { return "mbrcontains"; }
+  bool eval(const dd::Spatial_reference_system *srs, const gis::Geometry *g1,
+            const gis::Geometry *g2, bool *result, bool *null) override;
+};
+
+
+class Item_func_mbrcoveredby final : public Item_func_spatial_relation
+{
+public:
+  Item_func_mbrcoveredby(const POS &pos, Item *a, Item *b)
+    : Item_func_spatial_relation(pos, a, b)
+  {}
+  enum Functype functype() const override
+  { return SP_COVEREDBY_FUNC; }
+  enum Functype rev_functype() const override
+  { return SP_COVERS_FUNC; }
+  const char *func_name() const override
+  { return "mbrcoveredby"; }
+  bool eval(const dd::Spatial_reference_system *srs, const gis::Geometry *g1,
+            const gis::Geometry *g2, bool *result, bool *null) override;
+};
+
+
+class Item_func_mbrcovers final : public Item_func_spatial_relation
+{
+public:
+  Item_func_mbrcovers(const POS &pos, Item *a, Item *b)
+    : Item_func_spatial_relation(pos, a, b)
+  {}
+  enum Functype functype() const override
+  { return SP_COVERS_FUNC; }
+  enum Functype rev_functype() const override
+  { return SP_COVEREDBY_FUNC; }
+  const char *func_name() const override
+  { return "mbrcovers"; }
+  bool eval(const dd::Spatial_reference_system *srs, const gis::Geometry *g1,
+            const gis::Geometry *g2, bool *result, bool *null) override;
+};
+
+
+class Item_func_mbrdisjoint final : public Item_func_spatial_relation
+{
+public:
+  Item_func_mbrdisjoint(const POS &pos, Item *a, Item *b)
+    : Item_func_spatial_relation(pos, a, b)
+  {}
+  enum Functype functype() const override
+  { return SP_DISJOINT_FUNC; }
+  enum Functype rev_functype() const override
+  { return SP_DISJOINT_FUNC; }
+  const char *func_name() const override
+  { return "mbrdisjoint"; }
+  bool eval(const dd::Spatial_reference_system *srs, const gis::Geometry *g1,
+            const gis::Geometry *g2, bool *result, bool *null) override;
+};
+
+
+class Item_func_mbrequals final : public Item_func_spatial_relation
+{
+public:
+  Item_func_mbrequals(const POS &pos, Item *a, Item *b)
+    : Item_func_spatial_relation(pos, a, b)
+  {}
+  enum Functype functype() const override
+  { return SP_EQUALS_FUNC; }
+  enum Functype rev_functype() const override
+  { return SP_EQUALS_FUNC; }
+  const char *func_name() const override
+  { return "mbrequals"; }
+  bool eval(const dd::Spatial_reference_system *srs, const gis::Geometry *g1,
+            const gis::Geometry *g2, bool *result, bool *null) override;
+};
+
+
+class Item_func_mbrintersects final : public Item_func_spatial_relation
+{
+public:
+  Item_func_mbrintersects(const POS &pos, Item *a, Item *b)
+    : Item_func_spatial_relation(pos, a, b)
+  {}
+  enum Functype functype() const override
+  { return SP_INTERSECTS_FUNC; }
+  enum Functype rev_functype() const override
+  { return SP_INTERSECTS_FUNC; }
+  const char *func_name() const override
+  { return "mbrintersects"; }
+  bool eval(const dd::Spatial_reference_system *srs, const gis::Geometry *g1,
+            const gis::Geometry *g2, bool *result, bool *null) override;
+};
+
+
+class Item_func_mbroverlaps final : public Item_func_spatial_relation
+{
+public:
+  Item_func_mbroverlaps(const POS &pos, Item *a, Item *b)
+    : Item_func_spatial_relation(pos, a, b)
+  {}
+  enum Functype functype() const override
+  { return SP_OVERLAPS_FUNC; }
+  enum Functype rev_functype() const override
+  { return SP_OVERLAPS_FUNC; }
+  const char *func_name() const override
+  { return "mbroverlaps"; }
+  bool eval(const dd::Spatial_reference_system *srs, const gis::Geometry *g1,
+            const gis::Geometry *g2, bool *result, bool *null) override;
+};
+
+
+class Item_func_mbrtouches final : public Item_func_spatial_relation
+{
+public:
+  Item_func_mbrtouches(const POS &pos, Item *a, Item *b)
+    : Item_func_spatial_relation(pos, a, b)
+  {}
+  enum Functype functype() const override
+  { return SP_TOUCHES_FUNC; }
+  enum Functype rev_functype() const override
+  { return SP_TOUCHES_FUNC; }
+  const char *func_name() const override
+  { return "mbrtouches"; }
+  bool eval(const dd::Spatial_reference_system *srs, const gis::Geometry *g1,
+            const gis::Geometry *g2, bool *result, bool *null) override;
+};
+
+
+class Item_func_mbrwithin final : public Item_func_spatial_relation
+{
+public:
+  Item_func_mbrwithin(const POS &pos, Item *a, Item *b)
+    : Item_func_spatial_relation(pos, a, b)
+  {}
+  enum Functype functype() const override
+  { return SP_WITHIN_FUNC; }
+  enum Functype rev_functype() const override
+  { return SP_CONTAINS_FUNC; }
+  const char *func_name() const override
+  { return "mbrwithin"; }
+  bool eval(const dd::Spatial_reference_system *srs, const gis::Geometry *g1,
+            const gis::Geometry *g2, bool *result, bool *null) override;
+};
+
+
+class Item_func_st_overlaps final : public Item_func_spatial_relation
 {
 public:
   Item_func_st_overlaps(const POS &pos, Item *a, Item *b)
-    : Item_func_spatial_rel(pos, a, b)
+    : Item_func_spatial_relation(pos, a, b)
   {}
   enum Functype functype() const override
   { return SP_OVERLAPS_FUNC; }
@@ -1167,23 +1356,16 @@ public:
   { return SP_OVERLAPS_FUNC; }
   const char *func_name() const override
   { return "st_overlaps"; }
-  bool resolve_type(THD *) override
-  {
-    maybe_null= true;
-    return false;
-  }
-  void print(String *str, enum_query_type query_type) override
-  {
-    Item_func::print(str, query_type);
-  }
+  bool eval(const dd::Spatial_reference_system *srs, const gis::Geometry *g1,
+            const gis::Geometry *g2, bool *result, bool *null) override;
 };
 
 
-class Item_func_st_touches final : public Item_func_spatial_rel
+class Item_func_st_touches final : public Item_func_spatial_relation
 {
 public:
   Item_func_st_touches(const POS &pos, Item *a, Item *b)
-    : Item_func_spatial_rel(pos, a, b)
+    : Item_func_spatial_relation(pos, a, b)
   {}
   enum Functype functype() const override
   { return SP_TOUCHES_FUNC; }
@@ -1191,23 +1373,16 @@ public:
   { return SP_TOUCHES_FUNC; }
   const char *func_name() const override
   { return "st_touches"; }
-  bool resolve_type(THD *) override
-  {
-    maybe_null= true;
-    return false;
-  }
-  void print(String *str, enum_query_type query_type) override
-  {
-    Item_func::print(str, query_type);
-  }
+  bool eval(const dd::Spatial_reference_system *srs, const gis::Geometry *g1,
+            const gis::Geometry *g2, bool *result, bool *null) override;
 };
 
 
-class Item_func_st_within final : public Item_func_spatial_rel
+class Item_func_st_within final : public Item_func_spatial_relation
 {
 public:
   Item_func_st_within(const POS &pos, Item *a, Item *b)
-    : Item_func_spatial_rel(pos, a, b)
+    : Item_func_spatial_relation(pos, a, b)
   {}
   enum Functype functype() const override
   { return SP_WITHIN_FUNC; }
@@ -1215,15 +1390,8 @@ public:
   { return SP_CONTAINS_FUNC; }
   const char *func_name() const override
   { return "st_within"; }
-  bool resolve_type(THD *) override
-  {
-    maybe_null= true;
-    return false;
-  }
-  void print(String *str, enum_query_type query_type) override
-  {
-    Item_func::print(str, query_type);
-  }
+  bool eval(const dd::Spatial_reference_system *srs, const gis::Geometry *g1,
+            const gis::Geometry *g2, bool *result, bool *null) override;
 };
 
 
@@ -1261,7 +1429,8 @@ private:
   Geometry *bg_geo_set_op(Geometry *g1, Geometry *g2, String *result);
 
   template<typename Coordsys>
-  Geometry *combine_sub_results(Geometry *g1, Geometry *g2, String *result);
+  Geometry *combine_sub_results(Geometry *g1, Geometry *g2,
+                                gis::srid_t default_srid, String *result);
   Geometry *simplify_multilinestring(Gis_multi_line_string *mls,
                                      String *result);
 
@@ -1448,20 +1617,12 @@ public:
   }
 };
 
-class Item_func_issimple: public Item_bool_func
+class Item_func_st_issimple: public Item_bool_func
 {
-  String tmp;
 public:
-  Item_func_issimple(const POS &pos, Item *a): Item_bool_func(pos, a) {}
+  Item_func_st_issimple(const POS &pos, Item *a): Item_bool_func(pos, a) {}
   longlong val_int() override;
-  bool issimple(Geometry *g);
-  optimize_type select_optimize() const override { return OPTIMIZE_NONE; }
   const char *func_name() const override { return "st_issimple"; }
-  bool resolve_type(THD *) override
-  {
-    maybe_null= true;
-    return false;
-  }
 };
 
 class Item_func_isclosed: public Item_bool_func
@@ -1640,11 +1801,11 @@ public:
 };
 
 
-class Item_func_glength: public Item_real_func
+class Item_func_st_length: public Item_real_func
 {
   String value;
 public:
-  Item_func_glength(const POS &pos, Item *a): Item_real_func(pos, a) {}
+  Item_func_st_length(const POS &pos, Item *a): Item_real_func(pos, a) {}
   double val_real() override;
   const char *func_name() const override { return "st_length"; }
   bool resolve_type(THD *thd) override
@@ -1739,41 +1900,13 @@ public:
 };
 
 
-class Item_func_distance_sphere: public Item_real_func
+class Item_func_st_distance_sphere: public Item_real_func
 {
-  double distance_point_geometry_spherical(const Geometry *g1,
-                                           const Geometry *g2,
-                                           double earth_radius);
-  double distance_multipoint_geometry_spherical(const Geometry *g1,
-                                                const Geometry *g2,
-                                                double earth_radius);
 public:
-  double bg_distance_spherical(const Geometry *g1, const Geometry *g2,
-                               double earth_radius);
-
-  Item_func_distance_sphere(const POS &pos, PT_item_list *ilist)
-    : Item_real_func(pos, ilist)
-  {
-    /*
-      Either operand can be an empty geometry collection, and it's meaningless
-      for a distance between them.
-    */
-    maybe_null= true;
-  }
-
-  bool resolve_type(THD *thd) override
-  {
-    if (Item_real_func::resolve_type(thd))
-      return true;
-    maybe_null= true;
-    return false;
-  }
-
+  Item_func_st_distance_sphere(const POS &pos, PT_item_list *ilist)
+    : Item_real_func(pos, ilist) {}
   double val_real() override;
-  const char *func_name() const override
-  {
-    return "st_distance_sphere";
-  }
+  const char *func_name() const override { return "st_distance_sphere"; }
 };
 
 #endif /*ITEM_GEOFUNC_INCLUDED*/

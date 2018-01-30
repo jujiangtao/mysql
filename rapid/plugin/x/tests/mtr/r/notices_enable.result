@@ -10,10 +10,8 @@ Mysqlx.Resultset.ColumnMetaData {
   original_table: ""
   schema: ""
   catalog: "def"
-  collation: 0
   fractional_digits: 4
   length: 7
-  flags: 0
 }
 
 Mysqlx.Resultset.ColumnMetaData {
@@ -24,10 +22,8 @@ Mysqlx.Resultset.ColumnMetaData {
   original_table: ""
   schema: ""
   catalog: "def"
-  collation: 0
   fractional_digits: 4
   length: 7
-  flags: 0
 }
 
 Mysqlx.Resultset.ColumnMetaData {
@@ -39,9 +35,7 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: ""
   catalog: "def"
   collation: 45
-  fractional_digits: 31
   length: 164
-  flags: 0
 }
 
 Mysqlx.Resultset.ColumnMetaData {
@@ -53,9 +47,7 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: ""
   catalog: "def"
   collation: 45
-  fractional_digits: 31
   length: 0
-  flags: 0
 }
 
 Mysqlx.Resultset.Row {
@@ -137,7 +129,6 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: ""
   catalog: "def"
   collation: 33
-  fractional_digits: 0
   length: 192
   flags: 16
 }
@@ -151,9 +142,7 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: ""
   catalog: "def"
   collation: 33
-  fractional_digits: 0
   length: 3072
-  flags: 0
 }
 
 Mysqlx.Resultset.FetchDone {
@@ -376,10 +365,7 @@ Mysqlx.Resultset.ColumnMetaData {
   original_table: "t1"
   schema: "test"
   catalog: "def"
-  collation: 0
-  fractional_digits: 0
   length: 11
-  flags: 128
 }
 
 Mysqlx.Resultset.ColumnMetaData {
@@ -391,9 +377,7 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: ""
   catalog: "def"
   collation: 45
-  fractional_digits: 0
-  length: 1024
-  flags: 0
+  length: 4096
 }
 
 Mysqlx.Resultset.Row {
@@ -485,10 +469,7 @@ Mysqlx.Resultset.ColumnMetaData {
   original_table: "t1"
   schema: "test"
   catalog: "def"
-  collation: 0
-  fractional_digits: 0
   length: 11
-  flags: 128
 }
 
 Mysqlx.Resultset.ColumnMetaData {
@@ -500,9 +481,7 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: ""
   catalog: "def"
   collation: 45
-  fractional_digits: 0
-  length: 1024
-  flags: 0
+  length: 4096
 }
 
 Mysqlx.Resultset.Row {
@@ -603,10 +582,7 @@ Mysqlx.Resultset.ColumnMetaData {
   original_table: "t1"
   schema: "test"
   catalog: "def"
-  collation: 0
-  fractional_digits: 0
   length: 11
-  flags: 128
 }
 
 Mysqlx.Resultset.ColumnMetaData {
@@ -618,9 +594,7 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: ""
   catalog: "def"
   collation: 255
-  fractional_digits: 0
-  length: 4
-  flags: 0
+  length: 16
 }
 
 Mysqlx.Resultset.Row {
@@ -729,10 +703,7 @@ Mysqlx.Resultset.ColumnMetaData {
   original_table: ""
   schema: ""
   catalog: "def"
-  collation: 0
-  fractional_digits: 0
   length: 10
-  flags: 0
 }
 
 Mysqlx.Resultset.Row {
@@ -779,7 +750,6 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: ""
   catalog: "def"
   collation: 33
-  fractional_digits: 0
   length: 192
   flags: 16
 }
@@ -793,9 +763,7 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: ""
   catalog: "def"
   collation: 33
-  fractional_digits: 0
   length: 3072
-  flags: 0
 }
 
 Mysqlx.Resultset.Row {
@@ -824,7 +792,6 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: ""
   catalog: "def"
   collation: 33
-  fractional_digits: 0
   length: 192
   flags: 16
 }
@@ -838,9 +805,7 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: ""
   catalog: "def"
   collation: 33
-  fractional_digits: 0
   length: 3072
-  flags: 0
 }
 
 Mysqlx.Resultset.Row {
@@ -869,7 +834,6 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: ""
   catalog: "def"
   collation: 33
-  fractional_digits: 0
   length: 192
   flags: 16
 }
@@ -883,9 +847,7 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: ""
   catalog: "def"
   collation: 33
-  fractional_digits: 0
   length: 3072
-  flags: 0
 }
 
 Mysqlx.Resultset.Row {
@@ -940,10 +902,7 @@ Mysqlx.Resultset.ColumnMetaData {
   original_table: ""
   schema: ""
   catalog: "def"
-  collation: 0
-  fractional_digits: 0
   length: 21
-  flags: 0
 }
 
 Mysqlx.Resultset.Row {
@@ -971,7 +930,6 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: ""
   catalog: "def"
   collation: 33
-  fractional_digits: 31
   length: 21
   flags: 16
 }
@@ -984,8 +942,6 @@ Mysqlx.Resultset.ColumnMetaData {
   original_table: ""
   schema: ""
   catalog: "def"
-  collation: 0
-  fractional_digits: 0
   length: 4
   flags: 16
 }
@@ -999,7 +955,6 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: ""
   catalog: "def"
   collation: 33
-  fractional_digits: 31
   length: 1536
   flags: 16
 }
@@ -1081,9 +1036,7 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: "test"
   catalog: "def"
   collation: 33
-  fractional_digits: 0
   length: 30
-  flags: 0
 }
 
 Mysqlx.Resultset.FetchDone {
@@ -1122,7 +1075,6 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: ""
   catalog: "def"
   collation: 33
-  fractional_digits: 0
   length: 192
   flags: 16
 }
@@ -1136,9 +1088,7 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: ""
   catalog: "def"
   collation: 33
-  fractional_digits: 0
   length: 3072
-  flags: 0
 }
 
 Mysqlx.Resultset.Row {
@@ -1167,9 +1117,7 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: "test"
   catalog: "def"
   collation: 33
-  fractional_digits: 0
   length: 30
-  flags: 0
 }
 
 Mysqlx.Resultset.FetchDone {
@@ -1607,6 +1555,342 @@ Mysqlx.Notice.Frame {
   type: 1
   scope: LOCAL
   payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aa4\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aa5\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aa6\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aa7\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aa8\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aa9\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aa10\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aa11\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aa12\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aa13\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aa14\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aa15\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aa16\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aa17\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aa18\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aa19\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aa20\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aa21\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aa22\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aa23\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aa24\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aa25\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aa26\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aa27\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aa28\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aa29\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aa30\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aaaa1\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aaaa2\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aaaa3\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aaaa4\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aaaa5\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aaaa6\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aaaa7\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aaaa8\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aaaa9\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aaaa10\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aaaa11\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aaaa12\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aaaa13\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aaaa14\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aaaa15\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aaaa16\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aaaa17\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aaaa18\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aaaa19\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aaaa20\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aaaa21\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aaaa22\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aaaa23\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aaaa24\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aaaa25\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aaaa26\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aaaa27\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aaaa28\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aaaa29\\\'\"\n }"
+}
+
+Mysqlx.Notice.Frame {
+  type: 1
+  scope: LOCAL
+  payload: "Mysqlx.Notice.Warning { level: NOTE\ncode: 1051\nmsg: \"Unknown table \\\'test.aaaa30\\\'\"\n }"
 }
 
 Mysqlx.Notice.Frame {
@@ -2762,7 +3046,6 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: ""
   catalog: "def"
   collation: 33
-  fractional_digits: 0
   length: 192
   flags: 16
 }
@@ -2776,9 +3059,7 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: ""
   catalog: "def"
   collation: 33
-  fractional_digits: 0
   length: 3072
-  flags: 0
 }
 
 Mysqlx.Resultset.Row {
@@ -2855,10 +3136,7 @@ Mysqlx.Resultset.ColumnMetaData {
   original_table: "t1"
   schema: "test"
   catalog: "def"
-  collation: 0
-  fractional_digits: 0
   length: 11
-  flags: 0
 }
 
 Mysqlx.Resultset.Row {
@@ -2900,10 +3178,7 @@ Mysqlx.Resultset.ColumnMetaData {
   original_table: "t1"
   schema: "test"
   catalog: "def"
-  collation: 0
-  fractional_digits: 0
   length: 11
-  flags: 0
 }
 
 Mysqlx.Resultset.Row {
@@ -6158,8 +6433,6 @@ Mysqlx.Resultset.ColumnMetaData {
   original_table: ""
   schema: ""
   catalog: "def"
-  collation: 0
-  fractional_digits: 0
   length: 1
   flags: 16
 }
@@ -6209,8 +6482,6 @@ Mysqlx.Resultset.ColumnMetaData {
   original_table: ""
   schema: ""
   catalog: "def"
-  collation: 0
-  fractional_digits: 0
   length: 1
   flags: 16
 }
@@ -6245,8 +6516,6 @@ Mysqlx.Resultset.ColumnMetaData {
   original_table: ""
   schema: ""
   catalog: "def"
-  collation: 0
-  fractional_digits: 0
   length: 1
   flags: 16
 }
@@ -6305,8 +6574,6 @@ Mysqlx.Resultset.ColumnMetaData {
   original_table: ""
   schema: ""
   catalog: "def"
-  collation: 0
-  fractional_digits: 0
   length: 1
   flags: 16
 }
@@ -6335,8 +6602,6 @@ Mysqlx.Resultset.ColumnMetaData {
   original_table: ""
   schema: ""
   catalog: "def"
-  collation: 0
-  fractional_digits: 0
   length: 1
   flags: 16
 }
@@ -6451,7 +6716,6 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: "test"
   catalog: "def"
   collation: 255
-  fractional_digits: 0
   length: 12
   flags: 1
 }
@@ -6491,7 +6755,6 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: "test"
   catalog: "def"
   collation: 255
-  fractional_digits: 0
   length: 12
   flags: 1
 }
@@ -6625,7 +6888,6 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: "test"
   catalog: "def"
   collation: 255
-  fractional_digits: 0
   length: 12
   flags: 1
 }
@@ -6725,7 +6987,6 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: ""
   catalog: "def"
   collation: 33
-  fractional_digits: 31
   length: 21
   flags: 16
 }
@@ -6738,8 +6999,6 @@ Mysqlx.Resultset.ColumnMetaData {
   original_table: ""
   schema: ""
   catalog: "def"
-  collation: 0
-  fractional_digits: 0
   length: 4
   flags: 16
 }
@@ -6753,7 +7012,6 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: ""
   catalog: "def"
   collation: 33
-  fractional_digits: 31
   length: 1536
   flags: 16
 }
@@ -6785,7 +7043,6 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: ""
   catalog: "def"
   collation: 33
-  fractional_digits: 31
   length: 21
   flags: 16
 }
@@ -6798,8 +7055,6 @@ Mysqlx.Resultset.ColumnMetaData {
   original_table: ""
   schema: ""
   catalog: "def"
-  collation: 0
-  fractional_digits: 0
   length: 4
   flags: 16
 }
@@ -6813,7 +7068,6 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: ""
   catalog: "def"
   collation: 33
-  fractional_digits: 31
   length: 1536
   flags: 16
 }
@@ -6838,10 +7092,7 @@ Mysqlx.Resultset.ColumnMetaData {
   original_table: ""
   schema: ""
   catalog: "def"
-  collation: 0
-  fractional_digits: 0
   length: 21
-  flags: 0
 }
 
 Mysqlx.Resultset.ColumnMetaData {
@@ -6852,10 +7103,7 @@ Mysqlx.Resultset.ColumnMetaData {
   original_table: ""
   schema: ""
   catalog: "def"
-  collation: 0
-  fractional_digits: 0
   length: 21
-  flags: 0
 }
 
 Mysqlx.Resultset.Row {
@@ -6883,8 +7131,6 @@ Mysqlx.Resultset.ColumnMetaData {
   original_table: "t1"
   schema: "test"
   catalog: "def"
-  collation: 0
-  fractional_digits: 0
   length: 11
   flags: 48
 }
@@ -6918,7 +7164,6 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: ""
   catalog: "def"
   collation: 33
-  fractional_digits: 31
   length: 21
   flags: 16
 }
@@ -6931,8 +7176,6 @@ Mysqlx.Resultset.ColumnMetaData {
   original_table: ""
   schema: ""
   catalog: "def"
-  collation: 0
-  fractional_digits: 0
   length: 4
   flags: 16
 }
@@ -6946,7 +7189,6 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: ""
   catalog: "def"
   collation: 33
-  fractional_digits: 31
   length: 1536
   flags: 16
 }
@@ -6971,10 +7213,7 @@ Mysqlx.Resultset.ColumnMetaData {
   original_table: ""
   schema: ""
   catalog: "def"
-  collation: 0
-  fractional_digits: 0
   length: 21
-  flags: 0
 }
 
 Mysqlx.Resultset.Row {
@@ -7147,7 +7386,7 @@ Mysqlx.Notice.Frame {
 Mysqlx.Notice.Frame {
   type: 1
   scope: LOCAL
-  payload: "Mysqlx.Notice.Warning { level: WARNING\ncode: 1478\nmsg: \"InnoDB: cannot specify ROW_FORMAT = REDUNDANT with KEY_BLOCK_SIZE.\"\n }"
+  payload: "Mysqlx.Notice.Warning { level: WARNING\ncode: 1478\nmsg: \"InnoDB: cannot specify ROW_FORMAT=REDUNDANT with KEY_BLOCK_SIZE.\"\n }"
 }
 
 Mysqlx.Error {
@@ -7194,7 +7433,6 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: ""
   catalog: "def"
   collation: 33
-  fractional_digits: 0
   length: 192
   flags: 16
 }
@@ -7208,9 +7446,7 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: ""
   catalog: "def"
   collation: 33
-  fractional_digits: 0
   length: 3072
-  flags: 0
 }
 
 Mysqlx.Resultset.FetchDone {
@@ -7235,7 +7471,6 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: ""
   catalog: "def"
   collation: 33
-  fractional_digits: 0
   length: 192
   flags: 16
 }
@@ -7249,9 +7484,7 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: ""
   catalog: "def"
   collation: 33
-  fractional_digits: 0
   length: 3072
-  flags: 0
 }
 
 Mysqlx.Resultset.Row {
@@ -7280,7 +7513,6 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: ""
   catalog: "def"
   collation: 33
-  fractional_digits: 0
   length: 192
   flags: 16
 }
@@ -7294,9 +7526,7 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: ""
   catalog: "def"
   collation: 33
-  fractional_digits: 0
   length: 3072
-  flags: 0
 }
 
 Mysqlx.Resultset.Row {
@@ -7325,7 +7555,6 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: ""
   catalog: "def"
   collation: 33
-  fractional_digits: 0
   length: 192
   flags: 16
 }
@@ -7339,9 +7568,7 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: ""
   catalog: "def"
   collation: 33
-  fractional_digits: 0
   length: 3072
-  flags: 0
 }
 
 Mysqlx.Resultset.Row {
@@ -7366,7 +7593,7 @@ Try to enable fixed notice, should be ok
 command ok
 Namespace 'xplugin' is deprecated, please use 'mysqlx' instead
 Verify [Status variable "Mysqlx_notice_other_sent" needs to have a value of 169]
-Verify [Status variable "Mysqlx_notice_warning_sent" needs to have a value of 807]
+Verify [Status variable "Mysqlx_notice_warning_sent" needs to have a value of 863]
 Verify [Status variable "Mysqlx_stmt_disable_notices" needs to have a value of 0]
 Verify [Status variable "Mysqlx_stmt_enable_notices" needs to have a value of 1]
 Verify [Status variable "Mysqlx_stmt_list_notices" needs to have a value of 0]
@@ -7378,12 +7605,12 @@ checking warnings with procedure execution
 
 0 rows affected
 @start_global_value
-64
+1024
 0 rows affected
 
 0 rows affected
 @start_session_value
-64
+1024
 0 rows affected
 
 0 rows affected
@@ -7643,12 +7870,12 @@ Mysqlx.Error {
 
 0 rows affected
 @@global.max_error_count
-64
+1024
 0 rows affected
 
 0 rows affected
 @@session.max_error_count
-64
+1024
 0 rows affected
 checking warnings while creating index with more than row size
 
@@ -7758,10 +7985,6 @@ Mysqlx.Resultset.ColumnMetaData {
   original_table: ""
   schema: ""
   catalog: ""
-  collation: 0
-  fractional_digits: 0
-  length: 0
-  flags: 0
 }
 
 Mysqlx.Resultset.ColumnMetaData {
@@ -7772,10 +7995,6 @@ Mysqlx.Resultset.ColumnMetaData {
   original_table: ""
   schema: ""
   catalog: ""
-  collation: 0
-  fractional_digits: 0
-  length: 0
-  flags: 0
 }
 
 Mysqlx.Resultset.Row {
@@ -7827,10 +8046,8 @@ Mysqlx.Resultset.ColumnMetaData {
   original_table: ""
   schema: ""
   catalog: "def"
-  collation: 0
   fractional_digits: 4
   length: 7
-  flags: 0
 }
 
 Mysqlx.Resultset.ColumnMetaData {
@@ -7841,10 +8058,8 @@ Mysqlx.Resultset.ColumnMetaData {
   original_table: ""
   schema: ""
   catalog: "def"
-  collation: 0
   fractional_digits: 4
   length: 7
-  flags: 0
 }
 
 Mysqlx.Resultset.ColumnMetaData {
@@ -7856,9 +8071,7 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: ""
   catalog: "def"
   collation: 45
-  fractional_digits: 31
   length: 164
-  flags: 0
 }
 
 Mysqlx.Resultset.ColumnMetaData {
@@ -7870,9 +8083,7 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: ""
   catalog: "def"
   collation: 45
-  fractional_digits: 31
   length: 0
-  flags: 0
 }
 
 Mysqlx.Resultset.Row {
@@ -7941,10 +8152,8 @@ Mysqlx.Resultset.ColumnMetaData {
   original_table: ""
   schema: ""
   catalog: "def"
-  collation: 0
   fractional_digits: 4
   length: 7
-  flags: 0
 }
 
 Mysqlx.Resultset.ColumnMetaData {
@@ -7955,10 +8164,8 @@ Mysqlx.Resultset.ColumnMetaData {
   original_table: ""
   schema: ""
   catalog: "def"
-  collation: 0
   fractional_digits: 4
   length: 7
-  flags: 0
 }
 
 Mysqlx.Resultset.ColumnMetaData {
@@ -7970,9 +8177,7 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: ""
   catalog: "def"
   collation: 45
-  fractional_digits: 31
   length: 164
-  flags: 0
 }
 
 Mysqlx.Resultset.ColumnMetaData {
@@ -7984,9 +8189,7 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: ""
   catalog: "def"
   collation: 45
-  fractional_digits: 31
   length: 0
-  flags: 0
 }
 
 Mysqlx.Resultset.Row {
@@ -8025,10 +8228,6 @@ Mysqlx.Resultset.ColumnMetaData {
   original_table: ""
   schema: ""
   catalog: ""
-  collation: 0
-  fractional_digits: 0
-  length: 0
-  flags: 0
 }
 
 Mysqlx.Resultset.ColumnMetaData {
@@ -8039,10 +8238,6 @@ Mysqlx.Resultset.ColumnMetaData {
   original_table: ""
   schema: ""
   catalog: ""
-  collation: 0
-  fractional_digits: 0
-  length: 0
-  flags: 0
 }
 
 Mysqlx.Resultset.Row {
@@ -8085,10 +8280,6 @@ Mysqlx.Resultset.ColumnMetaData {
   original_table: ""
   schema: ""
   catalog: ""
-  collation: 0
-  fractional_digits: 0
-  length: 0
-  flags: 0
 }
 
 Mysqlx.Resultset.ColumnMetaData {
@@ -8099,10 +8290,6 @@ Mysqlx.Resultset.ColumnMetaData {
   original_table: ""
   schema: ""
   catalog: ""
-  collation: 0
-  fractional_digits: 0
-  length: 0
-  flags: 0
 }
 
 Mysqlx.Resultset.Row {
@@ -8154,10 +8341,8 @@ Mysqlx.Resultset.ColumnMetaData {
   original_table: ""
   schema: ""
   catalog: "def"
-  collation: 0
   fractional_digits: 4
   length: 7
-  flags: 0
 }
 
 Mysqlx.Resultset.ColumnMetaData {
@@ -8168,10 +8353,8 @@ Mysqlx.Resultset.ColumnMetaData {
   original_table: ""
   schema: ""
   catalog: "def"
-  collation: 0
   fractional_digits: 4
   length: 7
-  flags: 0
 }
 
 Mysqlx.Resultset.ColumnMetaData {
@@ -8183,9 +8366,7 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: ""
   catalog: "def"
   collation: 45
-  fractional_digits: 31
   length: 164
-  flags: 0
 }
 
 Mysqlx.Resultset.ColumnMetaData {
@@ -8197,9 +8378,7 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: ""
   catalog: "def"
   collation: 45
-  fractional_digits: 31
   length: 0
-  flags: 0
 }
 
 Mysqlx.Resultset.Row {
@@ -8275,10 +8454,8 @@ Mysqlx.Resultset.ColumnMetaData {
   original_table: ""
   schema: ""
   catalog: "def"
-  collation: 0
   fractional_digits: 4
   length: 7
-  flags: 0
 }
 
 Mysqlx.Resultset.ColumnMetaData {
@@ -8289,10 +8466,8 @@ Mysqlx.Resultset.ColumnMetaData {
   original_table: ""
   schema: ""
   catalog: "def"
-  collation: 0
   fractional_digits: 4
   length: 7
-  flags: 0
 }
 
 Mysqlx.Resultset.ColumnMetaData {
@@ -8304,9 +8479,7 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: ""
   catalog: "def"
   collation: 45
-  fractional_digits: 31
   length: 164
-  flags: 0
 }
 
 Mysqlx.Resultset.ColumnMetaData {
@@ -8318,9 +8491,7 @@ Mysqlx.Resultset.ColumnMetaData {
   schema: ""
   catalog: "def"
   collation: 45
-  fractional_digits: 31
   length: 0
-  flags: 0
 }
 
 Mysqlx.Resultset.Row {

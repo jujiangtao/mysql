@@ -1,13 +1,20 @@
 /* Copyright (c) 2010, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -23,32 +30,34 @@
   @{
 */
 
-#include "sql_join_buffer.h"
+#include "sql/sql_join_buffer.h"
 
 #include <limits.h>
 #include <algorithm>
+#include <atomic>
 
 #include "binary_log_types.h"
-#include "field.h"
-#include "item.h"
-#include "key.h"
 #include "my_base.h"
 #include "my_bitmap.h"
+#include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_macros.h"
 #include "my_table_map.h"
-#include "opt_trace.h"      // Opt_trace_object
-#include "psi_memory_key.h" // key_memory_JOIN_CACHE
-#include "records.h"
-#include "sql_bitmap.h"
-#include "sql_class.h"
-#include "sql_const.h"
-#include "sql_opt_exec_shared.h"
-#include "sql_optimizer.h"  // JOIN
-#include "sql_select.h"
-#include "system_variables.h"
-#include "table.h"
-#include "thr_malloc.h"
+#include "sql/field.h"
+#include "sql/item.h"
+#include "sql/key.h"
+#include "sql/opt_trace.h"  // Opt_trace_object
+#include "sql/psi_memory_key.h" // key_memory_JOIN_CACHE
+#include "sql/records.h"
+#include "sql/sql_bitmap.h"
+#include "sql/sql_class.h"
+#include "sql/sql_const.h"
+#include "sql/sql_opt_exec_shared.h"
+#include "sql/sql_optimizer.h" // JOIN
+#include "sql/sql_select.h"
+#include "sql/system_variables.h"
+#include "sql/table.h"
+#include "sql/thr_malloc.h"
 
 using std::max;
 using std::min;
@@ -199,7 +208,7 @@ void JOIN_CACHE::calc_record_fields()
                            &used_fields, &used_fieldlength, &used_blobs,
                            &tab->used_null_fields, &tab->used_uneven_bit_fields);
     flag_fields+= tab->used_null_fields || tab->used_uneven_bit_fields;
-    flag_fields+= MY_TEST(tab->table()->is_nullable());
+    flag_fields+= tab->table()->is_nullable();
     fields+= used_fields;
     blobs+= used_blobs;
   }
@@ -774,6 +783,7 @@ int JOIN_CACHE_BKA::init()
 
   tables= qep_tab - tab;
 
+  filter_virtual_gcol_base_cols();
   calc_record_fields();
 
   /* Mark all fields that can be used as arguments for this key access */
@@ -885,6 +895,7 @@ int JOIN_CACHE_BKA::init()
   use_emb_key= check_emb_key_usage();
 
   create_remaining_fields(FALSE);
+  restore_virtual_gcol_base_cols();
   bitmap_clear_all(&qep_tab->table()->tmp_set);
 
   set_constants();
@@ -1536,7 +1547,7 @@ void JOIN_CACHE::get_record_by_pos(uchar *rec_ptr)
 bool JOIN_CACHE::get_match_flag_by_pos(uchar *rec_ptr)
 {
   if (with_match_flag)
-    return MY_TEST(*rec_ptr);
+    return *rec_ptr != 0;
   if (prev_cache)
   {
     auto prev_rec_ptr= prev_cache->get_rec_ref(rec_ptr);
@@ -1779,7 +1790,7 @@ bool JOIN_CACHE::skip_record_if_match()
   if (prev_cache)
     offset+= prev_cache->get_size_of_rec_offset();
   /* Check whether the match flag is on */
-  if (MY_TEST(*(pos+offset)))
+  if (*(pos+offset) != 0)
   {
     pos+= size_of_rec_len + get_rec_length(pos);
     return TRUE;
@@ -1881,6 +1892,13 @@ enum_nested_loop_state JOIN_CACHE::join_records(bool skip_last)
   if (outer_join_first_inner && qep_tab->first_unmatched == NO_PLAN_IDX)
     qep_tab->not_null_compl= true;
 
+  /*
+    We're going to read records of previous tables from our buffer, and also
+    records of our table; none of these can be a group-by/window tmp table, so
+    we should still be on the join's first slice.
+  */
+  DBUG_ASSERT(qep_tab->join()->get_ref_item_slice() == REF_SLICE_SAVE);
+
   if (qep_tab->first_unmatched == NO_PLAN_IDX)
   {
     const bool pfs_batch_update= qep_tab->pfs_batch_update(join);
@@ -1895,7 +1913,15 @@ enum_nested_loop_state JOIN_CACHE::join_records(bool skip_last)
       goto finish;
     if (outer_join_first_inner)
     {
-      if (next_cache)
+      /*
+        If the inner-most outer join has a single inner table, all matches for
+        outer table's record from join buffer is already found by
+        join_matching_records. There is no need to call
+        next_cache->join_records now. The full extensions of matched and null
+        extended rows will be generated together at once by calling
+        next_cache->join_records at the end of this function.
+      */
+      if (!qep_tab->is_single_inner_for_outer_join() && next_cache)
       {
         /* 
           Ensure that all matches for outer records from join buffer are to be
@@ -2070,7 +2096,7 @@ enum_nested_loop_state JOIN_CACHE_BNL::join_matching_records(bool skip_last)
         reset_cache(false);
 
         /* Read each record from the join buffer and look for matches */
-        for (uint cnt= records - MY_TEST(skip_last) ; cnt; cnt--)
+        for (uint cnt= records - skip_last; cnt; cnt--)
         { 
           /* 
             If only the first match is needed and it has been already found for
@@ -2334,7 +2360,7 @@ enum_nested_loop_state JOIN_CACHE::join_null_complements(bool skip_last)
   if (!records)
     DBUG_RETURN(NESTED_LOOP_OK);
   
-  cnt= records - (is_key_access() ? 0 : MY_TEST(skip_last));
+  cnt= records - (is_key_access() ? 0 : skip_last);
 
   /* This function may be called only for inner tables of outer joins */ 
   DBUG_ASSERT(qep_tab->first_inner() != NO_PLAN_IDX);
@@ -2527,7 +2553,8 @@ bool bka_range_seq_skip_record(range_seq_t rseq, char *range_info, uchar*)
     return one of enum_nested_loop_state
 */
 
-enum_nested_loop_state JOIN_CACHE_BKA::join_matching_records(bool skip_last)
+enum_nested_loop_state JOIN_CACHE_BKA::
+join_matching_records(bool skip_last MY_ATTRIBUTE((unused)))
 {
   /* The value of skip_last must be always FALSE when this function is called */
   DBUG_ASSERT(!skip_last);
@@ -3400,8 +3427,8 @@ bool bka_unique_skip_index_tuple(range_seq_t rseq, char *range_info)
     return one of enum_nested_loop_state 
 */
 
-enum_nested_loop_state 
-JOIN_CACHE_BKA_UNIQUE::join_matching_records(bool skip_last)
+enum_nested_loop_state JOIN_CACHE_BKA_UNIQUE::
+join_matching_records(bool skip_last MY_ATTRIBUTE((unused)))
 {
   /* The value of skip_last must be always FALSE when this function is called */
   DBUG_ASSERT(!skip_last);

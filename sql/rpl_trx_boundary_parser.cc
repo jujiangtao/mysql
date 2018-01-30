@@ -1,29 +1,38 @@
 /* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "rpl_trx_boundary_parser.h"
+#include "sql/rpl_trx_boundary_parser.h"
 
 #include <string.h>
 #include <sys/types.h>
 
 #include "binlog_event.h"
-#include "log.h"           // sql_print_warning
-#include "log_event.h"     // Log_event
 #include "m_string.h"
 #include "my_byteorder.h"
 #include "my_dbug.h"
+#include "my_loglevel.h"
+#include "mysqld_error.h"
+#include "sql/log.h"
+#include "sql/log_event.h" // Log_event
 
 
 #ifndef DBUG_OFF
@@ -56,6 +65,7 @@ void Transaction_boundary_parser::reset()
                       event_parser_state_names[current_parser_state],
                       event_parser_state_names[EVENT_PARSER_NONE]));
   current_parser_state= EVENT_PARSER_NONE;
+  last_parser_state= EVENT_PARSER_NONE;
   DBUG_VOID_RETURN;
 }
 
@@ -211,7 +221,15 @@ Transaction_boundary_parser::get_event_boundary_type(
     case binary_log::UPDATE_ROWS_EVENT_V1:
     case binary_log::DELETE_ROWS_EVENT_V1:
     case binary_log::VIEW_CHANGE_EVENT:
+    case binary_log::PARTIAL_UPDATE_ROWS_EVENT:
       boundary_type= EVENT_BOUNDARY_TYPE_STATEMENT;
+      break;
+
+    /*
+      Incident events have their own boundary type.
+    */
+    case binary_log::INCIDENT_EVENT:
+      boundary_type= EVENT_BOUNDARY_TYPE_INCIDENT;
       break;
 
     /*
@@ -223,11 +241,9 @@ Transaction_boundary_parser::get_event_boundary_type(
     case binary_log::FORMAT_DESCRIPTION_EVENT:
     case binary_log::HEARTBEAT_LOG_EVENT:
     case binary_log::PREVIOUS_GTIDS_LOG_EVENT:
-    case binary_log::START_EVENT_V3:
     case binary_log::STOP_EVENT:
     case binary_log::SLAVE_EVENT:
     case binary_log::DELETE_FILE_EVENT:
-    case binary_log::INCIDENT_EVENT:
     case binary_log::TRANSACTION_CONTEXT_EVENT:
       boundary_type= EVENT_BOUNDARY_TYPE_IGNORE;
       break;
@@ -244,9 +260,8 @@ Transaction_boundary_parser::get_event_boundary_type(
       {
         boundary_type= EVENT_BOUNDARY_TYPE_ERROR;
         if (throw_warnings)
-          sql_print_warning(
-            "Unsupported non-ignorable event fed into the "
-            "event stream.");
+          LogErr(WARNING_LEVEL,
+                 ER_RPL_UNSUPPORTED_UNIGNORABLE_EVENT_IN_STREAM);
       }
   } /* End of switch(event_type) */
 
@@ -289,9 +304,7 @@ bool Transaction_boundary_parser::update_state(
     case EVENT_PARSER_DDL:
     case EVENT_PARSER_DML:
       if (throw_warnings)
-        sql_print_warning(
-          "GTID_LOG_EVENT or ANONYMOUS_GTID_LOG_EVENT "
-          "is not expected in an event stream %s.",
+        LogErr(WARNING_LEVEL, ER_RPL_GTID_LOG_EVENT_IN_STREAM,
           current_parser_state == EVENT_PARSER_GTID ?
             "after a GTID_LOG_EVENT or an ANONYMOUS_GTID_LOG_EVENT" :
             current_parser_state == EVENT_PARSER_DDL ?
@@ -319,9 +332,7 @@ bool Transaction_boundary_parser::update_state(
     case EVENT_PARSER_DDL:
     case EVENT_PARSER_DML:
       if (throw_warnings)
-        sql_print_warning(
-          "QUERY(BEGIN) is not expected in an event stream "
-          "in the middle of a %s.",
+        LogErr(WARNING_LEVEL, ER_RPL_UNEXPECTED_BEGIN_IN_STREAM,
           current_parser_state == EVENT_PARSER_DDL ? "DDL" : "DML");
       error= true;
       break;
@@ -343,10 +354,8 @@ bool Transaction_boundary_parser::update_state(
     case EVENT_PARSER_GTID:
     case EVENT_PARSER_DDL:
       if (throw_warnings)
-        sql_print_warning(
-          "QUERY(COMMIT or ROLLBACK) or "
-          "XID_LOG_EVENT is not expected "
-          "in an event stream %s.",
+        LogErr(WARNING_LEVEL,
+               ER_RPL_UNEXPECTED_COMMIT_ROLLBACK_OR_XID_LOG_EVENT_IN_STREAM,
           current_parser_state == EVENT_PARSER_NONE ? "outside a transaction" :
           current_parser_state == EVENT_PARSER_GTID ? "after a GTID_LOG_EVENT" :
           "in the middle of a DDL"); /* EVENT_PARSER_DDL */
@@ -368,9 +377,7 @@ bool Transaction_boundary_parser::update_state(
       case EVENT_PARSER_NONE:
       case EVENT_PARSER_DDL:
         if (throw_warnings)
-          sql_print_warning(
-              "QUERY(XA ROLLBACK) is "
-              "not expected in an event stream %s.",
+          LogErr(WARNING_LEVEL, ER_RPL_UNEXPECTED_XA_ROLLBACK_IN_STREAM,
               current_parser_state == EVENT_PARSER_NONE ? "outside a transaction" :
               "in the middle of a DDL"); /* EVENT_PARSER_DDL */
         error= true;
@@ -427,6 +434,16 @@ bool Transaction_boundary_parser::update_state(
     break;
 
   /*
+    Incident events can happen without a GTID (before BUG#19594845 fix) or
+    with its own GTID in order to be skipped. In any case, it should always
+    mark "the end" of a transaction.
+  */
+  case EVENT_BOUNDARY_TYPE_INCIDENT:
+    /* In any case, we will update the state to NONE */
+    new_parser_state= EVENT_PARSER_NONE;
+    break;
+
+  /*
     Rotate, Format_description and Heartbeat should be ignored.
     The rotate might be fake, like when the IO thread receives from dump thread
     Previous_gtid and Heartbeat events due to reconnection/auto positioning.
@@ -445,6 +462,8 @@ bool Transaction_boundary_parser::update_state(
                       "from '%s' to '%s'",
                       event_parser_state_names[current_parser_state],
                       event_parser_state_names[new_parser_state]));
+
+  last_parser_state= current_parser_state;
   current_parser_state= new_parser_state;
 
   DBUG_RETURN(error);

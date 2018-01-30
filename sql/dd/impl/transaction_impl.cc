@@ -1,31 +1,39 @@
 /* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "dd/impl/transaction_impl.h"
+#include "sql/dd/impl/transaction_impl.h"
 
 #include <stddef.h>
 #include <new>
 #include <utility>
 
-#include "dd/impl/raw/raw_table.h"           // dd::Raw_table
+#include "my_base.h"
 #include "my_dbug.h"
-#include "query_options.h"
-#include "sql_base.h"                        // MYSQL_LOCK_IGNORE_TIMEOUT
-#include "sql_lex.h"
-#include "system_variables.h"
-#include "table.h"
+#include "sql/dd/impl/raw/raw_table.h"       // dd::Raw_table
+#include "sql/query_options.h"
+#include "sql/sql_base.h"                    // MYSQL_LOCK_IGNORE_TIMEOUT
+#include "sql/sql_lex.h"
+#include "sql/system_variables.h"
+#include "sql/table.h"
 
 namespace dd {
 
@@ -100,8 +108,8 @@ bool Open_dictionary_tables_ctx::open_tables()
   const uint flags= (MYSQL_LOCK_IGNORE_TIMEOUT |
                      MYSQL_OPEN_IGNORE_KILLED |
                      MYSQL_OPEN_IGNORE_FLUSH |
-                     m_ignore_global_read_lock ?
-                       MYSQL_OPEN_IGNORE_GLOBAL_READ_LOCK : 0);
+                     (m_ignore_global_read_lock ?
+                      MYSQL_OPEN_IGNORE_GLOBAL_READ_LOCK : 0));
   uint counter;
 
   if (::open_tables(m_thd, &table_list, &counter, flags))
@@ -167,8 +175,11 @@ Update_dictionary_tables_ctx::Update_dictionary_tables_ctx(THD *thd)
     m_thd->clear_current_stmt_binlog_format_row();
 
   // Disable bin logging
-  m_saved_binlog_options= m_thd->variables.option_bits;
+  m_saved_options= m_thd->variables.option_bits;
   m_thd->variables.option_bits&= ~OPTION_BIN_LOG;
+
+  // Set bit to indicate that the thread is updating the data dictionary tables.
+  m_thd->variables.option_bits|= OPTION_DD_UPDATE_CONTEXT;
 
   /*
     In @@autocommit=1 mode InnoDB automatically commits its transaction when
@@ -208,7 +219,7 @@ Update_dictionary_tables_ctx::~Update_dictionary_tables_ctx()
   m_thd->check_for_truncated_fields= m_saved_check_for_truncated_fields;
   m_thd->variables.sql_mode= m_saved_mode;
 
-  m_thd->variables.option_bits= m_saved_binlog_options;
+  m_thd->variables.option_bits= m_saved_options;
 
   if (m_saved_binlog_row_based)
     m_thd->set_current_stmt_binlog_format_row();

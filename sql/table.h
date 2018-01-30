@@ -4,13 +4,20 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -18,11 +25,13 @@
 
 #include <string.h>
 #include <sys/types.h>
+#include <string>
+#include <vector>
 
 #include "binary_log_types.h"
-#include "key.h"
 #include "lex_string.h"
 #include "m_ctype.h"
+#include "map_helpers.h"
 #include "my_base.h"
 #include "my_bitmap.h"
 #include "my_compiler.h"
@@ -31,51 +40,76 @@
 #include "my_sharedlib.h"
 #include "my_sys.h"
 #include "my_table_map.h"
+#include "mysql/components/services/mysql_mutex_bits.h"
+#include "mysql/components/services/psi_table_bits.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/psi/psi_table.h"
-#include "sql_alloc.h"
-#include "sql_const.h"
-#include "sql_list.h"
-#include "sql_plist.h"
-#include "sql_plugin_ref.h"
-#include "system_variables.h"
+#include "mysql/udf_registration_types.h"
+#include "sql/auth/auth_common.h"
+#include "sql/dd/properties.h"
+#include "sql/dd/types/foreign_key.h" // dd::Foreign_key::enum_rule
+#include "sql/enum_query_type.h" // enum_query_type
+#include "sql/handler.h"   // row_type
+#include "sql/key.h"
+#include "sql/key_spec.h"
+#include "sql/mdl.h"       // MDL_wait_for_subgraph
+#include "sql/mem_root_array.h"
+#include "sql/memroot_allocator.h"
+#include "sql/opt_costmodel.h" // Cost_model_table
+#include "sql/record_buffer.h" // Record_buffer
+#include "sql/sql_alloc.h"
+#include "sql/sql_bitmap.h" // Bitmap
+#include "sql/sql_const.h"
+#include "sql/sql_list.h"
+#include "sql/sql_plist.h"
+#include "sql/sql_plugin_ref.h"
+#include "sql/sql_sort.h"  // Filesort_info
+#include "sql/system_variables.h"
+#include "sql/thr_malloc.h"
+#include "sql_string.h"
+#include "table_id.h"      // Table_id
 #include "thr_lock.h"
 #include "typelib.h"
 
-class Field;
-class Item;
-class String;
-class THD;
-class partition_info;
-struct TABLE;
-struct TABLE_LIST;
-struct TABLE_SHARE;
 
-#include "enum_query_type.h" // enum_query_type
-#include "handler.h"       // row_type
-#include "mdl.h"           // MDL_wait_for_subgraph
-#include "mem_root_array.h"
-#include "opt_costmodel.h" // Cost_model_table
-#include "record_buffer.h" // Record_buffer
-#include "sql_bitmap.h"    // Bitmap
-#include "sql_sort.h"      // Filesort_info
-#include "table_id.h"      // Table_id
+#include "sql/mem_root_array.h"
+
+class Field;
+
+namespace histograms
+{
+  class Histogram;
+};
 
 class ACL_internal_schema_access;
 class ACL_internal_table_access;
 class COND_EQUAL;
+class Field_json;
 /* Structs that defines the TABLE */
 class File_parser;
 class GRANT_TABLE;
 class Index_hint;
+class Item;
 class Item_field;
+class Json_diff_vector;
+class Json_seekable_path;
+class Json_wrapper;
 class Query_result_union;
 class SELECT_LEX_UNIT;
 class Security_context;
+class String;
+class THD;
 class Table_cache_element;
 class Table_trigger_dispatcher;
 class Temp_table_param;
+class partition_info;
 struct LEX;
+struct Partial_update_info;
+struct TABLE;
+struct TABLE_LIST;
+struct TABLE_SHARE;
+template <class Key, class Value> class collation_unordered_map;
+template <class T> class Memroot_allocator;
 
 typedef int8 plan_idx;
 class Opt_hints_qb;
@@ -89,9 +123,12 @@ namespace dd {
   enum class enum_table_type;
 }
 class Common_table_expr;
+
 typedef Mem_root_array_YY<LEX_CSTRING> Create_col_name_list;
 
 typedef int64 query_id_t;
+
+enum class enum_json_diff_operation;
 
 #define store_record(A,B) memcpy((A)->B,(A)->record[0],(size_t) (A)->s->reclength)
 #define restore_record(A,B) memcpy((A)->record[0],(A)->B,(size_t) (A)->s->reclength)
@@ -112,6 +149,7 @@ typedef ulonglong nested_join_map;
 #define tmp_file_prefix "#sql"			/**< Prefix for tmp tables */
 #define tmp_file_prefix_length 4
 #define TMP_TABLE_KEY_EXTRA 8
+#define PLACEHOLDER_TABLE_ROW_ESTIMATE 2
 
 /**
   Enumerate possible types of a table from re-execution
@@ -268,7 +306,16 @@ typedef struct st_order {
      SELECT a AS foo GROUP BY a: false.
   */
   bool   used_alias;
-  Field  *field;                        /* If tmp-table group */
+  /**
+    When GROUP BY is implemented with a temporary table (i.e. the table takes
+    care to store only unique group rows, table->group != nullptr), each GROUP
+    BY expression is stored in a column of the table, which is
+    'field_in_tmp_table'.
+    Such field may point into table->record[0] (if we only use it to get its
+    value from a tmp table's row), or into 'buff' (if we use it to do index
+    lookup into the tmp table).
+  */
+  Field  *field_in_tmp_table;
   char   *buff;                         /* If tmp-table group */
   table_map used, depend_map;
   bool is_position;  /* An item expresses a position in a ORDER clause */
@@ -301,8 +348,7 @@ typedef struct st_grant_internal_info GRANT_INTERNAL_INFO;
    @details The privilege checking process is divided into phases depending on
    the level of the privilege to be checked and the type of object to be
    accessed. Due to the mentioned scattering of privilege checking
-   functionality, it is necessary to keep track of the state of the
-   process. This information is stored in privilege and want_privilege.
+   functionality, it is necessary to keep track of the state of the process.
 
    A GRANT_INFO also serves as a cache of the privilege hash tables. Relevant
    members are grant_table and version.
@@ -345,15 +391,6 @@ struct GRANT_INFO
      The set is implemented as a bitmap, with the bits defined in sql_acl.h.
    */
   ulong privilege;
-#ifndef DBUG_OFF
-  /**
-     @brief the set of privileges that the current user needs to fulfil in
-     order to carry out the requested operation. Used in debug build to
-     ensure individual column privileges are assigned consistently.
-     @todo remove this member in 8.0.
-   */
-  ulong want_privilege;
-#endif
   /** The grant state for internal tables. */
   GRANT_INTERNAL_INFO m_internal;
 };
@@ -554,10 +591,11 @@ typedef struct st_table_field_def
 class Table_check_intact
 {
 protected:
+  bool has_keys;
   virtual void report_error(uint code, const char *fmt, ...)= 0;
 
 public:
-  Table_check_intact() {}
+  Table_check_intact() : has_keys(FALSE) {}
   virtual ~Table_check_intact() {}
 
   /**
@@ -610,6 +648,32 @@ typedef I_P_List <Wait_for_flush,
                  Wait_for_flush_list;
 
 
+typedef struct Table_share_foreign_key_info
+{
+  LEX_CSTRING referenced_table_db;
+  LEX_CSTRING referenced_table_name;
+  /**
+    Name of unique key matching FK in parent table, "" if there is no
+    unique key.
+  */
+  LEX_CSTRING unique_constraint_name;
+  dd::Foreign_key::enum_rule update_rule, delete_rule;
+  uint columns;
+  /**
+    Arrays with names of referencing columns of the FK.
+  */
+  LEX_CSTRING *column_name;
+} TABLE_SHARE_FOREIGN_KEY_INFO;
+
+
+typedef struct Table_share_foreign_key_parent_info
+{
+  LEX_CSTRING referencing_table_db;
+  LEX_CSTRING referencing_table_name;
+  dd::Foreign_key::enum_rule update_rule, delete_rule;
+} TABLE_SHARE_FOREIGN_KEY_PARENT_INFO;
+
+
 /**
   This structure is shared between different table objects. There is one
   instance of table share per one table in the database.
@@ -619,11 +683,28 @@ struct TABLE_SHARE
 {
   TABLE_SHARE() {}                    /* Remove gcc warning */
 
+  /*
+    A map of [uint, Histogram] values, where the key is the field index. The
+    map is populated with any histogram statistics when it is loaded/created.
+  */
+  malloc_unordered_map<uint, const histograms::Histogram*> *m_histograms
+  { nullptr };
+
+  /**
+    Find the histogram for the given field index.
+
+    @param field_index the index of the field we want to find a histogram for
+
+    @retval nullptr if no histogram is found
+    @retval a pointer to a histogram if one is found
+  */
+  const histograms::Histogram* find_histogram(uint field_index);
+
   /** Category of this table. */
   TABLE_CATEGORY table_category;
 
   /* hash of field names (contains pointers to elements of field array) */
-  HASH	name_hash;			/* hash of field names */
+  collation_unordered_map<std::string, Field**> *name_hash{nullptr};
   MEM_ROOT mem_root;
   TYPELIB keynames;			/* Pointers to keynames */
   TYPELIB *intervals;			/* pointer to interval info */
@@ -876,6 +957,16 @@ struct TABLE_SHARE
   SELECT_LEX *owner_of_possible_tmp_keys;
 
   /**
+    Arrays with descriptions of foreign keys in which this table participates
+    as child or parent. We only cache in them information from dd::Table object
+    which is sufficient for use by prelocking algorithm.
+  */
+  uint foreign_keys;
+  TABLE_SHARE_FOREIGN_KEY_INFO *foreign_key;
+  uint foreign_key_parents;
+  TABLE_SHARE_FOREIGN_KEY_PARENT_INFO *foreign_key_parent;
+
+  /**
     Set share's table cache key and update its db and table name appropriately.
 
     @param key_buff    Buffer with already built table cache key to be
@@ -1032,12 +1123,7 @@ struct TABLE_SHARE
     The set of indexes that the optimizer may use when creating an execution
     plan.
    */
-  Key_map usable_indexes() const
-  {
-    Key_map usable_indexes(keys_in_use);
-    usable_indexes.intersect(visible_indexes);
-    return usable_indexes;
-  }
+  Key_map usable_indexes(const THD *thd) const;
 
   /** Release resources and free memory occupied by the table share. */
   void destroy();
@@ -1089,6 +1175,53 @@ public:
   bool is_truncated_value() const { return truncated_value; }
 };
 
+
+/**
+  Class that represents a single change to a column value in partial
+  update of a JSON column.
+*/
+class Binary_diff final
+{
+  /// The offset of the start of the change.
+  size_t m_offset;
+
+  /// The size of the portion that is to be replaced.
+  size_t m_length;
+
+public:
+  /**
+    Create a new Binary_diff object.
+
+    @param offset     the offset of the beginning of the change
+    @param length     the length of the section that is to be replaced
+  */
+  Binary_diff(size_t offset, size_t length)
+    : m_offset(offset), m_length(length)
+  {}
+
+  /// @return the offset of the changed data
+  size_t offset() const { return m_offset; }
+
+  /// @return the length of the changed data
+  size_t length() const { return m_length; }
+
+  /**
+    Get a pointer to the start of the replacement data.
+
+    @param field  the column that is updated
+    @return a pointer to the start of the replacement data
+  */
+  const char *new_data(Field *field) const;
+};
+
+
+/**
+  Vector of Binary_diff objects.
+
+  The Binary_diff objects in the vector should be ordered on offset, and none
+  of the diffs should be overlapping or adjacent.
+*/
+using Binary_diff_vector= Mem_root_array<Binary_diff>;
 
 /**
   Flags for TABLE::m_status (maximum 8 bits).
@@ -1415,7 +1548,6 @@ public:
      and BLOB field count > 0.
    */
   Blob_mem_storage *blob_storage;
-  GRANT_INFO grant;
   Filesort_info sort;
   partition_info *part_info;            /* Partition related information */
   /* If true, all partitions have been pruned away */
@@ -1425,9 +1557,20 @@ public:
 private:
   /// Cost model object for operations on this table
   Cost_model_table m_cost_model;
+#ifndef DBUG_OFF
+  /**
+    Internal tmp table sequential number. Increased in the order of
+    creation. Used for debugging purposes when many tmp tables are used
+    during execution (e.g several windows with window functions)
+  */
+  uint tmp_table_seq_id;
+#endif
 public:
 
   void init(THD *thd, TABLE_LIST *tl);
+  bool init_tmp_table(THD *thd, TABLE_SHARE *share, MEM_ROOT *m_root,
+                      CHARSET_INFO *charset, const char* alias, Field **fld,
+                      uint *blob_fld, bool is_virtual);
   bool fill_item_list(List<Item> *item_list) const;
   void reset_item_list(List<Item> *item_list) const;
   void clear_column_bitmaps(void);
@@ -1712,6 +1855,248 @@ public:
     the next statement.
   */
   void cleanup_gc_items();
+
+#ifndef DBUG_OFF
+  void set_tmp_table_seq_id(uint arg) { tmp_table_seq_id= arg; }
+#endif
+
+private:
+  /**
+    Bitmap that tells which columns are eligible for partial update in an
+    update statement.
+
+    The bitmap is lazily allocated in the TABLE's mem_root when
+    #mark_column_for_partial_update() is called.
+  */
+  MY_BITMAP *m_partial_update_columns;
+
+  /**
+    Object which contains execution time state used for partial update
+    of JSON columns.
+
+    It is allocated in the execution mem_root by #setup_partial_update() if
+    there are columns that have been marked as eligible for partial update.
+  */
+  Partial_update_info *m_partial_update_info;
+
+  /**
+    This flag decides whether or not we should log the drop temporary table
+    command.
+  */
+  bool should_binlog_drop_if_temp_flag;
+public:
+  /**
+    Does this table have any columns that can be updated using partial update
+    in the current row?
+
+    @return whether any columns in the current row can be updated using partial
+    update
+  */
+  bool has_binary_diff_columns() const;
+
+  /**
+    Get the list of binary diffs that have been collected for a given column in
+    the current row, or `nullptr` if partial update cannot be used for that
+    column.
+
+    @param  field   the column to get binary diffs for
+    @return the list of binary diffs for the column, or `nullptr` if the column
+    cannot be updated using partial update
+  */
+  const Binary_diff_vector *get_binary_diffs(const Field *field) const;
+
+  /**
+    Mark a given column as one that can potentially be updated using
+    partial update during execution of an update statement.
+
+    Whether it is actually updated using partial update, is not
+    determined until execution time, since that depends both on the
+    data that is in the column and the new data that is written to the
+    column.
+
+    This function should be called during preparation of an update
+    statement.
+
+    @param  field  a column which is eligible for partial update
+    @retval false  on success
+    @retval true   on out-of-memory
+  */
+  bool mark_column_for_partial_update(const Field *field);
+
+  /**
+    Has this column been marked for partial update?
+
+    Note that this only tells if the column satisfies the syntactical
+    requirements for being partially updated. Use #is_binary_diff_enabled() or
+    #is_logical_diff_enabled() instead to see if partial update should be used
+    on the column.
+
+    @param  field  the column to check
+    @return whether the column has been marked for partial update
+  */
+  bool is_marked_for_partial_update(const Field *field) const;
+
+  /**
+    Does this table have any columns that were marked with
+    #mark_column_for_partial_update()?
+
+    Note that this only tells if any of the columns satisfy the syntactical
+    requirements for being partially updated. Use
+    #has_binary_diff_columns(), #is_binary_diff_enabled() or
+    #is_logical_diff_enabled() instead to see if partial update should be used
+    on a column.
+  */
+  bool has_columns_marked_for_partial_update() const;
+
+  /**
+    Enable partial update of JSON columns in this table. It is only
+    enabled for the columns that have previously been marked for
+    partial update using #mark_column_for_partial_update().
+
+    @param logical_diffs  should logical JSON diffs be collected in addition
+                          to the physical binary diffs?
+
+    This function should be called once per statement execution, when
+    the update statement is optimized.
+
+    @retval false  on success
+    @retval true   on out-of-memory
+  */
+  bool setup_partial_update(bool logical_diffs);
+
+  /**
+    @see setup_partial_update(bool)
+
+    This is a wrapper that auto-computes the value of the parameter
+    logical_diffs.
+
+    @retval false  on success
+    @retval true   on out-of-memory
+  */
+  bool setup_partial_update();
+
+  /**
+    Add a binary diff for a column that is updated using partial update.
+
+    @param field   the column that is being updated
+    @param offset  the offset of the changed portion
+    @param length  the length of the changed portion
+
+    @retval false  on success
+    @retval true   on out-of-memory
+  */
+  bool add_binary_diff(const Field *field, size_t offset, size_t length);
+
+  /**
+    Clear the diffs that have been collected for partial update of
+    JSON columns, and re-enable partial update for any columns where
+    partial update was temporarily disabled for the current row.
+    Should be called between each row that is updated.
+  */
+  void clear_partial_update_diffs();
+
+  /**
+    Clean up state used for partial update of JSON columns.
+
+    This function should be called at the end of each statement
+    execution.
+  */
+  void cleanup_partial_update();
+
+  /**
+    Temporarily disable collection of binary diffs for a column in the current
+    row.
+
+    This function is called during execution to disable partial update of a
+    column that was previously marked as eligible for partial update with
+    #mark_column_for_partial_update() during preparation.
+
+    Partial update of this column will be re-enabled when we go to the next
+    row.
+
+    @param  field  the column to stop collecting binary diffs for
+  */
+  void disable_binary_diffs_for_current_row(const Field *field);
+
+  /**
+    Temporarily disable collection of Json_diff objects describing the
+    logical changes of a JSON column in the current row.
+
+    Collection of logical JSON diffs is re-enabled when we go to the next row.
+
+    @param field  the column to stop collecting logical JSON diffs for
+  */
+  void disable_logical_diffs_for_current_row(const Field *field) const;
+
+  /**
+    Get a buffer that can be used to hold the partially updated column value
+    while performing partial update.
+  */
+  String *get_partial_update_buffer();
+
+  /**
+    Add a logical JSON diff describing a logical change to a JSON column in
+    partial update.
+
+    @param field      the column that is updated
+    @param path       the JSON path that is changed
+    @param operation  the operation to perform
+    @param new_value  the new value in the path
+
+    @throws std::bad_alloc if memory cannot be allocated
+  */
+  void add_logical_diff(const Field_json *field,
+                        const Json_seekable_path &path,
+                        enum_json_diff_operation operation,
+                        const Json_wrapper *new_value);
+
+
+  /**
+    Get the list of JSON diffs that have been collected for a given column in
+    the current row, or `nullptr` if partial update cannot be used for that
+    column.
+
+    @param  field   the column to get JSON diffs for
+    @return the list of JSON diffs for the column, or `nullptr` if the column
+    cannot be updated using partial update
+  */
+  const Json_diff_vector *get_logical_diffs(const Field_json *field) const;
+
+  /**
+    Is partial update using binary diffs enabled on this JSON column?
+
+    @param field  the column to check
+    @return whether the column can be updated with binary diffs
+  */
+  bool is_binary_diff_enabled(const Field *field) const;
+
+  /**
+    Is partial update using logical diffs enabled on this JSON column?
+
+    @param field  the column to check
+    @return whether the column can be updated with JSON diffs
+  */
+  bool is_logical_diff_enabled(const Field *field) const;
+
+  /**
+    Virtual fields of type BLOB have a flag m_keep_old_value. This flag is set
+    to false for all such fields in this table.
+  */
+  void blobs_need_not_keep_old_value();
+
+  /**
+    Set the variable should_binlog_drop_if_temp_flag, so that
+    the logging of temporary tables can be decided.
+
+    @param should_binlog  the value to set flag should_binlog_drop_if_temp_flag
+  */
+  void set_binlog_drop_if_temp(bool should_binlog);
+
+  /**
+    @return whether should_binlog_drop_if_temp_flag flag is
+            set or not
+  */
+  bool should_binlog_drop_if_temp(void) const;
 };
 
 
@@ -1889,6 +2274,12 @@ typedef struct st_lex_alter {
   uint16 expire_after_days;
   bool update_account_locked_column;
   bool account_locked;
+  uint32 password_history_length;
+  bool use_default_password_history;
+  bool update_password_history;
+  uint32 password_reuse_interval;
+  bool use_default_password_reuse_interval;
+  bool update_password_reuse_interval;
 
   void cleanup()
   {
@@ -1898,7 +2289,14 @@ typedef struct st_lex_alter {
     expire_after_days= 0;
     update_account_locked_column= false;
     account_locked= false;
+    use_default_password_history= true;
+    update_password_history= false;
+    use_default_password_reuse_interval= true;
+    update_password_reuse_interval= false;
+    password_history_length= 0;
+    password_reuse_interval= 0;
   }
+
 } LEX_ALTER;
 
 typedef struct	st_lex_user {
@@ -1954,7 +2352,8 @@ public:
   Field_map used_fields;
 };
 
-
+class Item_func;
+class Table_function;
 /*
   Table reference in the FROM clause.
 
@@ -2100,7 +2499,7 @@ struct TABLE_LIST
   bool is_placeholder() const
   {
     return is_view_or_derived() || schema_table || !table ||
-      m_is_recursive_reference;
+      m_is_recursive_reference || is_table_function();
   }
 
   /// Produce a textual identification of this object
@@ -2153,6 +2552,11 @@ struct TABLE_LIST
     return derived != NULL;
   }
 
+  /// Return true if this represents a table function
+  bool is_table_function() const
+  {
+    return table_function != NULL;
+  }
   /**
      @returns true if this is a recursive reference inside the definition of a
      recursive CTE.
@@ -2319,7 +2723,8 @@ struct TABLE_LIST
   /// Set temporary name from underlying temporary table:
   void set_name_temporary()
   {
-    DBUG_ASSERT(is_view_or_derived() && uses_materialization());
+    DBUG_ASSERT((is_view_or_derived()) &&
+                uses_materialization());
     table_name= table->s->table_name.str;
     table_name_length= table->s->table_name.length;
     db= (char *)"";
@@ -2329,7 +2734,8 @@ struct TABLE_LIST
   /// Reset original name for temporary table.
   void reset_name_temporary()
   {
-    DBUG_ASSERT(is_view_or_derived() && uses_materialization());
+    DBUG_ASSERT((is_table_function() || is_view_or_derived()) &&
+                uses_materialization());
     /*
       When printing a query using a view or CTE, we need the table's name and
       the alias; the name has been destroyed if the table was materialized,
@@ -2353,16 +2759,13 @@ struct TABLE_LIST
   bool optimize_derived(THD *thd);
 
   /// Create result table for a materialized derived table/view
-  bool create_derived(THD *thd);
+  bool create_materialized_table(THD *thd);
 
   /// Materialize derived table
   bool materialize_derived(THD *thd);
 
   /// Clean up the query expression for a materialized derived table
   bool cleanup_derived();
-
-  /// Set wanted privilege for subsequent column privilege checking
-  void set_want_privilege(ulong want_privilege);
 
   /// Prepare security context for a view
   bool prepare_security(THD *thd);
@@ -2378,7 +2781,7 @@ struct TABLE_LIST
     TABLE::keys_in_use_for_group_by, TABLE::keys_in_use_for_order_by,
     TABLE::force_index and TABLE::covering_keys.
   */
-  bool process_index_hints(TABLE *table);
+  bool process_index_hints(const THD *thd, TABLE *table);
 
   /**
     Compare the version of metadata from the previous execution
@@ -2446,6 +2849,9 @@ struct TABLE_LIST
   /// Setup a derived table to use materialization
   bool setup_materialized_derived(THD *thd);
   bool setup_materialized_derived_tmp_table(THD *thd);
+
+  /// Setup a table function to use materialization
+  bool setup_table_function(THD *thd);
 
   bool create_field_translation(THD *thd);
 
@@ -2557,8 +2963,6 @@ struct TABLE_LIST
   void set_privileges(ulong privilege)
   {
     grant.privilege|= privilege;
-    if (table)
-      table->grant.privilege|= privilege;
   }
   /*
     List of tables local to a subquery or the top-level SELECT (used by
@@ -2666,6 +3070,12 @@ public:
     can see this lists can't be merged)
   */
   TABLE_LIST	*correspondent_table;
+
+  /*
+    Holds the function used as the table function
+  */
+  Table_function *table_function;
+
 private:
   /**
      This field is set to non-null for derived tables and views. It points
@@ -2781,10 +3191,6 @@ private:
   Lock_descriptor m_lock_descriptor;
 public:
   GRANT_INFO	grant;
-  /* data need by some engines in query cache*/
-  ulonglong     engine_data;
-  /* call back function for asking handler about caching in query cache */
-  qc_engine_callback callback_func;
 public:
   uint		outer_join;		/* Which join type */
   uint		shared;			/* Used in multi-upd */
@@ -2940,7 +3346,7 @@ public:
   { return m_derived_column_names; }
   void set_derived_column_names(const Create_col_name_list *d)
   { m_derived_column_names= d; }
-
+  void propagate_table_maps(table_map map_arg);
 
 private:
   /*
@@ -3339,9 +3745,6 @@ void dbug_tmp_restore_column_maps(MY_BITMAP *read_set MY_ATTRIBUTE((unused)),
 }
 
 
-size_t max_row_length(TABLE *table, const uchar *data);
-
-
 void init_mdl_requests(TABLE_LIST *table_list);
 
 /**
@@ -3392,14 +3795,15 @@ int open_table_from_share(THD *thd, TABLE_SHARE *share, const char *alias,
                           uint db_stat, uint prgflag, uint ha_open_flags,
                           TABLE *outparam, bool is_create_table,
                           const dd::Table *table_def_param);
-TABLE_SHARE *alloc_table_share(TABLE_LIST *table_list, const char *key,
-                               size_t key_length);
+TABLE_SHARE *alloc_table_share(const char *db, const char *table_name,
+                               const char *key, size_t key_length);
 void init_tmp_table_share(THD *thd, TABLE_SHARE *share, const char *key,
                           size_t key_length,
                           const char *table_name, const char *path,
                           MEM_ROOT *mem_root);
 void free_table_share(TABLE_SHARE *share);
 void update_create_info_from_table(HA_CREATE_INFO *info, TABLE *form);
+Ident_name_check check_db_name(const char *name, size_t length);
 Ident_name_check check_and_convert_db_name(LEX_STRING *db,
                                            bool preserve_lettercase);
 bool check_column_name(const char *name);
@@ -3426,11 +3830,13 @@ extern LEX_STRING SLOW_LOG_NAME;
 /* information schema */
 extern LEX_STRING INFORMATION_SCHEMA_NAME;
 
-/* mysql schema */
+/* mysql schema name and DD ID */
 extern LEX_STRING MYSQL_SCHEMA_NAME;
+static const uint MYSQL_SCHEMA_DD_ID= 1;
 
-/* mysql tablespace */
+/* mysql tablespace name and DD ID */
 extern LEX_STRING MYSQL_TABLESPACE_NAME;
+static const uint MYSQL_TABLESPACE_DD_ID= 1;
 
 /* replication's tables */
 extern LEX_STRING RLI_INFO_NAME;

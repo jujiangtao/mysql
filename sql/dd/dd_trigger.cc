@@ -2,47 +2,47 @@
    Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "sql/dd/dd_trigger.h"
 
 #include <string.h>
-#include <memory>
-#include <string>                        // std::string
 
-#include "dd/cache/dictionary_client.h"  // dd::cache::Dictionary_client
-#include "dd/dd.h"                       // dd::get_dictionary
-#include "dd/dd_schema.h"                // dd::Schema_MDL_locker
-#include "dd/dictionary.h"               // dd::Dictionary
-#include "dd/types/schema.h"
-#include "dd/types/table.h"              // dd::Table
-#include "dd/types/trigger.h"            // dd::Trigger
-#include "dd_table_share.h"              // dd_get_mysql_charset
+#include "my_alloc.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
-#include "my_psi_config.h"
 #include "my_sys.h"                      // my_error, resolve_collation
-#include "mysql/psi/mysql_sp.h"          // MYSQL_DROP_SP
-#include "mysql/psi/mysql_statement.h"
 #include "mysqld_error.h"                // ER_UNKNOWN_COLLATION
-#include "sql_class.h"                   // THD
-#include "sql_lex.h"
-#include "sql_list.h"                    // List
-#include "sql_servers.h"
-#include "system_variables.h"
-#include "table.h"
-#include "transaction.h"                 // trans_commit, trans_rollback
-#include "trigger.h"                     // Trigger
+#include "sql/dd/cache/dictionary_client.h" // dd::cache::Dictionary_client
+#include "sql/dd/string_type.h"
+#include "sql/dd/types/table.h"          // dd::Table
+#include "sql/dd/types/trigger.h"        // dd::Trigger
+#include "sql/dd_table_share.h"          // dd_get_mysql_charset
+#include "sql/item_create.h"
+#include "sql/key.h"
+#include "sql/sql_class.h"               // THD
+#include "sql/sql_list.h"                // List
+#include "sql/sql_servers.h"
+#include "sql/system_variables.h"
+#include "sql/table.h"
+#include "sql/trigger.h"                 // Trigger
 
 namespace dd
 {
@@ -213,13 +213,7 @@ bool create_trigger(THD *thd, const ::Trigger *new_trigger,
     DBUG_RETURN(true);
   }
 
-  if (new_table == nullptr)
-  {
-    my_error(ER_NO_SUCH_TABLE, MYF(0),
-             new_trigger->get_db_name().str,
-             new_trigger->get_subject_table_name().str);
-    DBUG_RETURN(true);
-  }
+  DBUG_ASSERT(new_table != nullptr);
 
   Trigger *dd_trig_obj;
 
@@ -260,19 +254,7 @@ bool create_trigger(THD *thd, const ::Trigger *new_trigger,
   if (fill_in_dd_trigger_object(new_trigger, dd_trig_obj))
     DBUG_RETURN(true);
 
-  /*
-    Store the dd::Table object. All the trigger objects are stored
-    in mysql.triggers. Errors will be reported by the dictionary subsystem.
-  */
-  if (dd_client->update(new_table))
-  {
-    trans_rollback_stmt(thd);
-    // Full rollback in case we have THD::transaction_rollback_request.
-    trans_rollback(thd);
-    DBUG_RETURN(true);
-  }
-
-  DBUG_RETURN(false);
+  DBUG_RETURN(dd_client->update(new_table));
 }
 
 
@@ -328,31 +310,12 @@ bool load_triggers(THD *thd,
                    MEM_ROOT *mem_root,
                    const char *schema_name,
                    const char *table_name,
+                   const dd::Table &table,
                    List<::Trigger> *triggers)
 {
   DBUG_ENTER("dd::load_triggers");
 
-  Schema_MDL_locker schema_mdl_locker(thd);
-
-  cache::Dictionary_client *dd_client= thd->dd_client();
-  cache::Dictionary_client::Auto_releaser releaser(dd_client);
-
-  const Table *table= nullptr;
-  if (schema_mdl_locker.ensure_locked(schema_name) ||
-      dd_client->acquire(schema_name, table_name, &table))
-  {
-    // Error is reported by the dictionary subsystem.
-    DBUG_RETURN(true);
-  }
-
-  if (table == nullptr)
-  {
-    my_error(ER_NO_SUCH_TABLE, MYF(0),
-             schema_name, table_name);
-    DBUG_RETURN(true);
-  }
-
-  for (const auto &trigger : table->triggers())
+  for (const auto &trigger : table.triggers())
   {
     LEX_CSTRING db_name_str= { schema_name, strlen(schema_name) };
     LEX_CSTRING subject_table_name= { table_name, strlen(table_name) };
@@ -446,7 +409,7 @@ bool load_triggers(THD *thd,
 
     if (triggers->push_back(trigger_to_add, mem_root))
     {
-      delete trigger_to_add;
+      destroy(trigger_to_add);
       DBUG_RETURN(true);
     }
   }
@@ -455,71 +418,17 @@ bool load_triggers(THD *thd,
 }
 
 
-bool load_trigger_names(THD *thd,
-                        MEM_ROOT *mem_root,
-                        const char *schema_name,
-                        const char *table_name,
-                        List<LEX_CSTRING> *trigger_names)
-{
-  DBUG_ENTER("dd::load_trigger_names");
-
-  Schema_MDL_locker schema_mdl_locker(thd);
-
-  cache::Dictionary_client *dd_client= thd->dd_client();
-  cache::Dictionary_client::Auto_releaser releaser(dd_client);
-
-  const Table *table= nullptr;
-  if (schema_mdl_locker.ensure_locked(schema_name) ||
-      dd_client->acquire(schema_name, table_name, &table))
-  {
-    // Error is reported by the dictionary subsystem.
-    DBUG_RETURN(true);
-  }
-
-  if (table == nullptr)
-  {
-    DBUG_RETURN(false);
-  }
-
-  for (const auto &trigger : table->triggers())
-  {
-    LEX_CSTRING *trigger_name;
-
-    trigger_name= make_lex_string_root(mem_root,
-                                       static_cast<LEX_CSTRING *>(NULL),
-                                       trigger->name().c_str(),
-                                       trigger->name().length(), true);
-    if (trigger_name == nullptr)
-      DBUG_RETURN(true);
-
-    if (trigger_names->push_back(trigger_name, mem_root))
-      DBUG_RETURN(true);
-  }
-
-  DBUG_RETURN(false);
-}
-
-
+// Only used by NDB
 bool table_has_triggers(THD *thd, const char *schema_name,
                         const char *table_name, bool *table_has_trigger)
 {
   DBUG_ENTER("table_has_triggers");
 
-  Schema_MDL_locker schema_mdl_locker(thd);
-
-  if (get_dictionary()->is_dd_table_name(schema_name, table_name))
-  {
-    *table_has_trigger= false;
-    DBUG_RETURN(false);
-  }
-
-  cache::Dictionary_client *dd_client= thd->dd_client();
-  cache::Dictionary_client::Auto_releaser releaser(dd_client);
+  cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
 
   const Table *table= nullptr;
 
-  if (schema_mdl_locker.ensure_locked(schema_name) ||
-      dd_client->acquire(schema_name, table_name, &table))
+  if (thd->dd_client()->acquire(schema_name, table_name, &table))
   {
     // Error is reported by the dictionary subsystem.
     DBUG_RETURN(true);
@@ -528,197 +437,6 @@ bool table_has_triggers(THD *thd, const char *schema_name,
   *table_has_trigger= (table != nullptr && table->has_trigger());
 
   DBUG_RETURN(false);
-}
-
-
-bool check_trigger_exists(THD *thd,
-                          const char *schema_name,
-                          const char *trigger_name,
-                          bool *trigger_exists)
-{
-  Schema_MDL_locker mdl_locker(thd);
-
-  cache::Dictionary_client *dd_client= thd->dd_client();
-  cache::Dictionary_client::Auto_releaser releaser(dd_client);
-
-  const Schema *sch_obj= nullptr;
-  if (mdl_locker.ensure_locked(schema_name) ||
-      dd_client->acquire(schema_name, &sch_obj))
-    return true;
-
-  if (sch_obj == nullptr)
-  {
-    my_error(ER_BAD_DB_ERROR, MYF(0), schema_name);
-    return true;
-  }
-
-  String_type table_name;
-  if (dd_client->get_table_name_by_trigger_name(sch_obj->id(),
-                                                trigger_name,
-                                                &table_name))
-    return true;
-
-  *trigger_exists= (table_name == "") ? false : true;
-
-  return false;
-}
-
-
-bool drop_trigger(THD *thd,
-                  const char *schema_name,
-                  const char *table_name,
-                  const char *trigger_name,
-                  bool *trigger_found)
-{
-  DBUG_ENTER("dd::drop_trigger");
-
-  Schema_MDL_locker schema_mdl_locker(thd);
-
-  cache::Dictionary_client *dd_client= thd->dd_client();
-  cache::Dictionary_client::Auto_releaser releaser(dd_client);
-
-  Table *new_table= nullptr;
-
-  if (schema_mdl_locker.ensure_locked(schema_name) ||
-      dd_client->acquire_for_modification(schema_name, table_name, &new_table))
-  {
-    // Error is reported by the dictionary subsystem.
-    DBUG_RETURN(true);
-  }
-
-  if (new_table == nullptr)
-  {
-    my_error(ER_NO_SUCH_TABLE, MYF(0),
-             schema_name, table_name);
-    DBUG_RETURN(true);
-  }
-
-  const Trigger *dd_trig_obj= new_table->get_trigger(trigger_name);
-
-  if (dd_trig_obj == nullptr)
-  {
-   *trigger_found= false;
-   DBUG_RETURN(false);
-  }
-  new_table->drop_trigger(dd_trig_obj);
-
-  /*
-    Store the Table object. All the trigger objects are stored
-    in mysql.triggers.
-  */
-  if (dd_client->update(new_table))
-  {
-    trans_rollback_stmt(thd);
-    trans_rollback(thd);
-    DBUG_RETURN(true);
-  }
-
-  *trigger_found= true;
-  DBUG_RETURN(false);
-}
-
-
-bool drop_all_triggers(THD *thd,
-                       const char *schema_name,
-                       const char *table_name,
-                       List<::Trigger> *triggers)
-{
-  DBUG_ENTER("dd::drop_trigger");
-
-  Schema_MDL_locker schema_mdl_locker(thd);
-
-  cache::Dictionary_client *dd_client= thd->dd_client();
-  cache::Dictionary_client::Auto_releaser releaser(dd_client);
-
-  Table *new_table= nullptr;
-
-  if (schema_mdl_locker.ensure_locked(schema_name) ||
-      dd_client->acquire_for_modification(schema_name, table_name, &new_table))
-  {
-    // Error is reported by the dictionary subsystem.
-    DBUG_RETURN(true);
-  }
-
-  if (new_table == nullptr)
-  {
-    my_error(ER_NO_SUCH_TABLE, MYF(0),
-             schema_name, table_name);
-    DBUG_RETURN(true);
-  }
-
-  List_iterator_fast<::Trigger> it(*triggers);
-  ::Trigger *t;
-
-  while ((t= it++))
-  {
-    LEX_CSTRING trigger_name= t->get_trigger_name();
-
-    const Trigger *dd_trig_obj= new_table->get_trigger(trigger_name.str);
-
-    if (dd_trig_obj == nullptr)
-      continue;
-
-    new_table->drop_trigger(dd_trig_obj);
-#ifdef HAVE_PSI_SP_INTERFACE
-    LEX_CSTRING db_name= t->get_db_name();
-    /* Drop statistics for this stored program from performance schema. */
-    MYSQL_DROP_SP(to_uint(enum_sp_type::TRIGGER),
-                  db_name.str, db_name.length,
-                  trigger_name.str, trigger_name.length);
-#endif
-  }
-
-  /*
-    Store the dd::Table object. All the trigger objects are removed from
-    mysql.triggers.
-  */
-  if (dd_client->update(new_table))
-  {
-    trans_rollback_stmt(thd);
-    trans_rollback(thd);
-    DBUG_RETURN(true);
-  }
-
-  DBUG_RETURN(trans_commit_stmt(thd) || trans_commit(thd));
-}
-
-
-bool get_table_name_for_trigger(THD *thd,
-                                const char *schema_name,
-                                const char *trigger_name,
-                                String_type *table_name,
-                                bool *trigger_found,
-                                bool push_warning_if_not_exist)
-{
-  Schema_MDL_locker mdl_locker(thd);
-
-  cache::Dictionary_client *dd_client= thd->dd_client();
-  cache::Dictionary_client::Auto_releaser releaser(dd_client);
-
-  const Schema *sch_obj= nullptr;
-  if (mdl_locker.ensure_locked(schema_name) ||
-      dd_client->acquire(schema_name, &sch_obj))
-    return true;
-
-  if (sch_obj == nullptr)
-  {
-    if (!push_warning_if_not_exist)
-    {
-      my_error(ER_BAD_DB_ERROR, MYF(0), schema_name);
-      return true;
-    }
-    *trigger_found= false;
-    return false;
-  }
-
-  if (dd_client->get_table_name_by_trigger_name(sch_obj->id(),
-                                                trigger_name,
-                                                table_name))
-    return true;
-
-  *trigger_found= (*table_name == "") ? false : true;
-
-  return false;
 }
 
 }  // namespace dd

@@ -1,17 +1,24 @@
 /* Copyright (c) 2009, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 /**
   == Debug Sync Facility ==
@@ -246,10 +253,10 @@
 
   mysql_mutex_lock(&mutex);
   thd->enter_cond(&condition_variable, &mutex, new_message);
-  #if defined(ENABLE_DEBUG_SYNC)
+  # if defined(ENABLE_DEBUG_SYNC)
   if (!thd->killed && !end_of_wait_condition)
      DEBUG_SYNC(thd, "sync_point_name");
-  #endif
+  # endif
   while (!thd->killed && !end_of_wait_condition)
     mysql_cond_wait(&condition_variable, &mutex);
   mysql_mutex_unlock(&mutex);
@@ -337,8 +344,11 @@
   For complete syntax tests, functional tests, and examples see the test
   case debug_sync.test.
 
+
   See also worklog entry WL#4259 - Test Synchronization Facility
 */
+
+#define LOG_SUBSYSTEM_TAG "debug_sync"
 
 #include "sql/debug_sync.h"
 
@@ -347,32 +357,39 @@
 #include <boost/algorithm/string/trim.hpp>
 #include <boost/concept/usage.hpp>
 #include <boost/iterator/iterator_facade.hpp>
+#include <boost/type_index/type_index_facade.hpp>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <algorithm>
+#include <atomic>
 #include <vector>
 
+#include "boost/algorithm/string/detail/classification.hpp"
 #include "m_ctype.h"
 #include "my_dbug.h"
+#include "my_inttypes.h"
+#include "my_loglevel.h"
 #include "my_macros.h"
 #include "my_psi_config.h"
 #include "my_sys.h"
 #include "my_systime.h"
 #include "my_thread.h"
+#include "mysql/components/services/mysql_cond_bits.h"
+#include "mysql/components/services/mysql_mutex_bits.h"
+#include "mysql/components/services/psi_cond_bits.h"
+#include "mysql/components/services/psi_memory_bits.h"
+#include "mysql/components/services/psi_mutex_bits.h"
 #include "mysql/psi/mysql_cond.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/psi/psi_base.h"
-#include "mysql/psi/psi_cond.h"
-#include "mysql/psi/psi_memory.h"
-#include "mysql/psi/psi_mutex.h"
 #include "mysql/service_my_snprintf.h"
 #include "mysql/service_mysql_alloc.h"
 #include "mysqld_error.h"
-#include "sql_error.h"
+#include "sql/psi_memory_key.h"
+#include "sql/sql_error.h"
+#include "sql/table.h"
 #include "sql_string.h"
-#include "table.h"
-#include "thr_malloc.h"
 #include "thr_mutex.h"
 
 #if defined(ENABLED_DEBUG_SYNC)
@@ -380,11 +397,11 @@
 #include <set>
 #include <string>
 
-#include "current_thd.h"
-#include "derror.h"
-#include "log.h"
 #include "mysql/psi/mysql_memory.h"
-#include "sql_class.h"
+#include "sql/current_thd.h"
+#include "sql/derror.h"
+#include "sql/log.h"
+#include "sql/sql_class.h"
 
 using std::max;
 using std::min;
@@ -460,7 +477,6 @@ extern "C" void (*debug_sync_C_callback_ptr)(const char *, size_t);
 */
 C_MODE_START
 static void debug_sync_C_callback(const char *, size_t);
-static int debug_sync_qsort_cmp(const void *, const void *);
 C_MODE_END
 
 /**
@@ -509,20 +525,20 @@ static PSI_mutex_key key_debug_sync_globals_ds_mutex;
 
 static PSI_mutex_info all_debug_sync_mutexes[]=
 {
-  { &key_debug_sync_globals_ds_mutex, "DEBUG_SYNC::mutex", PSI_FLAG_GLOBAL, 0}
+  { &key_debug_sync_globals_ds_mutex, "DEBUG_SYNC::mutex", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME}
 };
 
 static PSI_cond_key key_debug_sync_globals_ds_cond;
 
 static PSI_cond_info all_debug_sync_conds[]=
 {
-  { &key_debug_sync_globals_ds_cond, "DEBUG_SYNC::cond", PSI_FLAG_GLOBAL}
+  { &key_debug_sync_globals_ds_cond, "DEBUG_SYNC::cond", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME}
 };
 
 static PSI_memory_info all_debug_sync_memory[]=
 {
-  { &key_debug_THD_debug_sync_control, "THD::debug_sync_control", 0},
-  { &key_debug_sync_action, "debug_sync_control::debug_sync_action", 0}
+  { &key_debug_THD_debug_sync_control, "THD::debug_sync_control", 0, 0, PSI_DOCUMENT_ME},
+  { &key_debug_sync_action, "debug_sync_control::debug_sync_action", 0, 0, PSI_DOCUMENT_ME}
 };
 
 static void init_debug_sync_psi_keys(void)
@@ -620,12 +636,12 @@ void debug_sync_end(void)
     /* Print statistics. */
     {
       char llbuff[22];
-      sql_print_information("Debug sync points hit:                   %22s",
-                            llstr(debug_sync_global.dsp_hits, llbuff));
-      sql_print_information("Debug sync points executed:              %22s",
-                            llstr(debug_sync_global.dsp_executed, llbuff));
-      sql_print_information("Debug sync points max active per thread: %22s",
-                            llstr(debug_sync_global.dsp_max_active, llbuff));
+      LogErr(INFORMATION_LEVEL, ER_DEBUG_SYNC_HIT,
+             llstr(debug_sync_global.dsp_hits, llbuff));
+      LogErr(INFORMATION_LEVEL, ER_DEBUG_SYNC_EXECUTED,
+             llstr(debug_sync_global.dsp_executed, llbuff));
+      LogErr(INFORMATION_LEVEL, ER_DEBUG_SYNC_THREAD_MAX,
+             llstr(debug_sync_global.dsp_max_active, llbuff));
     }
   }
 
@@ -651,7 +667,7 @@ static void debug_sync_emergency_disable(void)
 
   DBUG_PRINT("debug_sync",
              ("Debug Sync Facility disabled due to lack of memory."));
-  sql_print_error("Debug Sync Facility disabled due to lack of memory.");
+  LogErr(ERROR_LEVEL, ER_DEBUG_SYNC_OOM);
 
   DBUG_VOID_RETURN;
 }
@@ -882,34 +898,6 @@ static void debug_sync_print_actions(THD *thd)
 }
 
 #endif /* !defined(DBUG_OFF) */
-
-
-/**
-  Compare two actions by sync point name length, string.
-
-  @param[in]    arg1            reference to action1
-  @param[in]    arg2            reference to action2
-
-  @return       difference
-    @retval     == 0            length1/string1 is same as length2/string2
-    @retval     < 0             length1/string1 is smaller
-    @retval     > 0             length1/string1 is bigger
-*/
-
-static int debug_sync_qsort_cmp(const void* arg1, const void* arg2)
-{
-  st_debug_sync_action *action1= (st_debug_sync_action*) arg1;
-  st_debug_sync_action *action2= (st_debug_sync_action*) arg2;
-  int diff;
-  DBUG_ASSERT(action1);
-  DBUG_ASSERT(action2);
-
-  if (!(diff= static_cast<int>(action1->sync_point.length() - action2->sync_point.length())))
-    diff= memcmp(action1->sync_point.ptr(), action2->sync_point.ptr(),
-                 action1->sync_point.length());
-
-  return diff;
-}
 
 
 /**
@@ -1231,8 +1219,15 @@ static bool debug_sync_set_action(THD *thd, st_debug_sync_action *action)
     {
       action->need_sort= FALSE;
       /* Sort actions by (name_len, name). */
-      my_qsort(ds_control->ds_action, ds_control->ds_active,
-               sizeof(st_debug_sync_action), debug_sync_qsort_cmp);
+      std::sort(
+        ds_control->ds_action, ds_control->ds_action + ds_control->ds_active,
+        [](const st_debug_sync_action &a, const st_debug_sync_action &b)
+        {
+          if (a.sync_point.length() != b.sync_point.length())
+            return a.sync_point.length() < b.sync_point.length();
+          return memcmp(a.sync_point.ptr(), b.sync_point.ptr(),
+                        a.sync_point.length()) < 0;
+        });
     }
   }
   DBUG_EXECUTE("debug_sync_list", debug_sync_print_actions(thd););
@@ -2041,7 +2036,7 @@ static void debug_sync_execute(THD *thd, st_debug_sync_action *action)
                    if (thd->killed)
                      DBUG_PRINT("debug_sync_exec",
                                 ("killed %d from '%s'  at: '%s'",
-                                 thd->killed, sig_wait, dsp_name));
+                                 thd->killed.load(), sig_wait, dsp_name));
                    else
                      DBUG_PRINT("debug_sync_exec",
                                 ("%s from '%s'  at: '%s'",

@@ -1,6 +1,3 @@
-
--- source include/not_embedded.inc
-
 # Save the initial number of concurrent sessions
 --source include/count_sessions.inc
 
@@ -226,7 +223,7 @@ SET PERSIST concurrent_insert=AUTO;
 --remove_file $MYSQLD_DATADIR/mysqld-auto.cnf
 
 --echo # negative tests persist session only variables
---error ER_WRONG_VALUE_FOR_VAR
+--error ER_LOCAL_VARIABLE
 SET @@persist.sql_log_bin=0;
 
 --echo # Test persisted-globals-load
@@ -309,7 +306,9 @@ SELECT @@global.flush_time;
 
 --remove_file $MYSQLD_DATADIR/mysqld-auto.cnf
 
+call mtr.add_suppression("\\[Warning\\] \\[[^]]*\\] option 'persisted_globals_load': boolean value 'NULL' wasn't recognized. Set to OFF.");
 call mtr.add_suppression("\\[Warning\\] option 'persisted_globals_load': boolean value 'NULL' wasn't recognized. Set to OFF.");
+
 --echo # Restart server with persisted-globals-load=NULL
 --exec echo "wait" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
 --shutdown_server
@@ -372,6 +371,24 @@ SELECT @@global.innodb_buffer_pool_size;
 SELECT @@global.innodb_buffer_pool_size;
 --echo # Check mysqld-auto.cnf file.
 --cat_file $MYSQLD_DATADIR/mysqld-auto.cnf
+--echo
+
+--echo #
+--echo # Bug#26085712: SERVER FAILS TO START AFTER SET PERSIST GTID_MODE
+--echo #                = ON_PERMISSIVE OR ON
+--echo #
+
+RESET PERSIST;
+SELECT @@gtid_mode;
+SET PERSIST gtid_mode=OFF_PERMISSIVE;
+SET PERSIST gtid_mode=ON_PERMISSIVE;
+SELECT @@gtid_mode;
+
+--echo # Restart server and check for gtid_mode value
+--source include/restart_mysqld.inc
+
+SELECT @@gtid_mode;
+RESET PERSIST;
 
 --remove_file $MYSQLD_DATADIR/mysqld-auto.cnf
 

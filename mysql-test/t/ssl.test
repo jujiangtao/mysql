@@ -5,23 +5,13 @@
 
 -- source include/have_ssl.inc
 
-########################################
-##### WL#7554 Force schema `test` to character set latin1
-##### This test should be migrated to utf8mb4
---disable_query_log
-let $testdbcs277=`select default_character_set_name from information_schema.schemata where schema_name='test'`;
-alter schema default character set latin1;
-use test;
---enable_query_log
-########################################
-
 # Save the initial number of concurrent sessions
 --source include/count_sessions.inc
 
 connect (ssl_con,localhost,root,,,,,SSL);
 
 # Check ssl turned on
---replace_result DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER
+--replace_result ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER
 SHOW STATUS LIKE 'Ssl_cipher';
 
 # Check ssl expiration
@@ -32,7 +22,7 @@ SHOW STATUS LIKE 'Ssl_server_not_after';
 -- source include/common-tests.inc
 
 # Check ssl turned on
---replace_result DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER
+--replace_result ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER
 SHOW STATUS LIKE 'Ssl_cipher';
 
 connection default;
@@ -69,10 +59,3 @@ disconnect ssl_con;
 
 ##  This test file is for testing encrypted communication only, not other
 ##  encryption routines that the SSL library happens to provide!
-
-########################################
-##### WL#7554 set schema `test` back to what it was
---disable_query_log
---eval alter schema test default character set $testdbcs277;
---enable_query_log
-########################################

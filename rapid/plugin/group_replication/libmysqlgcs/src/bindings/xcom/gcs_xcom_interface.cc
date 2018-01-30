@@ -1,40 +1,48 @@
 /* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_xcom_interface.h"
+
 #include <assert.h>
 #include <ctype.h>
 #include <stdio.h>
 #include <algorithm>
+#include <cstdarg>
 #include <fstream>
 #include <iostream>
 #include <queue>
+#include <sstream>
 #include <vector>
 
-#include "mysql/gcs/gcs_log_system.h"
-
-#include "gcs_xcom_interface.h"
-#include "gcs_internal_message.h"
-#include "gcs_message_stage_lz4.h"
-#include "gcs_message_stages.h"
-#include "gcs_xcom_group_member_information.h"
-#include "gcs_xcom_interface.h"
-#include "gcs_xcom_networking.h"
-#include "gcs_xcom_notification.h"
 #include "my_compiler.h"
-#include "synode_no.h"
-#include "xcom_ssl_transport.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_internal_message.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_message_stage_lz4.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_message_stages.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_xcom_group_member_information.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_xcom_networking.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_xcom_notification.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/sock_probe.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/synode_no.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/xcom_ssl_transport.h"
 
 using std::map;
 using std::vector;
@@ -59,11 +67,6 @@ static Gcs_xcom_proxy   *xcom_proxy;
 */
 static Gcs_xcom_engine  *gcs_engine;
 
-/*
-  Default logger object used by MySQL GCS.
-*/
-Ext_logger_interface *m_default_logger= NULL;
-
 void cb_xcom_receive_data(synode_no message_id, node_set nodes,
                           u_int size, char *data);
 void do_cb_xcom_receive_data(synode_no message_id, Gcs_xcom_nodes *xcom_nodes,
@@ -75,23 +78,35 @@ void      cb_xcom_receive_global_view(synode_no config_id,
                                       synode_no message_id, node_set nodes);
 void      do_cb_xcom_receive_global_view(synode_no config_id,
                                          synode_no message_id,
-                                         Gcs_xcom_nodes *nodes);
+                                         Gcs_xcom_nodes *xcom_nodes);
 void      cb_xcom_comms(int status);
 void      cb_xcom_ready(int status);
 void      cb_xcom_exit(int status);
 synode_no cb_xcom_get_app_snap(blob *gcs_snap);
+int       cb_xcom_get_should_exit();
 void      cb_xcom_handle_app_snap(blob *gcs_snap);
 int       cb_xcom_socket_accept(int fd);
 
 
 // XCom logging callback
-void cb_xcom_logger(int level, const char *message);
+void cb_xcom_logger(const int64_t level, const char *message);
+void cb_xcom_debugger(const char *format, ...) MY_ATTRIBUTE((format(printf, 1, 2)));
+int cb_xcom_debugger_check(const int64_t options);
 
 
 Gcs_interface *Gcs_xcom_interface::get_interface()
 {
   if (interface_reference_singleton == NULL)
   {
+
+#ifdef SAFE_MUTEX
+    /*
+      Must invoke this function in order for safe mutexes to be used when GCS is
+      used without the server, like in unit or JET tests.
+    */
+    safe_mutex_global_init();
+#endif
+
     interface_reference_singleton= new Gcs_xcom_interface();
   }
 
@@ -113,11 +128,22 @@ void Gcs_xcom_interface::cleanup()
 
 
 Gcs_xcom_interface::Gcs_xcom_interface()
-  :m_group_interfaces(), m_xcom_configured_groups(), m_local_node_information(NULL),
-  m_xcom_peers(), m_is_initialized(false), m_boot(false), m_socket_util(NULL),
-  m_gcs_xcom_app_cfg(), m_initialization_parameters(), m_default_logger(NULL),
-  m_ip_whitelist(), m_ssl_init_state(-1), m_wait_for_ssl_init_cond(),
-  m_wait_for_ssl_init_mutex()
+  :m_group_interfaces(),
+   m_xcom_configured_groups(),
+   m_node_address(NULL),
+   m_xcom_peers(),
+   m_is_initialized(false),
+   m_boot(false),
+   m_socket_util(NULL),
+   m_gcs_xcom_app_cfg(),
+   m_initialization_parameters(),
+   m_default_sink(NULL),
+   m_default_logger(NULL),
+   m_default_debugger(NULL),
+   m_ip_whitelist(),
+   m_ssl_init_state(-1),
+   m_wait_for_ssl_init_cond(),
+   m_wait_for_ssl_init_mutex()
 {
   // Initialize random seed
   srand(static_cast<unsigned int>(time(0)));
@@ -131,35 +157,125 @@ Gcs_xcom_interface::~Gcs_xcom_interface()
 }
 
 
-enum_gcs_error
-Gcs_xcom_interface::initialize(const Gcs_interface_parameters &interface_params)
+enum_gcs_error Gcs_xcom_interface::initialize_logging(const std::string *debug_file,
+                                                      const std::string *debug_path)
 {
-  if (is_initialized())
-    return GCS_OK;
+  assert(m_default_sink == NULL);
 
-  last_config_id.group_id= 0;
+#ifndef XCOM_STANDALONE
+  if (debug_file != NULL && debug_path != NULL)
+    m_default_sink= new Gcs_async_buffer(new Gcs_file_sink(*debug_file, *debug_path));
+  else
+#endif /* XCOM_STANDALONE */
+/* purecov: begin inspected */
+    m_default_sink= new Gcs_async_buffer(new Gcs_output_sink());
+/* purecov: end */
 
-  m_wait_for_ssl_init_mutex.init(NULL);
-  m_wait_for_ssl_init_cond.init();
+  if (m_default_sink->initialize())
+/* purecov: begin inspected */
+    return GCS_NOK;
+/* purecov: end */
 
-  /*
-    Initalize logger and set it in the logging infrastructure if
-    Gcs_logger::log is NULL
-  */
-  if(Gcs_logger::get_logger() == NULL)
+  if(Gcs_debug_manager::get_debugger() == NULL)
   {
-/* purecov: begin deadcode */
-    m_default_logger= new Gcs_simple_ext_logger_impl();
-    Gcs_logger::initialize(m_default_logger);
+    m_default_debugger= new Gcs_default_debugger(m_default_sink);
+    if (Gcs_debug_manager::initialize(m_default_debugger))
+/* purecov: begin inspected */
+      return GCS_NOK;
+/* purecov: end */
     MYSQL_GCS_LOG_INFO(
-      "No logging system was previously set. Using default logging system.");
+      "Debug messages will be sent to: " << m_default_sink->get_information();
+    );
+  }
+
+  if(Gcs_log_manager::get_logger() == NULL)
+  {
+/* purecov: begin tested */
+    m_default_logger= new Gcs_default_logger(m_default_sink);
+    if (Gcs_log_manager::initialize(m_default_logger))
+      return GCS_NOK;
+    MYSQL_GCS_LOG_INFO(
+      "Log messages will be sent to: " << m_default_sink->get_information();
+    );
 /* purecov: end */
   }
 
-  // Set the xcom logging callback
+  /*
+    Set the xcom logging callback.
+  */
   ::set_xcom_logger(cb_xcom_logger);
+  ::set_xcom_debugger(cb_xcom_debugger);
+  ::set_xcom_debugger_check(cb_xcom_debugger_check);
 
+  return GCS_OK;
+}
+
+
+enum_gcs_error Gcs_xcom_interface::finalize_logging()
+{
+  Gcs_log_manager::finalize();
+
+  if (m_default_logger != NULL)
+  {
+/* purecov: begin inspected */
+    m_default_logger->finalize();
+    delete m_default_logger;
+    m_default_logger= NULL;
+/* purecov: end */
+  }
+
+  Gcs_debug_manager::finalize();
+
+  if (m_default_debugger != NULL)
+  {
+    m_default_debugger->finalize();
+    delete m_default_debugger;
+    m_default_debugger= NULL;
+  }
+
+  if (m_default_sink != NULL)
+  {
+    m_default_sink->finalize();
+    delete m_default_sink;
+    m_default_sink= NULL;
+  }
+
+  return GCS_OK;
+}
+
+
+enum_gcs_error
+Gcs_xcom_interface::initialize(const Gcs_interface_parameters &interface_params)
+{
+  const std::string *ip_whitelist_str= NULL;
   Gcs_interface_parameters validated_params;
+
+  if (is_initialized())
+    return GCS_OK;
+
+  register_gcs_thread_psi_keys();
+  register_gcs_mutex_cond_psi_keys();
+
+  last_config_id.group_id= 0;
+
+  m_wait_for_ssl_init_mutex.init(
+    key_GCS_MUTEX_Gcs_xcom_interface_m_wait_for_ssl_init_mutex, NULL);
+  m_wait_for_ssl_init_cond.init(
+    key_GCS_COND_Gcs_xcom_interface_m_wait_for_ssl_init_cond);
+
+  /*
+    Initialize logging sub-systems.
+  */
+  if (initialize_logging(
+      interface_params.get_parameter("communication_debug_file"),
+      interface_params.get_parameter("communication_debug_path")))
+/* purecov: begin deadcode */
+    goto err;
+/* purecov: end */
+
+  /*
+    Copy the parameters to an internal structure.
+  */
   validated_params.add_parameters_from(interface_params);
 
   /*
@@ -170,8 +286,7 @@ Gcs_xcom_interface::initialize(const Gcs_interface_parameters &interface_params)
   Gcs_xcom_utils::init_net();
 
   // validate whitelist
-  const std::string *ip_whitelist_str=
-    validated_params.get_parameter("ip_whitelist");
+  ip_whitelist_str= validated_params.get_parameter("ip_whitelist");
 
   if (ip_whitelist_str && !m_ip_whitelist.is_valid(*ip_whitelist_str))
     goto err;
@@ -232,31 +347,24 @@ Gcs_xcom_interface::initialize(const Gcs_interface_parameters &interface_params)
   return GCS_OK;
 
 err:
-  // deinitialize network structures
+  /*
+    Deinitialize network structures
+  */
   m_gcs_xcom_app_cfg.deinit();
   Gcs_xcom_utils::deinit_net();
   delete m_socket_util;
   m_socket_util= NULL;
-
   /*
-   Clear logger here. This should be done in case of failure
-   on initialize
-   */
-  Gcs_logger::finalize();
-  if (m_default_logger != NULL)
-  {
-/* purecov: begin deadcode */
-    m_default_logger->finalize();
-    delete m_default_logger;
-    m_default_logger= NULL;
-/* purecov: end */
-  }
+   Clear logging here. This should be done in case of failure
+   on initialize.
+  */
+  finalize_logging();
 
   return GCS_NOK;
 }
 
-enum_gcs_error
-Gcs_xcom_interface::configure(const Gcs_interface_parameters &interface_params)
+
+enum_gcs_error Gcs_xcom_interface::configure(const Gcs_interface_parameters &interface_params)
 {
   bool reconfigured= false;
   enum_gcs_error error= GCS_OK;
@@ -382,14 +490,15 @@ Gcs_xcom_interface::configure(const Gcs_interface_parameters &interface_params)
 
   if(local_node_str != NULL)
   {
+/* purecov: begin tested */
     // Changing local_node
-    delete m_local_node_information;
-    m_local_node_information=
-      new Gcs_xcom_group_member_information(local_node_str->c_str());
-    xcom_local_port= m_local_node_information->get_member_port();
-    xcom_control->set_local_node_info(m_local_node_information);
+    delete m_node_address;
+    m_node_address= new Gcs_xcom_node_address(local_node_str->c_str());
+    xcom_local_port= m_node_address->get_member_port();
+    xcom_control->set_node_address(m_node_address);
 
     reconfigured |= true;
+/* purecov: end */
   }
 
   if (peer_nodes_str != NULL)
@@ -415,8 +524,11 @@ Gcs_xcom_interface::configure(const Gcs_interface_parameters &interface_params)
   }
 
   xcom_control->set_join_behavior(
-    static_cast<unsigned int>(atoi(join_attempts_str->c_str())), 
+    static_cast<unsigned int>(atoi(join_attempts_str->c_str())),
     static_cast<unsigned int>(atoi(join_sleep_time_str->c_str())));
+
+  // Set suspicion configuration parameters
+  configure_suspicions_mgr(validated_params, xcom_control->get_suspicions_manager());
 
 end:
   if (error == GCS_NOK || !reconfigured)
@@ -478,8 +590,8 @@ enum_gcs_error Gcs_xcom_interface::finalize()
   m_is_initialized= false;
 
   // Delete references...
-  delete m_local_node_information;
-  m_local_node_information= NULL;
+  delete m_node_address;
+  m_node_address= NULL;
 
   clean_group_references();
 
@@ -503,15 +615,7 @@ enum_gcs_error Gcs_xcom_interface::finalize()
   m_initialization_parameters.clear();
 
   // deinitialize logging
-  Gcs_logger::finalize();
-  if (m_default_logger != NULL)
-  {
-/* purecov: begin deadcode */
-    m_default_logger->finalize();
-    delete m_default_logger;
-    m_default_logger= NULL;
-/* purecov: end */
-  }
+  finalize_logging();
 
   m_wait_for_ssl_init_mutex.destroy();
   m_wait_for_ssl_init_cond.destroy();
@@ -585,7 +689,7 @@ get_group_interfaces(const Gcs_group_identifier &group_identifier)
       m_initialization_parameters.get_parameter("join_attempts");
     const std::string *join_sleep_time_str=
       m_initialization_parameters.get_parameter("join_sleep_time");
-  
+
     /*
       If the group interfaces do not exist, create and add them to
       the dictionary.
@@ -608,11 +712,16 @@ get_group_interfaces(const Gcs_group_identifier &group_identifier)
     Gcs_xcom_state_exchange_interface *se=
       new Gcs_xcom_state_exchange(group_interface->communication_interface);
 
-    Gcs_xcom_control *xcom_control= 
-      new Gcs_xcom_control(m_local_node_information,
+    Gcs_xcom_group_management *xcom_group_management=
+      new Gcs_xcom_group_management(xcom_proxy, group_identifier);
+    group_interface->management_interface= xcom_group_management;
+
+    Gcs_xcom_control *xcom_control=
+      new Gcs_xcom_control(m_node_address,
                            m_xcom_peers,
                            group_identifier,
                            xcom_proxy,
+                           xcom_group_management,
                            gcs_engine,
                            se,
                            vce,
@@ -621,12 +730,14 @@ get_group_interfaces(const Gcs_group_identifier &group_identifier)
     group_interface->control_interface= xcom_control;
 
     xcom_control->set_join_behavior(
-      static_cast<unsigned int>(atoi(join_attempts_str->c_str())), 
+      static_cast<unsigned int>(atoi(join_attempts_str->c_str())),
       static_cast<unsigned int>(atoi(join_sleep_time_str->c_str()))
     );
 
-    group_interface->management_interface=
-      new Gcs_xcom_group_management(xcom_proxy, vce, group_identifier);
+    // Set suspicion configuration parameters
+    configure_suspicions_mgr(m_initialization_parameters,
+      static_cast<Gcs_xcom_control*>(group_interface->control_interface)
+        ->get_suspicions_manager());
 
     // Store the created objects for later deletion
     group_interface->vce= vce;
@@ -643,9 +754,9 @@ get_group_interfaces(const Gcs_group_identifier &group_identifier)
 }
 
 
-enum_gcs_error Gcs_xcom_interface::set_logger(Ext_logger_interface *logger)
+enum_gcs_error Gcs_xcom_interface::set_logger(Logger_interface *logger)
 {
-  return Gcs_logger::initialize(logger);
+  return Gcs_log_manager::initialize(logger);
 }
 
 
@@ -701,7 +812,6 @@ void Gcs_xcom_interface::initialize_ssl()
 }
 
 
-
 bool Gcs_xcom_interface::
 initialize_xcom(const Gcs_interface_parameters &interface_params)
 {
@@ -743,22 +853,23 @@ initialize_xcom(const Gcs_interface_parameters &interface_params)
   initialize_peer_nodes(peers);
 
   MYSQL_GCS_LOG_DEBUG(
-    "Configured total number of peers: " << m_xcom_peers.size()
+    "Configured total number of peers: %llu",
+    static_cast<long long unsigned>(m_xcom_peers.size())
   )
 
-  m_local_node_information=
-    new Gcs_xcom_group_member_information(local_node_str->c_str());
-  xcom_local_port= m_local_node_information->get_member_port();
+  m_node_address=
+    new Gcs_xcom_node_address(local_node_str->c_str());
+  xcom_local_port= m_node_address->get_member_port();
 
   MYSQL_GCS_LOG_DEBUG(
-    "Configured Local member: " << *local_node_str
+    "Configured Local member: %s", local_node_str->c_str()
   )
 
   m_boot= bootstrap_group_str->compare("on") == 0 ||
           bootstrap_group_str->compare("true") == 0;
 
   MYSQL_GCS_LOG_DEBUG(
-    "Configured Bootstrap: " << bootstrap_group_str->c_str()
+    "Configured Bootstrap: %s", bootstrap_group_str->c_str()
   )
 
   // configure poll spin loops
@@ -778,6 +889,7 @@ initialize_xcom(const Gcs_interface_parameters &interface_params)
   ::set_xcom_global_view_receiver(cb_xcom_receive_global_view);
   ::set_port_matcher(cb_xcom_match_port);
   ::set_app_snap_handler(cb_xcom_handle_app_snap);
+  ::set_should_exit_getter(cb_xcom_get_should_exit);
   ::set_app_snap_getter(cb_xcom_get_app_snap);
   ::set_xcom_run_cb(cb_xcom_ready);
   ::set_xcom_comms_cb(cb_xcom_comms);
@@ -787,7 +899,7 @@ initialize_xcom(const Gcs_interface_parameters &interface_params)
   const std::string *wait_time_str=
     interface_params.get_parameter("wait_time");
 
-  MYSQL_GCS_LOG_DEBUG("Configured waiting time(s): " << wait_time_str->c_str())
+  MYSQL_GCS_LOG_DEBUG("Configured waiting time(s): %s", wait_time_str->c_str())
 
   int wait_time= atoi(wait_time_str->c_str());
   assert(wait_time > 0);
@@ -864,12 +976,13 @@ initialize_xcom(const Gcs_interface_parameters &interface_params)
   return false;
 
 error:
+/* purecov: begin deadcode */
   assert(xcom_proxy != NULL);
   assert(gcs_engine != NULL);
   xcom_proxy->xcom_set_ssl_mode(0); /* SSL_DISABLED */
 
-  delete m_local_node_information;
-  m_local_node_information= NULL;
+  delete m_node_address;
+  m_node_address= NULL;
 
   clear_peer_nodes();
 
@@ -893,11 +1006,11 @@ error:
   gcs_engine= NULL;
 
   return true;
+/* purecov: end */
 }
 
 void Gcs_xcom_interface::initialize_peer_nodes(const std::string *peer_nodes)
 {
-
   MYSQL_GCS_LOG_DEBUG("Initializing peers")
   std::vector<std::string> processed_peers, invalid_processed_peers;
   Gcs_xcom_utils::process_peer_nodes(peer_nodes,
@@ -911,18 +1024,18 @@ void Gcs_xcom_interface::initialize_peer_nodes(const std::string *peer_nodes)
       ++processed_peers_it)
   {
     m_xcom_peers.push_back
-                 (new Gcs_xcom_group_member_information(*processed_peers_it));
+                 (new Gcs_xcom_node_address(*processed_peers_it));
 
     MYSQL_GCS_LOG_TRACE(
-      "::initialize_peer_nodes():: Configured Peer "
-      << "Nodes: " << (*processed_peers_it).c_str()
+      "::initialize_peer_nodes():: Configured Peer Nodes: %s",
+      (*processed_peers_it).c_str()
     )
   }
 }
 
 void Gcs_xcom_interface::clear_peer_nodes()
 {
-  std::vector<Gcs_xcom_group_member_information *>::iterator it;
+  std::vector<Gcs_xcom_node_address *>::iterator it;
   for (it= m_xcom_peers.begin(); it != m_xcom_peers.end(); ++it)
     delete (*it);
 
@@ -938,8 +1051,8 @@ void Gcs_xcom_interface::set_xcom_group_information(const std::string &group_id)
 
   MYSQL_GCS_LOG_TRACE(
     "::set_xcom_group_information():: Configuring XCom "
-    << "group: XCom Group ID=" << xcom_group_id
-    << " Name=" << group_id
+    "group: XCom Group Id=%lu Name=%s", xcom_group_id,
+    group_id.c_str()
   )
 
   if ((old_s=get_xcom_group_information(xcom_group_id)) != NULL)
@@ -969,18 +1082,19 @@ Gcs_xcom_interface::get_xcom_group_information(const u_long xcom_group_id)
 
   MYSQL_GCS_LOG_TRACE(
     "::get_xcom_group_information():: Configuring XCom "
-    << "group: XCom Group ID=" << xcom_group_id
-    << " Name=" << (retval ? retval->get_group_id() : "NULL")
+    "group: XCom Group Id=%lu Name=%s",
+    xcom_group_id, (retval ? retval->get_group_id().c_str() : "NULL")
   )
 
   return retval;
 }
 
+
 /* purecov: begin deadcode */
-Gcs_xcom_group_member_information *
-Gcs_xcom_interface::get_xcom_local_information()
+Gcs_xcom_node_address *
+Gcs_xcom_interface::get_node_address()
 {
-  return m_local_node_information;
+  return m_node_address;
 }
 /* purecov: end*/
 
@@ -1023,8 +1137,9 @@ Gcs_xcom_interface::configure_msg_stages(const Gcs_interface_parameters& p,
 
     st_lz4->set_threshold(threshold);
     MYSQL_GCS_LOG_TRACE(
-      "::configure_msg_stages():: Set "
-      "compression threshold to " << threshold)
+      "::configure_msg_stages():: Set compression threshold to %llu",
+      threshold
+    )
 
     pipeline_setup.push_back(Gcs_message_stage::ST_LZ4);
   }
@@ -1034,6 +1149,30 @@ Gcs_xcom_interface::configure_msg_stages(const Gcs_interface_parameters& p,
   // build the pipeline for sending messages
   pipeline.configure_outgoing_pipeline(pipeline_setup);
 
+  return GCS_OK;
+}
+
+
+enum_gcs_error Gcs_xcom_interface::configure_suspicions_mgr(Gcs_interface_parameters &p,
+                                                            Gcs_suspicions_manager *mgr)
+{
+  const std::string *suspicions_timeout_ptr= p.get_parameter("suspicions_timeout");
+  if(suspicions_timeout_ptr != NULL) {
+    mgr->set_timeout_seconds(static_cast<unsigned long>(atoi(suspicions_timeout_ptr->c_str())));
+    MYSQL_GCS_LOG_TRACE(
+      "::configure_suspicions_mgr():: Set suspicions timeout to %s seconds",
+      suspicions_timeout_ptr->c_str()
+    )
+  }
+
+  const std::string *suspicions_processing_period_ptr= p.get_parameter("suspicions_processing_period");
+  if(suspicions_processing_period_ptr != NULL) {
+    mgr->set_period(static_cast<unsigned int>(atoi(suspicions_processing_period_ptr->c_str())));
+    MYSQL_GCS_LOG_TRACE(
+      "::configure_suspicions_mgr():: Set suspicions processing period to %s seconds",
+      suspicions_processing_period_ptr->c_str()
+    );
+  }
   return GCS_OK;
 }
 
@@ -1076,7 +1215,7 @@ void cb_xcom_receive_data(synode_no message_id, node_set nodes, u_int size,
   }
   else
   {
-    MYSQL_GCS_LOG_TRACE("Scheduled message notification: " << notification)
+    MYSQL_GCS_LOG_TRACE("Scheduled message notification: %p", notification)
   }
 }
 
@@ -1160,11 +1299,12 @@ void do_cb_xcom_receive_data(synode_no message_id, Gcs_xcom_nodes *xcom_nodes,
   }
 
   MYSQL_GCS_LOG_TRACE(
-    "::xcom_receive_data_internal():: xcom_receive_data "
-    << " My node_id is " << xcom_nodes->get_node_no()
-    << " message_id.group= " << message_id.group_id
-    << " message_id.msgno= " << message_id.msgno
-    << " message_id.node= "  << message_id.node
+    "xcom_receive_data_internal:: xcom_receive_data My node_id is %d "
+    "message_id.group= %u message_id.msgno= %llu message_id.node= %d",
+    xcom_nodes->get_node_no(),
+    message_id.group_id,
+    static_cast<long long unsigned>(message_id.msgno),
+    message_id.node
   )
 
   comm_if= intf->get_communication_session(*destination);
@@ -1194,7 +1334,7 @@ void do_cb_xcom_receive_data(synode_no message_id, Gcs_xcom_nodes *xcom_nodes,
     if (hd.get_cargo_type() == Gcs_internal_message_header::CT_INTERNAL_STATE_EXCHANGE)
     {
       MYSQL_GCS_LOG_TRACE(
-        "Reading message that carries exchangeable data: (header, payload)=" <<
+        "Reading message that carries exchangeable data: (header, payload)= %llu",
         p.get_payload_length()
       );
     }
@@ -1210,7 +1350,8 @@ void do_cb_xcom_receive_data(synode_no message_id, Gcs_xcom_nodes *xcom_nodes,
   }
   free(p.swap_buffer(NULL, 0));
 
-  Gcs_member_identifier origin(xcom_nodes->get_addresses()[message_id.node]);
+  const Gcs_xcom_node_information *node= xcom_nodes->get_node(message_id.node);
+  Gcs_member_identifier origin(node->get_member_id());
   Gcs_message *message= new Gcs_message(origin, *destination, message_data);
 
   /*
@@ -1264,7 +1405,7 @@ void cb_xcom_receive_global_view(synode_no config_id, synode_no message_id, node
   }
   else
   {
-    MYSQL_GCS_LOG_TRACE("Scheduled global view notification: " << notification)
+    MYSQL_GCS_LOG_TRACE("Scheduled global view notification: %p", notification)
   }
 }
 
@@ -1304,27 +1445,30 @@ void do_cb_xcom_receive_global_view(synode_no config_id, synode_no message_id,
 
   MYSQL_GCS_TRACE_EXECUTE(
     unsigned int node_no= xcom_nodes->get_node_no();
-    unsigned int size= xcom_nodes->get_size();
-    const std::vector<std::string> &addresses= xcom_nodes->get_addresses();
-    const std::vector<bool> &statuses= xcom_nodes->get_statuses();
-
-    MYSQL_GCS_LOG_TRACE("Received global view:"
-                        << " My node_id is " << node_no
-                        << " config_id.group= " << config_id.group_id
-                        << " config_id.msgno= " << config_id.msgno
-                        << " config_id.node= "  << config_id.node
-                        << " message_id.group= " << message_id.group_id
-                        << " message_id.msgno= " << message_id.msgno
-                        << " message_id.node= "  << message_id.node
+    const std::vector<Gcs_xcom_node_information> &nodes= xcom_nodes->get_nodes();
+    std::vector<Gcs_xcom_node_information>::const_iterator nodes_it;
+    MYSQL_GCS_LOG_TRACE(
+      "Received global view: My node_id is %d "
+      "config_id.group= %u config_id.msgno= %llu config_id.node=%d "
+      "message_id.group= %u message_id.msgno= %llu message_id.node= %d",
+      node_no,
+      config_id.group_id,
+      static_cast<long long unsigned>(config_id.msgno),
+      config_id.node,
+      message_id.group_id,
+      static_cast<long long unsigned>(message_id.msgno),
+      message_id.node
     )
 
     MYSQL_GCS_LOG_TRACE("Received global view: node set:")
-    for (unsigned int i= 0; i < size; i++)
+
+    for (nodes_it= nodes.begin(); nodes_it != nodes.end(); ++nodes_it)
     {
       MYSQL_GCS_LOG_TRACE(
-        "My node_id is " << node_no << " peer: " << i
-         << " address: " << addresses[i]
-         << " flag: " << (statuses[i] ? "Active": "Failed")
+        "My node_id is %d peer_ %d address: %s flag: %s",
+        node_no, (*nodes_it).get_node_no(),
+        (*nodes_it).get_member_id().get_member_id().c_str(),
+        ((*nodes_it).is_alive() ? "Active": "Failed")
       )
     }
   )
@@ -1354,7 +1498,7 @@ void do_cb_xcom_receive_global_view(synode_no config_id, synode_no message_id,
   else
   {
     MYSQL_GCS_LOG_TRACE(
-      "View rejected by handler. My node_id is " << message_id.node
+      "View rejected by handler. My node_id is %d", message_id.node
     )
   }
 
@@ -1394,7 +1538,7 @@ void cb_xcom_receive_local_view(synode_no message_id, node_set nodes)
   }
   else
   {
-    MYSQL_GCS_LOG_TRACE("Scheduled local view notification: " << notification)
+    MYSQL_GCS_LOG_TRACE("Scheduled local view notification: %p", notification)
   }
 }
 
@@ -1444,6 +1588,13 @@ synode_no cb_xcom_get_app_snap(blob *gcs_snap MY_ATTRIBUTE((unused)))
   return null_synode;
 }
 
+int cb_xcom_get_should_exit()
+{
+  if (xcom_proxy)
+    return (int)xcom_proxy->get_should_exit();
+  else
+    return 0;
+}
 
 void cb_xcom_ready(int status MY_ATTRIBUTE((unused)))
 {
@@ -1467,9 +1618,52 @@ void cb_xcom_exit(int status MY_ATTRIBUTE((unused)))
 }
 
 
-void cb_xcom_logger(int level, const char *message)
+/**
+  Callback function used by XCOM to write information, warning and error
+  messages in coordination with the GCS layer.
+*/
+
+void cb_xcom_logger(const int64_t level, const char *message)
 {
-  Gcs_logger::get_logger()->log_event((gcs_log_level_t) level, message);
+  std::stringstream log;
+
+  log << GCS_PREFIX << message;
+
+  Gcs_log_manager::get_logger()->log_event(
+    static_cast<gcs_log_level_t>(level),
+    log.str().c_str()
+  );
+}
+
+
+/**
+  Callback function used by XCOM to write debug messages in coordination with
+  the GCS layer.
+
+  The variadic signature allows XCOM to call this function without forcing
+  any preliminary processing on the message, meaning that the cost is minimal
+  and there is no need to use an intermediate buffer. The GCS layer will then
+  be responsible for writing the message content directly to the final buffer.
+*/
+
+void cb_xcom_debugger(const char * format, ...)
+{
+  va_list args;
+  va_start(args, format);
+  Gcs_default_debugger *debugger= Gcs_debug_manager::get_debugger();
+  debugger->log_event(format, args);
+  va_end(args);
+}
+
+
+/**
+  Callback function used by XCOM to check whether a debug module is enabled
+  or not.
+*/
+
+int cb_xcom_debugger_check(const int64_t options)
+{
+  return Gcs_debug_manager::test_debug_options(options);
 }
 
 

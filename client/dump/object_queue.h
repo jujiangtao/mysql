@@ -2,13 +2,20 @@
   Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
   along with this program; if not, write to the Free Software
@@ -19,18 +26,18 @@
 #define OBJECT_QUEUE_INCLUDED
 
 #include <sys/types.h>
+#include <atomic>
 #include <functional>
 #include <map>
 #include <queue>
 
-#include "abstract_dump_task.h"
-#include "abstract_object_reader_wrapper.h"
-#include "base/abstract_program.h"
-#include "base/atomic.h"
-#include "base/mutex.h"
-#include "i_object_reader.h"
+#include "client/base/abstract_program.h"
+#include "client/base/mutex.h"
+#include "client/dump/abstract_dump_task.h"
+#include "client/dump/abstract_object_reader_wrapper.h"
+#include "client/dump/i_object_reader.h"
+#include "client/dump/thread_group.h"
 #include "my_inttypes.h"
-#include "thread_group.h"
 
 namespace Mysql{
 namespace Tools{
@@ -98,7 +105,7 @@ private:
     Indicates if queue is running. If set to false, all pending and being
     processed tasks should complete, then queue is ready to close.
   */
-  my_boost::atomic_bool m_is_queue_running;
+  std::atomic<bool> m_is_queue_running;
   /*
     Callback called when created thread is starting or exiting. Call is done in
     execution context of created thread. Parameter value

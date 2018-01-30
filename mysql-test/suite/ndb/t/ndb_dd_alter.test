@@ -41,11 +41,6 @@
 
 -- source include/have_ndb.inc
 
---disable_warnings
-DROP TABLE IF EXISTS test.t1;
-DROP TABLE IF EXISTS test.t2;
---enable_warnings
-
 ############ Test Setup Section #############
 -- echo **** Test Setup Section ****
 ################## ALTER Tests (Meta data testing) ####################
@@ -143,11 +138,11 @@ SELECT * FROM test.t1 ORDER BY a1;
 # Create tablespace in Innodb with same name as in NDB
 # since the ALTER from NDB to Innodb will try to ALTER the table
 # into a tablespace with same name in InnoDB
-CREATE TABLESPACE ts ADD DATAFILE 'ts_innodb.ibd' ENGINE=Innodb;
+CREATE TABLESPACE ts_innodb ADD DATAFILE 'ts_innodb.ibd' ENGINE=Innodb;
 
 --error ER_ALTER_OPERATION_NOT_SUPPORTED
-ALTER TABLE test.t1 ALGORITHM=INPLACE, ENGINE=InnoDB;
-ALTER TABLE test.t1 ALGORITHM=COPY, ENGINE=InnoDB;
+ALTER TABLE test.t1 ALGORITHM=INPLACE, ENGINE=InnoDB TABLESPACE ts_innodb;
+ALTER TABLE test.t1 ALGORITHM=COPY, ENGINE=InnoDB TABLESPACE ts_innodb;
 --disable_warnings
 SHOW CREATE TABLE test.t1;
 --enable_warnings
@@ -267,9 +262,8 @@ call mtr.add_suppression("The table '#.*' is full");
 ALTER TABLE test.t1 TABLESPACE ts2 STORAGE DISK ENGINE NDB;
 
  ALTER TABLESPACE ts2
- DROP DATAFILE './table_space/datafile2.dat'
- ENGINE NDB;
- DROP TABLESPACE ts2 ENGINE NDB;
+ DROP DATAFILE './table_space/datafile2.dat';
+ DROP TABLESPACE ts2;
 
 #### Try to ALTER DD Tables and add Indexes
 
@@ -339,11 +333,6 @@ drop table t1;
 
 
  ALTER TABLESPACE ts
- DROP DATAFILE './table_space/datafile.dat'
- ENGINE NDB;
- DROP TABLESPACE ts ENGINE NDB;
+ DROP DATAFILE './table_space/datafile.dat';
+ DROP TABLESPACE ts;
  DROP LOGFILE GROUP lg ENGINE=NDB;
-
-####################### End section 4 #########################
-#End 5.1 test case
-

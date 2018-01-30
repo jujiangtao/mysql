@@ -2,13 +2,25 @@
    Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
+
+   Without limiting anything contained in the foregoing, this file,
+   which is part of C Driver for MySQL (Connector/C), is also subject to the
+   Universal FOSS Exception, version 1.0, a copy of which can be found at
+   http://oss.oracle.com/licenses/universal-foss-exception.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -26,29 +38,29 @@
 
 #include <assert.h>
 #include <fcntl.h>
-#include <m_ctype.h>
-#include <m_string.h>
-#include <my_dir.h>
-#include <my_getopt.h>
-#include <my_sys.h>
 #include <mysql_version.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/types.h>
 #include <new>
 
+#include "m_ctype.h"
+#include "m_string.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
+#include "my_dir.h"
+#include "my_getopt.h"
 #include "my_io.h"
+#include "my_sys.h"
 #include "mysql/service_mysql_alloc.h"
 #include "prealloced_array.h"
 #include "print_version.h"
 
 #define MAX_ERROR_NAME_LENGTH 64
-#define MAX_ROWS  2000
+#define MAX_ROWS  5000
 #define HEADER_LENGTH 32                /* Length of header in errmsg.sys */
 #define ERRMSG_VERSION 3                /* Version number of errmsg.sys */
-#define DEFAULT_CHARSET_DIR "../sql/share/charsets"
+#define DEFAULT_CHARSET_DIR "../share/charsets"
 #define ER_PREFIX "ER_"
 #define WARN_PREFIX "WARN_"
 #define OBSOLETE_ER_PREFIX "OBSOLETE_ER_"
@@ -56,8 +68,8 @@
 static char *OUTFILE= (char*) "errmsg.sys";
 static char *HEADERFILE= (char*) "mysqld_error.h";
 static char *NAMEFILE= (char*) "mysqld_ername.h";
-static char *TXTFILE= (char*) "../sql/share/errmsg-utf8.txt";
-static char *DATADIRECTORY= (char*) "../sql/share/";
+static char *TXTFILE= (char*) "../share/errmsg-utf8.txt";
+static char *DATADIRECTORY= (char*) "../share/";
 #ifndef DBUG_OFF
 static char *default_dbug_option= (char*) "d:t:O,/tmp/comp_err.trace";
 #endif

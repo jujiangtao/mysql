@@ -1,47 +1,56 @@
 /* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "dd/collection.h"
+#include "sql/dd/collection.h"
 
+#include <algorithm>
 #include <memory>     // std::unique_ptr
 
-#include "dd/impl/object_key.h"         // Needed for destructor
-#include "dd/impl/raw/raw_record.h"
-#include "dd/impl/raw/raw_record_set.h" // dd::Raw_record_set
-#include "dd/impl/raw/raw_table.h"      // dd::Raw_table
-#include "dd/impl/types/abstract_table_impl.h"  // IWYU pragma: keep
-#include "dd/impl/types/column_impl.h"  // IWYU pragma: keep
-#include "dd/impl/types/column_type_element_impl.h"  // IWYU pragma: keep
-#include "dd/impl/types/foreign_key_element_impl.h"  // IWYU pragma: keep
-#include "dd/impl/types/foreign_key_impl.h"  // IWYU pragma: keep
-#include "dd/impl/types/index_element_impl.h"  // IWYU pragma: keep
-#include "dd/impl/types/index_impl.h"  // IWYU pragma: keep
-#include "dd/impl/types/parameter_impl.h"  // IWYU pragma: keep
-#include "dd/impl/types/parameter_type_element_impl.h"  // IWYU pragma: keep
-#include "dd/impl/types/partition_impl.h"  // IWYU pragma: keep
-#include "dd/impl/types/partition_index_impl.h"  // IWYU pragma: keep
-#include "dd/impl/types/partition_value_impl.h"  // IWYU pragma: keep
-#include "dd/impl/types/routine_impl.h"  // IWYU pragma: keep
-#include "dd/impl/types/table_impl.h"  // IWYU pragma: keep
-#include "dd/impl/types/tablespace_file_impl.h"  // IWYU pragma: keep
-#include "dd/impl/types/tablespace_impl.h"  // IWYU pragma: keep
-#include "dd/impl/types/trigger_impl.h"  // IWYU pragma: keep
-#include "dd/impl/types/view_impl.h"  // IWYU pragma: keep
-#include "dd/impl/types/view_routine_impl.h"  // IWYU pragma: keep
-#include "dd/impl/types/view_table_impl.h"  // IWYU pragma: keep
 #include "my_dbug.h"
+#include "sql/dd/impl/object_key.h"     // Needed for destructor
+#include "sql/dd/impl/raw/raw_record.h"
+#include "sql/dd/impl/raw/raw_record_set.h" // dd::Raw_record_set
+#include "sql/dd/impl/raw/raw_table.h"  // dd::Raw_table
+#include "sql/dd/impl/types/abstract_table_impl.h" // IWYU pragma: keep
+#include "sql/dd/impl/types/column_impl.h" // IWYU pragma: keep
+#include "sql/dd/impl/types/column_type_element_impl.h" // IWYU pragma: keep
+#include "sql/dd/impl/types/foreign_key_element_impl.h" // IWYU pragma: keep
+#include "sql/dd/impl/types/foreign_key_impl.h" // IWYU pragma: keep
+#include "sql/dd/impl/types/index_element_impl.h" // IWYU pragma: keep
+#include "sql/dd/impl/types/index_impl.h" // IWYU pragma: keep
+#include "sql/dd/impl/types/parameter_impl.h" // IWYU pragma: keep
+#include "sql/dd/impl/types/parameter_type_element_impl.h" // IWYU pragma: keep
+#include "sql/dd/impl/types/partition_impl.h" // IWYU pragma: keep
+#include "sql/dd/impl/types/partition_index_impl.h" // IWYU pragma: keep
+#include "sql/dd/impl/types/partition_value_impl.h" // IWYU pragma: keep
+#include "sql/dd/impl/types/routine_impl.h" // IWYU pragma: keep
+#include "sql/dd/impl/types/table_impl.h" // IWYU pragma: keep
+#include "sql/dd/impl/types/tablespace_file_impl.h" // IWYU pragma: keep
+#include "sql/dd/impl/types/tablespace_impl.h" // IWYU pragma: keep
+#include "sql/dd/impl/types/trigger_impl.h" // IWYU pragma: keep
+#include "sql/dd/impl/types/view_impl.h" // IWYU pragma: keep
+#include "sql/dd/impl/types/view_routine_impl.h" // IWYU pragma: keep
+#include "sql/dd/impl/types/view_table_impl.h" // IWYU pragma: keep
+#include "template_utils.h"
 
 namespace dd {
 
@@ -146,14 +155,41 @@ bool Collection<T>::restore_items(
     m_items.push_back(item);
 
     if (item->restore_attributes(*r) ||
-        item->restore_children(otx) ||
-        item->validate() ||
         rs->next(r))
     {
       clear_all_items();
       DBUG_RETURN(true);
     }
 
+  }
+
+  /*
+    It is necessary to complete the table scan above reading the
+    parent DD object first before reading child DD object. If
+    both the parent and DD child objects are stored in single DD
+    table (E.g., we stored parent and sub partitions both in
+    single mysql.partitions DD table.), we cannot keep two
+    table scans context using single table handler. We might need
+    two handler instances to achieve the same.
+
+    Support multiple table handler for same DD table is not quite
+    easy when we look at the current DD framework design.
+
+    The other solution is to complete the scan for parent DD
+    object entries first and then read child DD object entries.
+    This seem to serve the purpose. There seem to be no side
+    effect of we splitting this loop into two.
+  */
+  rs.reset();
+
+  for (auto item : m_items)
+  {
+    if(item->restore_children(otx) ||
+       item->validate())
+    {
+      clear_all_items();
+      DBUG_RETURN(true);
+    }
   }
 
   // The record fetched from DB may not be ordered based on ordinal position,
@@ -191,7 +227,7 @@ bool Collection<T>::store_items(Open_dictionary_tables_ctx *otx)
 
   // Drop items from m_removed_items.
 
-  for (Weak_object_impl *removed : m_removed_items)
+  for (auto *removed : m_removed_items)
   {
     if (removed->validate() || removed->drop(otx))
       DBUG_RETURN(true);
@@ -288,6 +324,8 @@ template Column_type_element*&
 Collection<Column_type_element*>::Collection_iterator::operator*();
 template Foreign_key*&
 Collection<Foreign_key*>::Collection_iterator::operator*();
+template Foreign_key_element*&
+Collection<Foreign_key_element*>::Collection_iterator::operator*();
 template Index*&
 Collection<Index*>::Collection_iterator::operator*();
 template Index_element*&
@@ -346,6 +384,11 @@ template bool Collection<Foreign_key*>::
 restore_items<Table_impl>(Table_impl*,
                           Open_dictionary_tables_ctx*,
                           Raw_table*, Object_key*);
+template bool Collection<Foreign_key*>::
+restore_items<Table_impl, Foreign_key_order_comparator>(Table_impl*,
+                          Open_dictionary_tables_ctx*,
+                          Raw_table*, Object_key*,
+                          Foreign_key_order_comparator);
 template bool Collection<Foreign_key_element*>::
 restore_items<Foreign_key_impl>(Foreign_key_impl*,
                                 Open_dictionary_tables_ctx*,
@@ -375,14 +418,29 @@ restore_items<Table_impl, Partition_order_comparator>(Table_impl*,
                           Open_dictionary_tables_ctx*,
                           Raw_table*, Object_key*,
                           Partition_order_comparator);
-template bool Collection<Partition_index*>::
+template bool Collection<Partition*>::
 restore_items<Partition_impl>(Partition_impl*,
+                          Open_dictionary_tables_ctx*,
+                          Raw_table*, Object_key*);
+template bool Collection<Partition*>::
+restore_items<Partition_impl, Partition_order_comparator>(Partition_impl*,
+                          Open_dictionary_tables_ctx*,
+                          Raw_table*, Object_key*,
+                          Partition_order_comparator);
+template bool Collection<Partition_index*>::
+restore_items<Partition_impl, Partition_index_order_comparator>(Partition_impl*,
                               Open_dictionary_tables_ctx*,
-                              Raw_table*, Object_key*);
+                              Raw_table*, Object_key*,
+                              Partition_index_order_comparator);
 template bool Collection<Partition_value*>::
 restore_items<Partition_impl>(Partition_impl*,
                               Open_dictionary_tables_ctx*,
                               Raw_table*, Object_key*);
+template bool Collection<Partition_value*>::
+restore_items<Partition_impl, Partition_value_order_comparator>(Partition_impl*,
+                              Open_dictionary_tables_ctx*,
+                              Raw_table*, Object_key*,
+                              Partition_value_order_comparator);
 template bool Collection<Tablespace_file*>::
 restore_items<Tablespace_impl>(Tablespace_impl*,
                                Open_dictionary_tables_ctx*,
@@ -399,6 +457,11 @@ template bool Collection<Trigger*>::
 restore_items<Table_impl>(Table_impl*,
                           Open_dictionary_tables_ctx*,
                           Raw_table*, Object_key*);
+template bool Collection<Trigger*>::
+restore_items<Table_impl, Trigger_order_comparator>(Table_impl*,
+                          Open_dictionary_tables_ctx*,
+                          Raw_table*, Object_key*,
+                          Trigger_order_comparator);
 
 template bool Collection<Column*>::
 store_items(Open_dictionary_tables_ctx*);
@@ -519,6 +582,10 @@ template const Collection<Index*>::abstract_type*
 Collection<Index*>::at(size_t n) const;
 template const Collection<Index_element*>::abstract_type*
 Collection<Index_element*>::at(size_t n) const;
+template const Collection<Partition*>::abstract_type*
+Collection<Partition*>::at(size_t n) const;
+template const Collection<Partition_index*>::abstract_type*
+Collection<Partition_index*>::at(size_t n) const;
 
 template void Collection<Column*>::
 deep_copy<Abstract_table_impl>(Collection<Column*> const&, Abstract_table_impl*);
@@ -538,6 +605,8 @@ template void Collection<Parameter_type_element*>::
 deep_copy<Parameter_impl>(Collection<Parameter_type_element*> const&, Parameter_impl*);
 template void Collection<Partition*>::
 deep_copy<Table_impl>(Collection<Partition*> const&, Table_impl*);
+template void Collection<Partition*>::
+deep_copy<Partition_impl>(Collection<Partition*> const&, Partition_impl*);
 template void Collection<Partition_index*>::
 deep_copy<Partition_impl>(Collection<Partition_index*> const&, Partition_impl*);
 template void Collection<Partition_value*>::

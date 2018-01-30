@@ -1,13 +1,20 @@
 /* Copyright (c) 2002, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -18,25 +25,33 @@
 
 #include <stddef.h>
 #include <sys/types.h>
+#include <string>
 
 #include "binary_log_types.h"
-#include "hash.h"
-#include "item.h"            // Item::Type
 #include "lex_string.h"
-#include "mdl.h"             // MDL_request
+#include "map_helpers.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "mysql/psi/mysql_statement.h"
+#include "mysql/udf_registration_types.h"
 #include "mysql_com.h"
-#include "sp_head.h"         // Stored_program_creation_ctx
-#include "sql_admin.h"
-#include "sql_alloc.h"
-#include "sql_class.h"
-#include "sql_lex.h"
-#include "sql_plugin.h"
-#include "sql_servers.h"
+#include "sql/handler.h"
+#include "sql/item.h"        // Item::Type
+#include "sql/item_create.h"
+#include "sql/key.h"
+#include "sql/mdl.h"         // MDL_request
+#include "sql/session_tracker.h"
+#include "sql/sp_head.h"     // Stored_program_creation_ctx
+#include "sql/sql_admin.h"
+#include "sql/sql_alloc.h"
+#include "sql/sql_connect.h"
+#include "sql/sql_lex.h"
+#include "sql/sql_servers.h"
+#include "sql/thr_malloc.h"
 
 class Object_creation_ctx;
+class Query_arena;
+class THD;
 
 namespace dd {
   class Routine;
@@ -86,9 +101,6 @@ enum enum_sp_return_code
 
   // Drop routine failed
   SP_DROP_FAILED,
-
-  // Alter routine failed
-  SP_ALTER_FAILED,
 
   // Routine load failed
   SP_LOAD_FAILED,
@@ -162,7 +174,7 @@ protected:
   virtual Object_creation_ctx *create_backup_ctx(THD *thd) const
   {
     DBUG_ENTER("Stored_routine_creation_ctx::create_backup_ctx");
-    DBUG_RETURN(new Stored_routine_creation_ctx(thd));
+    DBUG_RETURN(new (*THR_MALLOC) Stored_routine_creation_ctx(thd));
   }
 
 private:
@@ -221,8 +233,8 @@ db_load_routine(THD *thd, enum_sp_type type, const char *sp_db,
 
 bool sp_create_routine(THD *thd, sp_head *sp, const LEX_USER *definer);
 
-enum_sp_return_code sp_update_routine(THD *thd, enum_sp_type type,
-                                      sp_name *name, st_sp_chistics *chistics);
+bool sp_update_routine(THD *thd, enum_sp_type type, sp_name *name,
+                       st_sp_chistics *chistics);
 
 enum_sp_return_code sp_drop_routine(THD *thd, enum_sp_type type, sp_name *name);
 
@@ -236,10 +248,79 @@ class Sroutine_hash_entry
 {
 public:
   /**
-    Metadata lock request for routine.
-    MDL_key in this request is also used as a key for set.
+    Key identifiying routine or other object added to the set.
+
+    Key format: "@<1-byte entry type@>@<db name@>\0@<routine/object name@>\0".
+
+    @note We use binary comparison for these keys as the @<db name@> component
+          requires case-sensitive comparison on --lower-case-table-names=0
+          systems. On systems where --lower-case-table-names > 0 database
+          names which passed to functions working with this set are already
+          lowercased. So binary comparison is equivalent to case-insensitive
+          comparison for them.
+          To achieve case-insensitive comparison for routine names we need
+          to always lowercase routine names when constructing these keys.
+          TODO: Routine names are also compared in accent-insensitive fashion
+          at this point. This needs to be handled somehow.
+
+    @note The '@<db name@>\0@<object name@>\0' part of the key is compatible
+          with keys used by MDL. So one can easily construct MDL_key from
+          this key.
   */
-  MDL_request mdl_request;
+  char *m_key;
+  uint16 m_key_length;
+  uint16 m_db_length;
+
+  enum entry_type
+  {
+    FUNCTION,
+    PROCEDURE,
+    TRIGGER,
+    /**
+      Parent table in a foreign key on which child table there was insert
+      or update. We will lookup new values in parent, so need to acquire
+      SR lock on it.
+    */
+    FK_TABLE_ROLE_PARENT_CHECK,
+    /**
+      Child table in a foreign key with RESTRICT/NO ACTION as corresponding
+      rule and on which parent table there was delete or update.
+      We will check if old parent key is referenced by child table,
+      so need to acquire SR lock on it.
+    */
+    FK_TABLE_ROLE_CHILD_CHECK,
+    /**
+      Child table in a foreign key with CASCADE/SET NULL/SET DEFAULT as
+      'on update' rule, on which parent there was update, or with SET NULL/
+      SET DEFAULT as 'on delete' rule, on which parent there was delete.
+      We might need to update rows in child table, so we need to acquire
+      SW lock on it. We also need to take into account that child table
+      might be parent for some other FKs, so such update needs
+      to be handled recursively.
+    */
+    FK_TABLE_ROLE_CHILD_UPDATE,
+    /**
+      Child table in a foreign key with CASCADE as 'on delete' rule for
+      which there was delete from the parent table.
+      We might need to delete rows from the child table, so we need to
+      acquire SW lock on it.
+      We also need to take into account that child table might be parent
+      for some other FKs, so such delete needs to be handled recursively
+      (and even might result in updates).
+    */
+    FK_TABLE_ROLE_CHILD_DELETE
+  };
+
+  entry_type type() const { return (entry_type)m_key[0]; }
+  const char *db() const { return (char*)m_key + 1; }
+  size_t db_length() const { return m_db_length; }
+  const char *name() const { return (char*)m_key + 1 + m_db_length + 1; }
+  size_t name_length() const
+  { return m_key_length - 1U - m_db_length - 1U - 1U; }
+
+  const char *part_mdl_key() { return (char*)m_key + 1; }
+  size_t part_mdl_key_length() { return m_key_length - 1U; }
+
   /**
     Next element in list linking all routines in set. See also comments
     for LEX::sroutine/sroutine_list and sp_head::m_sroutines.
@@ -255,25 +336,49 @@ public:
     This is for prepared statement validation purposes.
     A statement looks up and pre-loads all its stored functions
     at prepare. Later on, if a function is gone from the cache,
-    execute may fail.
-    Remember the version of sp_head at prepare to be able to
+    execute may fail. Similarly, tables involved in referential
+    constraints are also prelocked.
+    Remember the version of the cached item at prepare to be able to
     invalidate the prepared statement at execute if it
     changes.
   */
-  int64 m_sp_cache_version;
+  int64 m_cache_version;
 };
 
 
 /*
   Procedures for handling sets of stored routines used by statement or routine.
 */
-void sp_add_used_routine(Query_tables_list *prelocking_ctx, Query_arena *arena,
-                         sp_name *rt, enum_sp_type rt_type);
 bool sp_add_used_routine(Query_tables_list *prelocking_ctx, Query_arena *arena,
-                         const MDL_key *key, TABLE_LIST *belong_to_view);
+                         Sroutine_hash_entry::entry_type type,
+                         const char *db, size_t db_length,
+                         const char *name, size_t name_length,
+                         bool lowercase_db, bool lowercase_name,
+                         bool own_routine, TABLE_LIST *belong_to_view);
+
+/**
+  Convenience wrapper around sp_add_used_routine() for most common case -
+  stored procedure or function which are explicitly used by the statement.
+*/
+
+inline bool
+sp_add_own_used_routine(Query_tables_list *prelocking_ctx, Query_arena *arena,
+                        Sroutine_hash_entry::entry_type type, sp_name *sp_name)
+{
+  DBUG_ASSERT(type == Sroutine_hash_entry::FUNCTION ||
+              type == Sroutine_hash_entry::PROCEDURE);
+
+  return sp_add_used_routine(prelocking_ctx, arena, type,
+                             sp_name->m_db.str, sp_name->m_db.length,
+                             sp_name->m_name.str, sp_name->m_name.length,
+                             false, true, true, nullptr);
+}
+
 void sp_remove_not_own_routines(Query_tables_list *prelocking_ctx);
-void sp_update_stmt_used_routines(THD *thd, Query_tables_list *prelocking_ctx,
-                                  HASH *src, TABLE_LIST *belong_to_view);
+void sp_update_stmt_used_routines
+  (THD *thd, Query_tables_list *prelocking_ctx,
+   malloc_unordered_map<std::string, Sroutine_hash_entry*> *src,
+   TABLE_LIST *belong_to_view);
 void sp_update_stmt_used_routines(THD *thd, Query_tables_list *prelocking_ctx,
                                   SQL_I_List<Sroutine_hash_entry> *src,
                                   TABLE_LIST *belong_to_view);

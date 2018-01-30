@@ -3,16 +3,24 @@
 Copyright (c) 2012, 2017, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+the terms of the GNU General Public License, version 2.0, as published by the
+Free Software Foundation.
+
+This program is also distributed with certain software (including but not
+limited to OpenSSL) that is licensed under separate terms, as designated in a
+particular file or component or in included license documentation. The authors
+of MySQL hereby grant you an additional permission to link the program and
+your derivative works with the separately licensed software that they have
+included with MySQL.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+FOR A PARTICULAR PURPOSE. See the GNU General Public License, version 2.0,
+for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 *****************************************************************************/
 
@@ -199,7 +207,7 @@ row_quiesce_write_indexes(
 	bool		has_sdi = FSP_FLAGS_HAS_SDI(flags);
 
 	if (has_sdi) {
-		num_indexes += MAX_SDI_COPIES;
+		num_indexes += 1;
 	}
 
 	num_indexes += static_cast<uint32_t>(UT_LIST_GET_LEN(table->indexes));
@@ -221,21 +229,17 @@ row_quiesce_write_indexes(
 
 	dberr_t	err = DB_SUCCESS;
 
-	/* Write SDI Indexes */
+	/* Write SDI Index */
 	if (has_sdi) {
-		for (uint32_t copy_num = 0; copy_num < MAX_SDI_COPIES;
-			++copy_num) {
 
-			dict_mutex_enter_for_mysql();
+		dict_mutex_enter_for_mysql();
 
-			dict_index_t*	index = dict_sdi_get_index(
-				table->space, copy_num);
+		dict_index_t*	index = dict_sdi_get_index(table->space);
 
-			dict_mutex_exit_for_mysql();
+		dict_mutex_exit_for_mysql();
 
-			ut_ad(index != NULL);
-			err = row_quiesce_write_one_index(index, file, thd);
-		}
+		ut_ad(index != NULL);
+		err = row_quiesce_write_one_index(index, file, thd);
 	}
 
 	/* Write the table indexes meta data. */
@@ -487,7 +491,7 @@ row_quiesce_write_cfg(
 	dberr_t			err;
 	char			name[OS_FILE_MAX_PATH];
 
-	srv_get_meta_data_filename(table, name, sizeof(name));
+	dd_get_meta_data_filename(table, NULL, name, sizeof(name));
 
 	ib::info() << "Writing table metadata to '" << name << "'";
 
@@ -670,6 +674,8 @@ row_quiesce_write_cfp(
 	this information will be lost in fil_discard_tablespace along
 	with fil_space_free(). */
 	if (table->encryption_key == NULL) {
+		lint old_size = mem_heap_get_size(table->heap);
+
 		table->encryption_key =
 			static_cast<byte*>(mem_heap_alloc(table->heap,
 							  ENCRYPTION_KEY_LEN));
@@ -677,6 +683,9 @@ row_quiesce_write_cfp(
 		table->encryption_iv =
 			static_cast<byte*>(mem_heap_alloc(table->heap,
 							  ENCRYPTION_KEY_LEN));
+
+		lint	new_size = mem_heap_get_size(table->heap);
+		dict_sys->size += new_size - old_size;
 
 		fil_space_t*	space = fil_space_get(table->space);
 		ut_ad(space != NULL && FSP_FLAGS_GET_ENCRYPTION(space->flags));
@@ -871,7 +880,7 @@ row_quiesce_table_complete(
 	the user tries to drop the database (remove directory). */
 	char		cfg_name[OS_FILE_MAX_PATH];
 
-	srv_get_meta_data_filename(table, cfg_name, sizeof(cfg_name));
+	dd_get_meta_data_filename(table, NULL, cfg_name, sizeof(cfg_name));
 
 	os_file_delete_if_exists(innodb_data_file_key, cfg_name, NULL);
 

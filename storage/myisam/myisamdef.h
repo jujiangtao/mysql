@@ -2,13 +2,20 @@
    Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -190,7 +197,6 @@ typedef struct st_mi_isam_share {	/* Shared between opens */
 			const uchar *record, my_off_t pos);
   size_t (*file_read)(MI_INFO *, uchar *, size_t, my_off_t, myf);
   size_t (*file_write)(MI_INFO *, const uchar *, size_t, my_off_t, myf);
-  invalidator_by_filename invalidator;  /* query cache invalidator */
   ulong this_process;			/* processid */
   ulong last_process;			/* For table-change-check */
   ulong last_version;			/* Version on start */
@@ -265,7 +271,6 @@ struct st_myisam_info {
   uint  int_nod_flag;			/*  -""-  */
   uint32 int_keytree_version;		/*  -""-  */
   int (*read_record)(struct st_myisam_info*, my_off_t, uchar*);
-  invalidator_by_filename invalidator;  /* query cache invalidator */
   ulong this_unique;			/* uniq filenumber or thread */
   ulong last_unique;			/* last unique number */
   ulong this_loop;			/* counter for this open */
@@ -479,6 +484,10 @@ typedef struct st_mi_sort_param
 
 extern mysql_mutex_t THR_LOCK_myisam;
 
+#ifdef	__cplusplus
+extern "C" {
+#endif
+
 	/* Some extern variables */
 
 extern LIST *myisam_open_list;
@@ -638,6 +647,10 @@ extern ulonglong mi_safe_mul(ulonglong a,ulonglong b);
 extern int _mi_ft_update(MI_INFO *info, uint keynr, uchar *keybuf,
 			 const uchar *oldrec, const uchar *newrec, my_off_t pos);
 
+#ifdef __cplusplus
+}
+#endif
+
 struct st_sort_info;
 
 
@@ -795,8 +808,8 @@ int _create_index_by_sort(MI_SORT_PARAM *info, bool no_messages, ulonglong);
 extern void mi_set_index_cond_func(MI_INFO *info, index_cond_func_t func,
                                    void *func_arg);
 
-extern thread_local_key_t keycache_tls_key;
 #ifdef __cplusplus
+extern thread_local st_keycache_thread_var *keycache_tls;
 }
 #endif
 

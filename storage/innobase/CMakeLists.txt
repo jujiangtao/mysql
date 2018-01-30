@@ -1,22 +1,35 @@
-# Copyright (c) 2006, 2016, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2006, 2017, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; version 2 of the License.
+# it under the terms of the GNU General Public License, version 2.0,
+# as published by the Free Software Foundation.
+#
+# This program is also distributed with certain software (including
+# but not limited to OpenSSL) that is licensed under separate terms,
+# as designated in a particular file or component or in included license
+# documentation.  The authors of MySQL hereby grant you an additional
+# permission to link the program and your derivative works with the
+# separately licensed software that they have included with MySQL.
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU General Public License, version 2.0, for more details.
 #
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
-# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 # This is the CMakeLists for InnoDB
 
 INCLUDE(innodb.cmake)
 INCLUDE(${MYSQL_CMAKE_SCRIPT_DIR}/compile_flags.cmake)
+
+# TODO: Fix up all non-canonical include paths and remove this.
+INCLUDE_DIRECTORIES(
+  ${CMAKE_SOURCE_DIR}/sql
+  ${CMAKE_SOURCE_DIR}/sql/auth
+)
 
 SET(INNOBASE_ZIP_DECOMPRESS_SOURCES
 	buf/buf.cc
@@ -34,6 +47,9 @@ SET(INNOBASE_ZIP_DECOMPRESS_SOURCES
 SET(INNOBASE_SOURCES
 	api/api0api.cc
 	api/api0misc.cc
+	arch/arch0arch.cc
+	arch/arch0page.cc
+	arch/arch0log.cc
 	btr/btr0btr.cc
 	btr/btr0cur.cc
 	btr/btr0pcur.cc
@@ -46,15 +62,24 @@ SET(INNOBASE_SOURCES
 	buf/buf0flu.cc
 	buf/buf0lru.cc
 	buf/buf0rea.cc
+	clone/clone0api.cc
+	clone/clone0clone.cc
+	clone/clone0copy.cc
+	clone/clone0apply.cc
+	clone/clone0desc.cc
+	clone/clone0snapshot.cc
 	data/data0data.cc
 	data/data0type.cc
 	dict/dict0boot.cc
 	dict/dict0crea.cc
 	dict/dict0dict.cc
+	dict/dict0dd.cc
 	dict/dict0load.cc
 	dict/dict0mem.cc
+	dict/dict0sdi.cc
 	dict/dict0stats.cc
 	dict/dict0stats_bg.cc
+	dict/dict0upgrade.cc
 	eval/eval0eval.cc
 	eval/eval0proc.cc
 	fil/fil0fil.cc
@@ -85,14 +110,28 @@ SET(INNOBASE_SOURCES
 	handler/i_s.cc
 	handler/p_s.cc
 	ibuf/ibuf0ibuf.cc
-	lob/lob0fit.cc
+        lob/lob0first.cc
+        lob/lob0index.cc
+        lob/lob0ins.cc
+        lob/lob0pages.cc
+        lob/lob0purge.cc
+        lob/lob0update.cc
+        lob/lob0impl.cc
 	lob/lob0lob.cc
+	lob/lob0del.cc
+	lob/lob0util.cc
+        lob/zlob0index.cc
+        lob/zlob0ins.cc
+        lob/zlob0update.cc
+        lob/zlob0first.cc
+        lob/zlob0read.cc
 	lock/lock0iter.cc
 	lock/lock0prdt.cc
 	lock/lock0lock.cc
 	lock/lock0wait.cc
 	log/log0log.cc
 	log/log0recv.cc
+	log/log0ddl.cc
 	mach/mach0data.cc
 	mtr/mtr0log.cc
 	mtr/mtr0mtr.cc

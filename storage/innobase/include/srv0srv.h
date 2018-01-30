@@ -18,16 +18,24 @@ their permission, and subject to the conditions contained in the file
 COPYING.Percona.
 
 This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+the terms of the GNU General Public License, version 2.0, as published by the
+Free Software Foundation.
+
+This program is also distributed with certain software (including but not
+limited to OpenSSL) that is licensed under separate terms, as designated in a
+particular file or component or in included license documentation. The authors
+of MySQL hereby grant you an additional permission to link the program and
+your derivative works with the separately licensed software that they have
+included with MySQL.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+FOR A PARTICULAR PURPOSE. See the GNU General Public License, version 2.0,
+for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 *****************************************************************************/
 
@@ -44,15 +52,16 @@ Created 10/10/1995 Heikki Tuuri
 
 #include "mysql/psi/mysql_stage.h"
 #include "univ.i"
-#ifndef UNIV_HOTBACKUP
 #include "buf0checksum.h"
 #include "fil0fil.h"
 #include "log0log.h"
-#include "os0event.h"
-#include "que0types.h"
-#include "srv0conc.h"
-#include "trx0types.h"
-#include "ut0counter.h"
+#ifndef UNIV_HOTBACKUP
+# include "log0ddl.h"
+# include "os0event.h"
+# include "que0types.h"
+# include "srv0conc.h"
+# include "trx0types.h"
+# include "ut0counter.h"
 
 /* Global counters used inside InnoDB. */
 struct srv_stats_t {
@@ -132,6 +141,14 @@ struct srv_stats_t {
 	ulint_ctr_64_t		n_rows_inserted;
 };
 
+extern Log_DDL*		log_ddl;
+
+#ifdef INNODB_DD_TABLE
+extern bool	srv_is_upgrade_mode;
+extern bool	srv_downgrade_logs;
+extern bool	srv_upgrade_old_undo_found;
+#endif /* INNODB_DD_TABLE */
+
 extern const char*	srv_main_thread_op_info;
 
 /* The monitor thread waits on this event. */
@@ -145,6 +162,7 @@ extern os_event_t	srv_buf_dump_event;
 
 /** The buffer pool resize thread waits on this event. */
 extern os_event_t	srv_buf_resize_event;
+#endif /* !UNIV_HOTBACKUP */
 
 /** The buffer pool dump/load file name */
 #define SRV_BUF_DUMP_FILENAME_DEFAULT	"ib_buffer_pool"
@@ -162,6 +180,7 @@ extern bool		srv_disable_sort_file_cache;
 at a time */
 #define SRV_AUTO_EXTEND_INCREMENT (srv_sys_space.get_autoextend_increment())
 
+#ifndef UNIV_HOTBACKUP
 /** Mutex protecting page_zip_stat_per_index */
 extern ib_mutex_t	page_zip_stat_per_index_mutex;
 /* Mutex for locking srv_monitor_file. Not created if srv_read_only_mode */
@@ -180,6 +199,7 @@ acquire any further latches or sleep before releasing this one. */
 extern ib_mutex_t	srv_misc_tmpfile_mutex;
 /* Temporary file for miscellanous diagnostic output */
 extern FILE*	srv_misc_tmpfile;
+#endif /* !UNIV_HOTBACKUP */
 
 /* Server parameters which are read from the initfile */
 
@@ -202,6 +222,7 @@ extern	ulong	srv_adaptive_max_sleep_delay;
 
 /** Sort buffer size in index creation */
 extern ulong	srv_sort_buf_size;
+
 /** Maximum modification log file size for online index creation */
 extern unsigned long long	srv_online_max_size;
 
@@ -211,7 +232,6 @@ use simulated aio we build below with threads.
 Currently we support native aio on windows and linux */
 extern bool	srv_use_native_aio;
 extern bool	srv_numa_interleave;
-#endif /* !UNIV_HOTBACKUP */
 
 /** Server undo tablespaces directory, can be absolute path. */
 extern char*	srv_undo_dir;
@@ -219,14 +239,8 @@ extern char*	srv_undo_dir;
 /** Number of undo tablespaces to use. */
 extern ulong	srv_undo_tablespaces;
 
-/** The number of rollback segments to use for durable,
-redo-logged, non-temporary transactions. */
+/** The number of rollback segments per tablespace */
 extern ulong	srv_rollback_segments;
-
-/** The number of rollback segments to use for non-durable,
-non-redo-logged, temporary transactions. These logs reside in
-the temp tablespace. */
-extern ulong	srv_tmp_rollback_segments;
 
 /** Maximum size of undo tablespace. */
 extern unsigned long long	srv_max_undo_tablespace_size;
@@ -245,10 +259,13 @@ extern const page_no_t	SRV_UNDO_TABLESPACE_SIZE_IN_PAGES;
 
 extern char*	srv_log_group_home_dir;
 
+#ifdef UNIV_DEBUG
+extern bool	srv_checkpoint_disabled;
+#endif /* UNIV_DEBUG */
+
 /** Enable or Disable Encrypt of REDO tablespace. */
 extern bool	srv_redo_log_encrypt;
 
-#ifndef UNIV_HOTBACKUP
 /** Maximum number of srv_n_log_files, or innodb_log_files_in_group */
 #define SRV_N_LOG_FILES_MAX 100
 extern ulong	srv_n_log_files;
@@ -275,6 +292,8 @@ even if they are marked as "corrupted". Mostly it is for DBA to process
 corrupted index and table */
 extern bool	srv_load_corrupted;
 
+/** Dedicated server setting */
+extern bool	srv_dedicated_server;
 /** Requested size in bytes */
 extern ulint		srv_buf_pool_size;
 /** Minimum pool size in bytes */
@@ -404,7 +423,6 @@ extern ulong	srv_spin_wait_delay;
 extern ibool	srv_priority_boost;
 
 extern ulint	srv_truncated_status_writes;
-extern ulint	srv_available_rollback_segments;
 
 #if defined UNIV_DEBUG || defined UNIV_IBUF_DEBUG
 extern bool	srv_ibuf_disable_background_merge;
@@ -423,7 +441,12 @@ extern ulint	srv_fatal_semaphore_wait_threshold;
 #define SRV_SEMAPHORE_WAIT_EXTENSION	7200
 extern ulint	srv_dml_needed_delay;
 
-#define SRV_MAX_N_IO_THREADS	130
+#ifdef UNIV_HOTBACKUP
+// MAHI: changed from 130 to 1 assuming the apply-log is single threaded
+# define SRV_MAX_N_IO_THREADS	1
+#else /* UNIV_HOTBACKUP */
+# define SRV_MAX_N_IO_THREADS	130
+#endif /* UNIV_HOTBACKUP */
 
 /* Array of English strings describing the current state of an
 i/o handler thread */
@@ -442,17 +465,22 @@ extern ulong srv_sync_array_size;
 /* print all user-level transactions deadlocks to mysqld stderr */
 extern bool srv_print_all_deadlocks;
 
+/** Print all DDL logs to mysqld stderr */
+extern bool	srv_print_ddl_logs;
+
 extern bool	srv_cmp_per_index_enabled;
 
 /** Status variables to be passed to MySQL */
 extern struct export_var_t export_vars;
 
+#ifndef UNIV_HOTBACKUP
 /** Global counters */
 extern srv_stats_t	srv_stats;
 
 /* Keys to register InnoDB threads with performance schema */
 
 # ifdef UNIV_PFS_THREAD
+extern mysql_pfs_key_t	archiver_thread_key;
 extern mysql_pfs_key_t	buf_dump_thread_key;
 extern mysql_pfs_key_t	buf_resize_thread_key;
 extern mysql_pfs_key_t	dict_stats_thread_key;
@@ -475,6 +503,7 @@ extern mysql_pfs_key_t	srv_purge_thread_key;
 extern mysql_pfs_key_t	srv_worker_thread_key;
 extern mysql_pfs_key_t	trx_recovery_rollback_thread_key;
 #endif /* UNIV_PFS_THREAD */
+#endif /* !UNIV_HOTBACKUP */
 
 #ifdef HAVE_PSI_STAGE_INTERFACE
 /** Performance schema stage event for monitoring ALTER TABLE progress
@@ -507,9 +536,17 @@ extern PSI_stage_info	srv_stage_alter_table_read_pk_internal_sort;
 
 /** Performance schema stage event for monitoring buffer pool load progress. */
 extern PSI_stage_info	srv_stage_buffer_pool_load;
+
+/** Performance schema stage event for monitoring clone file copy progress. */
+extern PSI_stage_info	srv_stage_clone_file_copy;
+
+/** Performance schema stage event for monitoring clone redo copy progress. */
+extern PSI_stage_info	srv_stage_clone_redo_copy;
+
+/** Performance schema stage event for monitoring clone page copy progress. */
+extern PSI_stage_info	srv_stage_clone_page_copy;
 #endif /* HAVE_PSI_STAGE_INTERFACE */
 
-#endif /* !UNIV_HOTBACKUP */
 
 #ifndef _WIN32
 /** Alternatives for the file flush option in Unix.
@@ -536,6 +573,15 @@ enum srv_unix_flush_t {
 				the integrity of the meta-data */
 };
 extern enum srv_unix_flush_t	srv_unix_file_flush_method;
+
+inline
+bool
+srv_is_direct_io()
+{
+	return(srv_unix_file_flush_method == SRV_UNIX_O_DIRECT
+	       || srv_unix_file_flush_method == SRV_UNIX_O_DIRECT_NO_FSYNC);
+}
+
 #else
 /** Alternatives for file i/o in Windows. @see innodb_flush_method_names. */
 enum srv_win_flush_t {
@@ -545,6 +591,14 @@ enum srv_win_flush_t {
 	SRV_WIN_IO_NORMAL,
 };
 extern enum srv_win_flush_t	srv_win_file_flush_method;
+
+inline
+bool
+srv_is_direct_io()
+{
+	return(srv_win_file_flush_method == SRV_WIN_IO_UNBUFFERED);
+}
+
 #endif /* _WIN32 */
 
 /** Alternatives for srv_force_recovery. Non-zero values are intended
@@ -589,7 +643,6 @@ typedef enum srv_stats_method_name_enum		srv_stats_method_name_t;
 extern ulong	srv_debug_compress;
 #endif /* UNIV_DEBUG */
 
-#ifndef UNIV_HOTBACKUP
 /** Types of threads existing in the system. */
 enum srv_thread_type {
 	SRV_NONE,			/*!< None */
@@ -652,6 +705,7 @@ srv_active_wake_master_thread_low(void);
 Wakes up the master thread if it is suspended or being suspended. */
 void
 srv_wake_master_thread(void);
+#ifndef UNIV_HOTBACKUP
 /*========================*/
 /******************************************************************//**
 Outputs to a file the output of the InnoDB Monitor.
@@ -788,6 +842,7 @@ srv_master_thread_disabled_debug_update(
 	void*				var_ptr,
 	const void*			save);
 #endif /* UNIV_DEBUG */
+#endif /* !UNIV_HOTBACKUP */
 
 /** Status variables to be passed to MySQL */
 struct export_var_t{
@@ -848,8 +903,6 @@ struct export_var_t{
 	ulint innodb_rows_deleted;		/*!< srv_n_rows_deleted */
 	ulint innodb_num_open_files;		/*!< fil_n_file_opened */
 	ulint innodb_truncated_status_writes;	/*!< srv_truncated_status_writes */
-	ulint innodb_available_rollback_segments; /*!< srv_available_rollback_segments */
-	ulint innodb_available_undo_logs;	/*!< srv_available_undo_logs */
 #ifdef UNIV_DEBUG
 	ulint innodb_purge_trx_id_age;		/*!< rw_max_trx_id - purged trx_id */
 	ulint innodb_purge_view_trx_id_age;	/*!< rw_max_trx_id
@@ -860,6 +913,7 @@ struct export_var_t{
 #endif /* UNIV_DEBUG */
 };
 
+#ifndef UNIV_HOTBACKUP
 /** Thread slot in the thread table.  */
 struct srv_slot_t{
 	srv_thread_type type;			/*!< thread type: user,
@@ -884,19 +938,6 @@ struct srv_slot_t{
 	que_thr_t*	thr;			/*!< suspended query thread
 						(only used for user threads) */
 };
-
-#else /* !UNIV_HOTBACKUP */
-# define srv_use_adaptive_hash_indexes		FALSE
-# define srv_use_native_aio			FALSE
-# define srv_numa_interleave			FALSE
-# define srv_force_recovery			0UL
-# define srv_set_io_thread_op_info(t,info)	((void) 0)
-# define srv_reset_io_thread_op_info()		((void) 0)
-# define srv_is_being_started			0
-# define srv_win_file_flush_method		SRV_WIN_IO_UNBUFFERED
-# define srv_unix_file_flush_method		SRV_UNIX_O_DSYNC
-# define srv_start_raw_disk_in_use		0
-# define srv_file_per_table			1
 #endif /* !UNIV_HOTBACKUP */
 
 #endif

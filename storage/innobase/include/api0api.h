@@ -3,16 +3,24 @@
 Copyright (c) 2012, 2017, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+the terms of the GNU General Public License, version 2.0, as published by the
+Free Software Foundation.
+
+This program is also distributed with certain software (including but not
+limited to OpenSSL) that is licensed under separate terms, as designated in a
+particular file or component or in included license documentation. The authors
+of MySQL hereby grant you an additional permission to link the program and
+your derivative works with the separately licensed software that they have
+included with MySQL.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+FOR A PARTICULAR PURPOSE. See the GNU General Public License, version 2.0,
+for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 *****************************************************************************/
 
@@ -90,7 +98,7 @@ and we use the Microsoft types when building with Visual Studio. */
 typedef __int8			ib_i8_t;
 #else
 /** A signed 8 bit integral type. */
-typedef int8_t                  ib_i8_t;
+typedef int8_t			ib_i8_t;
 #endif
 
 #if defined(_MSC_VER)
@@ -98,7 +106,7 @@ typedef int8_t                  ib_i8_t;
 typedef unsigned __int8		ib_u8_t;
 #else
 /** An unsigned 8 bit integral type. */
-typedef uint8_t                 ib_u8_t;
+typedef uint8_t			ib_u8_t;
 #endif
 
 #if defined(_MSC_VER)
@@ -106,7 +114,7 @@ typedef uint8_t                 ib_u8_t;
 typedef __int16			ib_i16_t;
 #else
 /** A signed 16 bit integral type. */
-typedef int16_t                 ib_i16_t;
+typedef int16_t			ib_i16_t;
 #endif
 
 #if defined(_MSC_VER)
@@ -114,7 +122,7 @@ typedef int16_t                 ib_i16_t;
 typedef unsigned __int16	ib_u16_t;
 #else
 /** An unsigned 16 bit integral type. */
-typedef uint16_t                ib_u16_t;
+typedef uint16_t		ib_u16_t;
 #endif
 
 #if defined(_MSC_VER)
@@ -122,7 +130,7 @@ typedef uint16_t                ib_u16_t;
 typedef __int32			ib_i32_t;
 #else
 /** A signed 32 bit integral type. */
-typedef int32_t                 ib_i32_t;
+typedef int32_t			ib_i32_t;
 #endif
 
 #if defined(_MSC_VER)
@@ -130,7 +138,7 @@ typedef int32_t                 ib_i32_t;
 typedef unsigned __int32	ib_u32_t;
 #else
 /** An unsigned 32 bit integral type. */
-typedef uint32_t                ib_u32_t;
+typedef uint32_t		ib_u32_t;
 #endif
 
 #if defined(_MSC_VER)
@@ -138,7 +146,7 @@ typedef uint32_t                ib_u32_t;
 typedef __int64			ib_i64_t;
 #else
 /** A signed 64 bit integral type. */
-typedef int64_t                 ib_i64_t;
+typedef int64_t			ib_i64_t;
 #endif
 
 #if defined(_MSC_VER)
@@ -146,7 +154,7 @@ typedef int64_t                 ib_i64_t;
 typedef unsigned __int64	ib_u64_t;
 #else
 /** An unsigned 64 bit integral type. */
-typedef uint64_t                ib_u64_t;
+typedef uint64_t		ib_u64_t;
 #endif
 
 typedef void*			ib_opaque_t;
@@ -457,25 +465,26 @@ ib_trx_start(
 					single DML */
 	void*		thd);		/*!< in: THD */
 
-/*****************************************************************//**
-Begin a transaction. This will allocate a new transaction handle and
+/** Begin a transaction. This will allocate a new transaction handle and
 put the transaction in the active state.
+@param[in]	ib_trx_level	trx isolation level
+@param[in]	read_write	true if read write transaction
+@param[in]	auto_commit	auto commit after each single DML
+@param[in,out]	thd		MySQL THD
 @return innobase txn handle */
 ib_trx_t
 ib_trx_begin(
-/*=========*/
-	ib_trx_level_t	ib_trx_level,	/*!< in: trx isolation level */
-	ib_bool_t	read_write,	/*!< in: true if read write
-					transaction */
-	ib_bool_t	auto_commit);	/*!< in: auto commit after each
-					single DML */
+	ib_trx_level_t	ib_trx_level,
+	ib_bool_t	read_write,
+	ib_bool_t	auto_commit,
+	void*		thd);
 
 /*****************************************************************//**
 Check if the transaction is read_only */
 ib_u32_t
 ib_trx_read_only(
 /*=============*/
-        ib_trx_t        ib_trx);         /*!< in: trx handle */
+	ib_trx_t	ib_trx);	/*!< in: trx handle */
 
 /*****************************************************************//**
 Release the resources of the transaction. If the transaction was
@@ -1005,93 +1014,81 @@ ib_ut_strerr(
 @param[in]	tablespace_id	tablespace id
 @param[in,out]	ib_sdi_vector	vector to hold objects with tablespace types
 and ids
-@param[in]	copy_num	SDI copy number to operate on. Should be 0 or 1
 @param[in,out]	trx		data dictionary transaction
 @return DB_SUCCESS if SDI keys retrieval is successful, else error */
 ib_err_t
 ib_sdi_get_keys(
 	uint32_t		tablespace_id,
 	ib_sdi_vector_t*	ib_sdi_vector,
-	uint32_t		copy_num,
 	ib_trx_t		trx);
 
-/** Retrieve SDI from tablespace.
+/** Retrieve SDI from tablespace
 @param[in]	tablespace_id	tablespace id
-@param[in]	sdi_key		SDI key to uniquely identify the tablespace
-object
-@param[in,out]	sdi		SDI retrieved from tablespace
-@param[in,out]	sdi_len		in:  Size of memory allocated
-				out: Actual SDI length
-@param[in]	copy_num	the copy from which SDI has to retrieved
+@param[in]	ib_sdi_key	SDI key
+@param[in,out]	comp_sdi	in: buffer to hold the SDI BLOB
+				out: compressed SDI retrieved from tablespace
+@param[in,out]	comp_sdi_len	in:  Size of memory allocated
+				out: compressed length of SDI
+@param[out]	uncomp_sdi_len	out: uncompressed length of SDI
 @param[in,out]	trx		innodb transaction
-@return DB_SUCCESS if SDI retrieval is successful, else error */
+@return DB_SUCCESS if SDI retrieval is successful, else error
+in case the passed buffer length is smaller than the actual SDI
+DB_OUT_OF_MEMORY is thrown and uncompressed length is set in
+uncomp_sdi_len */
 ib_err_t
 ib_sdi_get(
 	uint32_t		tablespace_id,
-	const ib_sdi_key_t*	sdi_key,
-	void*			sdi,
-	uint64_t*		sdi_len,
-	uint32_t		copy_num,
+	const ib_sdi_key_t*	ib_sdi_key,
+	void*			comp_sdi,
+	uint32_t*		comp_sdi_len,
+	uint32_t*		uncomp_sdi_len,
 	ib_trx_t		trx);
 
-/** Insert/Update SDI in tablespace.
+/** Insert/Update SDI in tablespace
 @param[in]	tablespace_id	tablespace id
 @param[in]	sdi_key		SDI key to uniquely identify the tablespace
-object
-@param[in]	sdi		SDI to be stored in tablespace
-@param[in]	sdi_len		SDI length
-@param[in]	copy_num	SDI copy number to operate on. Should be 0 or 1
+				object
+@param[in]	uncomp_len	uncompressed length of SDI
+@param[in]	comp_len	compressed length of SDI
+@param[in]	sdi		compressed SDI to be stored in tablespace
 @param[in,out]	trx		innodb transaction
 @return DB_SUCCESS if SDI Insert/Update is successful, else error */
 ib_err_t
 ib_sdi_set(
 	uint32_t		tablespace_id,
 	const ib_sdi_key_t*	sdi_key,
+	uint32_t		uncomp_len,
+	uint32_t		comp_len,
 	const void*		sdi,
-	uint64_t		sdi_len,
-	uint32_t		copy_num,
 	ib_trx_t		trx);
 
 /** Delete SDI from tablespace.
 @param[in]	tablespace_id	tablespace id
 @param[in]	sdi_key		SDI key to uniquely identify the tablespace
 object
-@param[in]	copy_num	the copy from which SDI has to be deleted
 @param[in,out]	trx		innodb transaction
 @return DB_SUCCESS if SDI deletion is successful, else error */
 ib_err_t
 ib_sdi_delete(
 	uint32_t		tablespace_id,
 	const ib_sdi_key_t*	sdi_key,
-	uint32_t		copy_num,
 	ib_trx_t		trx);
 
-/** Return the number of SDI copies stored in tablespace.
-@param[in]	tablespace_id	Tablespace id
-@retval		0		if there are no SDI copies
-@retval		MAX_SDI_COPIES	if the SDI is present
-@retval		UINT32_MAX	in case of failure */
-uint32_t
-ib_sdi_get_num_copies(space_id_t tablespace_id);
-
-/** Create SDI Copies in a tablespace. The number of allowed copies is always
-two for InnoDB.
+/** Create SDI in a tablespace
 @param[in]	tablespace_id	InnoDB tablespace id
-@param[in]	num_of_copies	number of SDI copies to create
 @return DB_SUCCESS if SDI index creation is successful, else error */
 ib_err_t
-ib_sdi_create_copies(
-	space_id_t	tablespace_id,
-	uint32_t	num_of_copies);
+ib_sdi_create(
+	space_id_t	tablespace_id);
 
-/** Drop SDI Indexes from tablespace. This should be used only when SDI
+/** Drop SDI Index from tablespace. This should be used only when SDI
 is corrupted.
 @param[in]	tablespace_id	InnoDB tablespace id
 @return DB_SUCCESS if dropping of SDI indexes  is successful, else error */
 ib_err_t
-ib_sdi_drop_copies(space_id_t tablespace_id);
+ib_sdi_drop(space_id_t tablespace_id);
 
-/** Flush SDI copy in a tablespace. The pages of a SDI copy modified by the
+/** Flush SDI in a tablespace. The pages of a SDI copy modified by the
 transaction will be flushed to disk.
 @param[in]	space_id	tablespace id
 @return DB_SUCCESS always*/
@@ -1135,18 +1132,18 @@ ib_memc_sdi_set(
 	const void*	sdi,
 	uint64_t*	sdi_len);
 
-/** Wrapper function to create SDI copies in a tablespace.
+/** Wrapper function to create SDI in a tablespace.
 @param[in,out]	crsr		Memcached cursor
 @return DB_SUCCESS if SDI creation is successful, else error */
 ib_err_t
-ib_memc_sdi_create_copies(
+ib_memc_sdi_create(
 	ib_crsr_t	ib_crsr);
 
-/** Wrapper function to drop SDI copies in a tablespace.
+/** Wrapper function to drop SDI in a tablespace.
 @param[in,out]	crsr		Memcached cursor
 @return DB_SUCCESS if dropping of SDI is successful, else error */
 ib_err_t
-ib_memc_sdi_drop_copies(
+ib_memc_sdi_drop(
 	ib_crsr_t	ib_crsr);
 
 /* Wrapper function to retreive list of SDI keys into the buffer

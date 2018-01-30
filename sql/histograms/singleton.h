@@ -4,13 +4,20 @@
 /* Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -62,18 +69,23 @@
   }
 */
 
-#include "histogram.h"        // Histogram, Histogram_comparator,
-#include "my_decimal.h"
-#include "sql_string.h"
-#include "thr_malloc.h"
-                              // value_map_allocator, value_map_type
-
 #include <stddef.h>
 #include <map>                // std::map
+#include <new>
 #include <string>             // std::string
 #include <utility>            // std::pair
 
 #include "my_base.h"          // ha_rows
+#include "my_inttypes.h"
+#include "mysql/udf_registration_types.h"
+#include "mysql_time.h"
+#include "sql/histograms/histogram.h" // Histogram, Histogram_comparator,
+#include "sql/histograms/value_map.h"        // Value_map
+#include "sql/memroot_allocator.h"
+#include "sql/my_decimal.h"
+#include "sql/thr_malloc.h"
+#include "sql_string.h"
+#include "template_utils.h"
 
 class Json_array;
 class Json_object;
@@ -84,6 +96,9 @@ namespace histograms {
 /**
   Singleton histogram.
 */
+struct Histogram_comparator;
+template <class T> class Value_map;
+
 template <class T>
 class Singleton : public Histogram
 {
@@ -91,9 +106,15 @@ private:
   /// String representation of the histogram type SINGLETON.
   static constexpr const char *singleton_str() { return "singleton"; }
 
+  using singleton_buckets_allocator=
+    Memroot_allocator<std::pair<const T, double>>;
+
+  using singleton_buckets_type=
+    std::map<const T, double, Histogram_comparator,
+             singleton_buckets_allocator>;
+
   /// The buckets for this histogram [key, cumulative frequency].
-  std::map<const T, double, Histogram_comparator,
-           Memroot_allocator<std::pair<const T, double>>> m_buckets;
+  singleton_buckets_type m_buckets;
 public:
   /**
     Singleton constructor.
@@ -104,20 +125,34 @@ public:
     @param db_name  name of the database this histogram represents
     @param tbl_name name of the table this histogram represents
     @param col_name name of the column this histogram represents
+    @param data_type the type of data that this histogram contains
   */
-  Singleton(MEM_ROOT *mem_root, std::string db_name, std::string tbl_name,
-            std::string col_name);
+  Singleton(MEM_ROOT *mem_root, const std::string &db_name,
+            const std::string &tbl_name, const std::string &col_name,
+            Value_map_type data_type);
+
+  /**
+    Singleton copy-constructor
+
+    This will take a copy of the histogram and all of its contents on the
+    provided MEM_ROOT.
+
+    @param mem_root the MEM_ROOT to allocate the new histogram on.
+    @param other    the histogram to take a copy of
+  */
+  Singleton(MEM_ROOT *mem_root, const Singleton<T> &other);
+
+  Singleton(const Singleton<T> &other) = delete;
 
   /**
     Build the Singleton histogram.
 
-    @param   value_map       values to create the histogram for
-    @param   num_null_values the number of NULL values in the data set
+    @param   value_map   values to create the histogram for
+    @param   num_buckets the number of buckets specified/requested by the user
 
     @return  true on error, false otherwise
   */
-  bool build_histogram(const value_map_type<T> &value_map,
-                       ha_rows num_null_values);
+  bool build_histogram(const Value_map<T> &value_map, size_t num_buckets);
 
   /**
     Convert this histogram to a JSON object.
@@ -144,6 +179,51 @@ public:
     @return a readable string representation of the histogram type
   */
   std::string histogram_type_to_str() const override;
+
+  /**
+    Make a clone of this histogram on a MEM_ROOT.
+
+    @param mem_root the MEM_ROOT to allocate the new histogram contents on.
+
+    @return a copy of the histogram allocated on the provided MEM_ROOT.
+  */
+  Histogram *clone(MEM_ROOT *mem_root) const override;
+
+  /**
+    Find the number of values equal to 'value'.
+
+    This function will estimate the number of values that is equal to the
+    provided value.
+
+    @param value The value to estimate the selectivity for.
+
+    @return the selectivity between 0.0 and 1.0 inclusive.
+  */
+  double get_equal_to_selectivity(const T& value) const;
+
+  /**
+    Find the number of values less than 'value'.
+
+    This function will estimate the number of values that is less than the
+    provided value.
+
+    @param value The value to estimate the selectivity for.
+
+    @return the selectivity between 0.0 and 1.0 inclusive.
+  */
+  double get_less_than_selectivity(const T& value) const;
+
+  /**
+    Find the number of values greater than 'value'.
+
+    This function will estimate the number of values that is greater than the
+    provided value.
+
+    @param value The value to estimate the selectivity for.
+
+    @return the selectivity between 0.0 and 1.0 inclusive.
+  */
+  double get_greater_than_selectivity(const T& value) const;
 private:
   /**
     Add value to a JSON bucket
@@ -168,6 +248,17 @@ private:
   */
   static bool create_json_bucket(const std::pair<T, double> &bucket,
                                  Json_array *json_bucket);
+
+
+protected:
+  /**
+    Populate this histogram with contents from a JSON object.
+
+    @param json_object a JSON object that represents an Singleton histogram
+
+    @return true on error, false otherwise.
+  */
+  bool json_to_histogram(const Json_object &json_object) override;
 };
 
 } // namespace histograms

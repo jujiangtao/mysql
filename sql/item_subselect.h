@@ -4,17 +4,24 @@
 /* Copyright (c) 2002, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 /* subselect Item */
 
@@ -22,17 +29,18 @@
 #include <sys/types.h>
 
 #include "binary_log_types.h"
-#include "enum_query_type.h"
-#include "item.h"   // Item_result_field
 #include "my_dbug.h"
-#include "my_decimal.h"
 #include "my_inttypes.h"
 #include "my_macros.h"
 #include "my_table_map.h"
 #include "my_time.h"
+#include "mysql/udf_registration_types.h"
 #include "mysql_com.h"
-#include "parse_tree_node_base.h"
-#include "sql_alloc.h"
+#include "sql/enum_query_type.h"
+#include "sql/item.h" // Item_result_field
+#include "sql/my_decimal.h"
+#include "sql/parse_tree_node_base.h"
+#include "sql/sql_alloc.h"
 
 class Comp_creator;
 class Field;
@@ -114,8 +122,6 @@ protected:
   enum_parsing_context parsing_place;
   /* work with 'substitution' */
   bool have_to_be_excluded;
-  /* cache of constant state */
-  bool const_item_cache;
 
 public:
   /* subquery is transformed */
@@ -127,6 +133,23 @@ public:
 
   Item_subselect();
   explicit Item_subselect(const POS &pos);
+
+private:
+  /// Accumulate properties from underlying query expression
+  void accumulate_properties();
+  /// Accumulate properties from underlying query block
+  void accumulate_properties(SELECT_LEX *select);
+  /// Accumulate properties from a selected expression within a query block.
+  void accumulate_expression(Item *item);
+  /// Accumulate properties from a condition or GROUP/ORDER within a query block.
+  void accumulate_condition(Item *item);
+  /// Accumulate properties from a join condition within a query block.
+  void accumulate_join_condition(List<TABLE_LIST> *tables);
+
+public:
+  /// Accumulate used tables
+  void accumulate_used_tables(table_map add_tables)
+  { used_tables_cache|= add_tables; }
 
   virtual subs_type substype() { return UNKNOWN_SUBS; }
 
@@ -149,7 +172,11 @@ public:
   enum Type type() const override;
   bool is_null() override
   {
-    update_null_value();
+    /*
+      TODO : Implement error handling for this function as
+      update_null_value() can return error.
+    */
+    (void) update_null_value();
     return null_value;
   }
   bool fix_fields(THD *thd, Item **ref) override;
@@ -157,11 +184,8 @@ public:
                          SELECT_LEX *removed_select) override;
   virtual bool exec();
   bool resolve_type(THD *) override;
-  table_map used_tables() const override;
+  table_map used_tables() const override { return used_tables_cache; }
   table_map not_null_tables() const override { return 0; }
-  bool const_item() const override;
-  inline table_map get_used_tables_cache() { return used_tables_cache; }
-  inline bool get_const_item_cache() { return const_item_cache; }
   Item *get_tmp_table_item(THD *thd) override;
   void update_used_tables() override;
   void print(String *str, enum_query_type query_type) override;
@@ -433,7 +457,7 @@ private:
     This will refer to a cached value which is reevaluated once for each
     candidate row, cf. setup in #single_value_transformer.
   */
-  Item_direct_ref *m_injected_left_expr;
+  Item_ref *m_injected_left_expr;
 
   /**
     Pointer to the created Item_in_optimizer; it is stored for the same
@@ -496,7 +520,7 @@ public:
     if ( pushed_cond_guards)
       pushed_cond_guards[i]= v;
   }
-  bool have_guarded_conds() override { return MY_TEST(pushed_cond_guards); }
+  bool have_guarded_conds() override { return pushed_cond_guards != nullptr; }
 
   Item_in_subselect(Item * left_expr, SELECT_LEX *select_lex);
   Item_in_subselect(const POS &pos, Item * left_expr,

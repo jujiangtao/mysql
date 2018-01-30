@@ -1,13 +1,20 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -24,8 +31,8 @@
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_io.h"
-#include "myisam_sys.h"
-#include "myisamdef.h"
+#include "storage/myisam/myisam_sys.h"
+#include "storage/myisam/myisamdef.h"
 #ifdef _WIN32
 #include <fcntl.h>
 #include <process.h>
@@ -87,11 +94,11 @@ void _myisam_log(enum myisam_log_commands command, MI_INFO *info,
   mi_int2store(buff+9,length);
 
   mysql_mutex_lock(&THR_LOCK_myisam);
-  error=my_lock(myisam_log_file,F_WRLCK,0L,F_TO_EOF,MYF(MY_SEEK_NOT_DONE));
+  error=my_lock(myisam_log_file,F_WRLCK,MYF(MY_SEEK_NOT_DONE));
   (void) mysql_file_write(myisam_log_file, buff, sizeof(buff), MYF(0));
   (void) mysql_file_write(myisam_log_file, buffert, length, MYF(0));
   if (!error)
-    error=my_lock(myisam_log_file,F_UNLCK,0L,F_TO_EOF,MYF(MY_SEEK_NOT_DONE));
+    error=my_lock(myisam_log_file,F_UNLCK,MYF(MY_SEEK_NOT_DONE));
   mysql_mutex_unlock(&THR_LOCK_myisam);
   set_my_errno(old_errno);
 }
@@ -110,12 +117,12 @@ void _myisam_log_command(enum myisam_log_commands command, MI_INFO *info,
   mi_int4store(buff+3,pid);
   mi_int2store(buff+7,result);
   mysql_mutex_lock(&THR_LOCK_myisam);
-  error=my_lock(myisam_log_file,F_WRLCK,0L,F_TO_EOF,MYF(MY_SEEK_NOT_DONE));
+  error=my_lock(myisam_log_file,F_WRLCK,MYF(MY_SEEK_NOT_DONE));
   (void) mysql_file_write(myisam_log_file, buff, sizeof(buff), MYF(0));
   if (buffert)
     (void) mysql_file_write(myisam_log_file, buffert, length, MYF(0));
   if (!error)
-    error=my_lock(myisam_log_file,F_UNLCK,0L,F_TO_EOF,MYF(MY_SEEK_NOT_DONE));
+    error=my_lock(myisam_log_file,F_UNLCK,MYF(MY_SEEK_NOT_DONE));
   mysql_mutex_unlock(&THR_LOCK_myisam);
   set_my_errno(old_errno);
 }
@@ -141,7 +148,7 @@ void _myisam_log_record(enum myisam_log_commands command, MI_INFO *info,
   mi_sizestore(buff+9,filepos);
   mi_int4store(buff+17,length);
   mysql_mutex_lock(&THR_LOCK_myisam);
-  error=my_lock(myisam_log_file,F_WRLCK,0L,F_TO_EOF,MYF(MY_SEEK_NOT_DONE));
+  error=my_lock(myisam_log_file,F_WRLCK,MYF(MY_SEEK_NOT_DONE));
   (void) mysql_file_write(myisam_log_file, buff, sizeof(buff), MYF(0));
   (void) mysql_file_write(myisam_log_file, record, info->s->base.reclength, MYF(0));
   if (info->s->base.blobs)
@@ -158,7 +165,7 @@ void _myisam_log_record(enum myisam_log_commands command, MI_INFO *info,
     }
   }
   if (!error)
-    error=my_lock(myisam_log_file,F_UNLCK,0L,F_TO_EOF,MYF(MY_SEEK_NOT_DONE));
+    error=my_lock(myisam_log_file,F_UNLCK,MYF(MY_SEEK_NOT_DONE));
   mysql_mutex_unlock(&THR_LOCK_myisam);
   set_my_errno(old_errno);
 }

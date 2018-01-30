@@ -21,8 +21,8 @@
 #
 # ##### Usage #######
 #
-# --let $local_server_connection1=server_1
-# --let $local_server_connection2=server1
+# --let $local_server_connection1=server1
+# --let $local_server_connection2=server_1
 # --let $remote_server_connection=server2
 # --let $local_transaction= INSERT INTO t2 VALUES (5); INSERT INTO t1 VALUES (5);
 # --let $remote_transaction=UPDATE t1 SET c1=6 WHERE c1=2
@@ -33,6 +33,9 @@
 #
 #  $local_server_connection1
 #      Connection name on which the $local_transaction needs to be executed.
+#      show_rpl_debug_info uses 'server_.*' connections, they need to be
+#      avoided for this parameter due to use of --send command, that dissalows
+#      the execution of queries
 #
 #  $local_server_connection2
 #      Connection name on which debug sync commands can be executed to block
@@ -69,10 +72,14 @@
 --echo ############################################################
 --echo # 0. Initial setup and checks.
 
--- let $old_conn= $CURRENT_CONNECTION
+--let $old_conn= $CURRENT_CONNECTION
 if (!$local_server_connection1)
 {
   --die !!!ERROR IN TEST: you must set $local_server_connection1 on which the local_transaction needs to be executed.
+}
+if (`SELECT '$local_server_connection1' REGEXP '.*_.*'`)
+{
+  --die !!!ERROR IN TEST: $local_server_connection1 can't be a 'server_.*' connection, as it maybe be used by rpl_debug_info on error cases.
 }
 if (!$local_server_connection2)
 {
@@ -104,8 +111,8 @@ if (!$gtid_util_included)
 }
 # Remember the gtid position
 --source include/gtid_step_reset.inc
---let $prev_certified_transactions= query_get_value(SELECT Count_Transactions_Checked from performance_schema.replication_group_member_stats, Count_Transactions_Checked, 1)
---let $prev_negatively_certified= query_get_value(SELECT Count_Conflicts_Detected from performance_schema.replication_group_member_stats, Count_Conflicts_Detected, 1)
+--let $prev_certified_transactions= query_get_value(SELECT Count_Transactions_Checked from performance_schema.replication_group_member_stats where member_id in (select @@server_uuid), Count_Transactions_Checked, 1)
+--let $prev_negatively_certified= query_get_value(SELECT Count_Conflicts_Detected from performance_schema.replication_group_member_stats where member_id in (select @@server_uuid), Count_Conflicts_Detected, 1)
 
 --echo
 --echo ############################################################
@@ -188,13 +195,13 @@ SET @@GLOBAL.DEBUG=@debug_save;
 --echo # 9. Assert that number of certified transactions are the
 --echo #    expected ones.
 --let $expected_certified_transactions= `SELECT $prev_certified_transactions + 2`
---let $certified_transactions= query_get_value(SELECT Count_Transactions_Checked from performance_schema.replication_group_member_stats, Count_Transactions_Checked, 1)
+--let $certified_transactions= query_get_value(SELECT Count_Transactions_Checked from performance_schema.replication_group_member_stats where member_id in (select @@server_uuid), Count_Transactions_Checked, 1)
 --let $assert_text= The value of Count_Transactions_Checked should be $expected_certified_transactions after starting group replication
 --let $assert_cond= "$certified_transactions" = $expected_certified_transactions
 --source include/assert.inc
 
 --let $expected_negatively_certified_transactions= `SELECT $prev_negatively_certified + $conflict_test`
---let $negatively_certified= query_get_value(SELECT Count_Conflicts_Detected from performance_schema.replication_group_member_stats, Count_Conflicts_Detected, 1)
+--let $negatively_certified= query_get_value(SELECT Count_Conflicts_Detected from performance_schema.replication_group_member_stats where member_id in (select @@server_uuid), Count_Conflicts_Detected, 1)
 --let $assert_text= The value of Count_Conflicts_Detected should be $expected_negatively_certified_transactions after starting group replication
 --let $assert_cond= "$negatively_certified" = $expected_negatively_certified_transactions
 --source include/assert.inc

@@ -3,16 +3,24 @@
 Copyright (c) 1996, 2017, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+the terms of the GNU General Public License, version 2.0, as published by the
+Free Software Foundation.
+
+This program is also distributed with certain software (including but not
+limited to OpenSSL) that is licensed under separate terms, as designated in a
+particular file or component or in included license documentation. The authors
+of MySQL hereby grant you an additional permission to link the program and
+your derivative works with the separately licensed software that they have
+included with MySQL.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+FOR A PARTICULAR PURPOSE. See the GNU General Public License, version 2.0,
+for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 *****************************************************************************/
 
@@ -406,8 +414,6 @@ que_graph_free_recursive(
 	sel_node_t*	sel;
 	ins_node_t*	ins;
 	upd_node_t*	upd;
-	tab_node_t*	cre_tab;
-	ind_node_t*	cre_ind;
 	purge_node_t*	purge;
 
 	DBUG_ENTER("que_graph_free_recursive");
@@ -482,20 +488,16 @@ que_graph_free_recursive(
 	case QUE_NODE_UPDATE:
 		upd = static_cast<upd_node_t*>(node);
 
-		DBUG_PRINT("que_graph_free_recursive",
-			   ("QUE_NODE_UPDATE: %p, processed_cascades: %p",
-			    upd, upd->processed_cascades));
-
 		if (upd->in_mysql_interface) {
 
 			btr_pcur_free_for_mysql(upd->pcur);
 			upd->in_mysql_interface = FALSE;
 		}
 
-		if (upd->cascade_top) {
+		que_graph_free_recursive(upd->cascade_node);
+		if (upd->cascade_heap) {
 			mem_heap_free(upd->cascade_heap);
 			upd->cascade_heap = NULL;
-			upd->cascade_top = false;
 		}
 
 		que_graph_free_recursive(upd->select);
@@ -505,25 +507,6 @@ que_graph_free_recursive(
 			mem_heap_free(upd->heap);
 			upd->heap = NULL;
 		}
-
-		break;
-	case QUE_NODE_CREATE_TABLE:
-		cre_tab = static_cast<tab_node_t*>(node);
-
-		que_graph_free_recursive(cre_tab->tab_def);
-		que_graph_free_recursive(cre_tab->col_def);
-		que_graph_free_recursive(cre_tab->v_col_def);
-
-		mem_heap_free(cre_tab->heap);
-
-		break;
-	case QUE_NODE_CREATE_INDEX:
-		cre_ind = static_cast<ind_node_t*>(node);
-
-		que_graph_free_recursive(cre_ind->ind_def);
-		que_graph_free_recursive(cre_ind->field_def);
-
-		mem_heap_free(cre_ind->heap);
 
 		break;
 	case QUE_NODE_PROC:
@@ -581,6 +564,7 @@ que_graph_free(
 			afterwards! */
 {
 	ut_ad(graph);
+	ut_ad(!mutex_own(&dict_sys->mutex));
 
 	if (graph->sym_tab) {
 		/* The following call frees dynamic memory allocated
@@ -945,10 +929,6 @@ que_node_type_string(
 		return("PURGE ROW");
 	case QUE_NODE_ROLLBACK:
 		return("ROLLBACK");
-	case QUE_NODE_CREATE_TABLE:
-		return("CREATE TABLE");
-	case QUE_NODE_CREATE_INDEX:
-		return("CREATE INDEX");
 	case QUE_NODE_FOR:
 		return("FOR LOOP");
 	case QUE_NODE_RETURN:
@@ -1056,10 +1036,6 @@ que_thr_step(
 		thr = exit_step(thr);
 	} else if (type == QUE_NODE_ROLLBACK) {
 		thr = trx_rollback_step(thr);
-	} else if (type == QUE_NODE_CREATE_TABLE) {
-		thr = dict_create_table_step(thr);
-	} else if (type == QUE_NODE_CREATE_INDEX) {
-		thr = dict_create_index_step(thr);
 	} else {
 		ut_error;
 	}
@@ -1209,15 +1185,11 @@ que_eval_sql(
 
 	ut_a(trx->error_state == DB_SUCCESS);
 
-	if (reserve_dict_mutex) {
-		mutex_enter(&dict_sys->mutex);
-	}
+	mutex_enter(&pars_mutex);
 
 	graph = pars_sql(info, sql);
 
-	if (reserve_dict_mutex) {
-		mutex_exit(&dict_sys->mutex);
-	}
+	mutex_exit(&pars_mutex);
 
 	graph->trx = trx;
 	trx->graph = NULL;
@@ -1228,15 +1200,7 @@ que_eval_sql(
 
 	que_run_threads(thr);
 
-	if (reserve_dict_mutex) {
-		mutex_enter(&dict_sys->mutex);
-	}
-
 	que_graph_free(graph);
-
-	if (reserve_dict_mutex) {
-		mutex_exit(&dict_sys->mutex);
-	}
 
 	ut_a(trx->error_state != 0);
 

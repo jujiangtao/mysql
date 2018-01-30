@@ -1,13 +1,20 @@
 /* Copyright (c) 2007, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -25,8 +32,8 @@
 #include <stddef.h>
 #include <sys/types.h>
 
-#include "hash.h"
-#include "my_atomic.h"
+#include <atomic>
+
 #include "my_inttypes.h"
 #include "my_macros.h"
 #include "mysql/psi/mysql_statement.h"
@@ -45,7 +52,7 @@ C_MODE_START
 #define LF_DYNARRAY_LEVELS       4
 
 typedef struct {
-  void * volatile level[LF_DYNARRAY_LEVELS];
+  std::atomic<void *> level[LF_DYNARRAY_LEVELS];
   uint size_of_element;
 } LF_DYNARRAY;
 
@@ -71,16 +78,16 @@ typedef struct {
   lf_pinbox_free_func *free_func;
   void *free_func_arg;
   uint free_ptr_offset;
-  uint32 volatile pinstack_top_ver;         /* this is a versioned pointer */
-  uint32 volatile pins_in_array;            /* number of elements in array */
+  std::atomic<uint32> pinstack_top_ver;    /* this is a versioned pointer */
+  std::atomic<uint32> pins_in_array;       /* number of elements in array */
 } LF_PINBOX;
 
 typedef struct st_lf_pins {
-  void * volatile pin[LF_PINBOX_PINS];
+  std::atomic<void *> pin[LF_PINBOX_PINS];
   LF_PINBOX *pinbox;
   void  *purgatory;
   uint32 purgatory_count;
-  uint32 volatile link;
+  std::atomic<uint32> link;
 /* we want sizeof(LF_PINS) to be 64 to avoid false sharing */
 #if SIZEOF_INT*2+SIZEOF_CHARP*(LF_PINBOX_PINS+2) != 64
   char pad[64-sizeof(uint32)*2-sizeof(void*)*(LF_PINBOX_PINS+2)];
@@ -106,7 +113,7 @@ static inline void lf_pin(LF_PINS *pins, int pin, void *addr)
 #if defined(__GNUC__) && defined(MY_LF_EXTRA_DEBUG)
   assert(pin < LF_NUM_PINS_IN_THIS_FILE);
 #endif
-  my_atomic_storeptr(&pins->pin[pin], addr);
+  pins->pin[pin].store(addr);
 }
 
 static inline void lf_unpin(LF_PINS *pins, int pin)
@@ -114,7 +121,7 @@ static inline void lf_unpin(LF_PINS *pins, int pin)
 #if defined(__GNUC__) && defined(MY_LF_EXTRA_DEBUG)
   assert(pin < LF_NUM_PINS_IN_THIS_FILE);
 #endif
-  my_atomic_storeptr(&pins->pin[pin], NULL);
+  pins->pin[pin].store(nullptr);
 }
 
 void lf_pinbox_init(LF_PINBOX *pinbox, uint free_ptr_offset,
@@ -132,9 +139,9 @@ typedef void lf_allocator_func(uchar *);
 
 typedef struct st_lf_allocator {
   LF_PINBOX pinbox;
-  uchar * volatile top;
+  std::atomic<uchar *> top;
   uint element_size;
-  uint32 volatile mallocs;
+  std::atomic<uint32> mallocs;
   lf_allocator_func *constructor; /* called, when an object is malloc()'ed */
   lf_allocator_func *destructor;  /* called, when an object is free()'d    */
 } LF_ALLOCATOR;
@@ -165,6 +172,18 @@ typedef void lf_hash_init_func(uchar *dst, const uchar* src);
 /* lf_hash overhead per element (that is, sizeof(LF_SLIST) */
 extern const int LF_HASH_OVERHEAD;
 
+/**
+  Callback for extracting key and key length from user data in a LF_HASH.
+  @param      arg    Pointer to user data.
+  @param[out] length Store key length here.
+  @return            Pointer to key to be hashed.
+
+  @note Was my_hash_get_key, with lots of C-style casting when calling
+        my_hash_init. Renamed to force build error (since signature changed)
+        in case someone keeps following that coding style.
+ */
+typedef const uchar *(*hash_get_key_function)(const uchar *arg, size_t *length);
+
 typedef struct st_lf_hash {
   LF_DYNARRAY array;                    /* hash itself */
   LF_ALLOCATOR alloc;                   /* allocator for elements */
@@ -174,8 +193,8 @@ typedef struct st_lf_hash {
   uint key_offset, key_length;          /* see HASH */
   uint element_size;                    /* size of memcpy'ed area on insert */
   uint flags;                           /* LF_HASH_UNIQUE, etc */
-  int32 volatile size;                  /* size of array */
-  int32 volatile count;                 /* number of elements in the hash */
+  std::atomic<int32> size;              /* size of array */
+  std::atomic<int32> count;             /* number of elements in the hash */
   /**
     "Initialize" hook - called to finish initialization of object provided by
      LF_ALLOCATOR (which is pointed by "dst" parameter) and set element key

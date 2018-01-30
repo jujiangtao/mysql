@@ -2,13 +2,20 @@
    Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -20,30 +27,30 @@
 
 #include <fcntl.h>
 #include <limits.h>
-#include <m_ctype.h>
-#include <my_bit.h>
-#include <myisampack.h>
 #include <stdarg.h>
 #include <algorithm>
 #include <new>
 
-#include "current_thd.h"
-#include "derror.h"
-#include "key.h"                                // key_copy
 #include "lex_string.h"
-#include "log.h"
+#include "m_ctype.h"
+#include "my_bit.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_io.h"
 #include "my_psi_config.h"
 #include "myisam.h"
-#include "myisamdef.h"
-#include "mysqld.h"
-#include "rt_index.h"
-#include "sql_class.h"                          // THD
-#include "sql_plugin.h"
-#include "sql_table.h"                          // tablename_to_filename
-#include "system_variables.h"
+#include "myisampack.h"
+#include "sql/current_thd.h"
+#include "sql/derror.h"
+#include "sql/key.h"                            // key_copy
+#include "sql/log.h"
+#include "sql/mysqld.h"
+#include "sql/sql_class.h"                      // THD
+#include "sql/sql_plugin.h"
+#include "sql/sql_table.h"                      // tablename_to_filename
+#include "sql/system_variables.h"
+#include "storage/myisam/myisamdef.h"
+#include "storage/myisam/rt_index.h"
 
 using std::min;
 using std::max;
@@ -169,7 +176,7 @@ static void mi_check_print_msg(MI_CHECK *param,	const char* msg_type,
 
   if (!thd->get_protocol()->connection_alive())
   {
-    sql_print_error("%s", msgbuf);
+    LogErr(ERROR_LEVEL, ER_MYISAM_CHECK_METHOD_ERROR, msgbuf);
     return;
   }
 
@@ -198,8 +205,7 @@ static void mi_check_print_msg(MI_CHECK *param,	const char* msg_type,
   protocol->store(msg_type, system_charset_info);
   protocol->store(msgbuf, msg_length, system_charset_info);
   if (protocol->end_row())
-    sql_print_error("Failed on my_net_write, writing to stderr instead: %s\n",
-		    msgbuf);
+    LogErr(ERROR_LEVEL, ER_MY_NET_WRITE_FAILED_FALLING_BACK_ON_STDERR, msgbuf);
 
   if (param->need_print_msg_lock)
     mysql_mutex_unlock(&param->print_msg_mutex);
@@ -479,8 +485,8 @@ int check_definition(MI_KEYDEF *t1_keyinfo, MI_COLUMNDEF *t1_recinfo,
     {
        DBUG_PRINT("error", ("Key %d has different definition", i));
        DBUG_PRINT("error", ("t1_fulltext= %d, t2_fulltext=%d",
-                            MY_TEST(t1_keyinfo[i].flag & HA_FULLTEXT),
-                            MY_TEST(t2_keyinfo[i].flag & HA_FULLTEXT)));
+         static_cast<bool>(t1_keyinfo[i].flag & HA_FULLTEXT),
+         static_cast<bool>(t2_keyinfo[i].flag & HA_FULLTEXT)));
        DBUG_RETURN(1);
     }
     if (t1_keyinfo[i].flag & HA_SPATIAL && t2_keyinfo[i].flag & HA_SPATIAL)
@@ -490,8 +496,8 @@ int check_definition(MI_KEYDEF *t1_keyinfo, MI_COLUMNDEF *t1_recinfo,
     {
        DBUG_PRINT("error", ("Key %d has different definition", i));
        DBUG_PRINT("error", ("t1_spatial= %d, t2_spatial=%d",
-                            MY_TEST(t1_keyinfo[i].flag & HA_SPATIAL),
-                            MY_TEST(t2_keyinfo[i].flag & HA_SPATIAL)));
+         static_cast<bool>(t1_keyinfo[i].flag & HA_SPATIAL),
+         static_cast<bool>(t2_keyinfo[i].flag & HA_SPATIAL)));
        DBUG_RETURN(1);
     }
     if (!(t1_keyinfo[i].key_alg == t2_keyinfo[i].key_alg ||
@@ -638,18 +644,22 @@ void _mi_report_crashed(MI_INFO *file, const char *message,
   LIST *element;
   char buf[1024];
   mysql_mutex_lock(&file->s->intern_lock);
+
   if ((cur_thd= (THD*) file->in_use.data))
-    sql_print_error("Got an error from thread_id=%u, %s:%d",
-                    cur_thd->thread_id(), sfile, sline);
+    LogErr(ERROR_LEVEL, ER_MYISAM_CRASHED_ERROR_IN_THREAD,
+           cur_thd->thread_id(), sfile, sline);
   else
-    sql_print_error("Got an error from unknown thread, %s:%d", sfile, sline);
+    LogErr(ERROR_LEVEL, ER_MYISAM_CRASHED_ERROR_IN, sfile, sline);
+
   if (message)
-    sql_print_error("%s", message);
+    LogErr(ERROR_LEVEL, ER_MYISAM_CRASHED_ERROR, message);
+
   for (element= file->s->in_use; element; element= list_rest(element))
   {
     THD *thd= (THD*) element->data;
-    sql_print_error("%s", thd ? thd_security_context(thd, buf, sizeof(buf), 0)
-                              : "Unknown thread accessing table");
+    LogErr(ERROR_LEVEL, ER_MYISAM_CRASHED_ERROR,
+           thd ? thd_security_context(thd, buf, sizeof(buf), 0)
+               : "Unknown thread accessing table");
   }
   mysql_mutex_unlock(&file->s->intern_lock);
 }
@@ -1087,16 +1097,16 @@ int ha_myisam::repair(THD* thd, HA_CHECK_OPT *check_opt)
 		      (uint) (T_RETRY_WITHOUT_QUICK | T_QUICK)))
     {
       param.testflag&= ~T_RETRY_WITHOUT_QUICK;
-      sql_print_information("Retrying repair of: '%s' without quick",
-                            table->s->path.str);
+      LogErr(INFORMATION_LEVEL, ER_RETRYING_REPAIR_WITHOUT_QUICK,
+             table->s->path.str);
       continue;
     }
     param.testflag&= ~T_QUICK;
     if ((param.testflag & T_REP_BY_SORT))
     {
       param.testflag= (param.testflag & ~T_REP_BY_SORT) | T_REP;
-      sql_print_information("Retrying repair of: '%s' with keycache",
-                            table->s->path.str);
+      LogErr(INFORMATION_LEVEL, ER_RETRYING_REPAIR_WITH_KEYCACHE,
+             table->s->path.str);
       continue;
     }
     break;
@@ -1105,10 +1115,10 @@ int ha_myisam::repair(THD* thd, HA_CHECK_OPT *check_opt)
       !(check_opt->flags & T_VERY_SILENT))
   {
     char llbuff[22],llbuff2[22];
-    sql_print_information("Found %s of %s rows when repairing '%s'",
-                          llstr(file->state->records, llbuff),
-                          llstr(start_records, llbuff2),
-                          table->s->path.str);
+    LogErr(INFORMATION_LEVEL, ER_FOUND_ROWS_WHILE_REPAIRING,
+           llstr(file->state->records, llbuff),
+           llstr(start_records, llbuff2),
+           table->s->path.str);
   }
   return error;
 }
@@ -1127,8 +1137,8 @@ int ha_myisam::optimize(THD* thd, HA_CHECK_OPT *check_opt)
   param.sort_buffer_length=  THDVAR(thd, sort_buffer_size);
   if ((error= repair(thd,param,1)) && param.retry_repair)
   {
-    sql_print_warning("Warning: Optimize table got errno %d on %s.%s, retrying",
-                      my_errno(), param.db_name, param.table_name);
+    LogErr(WARNING_LEVEL, ER_ERROR_DURING_OPTIMIZE_TABLE,
+           my_errno(), param.db_name, param.table_name);
     param.testflag&= ~T_REP_BY_SORT;
     error= repair(thd,param,1);
   }
@@ -1175,7 +1185,7 @@ int ha_myisam::repair(THD *thd, MI_CHECK &param, bool do_optimize)
 			mi_get_mask_all_keys_active(share->base.keys) :
 			share->state.key_map);
     uint testflag=param.testflag;
-    bool remap= MY_TEST(share->file_map);
+    bool remap= (share->file_map);
     /*
       mi_repair*() functions family use file I/O even if memory
       mapping is available.
@@ -1319,7 +1329,7 @@ int ha_myisam::assign_to_keycache(THD* thd, HA_CHECK_OPT *check_opt)
 
   table->keys_in_use_for_query.clear_all();
 
-  if (table_list->process_index_hints(table))
+  if (table_list->process_index_hints(thd, table))
     DBUG_RETURN(HA_ADMIN_FAILED);
   map= ~(ulonglong) 0;
   if (!table->keys_in_use_for_query.is_clear_all())
@@ -1368,7 +1378,7 @@ int ha_myisam::preload_keys(THD* thd, HA_CHECK_OPT*)
 
   table->keys_in_use_for_query.clear_all();
 
-  if (table_list->process_index_hints(table))
+  if (table_list->process_index_hints(thd, table))
     DBUG_RETURN(HA_ADMIN_FAILED);
 
   map= ~(ulonglong) 0;
@@ -1525,8 +1535,8 @@ int ha_myisam::enable_indexes(uint mode)
     param.tmpdir=&mysql_tmpdir_list;
     if ((error= (repair(thd,param,0) != HA_ADMIN_OK)) && param.retry_repair)
     {
-      sql_print_warning("Warning: Enabling keys got errno %d on %s.%s, retrying",
-                        my_errno(), param.db_name, param.table_name);
+      LogErr(WARNING_LEVEL, ER_ERROR_ENABLING_KEYS,
+             my_errno(), param.db_name, param.table_name);
       /*
         Repairing by sort failed. Now try standard repair method.
         Still we want to fix only index file. If data file corruption
@@ -1682,11 +1692,11 @@ bool ha_myisam::check_and_repair(THD *thd)
   // Don't use quick if deleted rows
   if (!file->state->del && (myisam_recover_options & HA_RECOVER_QUICK))
     check_opt.flags|=T_QUICK;
-  sql_print_warning("Checking table:   '%s'",table->s->path.str);
+  LogErr(WARNING_LEVEL, ER_CHECKING_TABLE, table->s->path.str);
 
   if ((marked_crashed= mi_is_crashed(file)) || check(thd, &check_opt))
   {
-    sql_print_warning("Recovering table: '%s'",table->s->path.str);
+LogErr(WARNING_LEVEL, ER_RECOVERING_TABLE,table->s->path.str);
     check_opt.flags=
       ((myisam_recover_options & HA_RECOVER_BACKUP ? T_BACKUP_DATA : 0) |
        (marked_crashed                             ? 0 : T_QUICK) |
@@ -2233,7 +2243,7 @@ extern "C" st_keycache_thread_var *keycache_thread_var()
       It will then be the main thread during startup/shutdown or
       extra threads created for thr_find_all_keys().
     */
-    return (st_keycache_thread_var*)my_get_thread_local(keycache_tls_key);
+    return keycache_tls;
   }
 
   /*
@@ -2307,8 +2317,7 @@ static int myisam_init(void *p)
   main_thread_keycache_var= st_keycache_thread_var();
   mysql_cond_init(mi_keycache_thread_var_suspend,
                   &main_thread_keycache_var.suspend);
-  (void)my_create_thread_local_key(&keycache_tls_key, NULL);
-  my_set_thread_local(keycache_tls_key, &main_thread_keycache_var);
+  keycache_tls= &main_thread_keycache_var;
   return 0;
 }
 
@@ -2316,7 +2325,7 @@ static int myisam_init(void *p)
 static int myisam_deinit(void*)
 {
   mysql_cond_destroy(&main_thread_keycache_var.suspend);
-  my_delete_thread_local_key(keycache_tls_key);
+  keycache_tls= nullptr;
   return 0;
 }
 
@@ -2422,6 +2431,7 @@ mysql_declare_plugin(myisam)
   "MyISAM storage engine",
   PLUGIN_LICENSE_GPL,
   myisam_init, /* Plugin Init */
+  NULL, /* Plugin Check uninstall */
   myisam_deinit, /* Plugin Deinit */
   0x0100, /* 1.0 */
   NULL,                       /* status variables                */
@@ -2430,97 +2440,3 @@ mysql_declare_plugin(myisam)
   0,
 }
 mysql_declare_plugin_end;
-
-
-/**
-  @brief Register a named table with a call back function to the query cache.
-
-  @param thd The thread handle
-  @param table_name A pointer to the table name in the table cache
-  @param table_name_len The length of the table name
-  @param[out] engine_callback The pointer to the storage engine call back
-    function, currently 0
-  @param[out] engine_data Engine data will be set to 0.
-
-  @note Despite the name of this function, it is used to check each statement
-    before it is cached and not to register a table or callback function.
-
-  @see handler::register_query_cache_table
-
-  @return The error code. The engine_data and engine_callback will be set to 0.
-    @retval TRUE Success
-    @retval FALSE An error occured
-*/
-
-bool
-ha_myisam::register_query_cache_table(THD *thd MY_ATTRIBUTE((unused)),
-                                      char *table_name MY_ATTRIBUTE((unused)),
-                                      size_t table_name_len MY_ATTRIBUTE((unused)),
-                                      qc_engine_callback *engine_callback,
-                                      ulonglong *engine_data)
-{
-  DBUG_ENTER("ha_myisam::register_query_cache_table");
-  /*
-    No call back function is needed to determine if a cached statement
-    is valid or not.
-  */
-  *engine_callback= 0;
-
-  /*
-    No engine data is needed.
-  */
-  *engine_data= 0;
-
-  if (file->s->concurrent_insert)
-  {
-    /*
-      If a concurrent INSERT has happened just before the currently
-      processed SELECT statement, the total size of the table is
-      unknown.
-
-      To determine if the table size is known, the current thread's snap
-      shot of the table size with the actual table size are compared.
-
-      If the table size is unknown the SELECT statement can't be cached.
-
-      When concurrent inserts are disabled at table open, mi_open()
-      does not assign a get_status() function. In this case the local
-      ("current") status is never updated. We would wrongly think that
-      we cannot cache the statement.
-    */
-    ulonglong actual_data_file_length;
-    ulonglong current_data_file_length;
-
-    /*
-      POSIX visibility rules specify that "2. Whatever memory values a
-      thread can see when it unlocks a mutex <...> can also be seen by any
-      thread that later locks the same mutex". In this particular case,
-      concurrent insert thread had modified the data_file_length in
-      MYISAM_SHARE before it has unlocked (or even locked)
-      structure_guard_mutex. So, here we're guaranteed to see at least that
-      value after we've locked the same mutex. We can see a later value
-      (modified by some other thread) though, but it's ok, as we only want
-      to know if the variable was changed, the actual new value doesn't matter
-    */
-    actual_data_file_length= file->s->state.state.data_file_length;
-    current_data_file_length= file->save_state.data_file_length;
-
-    if (current_data_file_length != actual_data_file_length)
-    {
-      /* Don't cache current statement. */
-      DBUG_RETURN(FALSE);
-    }
-  }
-
-  /*
-    This query execution might have started after the query cache was flushed
-    by a concurrent INSERT. In this case, don't cache this statement as the
-    data file length difference might not be visible yet if the tables haven't
-    been unlocked by the concurrent insert thread.
-  */
-  if (file->state->uncacheable)
-    DBUG_RETURN(FALSE);
-
-  /* It is ok to try to cache current statement. */
-  DBUG_RETURN(TRUE);
-}

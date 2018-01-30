@@ -1,26 +1,47 @@
-/* Copyright (c) 2015, 2016 Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "shared_multi_map.h"
+#include "sql/dd/impl/cache/shared_multi_map.h"
 
-#include <stddef.h>
 #include <new>
 
-#include "dd/impl/cache/cache_element.h"
-#include "log.h"                             // sql_print_warning()
 #include "my_dbug.h"
+#include "my_loglevel.h"
+#include "mysqld_error.h"
+#include "sql/dd/cache/dictionary_client.h"
+#include "sql/dd/impl/cache/cache_element.h"
+#include "sql/dd/impl/tables/character_sets.h"
+#include "sql/dd/impl/tables/collations.h"
+#include "sql/dd/impl/tables/column_statistics.h"
+#include "sql/dd/impl/tables/events.h"
+#include "sql/dd/impl/tables/resource_groups.h"
+#include "sql/dd/impl/tables/routines.h"
+#include "sql/dd/impl/tables/schemata.h"
+#include "sql/dd/impl/tables/spatial_reference_systems.h"
+#include "sql/dd/impl/tables/tables.h"
+#include "sql/dd/impl/tables/tablespaces.h"
+#include "sql/mdl.h"                         // MDL_request
+#include "sql/log.h"                         // sql_print_warning()
+#include "sql/sql_class.h"                   // THD
 
 namespace dd {
 namespace cache {
@@ -67,21 +88,21 @@ void Shared_multi_map<T>::remove(Cache_element<T> *element,
   DBUG_ASSERT(e->usage() == 1);
 
   // Get all keys that were created within the element.
-  const typename T::id_key_type *id_key= element->id_key();
-  const typename T::name_key_type *name_key= element->name_key();
-  const typename T::aux_key_type *aux_key= element->aux_key();
+  const typename T::Id_key *id_key= element->id_key();
+  const typename T::Name_key *name_key= element->name_key();
+  const typename T::Aux_key *aux_key= element->aux_key();
 
   // None of the non-null keys may be missed.
   DBUG_ASSERT(
-    (!id_key || !m_map<typename T::id_key_type>()->is_missed(*id_key)) &&
-    (!name_key || !m_map<typename T::name_key_type>()->is_missed(*name_key)) &&
-    (!aux_key || !m_map<typename T::aux_key_type>()->is_missed(*aux_key)));
+    (!id_key || !m_map<typename T::Id_key>()->is_missed(*id_key)) &&
+    (!name_key || !m_map<typename T::Name_key>()->is_missed(*name_key)) &&
+    (!aux_key || !m_map<typename T::Aux_key>()->is_missed(*aux_key)));
 
   // All non-null keys must exist.
   DBUG_ASSERT(
-    (!id_key || m_map<typename T::id_key_type>()->is_present(*id_key)) &&
-    (!name_key || m_map<typename T::name_key_type>()->is_present(*name_key)) &&
-    (!aux_key || m_map<typename T::aux_key_type>()->is_present(*aux_key)));
+    (!id_key || m_map<typename T::Id_key>()->is_present(*id_key)) &&
+    (!name_key || m_map<typename T::Name_key>()->is_present(*name_key)) &&
+    (!aux_key || m_map<typename T::Aux_key>()->is_present(*aux_key)));
 #endif
 
   // Remove the keys and the element from the shared map and the registry.
@@ -143,7 +164,7 @@ void Shared_multi_map<T>::shutdown()
     if (m_map<const T*>()->size() > 0)
     {
       /* purecov: begin deadcode */
-      sql_print_warning("Dictionary cache not empty at shutdown.");
+      LogErr(WARNING_LEVEL, ER_DD_CACHE_NOT_EMPTY_AT_SHUTDOWN);
       dump();
       DBUG_ASSERT(false);
       /* purecov: end */
@@ -154,7 +175,109 @@ void Shared_multi_map<T>::shutdown()
          m_element_pool.begin();
        it != m_element_pool.end(); ++it)
     delete(*it);
-   m_element_pool.clear();
+  m_element_pool.clear();
+}
+
+
+typedef std::map<Object_id, const String_type> schema_map_t;
+
+template <typename T>
+MDL_request *lock_request(THD*, const schema_map_t&, const T*)
+{
+  DBUG_ASSERT(false);
+  return nullptr;
+}
+
+
+template <>
+MDL_request *lock_request(THD *thd,
+                          const schema_map_t &schema_map,
+                          const Abstract_table *object)
+{
+  // Fetch the schema to get hold of the schema name.
+  const schema_map_t::const_iterator schema_name=
+                                       schema_map.find(object->schema_id());
+  if (schema_name == schema_map.end() || object == nullptr)
+    return nullptr;
+
+  MDL_request *request= new (thd->mem_root) MDL_request;
+  if (request == nullptr)
+    return nullptr;
+
+  MDL_REQUEST_INIT(request,
+                   MDL_key::TABLE,
+                   schema_name->second.c_str(),
+                   object->name().c_str(),
+                   MDL_EXCLUSIVE,
+                   MDL_TRANSACTION);
+  return request;
+}
+
+
+template <>
+MDL_request *lock_request(THD *thd,
+                          const schema_map_t&,
+                          const Tablespace *object)
+{
+  MDL_request *request= new (thd->mem_root) MDL_request;
+  if (request == nullptr || object == nullptr)
+    return nullptr;
+
+  MDL_REQUEST_INIT(request,
+                   MDL_key::TABLESPACE, "", object->name().c_str(),
+                   MDL_EXCLUSIVE,
+                   MDL_TRANSACTION);
+  return request;
+}
+
+
+/*
+  Reset the shared map. Delete all objects present after acquiring
+  metadata locks. Keep the capacity.
+*/
+template <typename T>
+bool Shared_multi_map<T>::reset(THD* thd)
+{
+  /*
+    Establish a map from schema ids to schema names. Must do this
+    before we can lock the cache partition.
+  */
+  dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
+  std::vector<const Schema*> schema_vector;
+  if (thd->dd_client()->fetch_global_components(&schema_vector))
+    return true;
+
+  schema_map_t schema_map;
+  for (const Schema *schema : schema_vector)
+    schema_map.insert(typename schema_map_t::value_type(schema->id(),
+                                                        schema->name()));
+
+  // Now, we can lock the cache partition and start acquiring MDL.
+  Autolocker lock(this);
+  MDL_request_list mdl_requests;
+  typename Element_map<const T*, Cache_element<T> >::Const_iterator it=
+    m_map<const T*>()->begin();
+  for ( ; it != m_map<const T*>()->end(); it++)
+    mdl_requests.push_front(lock_request(thd, schema_map,
+                                         it->second->object()));
+
+  if (thd->mdl_context.acquire_locks(&mdl_requests,
+                                     thd->variables.lock_wait_timeout))
+    return true;
+
+  /*
+    We have now locked all objects, hence, once we evict the unused
+    object, no objects should be left.
+  */
+  evict_all_unused(&lock);
+  if (m_map<const T*>()->size() > 0)
+  {
+    dump();
+    DBUG_ASSERT(m_map<const T*>()->size() == 0);
+    return true;
+  }
+
+  return false;
 }
 
 
@@ -234,40 +357,40 @@ void Shared_multi_map<T>::put(const K *key, const T *object,
   (*element)->recreate_keys();
 
   // Get all keys that were created within the element.
-  const typename T::id_key_type *id_key= (*element)->id_key();
-  const typename T::name_key_type *name_key= (*element)->name_key();
-  const typename T::aux_key_type *aux_key= (*element)->aux_key();
+  const typename T::Id_key *id_key= (*element)->id_key();
+  const typename T::Name_key *name_key= (*element)->name_key();
+  const typename T::Aux_key *aux_key= (*element)->aux_key();
 
   // There must be at least one key.
   DBUG_ASSERT(id_key || name_key || aux_key);
 
   // For the non-null keys being missed, set that the miss is handled.
   bool key_missed= false;
-  if (id_key && m_map<typename T::id_key_type>()->is_missed(*id_key))
+  if (id_key && m_map<typename T::Id_key>()->is_missed(*id_key))
   {
     key_missed= true;
-    m_map<typename T::id_key_type>()->set_miss_handled(*id_key);
+    m_map<typename T::Id_key>()->set_miss_handled(*id_key);
   }
-  if (name_key && m_map<typename T::name_key_type>()->is_missed(*name_key))
+  if (name_key && m_map<typename T::Name_key>()->is_missed(*name_key))
   {
     key_missed= true;
-    m_map<typename T::name_key_type>()->set_miss_handled(*name_key);
+    m_map<typename T::Name_key>()->set_miss_handled(*name_key);
   }
-  if (aux_key && m_map<typename T::aux_key_type>()->is_missed(*aux_key))
+  if (aux_key && m_map<typename T::Aux_key>()->is_missed(*aux_key))
   {
     key_missed= true;
-    m_map<typename T::aux_key_type>()->set_miss_handled(*aux_key);
+    m_map<typename T::Aux_key>()->set_miss_handled(*aux_key);
   }
 
   // All non-null keys must exist, or none.
   bool all_keys_present=
-    (!id_key || m_map<typename T::id_key_type>()->is_present(*id_key)) &&
-    (!name_key || m_map<typename T::name_key_type>()->is_present(*name_key)) &&
-    (!aux_key || m_map<typename T::aux_key_type>()->is_present(*aux_key));
+    (!id_key || m_map<typename T::Id_key>()->is_present(*id_key)) &&
+    (!name_key || m_map<typename T::Name_key>()->is_present(*name_key)) &&
+    (!aux_key || m_map<typename T::Aux_key>()->is_present(*aux_key));
   bool no_keys_present=
-    (!id_key || !m_map<typename T::id_key_type>()->is_present(*id_key)) &&
-    (!name_key || !m_map<typename T::name_key_type>()->is_present(*name_key)) &&
-    (!aux_key || !m_map<typename T::aux_key_type>()->is_present(*aux_key));
+    (!id_key || !m_map<typename T::Id_key>()->is_present(*id_key)) &&
+    (!name_key || !m_map<typename T::Name_key>()->is_present(*name_key)) &&
+    (!aux_key || !m_map<typename T::Aux_key>()->is_present(*aux_key));
 
   // If no keys are present, we must add the element.
   if (no_keys_present)
@@ -330,15 +453,15 @@ void Shared_multi_map<T>::release(Cache_element<T> *element)
   DBUG_ASSERT(e->usage() > 0);
 
   // Get all keys that were created within the element.
-  const typename T::id_key_type *id_key= element->id_key();
-  const typename T::name_key_type *name_key= element->name_key();
-  const typename T::aux_key_type *aux_key= element->aux_key();
+  const typename T::Id_key *id_key= element->id_key();
+  const typename T::Name_key *name_key= element->name_key();
+  const typename T::Aux_key *aux_key= element->aux_key();
 
   // All non-null keys must exist.
   DBUG_ASSERT(
-    (!id_key || m_map<typename T::id_key_type>()->is_present(*id_key)) &&
-    (!name_key || m_map<typename T::name_key_type>()->is_present(*name_key)) &&
-    (!aux_key || m_map<typename T::aux_key_type>()->is_present(*aux_key)));
+    (!id_key || m_map<typename T::Id_key>()->is_present(*id_key)) &&
+    (!name_key || m_map<typename T::Name_key>()->is_present(*name_key)) &&
+    (!aux_key || m_map<typename T::Aux_key>()->is_present(*aux_key)));
 #endif
 
   // Release the element.
@@ -417,168 +540,200 @@ template bool Shared_multi_map<Abstract_table>::
   get<const Abstract_table*>
     (const Abstract_table* const&, Cache_element<Abstract_table> **);
 template bool Shared_multi_map<Abstract_table>::
-  get<Abstract_table::id_key_type>
-    (const Abstract_table::id_key_type&, Cache_element<Abstract_table> **);
+  get<Abstract_table::Id_key>
+    (const Abstract_table::Id_key&, Cache_element<Abstract_table> **);
 template bool Shared_multi_map<Abstract_table>::
-  get<Abstract_table::name_key_type>
-    (const Abstract_table::name_key_type&, Cache_element<Abstract_table> **);
+  get<Abstract_table::Name_key>
+    (const Abstract_table::Name_key&, Cache_element<Abstract_table> **);
 template bool Shared_multi_map<Abstract_table>::
-  get<Abstract_table::aux_key_type>
-    (const Abstract_table::aux_key_type&, Cache_element<Abstract_table> **);
+  get<Abstract_table::Aux_key>
+    (const Abstract_table::Aux_key&, Cache_element<Abstract_table> **);
 template void Shared_multi_map<Abstract_table>::
-  put<Abstract_table::id_key_type>
-    (const Abstract_table::id_key_type*, const Abstract_table*,
+  put<Abstract_table::Id_key>
+    (const Abstract_table::Id_key*, const Abstract_table*,
       Cache_element<Abstract_table> **);
 template void Shared_multi_map<Abstract_table>::
-  put<Abstract_table::name_key_type>
-    (const Abstract_table::name_key_type*, const Abstract_table*,
+  put<Abstract_table::Name_key>
+    (const Abstract_table::Name_key*, const Abstract_table*,
       Cache_element<Abstract_table> **);
 template void Shared_multi_map<Abstract_table>::
-  put<Abstract_table::aux_key_type>
-    (const Abstract_table::aux_key_type*, const Abstract_table*,
+  put<Abstract_table::Aux_key>
+    (const Abstract_table::Aux_key*, const Abstract_table*,
       Cache_element<Abstract_table> **);
 template void Shared_multi_map<Abstract_table>::
-  drop_if_present<Abstract_table::id_key_type>(const Abstract_table::id_key_type&);
+  drop_if_present<Abstract_table::Id_key>(const Abstract_table::Id_key&);
 
 template class Shared_multi_map<Charset>;
 template bool Shared_multi_map<Charset>::
   get<const Charset*>
     (const Charset* const&, Cache_element<Charset> **);
 template bool Shared_multi_map<Charset>::
-  get<Charset::id_key_type>
-    (const Charset::id_key_type&, Cache_element<Charset> **);
+  get<Charset::Id_key>
+    (const Charset::Id_key&, Cache_element<Charset> **);
 template bool Shared_multi_map<Charset>::
-  get<Charset::name_key_type>
-    (const Charset::name_key_type&, Cache_element<Charset> **);
+  get<Charset::Name_key>
+    (const Charset::Name_key&, Cache_element<Charset> **);
 template bool Shared_multi_map<Charset>::
-  get<Charset::aux_key_type>
-    (const Charset::aux_key_type&, Cache_element<Charset> **);
+  get<Charset::Aux_key>
+    (const Charset::Aux_key&, Cache_element<Charset> **);
 template void Shared_multi_map<Charset>::
-  put<Charset::id_key_type>
-    (const Charset::id_key_type*, const Charset*,
+  put<Charset::Id_key>
+    (const Charset::Id_key*, const Charset*,
       Cache_element<Charset> **);
 template void Shared_multi_map<Charset>::
-  put<Charset::name_key_type>
-    (const Charset::name_key_type*, const Charset*,
+  put<Charset::Name_key>
+    (const Charset::Name_key*, const Charset*,
       Cache_element<Charset> **);
 template void Shared_multi_map<Charset>::
-  put<Charset::aux_key_type>
-    (const Charset::aux_key_type*, const Charset*,
+  put<Charset::Aux_key>
+    (const Charset::Aux_key*, const Charset*,
       Cache_element<Charset> **);
 template void Shared_multi_map<Charset>::
-  drop_if_present<Charset::id_key_type>(const Charset::id_key_type&);
+  drop_if_present<Charset::Id_key>(const Charset::Id_key&);
 
 template class Shared_multi_map<Collation>;
 template bool Shared_multi_map<Collation>::
   get<const Collation*>
     (const Collation* const&, Cache_element<Collation> **);
 template bool Shared_multi_map<Collation>::
-  get<Collation::id_key_type>
-    (const Collation::id_key_type&, Cache_element<Collation> **);
+  get<Collation::Id_key>
+    (const Collation::Id_key&, Cache_element<Collation> **);
 template bool Shared_multi_map<Collation>::
-  get<Collation::name_key_type>
-    (const Collation::name_key_type&, Cache_element<Collation> **);
+  get<Collation::Name_key>
+    (const Collation::Name_key&, Cache_element<Collation> **);
 template bool Shared_multi_map<Collation>::
-  get<Collation::aux_key_type>
-    (const Collation::aux_key_type&, Cache_element<Collation> **);
+  get<Collation::Aux_key>
+    (const Collation::Aux_key&, Cache_element<Collation> **);
 template void Shared_multi_map<Collation>::
-  put<Collation::id_key_type>
-    (const Collation::id_key_type*, const Collation*,
+  put<Collation::Id_key>
+    (const Collation::Id_key*, const Collation*,
       Cache_element<Collation> **);
 template void Shared_multi_map<Collation>::
-  put<Collation::name_key_type>
-    (const Collation::name_key_type*, const Collation*,
+  put<Collation::Name_key>
+    (const Collation::Name_key*, const Collation*,
       Cache_element<Collation> **);
 template void Shared_multi_map<Collation>::
-  put<Collation::aux_key_type>
-    (const Collation::aux_key_type*, const Collation*,
+  put<Collation::Aux_key>
+    (const Collation::Aux_key*, const Collation*,
       Cache_element<Collation> **);
 template void Shared_multi_map<Collation>::
-  drop_if_present<Collation::id_key_type>(const Collation::id_key_type&);
+  drop_if_present<Collation::Id_key>(const Collation::Id_key&);
+
+template class Shared_multi_map<Column_statistics>;
+template bool Shared_multi_map<Column_statistics>::
+  get<const Column_statistics*>
+    (const Column_statistics* const&, Cache_element<Column_statistics> **);
+template bool Shared_multi_map<Column_statistics>::
+  get<Column_statistics::Id_key>
+    (const Column_statistics::Id_key&,
+     Cache_element<Column_statistics> **);
+template bool Shared_multi_map<Column_statistics>::
+  get<Column_statistics::Name_key>
+    (const Column_statistics::Name_key&,
+     Cache_element<Column_statistics> **);
+template bool Shared_multi_map<Column_statistics>::
+  get<Column_statistics::Aux_key>
+    (const Column_statistics::Aux_key&,
+     Cache_element<Column_statistics> **);
+template void Shared_multi_map<Column_statistics>::
+  put<Column_statistics::Id_key>
+    (const Column_statistics::Id_key*, const Column_statistics*,
+     Cache_element<Column_statistics> **);
+template void Shared_multi_map<Column_statistics>::
+  put<Column_statistics::Name_key>
+    (const Column_statistics::Name_key*, const Column_statistics*,
+     Cache_element<Column_statistics> **);
+template void Shared_multi_map<Column_statistics>::
+  put<Column_statistics::Aux_key>
+    (const Column_statistics::Aux_key*, const Column_statistics*,
+     Cache_element<Column_statistics> **);
+template void Shared_multi_map<Column_statistics>::
+  drop_if_present<Column_statistics::Id_key>
+    (const Column_statistics::Id_key&);
 
 template class Shared_multi_map<Event>;
 template bool Shared_multi_map<Event>::
 get<const Event*>
 (const Event* const&, Cache_element<Event> **);
 template bool Shared_multi_map<Event>::
-get<Event::id_key_type>
-(const Event::id_key_type&, Cache_element<Event> **);
+get<Event::Id_key>
+(const Event::Id_key&, Cache_element<Event> **);
 template bool Shared_multi_map<Event>::
-get<Event::name_key_type>
-(const Event::name_key_type&, Cache_element<Event> **);
+get<Event::Name_key>
+(const Event::Name_key&, Cache_element<Event> **);
 template bool Shared_multi_map<Event>::
-get<Event::aux_key_type>
-(const Event::aux_key_type&, Cache_element<Event> **);
+get<Event::Aux_key>
+(const Event::Aux_key&, Cache_element<Event> **);
 template void Shared_multi_map<Event>::
-put<Event::id_key_type>
-(const Event::id_key_type*, const Event*,
+put<Event::Id_key>
+(const Event::Id_key*, const Event*,
  Cache_element<Event> **);
 template void Shared_multi_map<Event>::
-put<Event::name_key_type>
-(const Event::name_key_type*, const Event*,
+put<Event::Name_key>
+(const Event::Name_key*, const Event*,
  Cache_element<Event> **);
 template void Shared_multi_map<Event>::
-put<Event::aux_key_type>
-(const Event::aux_key_type*, const Event*,
+put<Event::Aux_key>
+(const Event::Aux_key*, const Event*,
  Cache_element<Event> **);
 template void Shared_multi_map<Event>::
-  drop_if_present<Event::id_key_type>(const Event::id_key_type&);
+  drop_if_present<Event::Id_key>(const Event::Id_key&);
 
 template class Shared_multi_map<Routine>;
 template bool Shared_multi_map<Routine>::
   get<const Routine*>
     (const Routine* const&, Cache_element<Routine> **);
 template bool Shared_multi_map<Routine>::
-  get<Routine::id_key_type>
-    (const Routine::id_key_type&, Cache_element<Routine> **);
+  get<Routine::Id_key>
+    (const Routine::Id_key&, Cache_element<Routine> **);
 template bool Shared_multi_map<Routine>::
-  get<Routine::name_key_type>
-    (const Routine::name_key_type&, Cache_element<Routine> **);
+  get<Routine::Name_key>
+    (const Routine::Name_key&, Cache_element<Routine> **);
 template bool Shared_multi_map<Routine>::
-  get<Routine::aux_key_type>
-    (const Routine::aux_key_type&, Cache_element<Routine> **);
+  get<Routine::Aux_key>
+    (const Routine::Aux_key&, Cache_element<Routine> **);
 template void Shared_multi_map<Routine>::
-  put<Routine::id_key_type>
-    (const Routine::id_key_type*, const Routine*,
+  put<Routine::Id_key>
+    (const Routine::Id_key*, const Routine*,
       Cache_element<Routine> **);
 template void Shared_multi_map<Routine>::
-  put<Routine::name_key_type>
-    (const Routine::name_key_type*, const Routine*,
+  put<Routine::Name_key>
+    (const Routine::Name_key*, const Routine*,
       Cache_element<Routine> **);
 template void Shared_multi_map<Routine>::
-  put<Routine::aux_key_type>
-    (const Routine::aux_key_type*, const Routine*,
+  put<Routine::Aux_key>
+    (const Routine::Aux_key*, const Routine*,
       Cache_element<Routine> **);
 template void Shared_multi_map<Routine>::
-  drop_if_present<Routine::id_key_type>(const Routine::id_key_type&);
+  drop_if_present<Routine::Id_key>(const Routine::Id_key&);
 
 template class Shared_multi_map<Schema>;
 template bool Shared_multi_map<Schema>::
   get<const Schema*>
     (const Schema* const&, Cache_element<Schema> **);
 template bool Shared_multi_map<Schema>::
-  get<Schema::id_key_type>
-    (const Schema::id_key_type&, Cache_element<Schema> **);
+  get<Schema::Id_key>
+    (const Schema::Id_key&, Cache_element<Schema> **);
 template bool Shared_multi_map<Schema>::
-  get<Schema::name_key_type>
-    (const Schema::name_key_type&, Cache_element<Schema> **);
+  get<Schema::Name_key>
+    (const Schema::Name_key&, Cache_element<Schema> **);
 template bool Shared_multi_map<Schema>::
-  get<Schema::aux_key_type>
-    (const Schema::aux_key_type&, Cache_element<Schema> **);
+  get<Schema::Aux_key>
+    (const Schema::Aux_key&, Cache_element<Schema> **);
 template void Shared_multi_map<Schema>::
-  put<Schema::id_key_type>
-    (const Schema::id_key_type*, const Schema*,
+  put<Schema::Id_key>
+    (const Schema::Id_key*, const Schema*,
       Cache_element<Schema> **);
 template void Shared_multi_map<Schema>::
-  put<Schema::name_key_type>
-    (const Schema::name_key_type*, const Schema*,
+  put<Schema::Name_key>
+    (const Schema::Name_key*, const Schema*,
       Cache_element<Schema> **);
 template void Shared_multi_map<Schema>::
-  put<Schema::aux_key_type>
-    (const Schema::aux_key_type*, const Schema*,
+  put<Schema::Aux_key>
+    (const Schema::Aux_key*, const Schema*,
       Cache_element<Schema> **);
 template void Shared_multi_map<Schema>::
-  drop_if_present<Schema::id_key_type>(const Schema::id_key_type&);
+  drop_if_present<Schema::Id_key>(const Schema::Id_key&);
 
 template class Shared_multi_map<Spatial_reference_system>;
 template bool Shared_multi_map<Spatial_reference_system>::
@@ -586,63 +741,91 @@ template bool Shared_multi_map<Spatial_reference_system>::
     (const Spatial_reference_system* const&,
      Cache_element<Spatial_reference_system> **);
 template bool Shared_multi_map<Spatial_reference_system>::
-  get<Spatial_reference_system::id_key_type>
-    (const Spatial_reference_system::id_key_type&,
+  get<Spatial_reference_system::Id_key>
+    (const Spatial_reference_system::Id_key&,
      Cache_element<Spatial_reference_system> **);
 template bool Shared_multi_map<Spatial_reference_system>::
-  get<Spatial_reference_system::name_key_type>
-    (const Spatial_reference_system::name_key_type&,
+  get<Spatial_reference_system::Name_key>
+    (const Spatial_reference_system::Name_key&,
      Cache_element<Spatial_reference_system> **);
 template bool Shared_multi_map<Spatial_reference_system>::
-  get<Spatial_reference_system::aux_key_type>
-    (const Spatial_reference_system::aux_key_type&,
+  get<Spatial_reference_system::Aux_key>
+    (const Spatial_reference_system::Aux_key&,
      Cache_element<Spatial_reference_system> **);
 template void Shared_multi_map<Spatial_reference_system>::
-  put<Spatial_reference_system::id_key_type>
-    (const Spatial_reference_system::id_key_type*,
+  put<Spatial_reference_system::Id_key>
+    (const Spatial_reference_system::Id_key*,
      const Spatial_reference_system*,
      Cache_element<Spatial_reference_system> **);
 template void Shared_multi_map<Spatial_reference_system>::
-  put<Spatial_reference_system::name_key_type>
-    (const Spatial_reference_system::name_key_type*,
+  put<Spatial_reference_system::Name_key>
+    (const Spatial_reference_system::Name_key*,
      const Spatial_reference_system*,
      Cache_element<Spatial_reference_system> **);
 template void Shared_multi_map<Spatial_reference_system>::
-  put<Spatial_reference_system::aux_key_type>
-    (const Spatial_reference_system::aux_key_type*,
+  put<Spatial_reference_system::Aux_key>
+    (const Spatial_reference_system::Aux_key*,
      const Spatial_reference_system*,
      Cache_element<Spatial_reference_system> **);
 template void Shared_multi_map<Spatial_reference_system>::
-  drop_if_present<Spatial_reference_system::id_key_type>(
-    const Spatial_reference_system::id_key_type&);
+  drop_if_present<Spatial_reference_system::Id_key>(
+    const Spatial_reference_system::Id_key&);
 
 template class Shared_multi_map<Tablespace>;
 template bool Shared_multi_map<Tablespace>::
   get<const Tablespace*>
     (const Tablespace* const&, Cache_element<Tablespace> **);
 template bool Shared_multi_map<Tablespace>::
-  get<Tablespace::id_key_type>
-    (const Tablespace::id_key_type&, Cache_element<Tablespace> **);
+  get<Tablespace::Id_key>
+    (const Tablespace::Id_key&, Cache_element<Tablespace> **);
 template bool Shared_multi_map<Tablespace>::
-  get<Tablespace::name_key_type>
-    (const Tablespace::name_key_type&, Cache_element<Tablespace> **);
+  get<Tablespace::Name_key>
+    (const Tablespace::Name_key&, Cache_element<Tablespace> **);
 template bool Shared_multi_map<Tablespace>::
-  get<Tablespace::aux_key_type>
-    (const Tablespace::aux_key_type&, Cache_element<Tablespace> **);
+  get<Tablespace::Aux_key>
+    (const Tablespace::Aux_key&, Cache_element<Tablespace> **);
 template void Shared_multi_map<Tablespace>::
-  put<Tablespace::id_key_type>
-    (const Tablespace::id_key_type*, const Tablespace*,
+  put<Tablespace::Id_key>
+    (const Tablespace::Id_key*, const Tablespace*,
       Cache_element<Tablespace> **);
 template void Shared_multi_map<Tablespace>::
-  put<Tablespace::name_key_type>
-    (const Tablespace::name_key_type*, const Tablespace*,
+  put<Tablespace::Name_key>
+    (const Tablespace::Name_key*, const Tablespace*,
       Cache_element<Tablespace> **);
 template void Shared_multi_map<Tablespace>::
-  put<Tablespace::aux_key_type>
-    (const Tablespace::aux_key_type*, const Tablespace*,
+  put<Tablespace::Aux_key>
+    (const Tablespace::Aux_key*, const Tablespace*,
       Cache_element<Tablespace> **);
 template void Shared_multi_map<Tablespace>::
-  drop_if_present<Tablespace::id_key_type>(const Tablespace::id_key_type&);
+  drop_if_present<Tablespace::Id_key>(const Tablespace::Id_key&);
+
+template class Shared_multi_map<Resource_group>;
+template bool Shared_multi_map<Resource_group>::
+  get<const Resource_group*>
+    (const Resource_group* const&, Cache_element<Resource_group> **);
+template bool Shared_multi_map<Resource_group>::
+  get<Resource_group::Id_key>
+    (const Resource_group::Id_key&, Cache_element<Resource_group> **);
+template bool Shared_multi_map<Resource_group>::
+  get<Resource_group::Name_key>
+    (const Resource_group::Name_key&, Cache_element<Resource_group> **);
+template bool Shared_multi_map<Resource_group>::
+  get<Resource_group::Aux_key>
+    (const Resource_group::Aux_key&, Cache_element<Resource_group> **);
+template void Shared_multi_map<Resource_group>::
+  put<Resource_group::Id_key>
+    (const Resource_group::Id_key*, const Resource_group*,
+      Cache_element<Resource_group> **);
+template void Shared_multi_map<Resource_group>::
+  put<Resource_group::Name_key>
+    (const Resource_group::Name_key*, const Resource_group*,
+      Cache_element<Resource_group> **);
+template void Shared_multi_map<Resource_group>::
+  put<Resource_group::Aux_key>
+    (const Resource_group::Aux_key*, const Resource_group*,
+      Cache_element<Resource_group> **);
+template void Shared_multi_map<Resource_group>::
+  drop_if_present<Resource_group::Id_key>(const Resource_group::Id_key&);
 
 } // namespace cache
 } // namespace dd

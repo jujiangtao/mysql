@@ -1,49 +1,63 @@
 /*
  * Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
  *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License as
- * published by the Free Software Foundation; version 2 of the
- * License.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License, version 2.0,
+ * as published by the Free Software Foundation.
  *
+ * This program is also distributed with certain software (including
+ * but not limited to OpenSSL) that is licensed under separate terms,
+ * as designated in a particular file or component or in included license
+ * documentation.  The authors of MySQL hereby grant you an additional
+ * permission to link the program and your derivative works with the
+ * separately licensed software that they have included with MySQL.
+ *  
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License, version 2.0, for more details.
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
- * 02110-1301  USA
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
  */
 
-#include "xpl_server.h"
+#include "plugin/x/src/xpl_server.h"
+#include "plugin/x/generated/mysqlx_version.h"
 
-#include "auth_mysql41.h"
-#include "auth_plain.h"
-#include "io/xpl_listener_factory.h"
+#define LOG_SUBSYSTEM_TAG  MYSQLX_PLUGIN_NAME
+
 #include "my_config.h"
+
 #include "my_inttypes.h"
 #include "my_thread_local.h"
-#include "mysql_show_variable_wrapper.h"
-#include "mysql_variables.h"
 #include "mysql/plugin.h"
 #include "mysql/service_ssl_wrapper.h"
-#include "mysqlx_version.h"
-#include "ngs/interface/authentication_interface.h"
-#include "ngs/interface/listener_interface.h"
-#include "ngs/protocol/protocol_config.h"
-#include "ngs/scheduler.h"
-#include "ngs/server_acceptors.h"
-#include "sql_data_result.h"
-#include "xpl_client.h"
-#include "xpl_error.h"
-#include "xpl_session.h"
-#include "xpl_system_variables.h"
+#include "plugin/x/ngs/include/ngs/interface/authentication_interface.h"
+#include "plugin/x/ngs/include/ngs/interface/listener_interface.h"
+#include "plugin/x/ngs/include/ngs/protocol/protocol_config.h"
+#include "plugin/x/ngs/include/ngs/scheduler.h"
+#include "plugin/x/ngs/include/ngs/server_acceptors.h"
+#include "plugin/x/ngs/include/ngs_common/config.h"
+#include "plugin/x/src/auth_challenge_response.h"
+#include "plugin/x/src/auth_plain.h"
+#include "plugin/x/src/io/xpl_listener_factory.h"
+#include "plugin/x/src/mysql_show_variable_wrapper.h"
+#include "plugin/x/src/mysql_variables.h"
+#include "plugin/x/src/sql_data_result.h"
+#include "plugin/x/src/xpl_client.h"
+#include "plugin/x/src/xpl_error.h"
+#include "plugin/x/src/xpl_session.h"
+#include "plugin/x/src/xpl_system_variables.h"
+#include "plugin/x/src/udf/mysqlx_error.h"
+#include "plugin/x/src/sha256_password_cache.h"
+#include "plugin/x/src/udf/registrator.h"
 
 #if !defined(HAVE_YASSL)
 #include <openssl/err.h>
 #endif
+
+std::atomic<bool> xpl::g_cache_plugin_started{false};
 
 class Session_scheduler : public ngs::Scheduler_dynamic
 {
@@ -193,15 +207,17 @@ bool xpl::Server::on_verify_server_state()
 ngs::shared_ptr<ngs::Client_interface> xpl::Server::create_client(ngs::Connection_ptr connection)
 {
   ngs::shared_ptr<ngs::Client_interface> result;
-  result = ngs::allocate_shared<xpl::Client>(connection, ngs::ref(m_server), ++m_client_id,
-                                             ngs::allocate_object<xpl::Protocol_monitor>());
+  auto global_timeouts = m_config->get_global_timeouts();
+  result = ngs::allocate_shared<xpl::Client>(connection, ngs::ref(m_server),
+      ++m_client_id, ngs::allocate_object<xpl::Protocol_monitor>(),
+      global_timeouts);
   return result;
 }
 
 
 ngs::shared_ptr<ngs::Session_interface> xpl::Server::create_session(ngs::Client_interface &client,
-                                                            ngs::Protocol_encoder &proto,
-                                                            Session::Session_id session_id)
+                                                                    ngs::Protocol_encoder_interface &proto,
+                                                                    const Session::Session_id session_id)
 {
   return ngs::shared_ptr<ngs::Session>(
            ngs::allocate_shared<xpl::Session>(ngs::ref(client), &proto, session_id));
@@ -219,7 +235,7 @@ void xpl::Server::on_client_closed(const ngs::Client_interface&)
 
 bool xpl::Server::will_accept_client(const ngs::Client_interface&)
 {
-  Mutex_lock lock(m_accepting_mutex);
+  MUTEX_LOCK(lock, m_accepting_mutex);
 
   ++m_num_of_connections;
 
@@ -256,7 +272,6 @@ void xpl::Server::did_reject_client(ngs::Server_delegate::Reject_reason reason)
   }
 }
 
-
 void xpl::Server::plugin_system_variables_changed()
 {
   const unsigned int min = m_wscheduler->set_num_workers(Plugin_system_variables::min_worker_threads);
@@ -265,10 +280,15 @@ void xpl::Server::plugin_system_variables_changed()
 
   m_wscheduler->set_idle_worker_timeout(Plugin_system_variables::idle_worker_thread_timeout * 1000);
 
+  m_config->m_interactive_timeout =
+      Plugin_system_variables::m_interactive_timeout;
   m_config->max_message_size = Plugin_system_variables::max_allowed_packet;
   m_config->connect_timeout = ngs::chrono::seconds(Plugin_system_variables::connect_timeout);
 }
 
+void xpl::Server::update_global_timeout_values() {
+  m_config->set_global_timeouts(get_global_timeouts());
+}
 
 bool xpl::Server::is_terminating() const
 {
@@ -317,9 +337,20 @@ int xpl::Server::main(MYSQL_PLUGIN p)
 
     const bool use_only_through_secure_connection = true, use_only_in_non_secure_connection = false;
 
+    // Cache cleaning plugin started before the X plugin so cache was not
+    // enabled yet
+    if (g_cache_plugin_started)
+      instance->m_sha256_password_cache.enable();
+
+    instance->server().add_sha256_password_cache(
+        &instance->get_sha256_password_cache());
     instance->server().add_authentication_mechanism("PLAIN",   Sasl_plain_auth::create,   use_only_through_secure_connection);
     instance->server().add_authentication_mechanism("MYSQL41", Sasl_mysql41_auth::create, use_only_in_non_secure_connection);
     instance->server().add_authentication_mechanism("MYSQL41", Sasl_mysql41_auth::create, use_only_through_secure_connection);
+    instance->server().add_authentication_mechanism("SHA256_MEMORY",
+        Sasl_sha256_memory_auth::create, use_only_in_non_secure_connection);
+    instance->server().add_authentication_mechanism("SHA256_MEMORY",
+        Sasl_sha256_memory_auth::create, use_only_through_secure_connection);
 
     instance->plugin_system_variables_changed();
 
@@ -327,9 +358,16 @@ int xpl::Server::main(MYSQL_PLUGIN p)
     thd_scheduler->launch();
     instance->m_nscheduler->launch();
 
-    xpl::Plugin_system_variables::registry_callback(ngs::bind(&Server::plugin_system_variables_changed, instance));
+    xpl::Plugin_system_variables::registry_callback(ngs::bind(
+          &Server::plugin_system_variables_changed,
+          instance));
+    xpl::Plugin_system_variables::registry_callback(ngs::bind(
+          &Server::update_global_timeout_values,
+          instance));
 
     instance->m_nscheduler->post(ngs::bind(&Server::net_thread, instance));
+
+    instance->register_udfs();
 
     instance_rwl.unlock();
   }
@@ -338,7 +376,7 @@ int xpl::Server::main(MYSQL_PLUGIN p)
     if (instance)
       instance->server().start_failed();
     instance_rwl.unlock();
-    my_plugin_log_message(&xpl::plugin_handle, MY_ERROR_LEVEL, "Startup failed with error \"%s\"", e.what());
+    LogPluginErr(ERROR_LEVEL, ER_XPLUGIN_STARTUP_FAILED, e.what());
     return 1;
   }
 
@@ -350,10 +388,13 @@ int xpl::Server::exit(MYSQL_PLUGIN)
 {
   // this flag will trigger the on_verify_server_state() timer to trigger an acceptor thread exit
   exiting = true;
-  my_plugin_log_message(&xpl::plugin_handle, MY_INFORMATION_LEVEL, "Exiting");
 
+  if (nullptr != xpl::plugin_handle)
+    LogPluginErr(INFORMATION_LEVEL, ER_XPLUGIN_SERVER_EXITING);
   if (instance)
   {
+    instance->unregister_udfs();
+
     // Following writelock sometimes blocks network thread in  bool Server::on_net_startup()
     // and call to  self->server().stop() wait for network thread to exit
     // thus its going hand forever. Still we already changed the value of instance. Thus we should exit
@@ -377,31 +418,12 @@ int xpl::Server::exit(MYSQL_PLUGIN)
     instance = NULL;
   }
 
-  my_plugin_log_message(&xpl::plugin_handle, MY_INFORMATION_LEVEL, "Exit done");
+  if (nullptr != xpl::plugin_handle)
+    LogPluginErr(INFORMATION_LEVEL, ER_XPLUGIN_SERVER_EXITED);
+
+  xpl::plugin_handle = nullptr;
+
   return 0;
-}
-
-
-ngs::Error_code xpl::Server::let_mysqlx_user_verify_itself(Sql_data_context &context)
-{
-  try
-  {
-    context.switch_to_local_user(MYSQLXSYS_USER);
-
-    if (!context.is_acl_disabled())
-    {
-      verify_mysqlx_user_grants(context);
-    }
-
-    return ngs::Success();
-  }
-  catch (const ngs::Error_code &error)
-  {
-    if (ER_MUST_CHANGE_PASSWORD == error.error)
-      log_error("Password for %s account has been expired", MYSQLXSYS_ACCOUNT);
-
-    return error;
-  }
 }
 
 void xpl::Server::verify_mysqlx_user_grants(Sql_data_context &context)
@@ -430,7 +452,7 @@ void xpl::Server::verify_mysqlx_user_grants(Sql_data_context &context)
   {
     sql_result.get_next_field(grants);
     ++num_of_grants;
-    if (grants == "GRANT USAGE ON *.* TO `" MYSQLXSYS_USER "`@`" MYSQLXSYS_HOST "`")
+    if (grants == "GRANT USAGE ON *.* TO `" MYSQL_SESSION_USER "`@`" MYSQLXSYS_HOST "`")
       has_no_privileges = true;
 
     bool on_all_schemas = false;
@@ -478,49 +500,6 @@ void xpl::Server::verify_mysqlx_user_grants(Sql_data_context &context)
   throw ngs::Error(ER_X_BAD_CONFIGURATION, "%s account already exists but does not have the expected grants", MYSQLXSYS_ACCOUNT);
 }
 
-
-void xpl::Server::create_mysqlx_user(Sql_data_context &context)
-{
-  Sql_data_result sql_result(context);
-
-  try
-  {
-    context.switch_to_local_user("root");
-
-    sql_result.disable_binlog();
-
-    // pwd doesn't matter because the account is locked
-    sql_result.query("CREATE USER IF NOT EXISTS " MYSQLXSYS_ACCOUNT " IDENTIFIED WITH mysql_native_password AS '*7CF5CA9067EC647187EB99FCC27548FBE4839AE3' ACCOUNT LOCK;");
-
-    try
-    {
-      if (sql_result.statement_warn_count() > 0)
-        verify_mysqlx_user_grants(context);
-    }
-    catch (const ngs::Error_code &error)
-    {
-      if (ER_X_MYSQLX_ACCOUNT_MISSING_PERMISSIONS != error.error)
-        throw error;
-    }
-
-    sql_result.query("GRANT SELECT ON mysql.user TO " MYSQLXSYS_ACCOUNT);
-    sql_result.query("GRANT SUPER ON *.* TO " MYSQLXSYS_ACCOUNT);
-    sql_result.query("FLUSH PRIVILEGES;");
-
-    sql_result.restore_binlog();
-  }
-  catch (const ngs::Error_code &error)
-  {
-    sql_result.restore_binlog();
-
-    if (ER_MUST_CHANGE_PASSWORD != error.error)
-      throw error;
-
-    throw ngs::Error(ER_X_BAD_CONFIGURATION, "Can't setup %s account - root password expired", MYSQLXSYS_ACCOUNT);
-  }
-}
-
-
 void xpl::Server::net_thread()
 {
   srv_session_init_thread(xpl::plugin_handle);
@@ -536,7 +515,6 @@ void xpl::Server::net_thread()
     log_info("Server starts handling incoming connections");
     m_server.start();
     log_info("Stopped handling incoming connections");
-    on_net_shutdown();
   }
 
   ssl_wrapper_thread_cleanup();
@@ -551,21 +529,17 @@ static xpl::Ssl_config choose_ssl_config(const bool mysqld_have_ssl,
 {
   if (!mysqlx_ssl.is_configured() && mysqld_have_ssl)
   {
-    my_plugin_log_message(&xpl::plugin_handle, MY_INFORMATION_LEVEL,
-        "Using SSL configuration from MySQL Server");
-
+    LogPluginErr(INFORMATION_LEVEL, ER_XPLUGIN_USING_SSL_CONF_FROM_SERVER);
     return mysqld_ssl;
   }
 
   if (mysqlx_ssl.is_configured())
   {
-    my_plugin_log_message(&xpl::plugin_handle, MY_INFORMATION_LEVEL,
-        "Using SSL configuration from Mysqlx Plugin");
+    LogPluginErr(INFORMATION_LEVEL, ER_XPLUGIN_USING_SSL_CONF_FROM_MYSQLX);
     return mysqlx_ssl;
   }
 
-  my_plugin_log_message(&xpl::plugin_handle, MY_INFORMATION_LEVEL,
-      "Neither MySQL Server nor Mysqlx Plugin has valid SSL configuration");
+  LogPluginErr(INFORMATION_LEVEL, ER_XPLUGIN_FAILED_TO_USE_SSL_CONF);
 
   return xpl::Ssl_config();
 }
@@ -588,12 +562,19 @@ bool xpl::Server::on_net_startup()
     if (error)
       throw error;
 
-    if (let_mysqlx_user_verify_itself(sql_context))
-      create_mysqlx_user(sql_context);
-
     Sql_data_result sql_result(sql_context);
-    sql_result.query("SELECT @@skip_networking, @@skip_name_resolve, @@have_ssl='YES', @@ssl_key, "
-                     "@@ssl_ca, @@ssl_capath, @@ssl_cert, @@ssl_cipher, @@ssl_crl, @@ssl_crlpath, @@tls_version;");
+    try {
+      sql_context.switch_to_local_user(MYSQL_SESSION_USER);
+      sql_result.query("SELECT @@skip_networking, @@skip_name_resolve, @@have_ssl='YES', @@ssl_key, "
+                       "@@ssl_ca, @@ssl_capath, @@ssl_cert, @@ssl_cipher, @@ssl_crl, @@ssl_crlpath, @@tls_version;");
+    } catch (const ngs::Error_code &) {
+      log_error("Unable to use user mysql.session account when connecting"
+                "the server for internal plugin requests.");
+      log_info("For more information, please see the X Plugin User Account"
+               "section in the MySQL documentation");
+      throw;
+    }
+
 
     sql_context.detach();
 
@@ -636,13 +617,13 @@ bool xpl::Server::on_net_startup()
 
     if (ssl_setup_result)
     {
-      my_plugin_log_message(&xpl::plugin_handle, MY_INFORMATION_LEVEL,
-          "Using " IS_YASSL_OR_OPENSSL("YaSSL", "OpenSSL") " for TLS connections");
+      LogPluginErr(INFORMATION_LEVEL, ER_XPLUGIN_USING_SSL_FOR_TLS_CONNECTION,
+                   IS_YASSL_OR_OPENSSL("YaSSL", "OpenSSL"));
     }
     else
     {
-      my_plugin_log_message(&xpl::plugin_handle, MY_INFORMATION_LEVEL,
-          "For more information, please see the Using Secure Connections with X Plugin section in the MySQL documentation.");
+      LogPluginErr(INFORMATION_LEVEL,
+                   ER_XPLUGIN_REFERENCE_TO_SECURE_CONN_WITH_XPLUGIN);
     }
 
     if (instance->server().prepare(ngs::move(ssl_ctx), skip_networking, skip_name_resolve, true))
@@ -665,51 +646,10 @@ bool xpl::Server::on_net_startup()
   return false;
 }
 
-
-void xpl::Server::on_net_shutdown()
-{
-  if (!mysqld::is_terminating())
-  {
-    try
-    {
-      Sql_data_context sql_context(NULL, true);
-
-      if (!sql_context.init())
-      {
-        Sql_data_result  sql_result(sql_context);
-
-        sql_context.switch_to_local_user("root");
-
-        sql_result.disable_binlog();
-
-        try
-        {
-          if (!sql_context.is_acl_disabled())
-            sql_result.query("DROP USER " MYSQLXSYS_ACCOUNT);
-          else
-            log_warning("Internal account %s can't be removed because server is running without user privileges (\"skip-grant-tables\" switch)", MYSQLXSYS_ACCOUNT);
-
-          sql_result.restore_binlog();
-        }
-        catch (const ngs::Error_code &error)
-        {
-          sql_result.restore_binlog();
-          throw error;
-        }
-
-        sql_context.detach();
-      }
-    }
-    catch (const ngs::Error_code &ec)
-    {
-      log_error("%s", ec.message.c_str());
-    }
-  }
-}
-
 ngs::Error_code xpl::Server::kill_client(uint64_t client_id, Session &requester)
 {
-  ngs::unique_ptr<Mutex_lock> lock(new Mutex_lock(server().get_client_exit_mutex()));
+  ngs::unique_ptr<Mutex_lock> lock(new Mutex_lock(server().get_client_exit_mutex(),
+                                                  __FILE__, __LINE__));
   ngs::Client_ptr found_client = server().get_client_list().find(client_id);
 
   // Locking exit mutex of ensures that the client wont exit Client::run until
@@ -733,7 +673,7 @@ ngs::Error_code xpl::Server::kill_client(uint64_t client_id, Session &requester)
     uint64_t mysql_session_id = 0;
 
     {
-      Mutex_lock lock_session_exit(xpl_client->get_session_exit_mutex());
+      MUTEX_LOCK(lock_session_exit, xpl_client->get_session_exit_mutex());
       ngs::shared_ptr<xpl::Session> session = xpl_client->get_session();
 
       is_session = NULL != session.get();
@@ -750,7 +690,7 @@ ngs::Error_code xpl::Server::kill_client(uint64_t client_id, Session &requester)
 
       bool is_killed = false;
       {
-        Mutex_lock lock_session_exit(xpl_client->get_session_exit_mutex());
+        MUTEX_LOCK(lock_session_exit, xpl_client->get_session_exit_mutex());
         ngs::shared_ptr<xpl::Session> session = xpl_client->get_session();
 
         if (session)
@@ -842,7 +782,7 @@ struct Client_check_handler_thd
 };
 
 
-xpl::Client_ptr xpl::Server::get_client_by_thd(Server_ref &server, THD *thd)
+xpl::Client_ptr xpl::Server::get_client_by_thd(Server_ptr &server, THD *thd)
 {
   std::vector<ngs::Client_ptr> clients;
   Client_check_handler_thd     client_check_thd(thd);
@@ -855,3 +795,14 @@ xpl::Client_ptr xpl::Server::get_client_by_thd(Server_ref &server, THD *thd)
 
   return Client_ptr();
 }
+
+void xpl::Server::register_udfs() {
+  udf::Registrator r;
+  r.registration(udf::get_mysqlx_error_record(), &m_udf_names);
+}
+
+void xpl::Server::unregister_udfs() {
+  udf::Registrator r;
+    r.unregistration(&m_udf_names);
+}
+

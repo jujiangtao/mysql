@@ -1,13 +1,20 @@
 /* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -698,17 +705,17 @@ public:
 
 
   <tr>
-    <td>var_header_len</td>
+    <td>width</td>
     <td>packed integer</td>
     <td>Represents the number of columns in the table</td>
   </tr>
 
   <tr>
-    <td>width</td>
+    <td>cols</td>
     <td>Bitfield, variable sized</td>
     <td>Indicates whether each column is used, one bit per column.
-        For this field, the amount of storage required for N columns
-        is INT((N + 7) / 8) bytes. </td>
+        For this field, the amount of storage required is
+        INT((width + 7) / 8) bytes. </td>
   </tr>
 
   <tr>
@@ -720,7 +727,8 @@ public:
   <tr>
     <td>columns_before_image</td>
     <td>vector of elements of type uint8_t</td>
-    <td>Bit-field indicating whether each column is used
+    <td>For DELETE and UPDATE only.
+        Bit-field indicating whether each column is used
         one bit per column. For this field, the amount of storage
         required for N columns is INT((N + 7) / 8) bytes.</td>
   </tr>
@@ -728,7 +736,7 @@ public:
   <tr>
     <td>columns_after_image</td>
     <td>vector of elements of type uint8_t</td>
-    <td>variable-sized (for UPDATE_ROWS_EVENT only).
+    <td>For WRITE and UPDATE only.
         Bit-field indicating whether each column is used in the
         UPDATE_ROWS_EVENT and WRITE_ROWS_EVENT after-image; one bit per column.
         For this field, the amount of storage required for N columns
@@ -806,7 +814,8 @@ public:
 
     @param type_arg          Type of ROW_EVENT. Expected types are:
                              - WRITE_ROWS_EVENT, WRITE_ROWS_EVENT_V1
-                             - UPDATE_ROWS_EVENT, UPDATE_ROWS_EVENT_V1
+                             - UPDATE_ROWS_EVENT, UPDATE_ROWS_EVENT_V1,
+                               PARTIAL_UPDATE_ROWS_EVENT
                              - DELETE_ROWS_EVENT, DELETE_ROWS_EVENT_V1
   */
   explicit Rows_event(Log_event_type type_arg)
@@ -963,8 +972,8 @@ public:
     this->header()->type_code= m_type;
   }
 
-  Update_rows_event()
-    : Rows_event(UPDATE_ROWS_EVENT)
+  Update_rows_event(Log_event_type event_type)
+    : Rows_event(event_type)
   {}
 };
 

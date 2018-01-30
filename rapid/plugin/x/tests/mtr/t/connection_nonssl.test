@@ -4,6 +4,7 @@
 --echo Preamble
 --source ../include/have_performance_schema_threads.inc
 --source include/xplugin_preamble.inc
+--source include/xplugin_create_user.inc
 
 SET GLOBAL mysqlx_connect_timeout = 300;
 call mtr.add_suppression("Unsuccessful login attempt");
@@ -54,7 +55,7 @@ GRANT ALL ON *.* TO user6_mysqlx@localhost;
 -->endsql
 EOF
 
---exec $MYSQLXTEST -u root --password='' --file=$MYSQL_TMP_DIR/mysqlx-connection-setup.tmp 2>&1
+--exec $MYSQLXTEST -u x_root --password='' --file=$MYSQL_TMP_DIR/mysqlx-connection-setup.tmp 2>&1
 
 --write_file $MYSQL_TMP_DIR/mysqlx-connection-info.tmp
 -->sql
@@ -97,7 +98,7 @@ ALTER USER user2_mysqlx@localhost PASSWORD EXPIRE;
 # Expecting error since MYSQLXTEST trying to take connection using ssl option to Non-SSL enabled server.
 --let $expected_error_msg= Capability prepare failed for 'tls' \(code 5001\)
 --source ../include/mysqlxtest_expected_error.inc
---exec $MYSQLXTEST -u user2_mysqlx --password='set-new-auth' --ssl-key=$MYSQL_TEST_DIR/std_data/server-key.pem --ssl-cert=$MYSQL_TEST_DIR/std_data/server-cert.pem --file=$MYSQL_TMP_DIR/mysqlx-connection-info.tmp --file=$MYSQL_TMP_DIR/mysqlx-set-pwd.tmp 2>&1
+--exec $MYSQLXTEST -u user2_mysqlx --password='set-new-auth' --ssl-key=$MYSQL_TEST_DIR/std_data/server-key.pem --ssl-cert=$MYSQL_TEST_DIR/std_data/server-cert.pem --ssl-mode=required --file=$MYSQL_TMP_DIR/mysqlx-connection-info.tmp 2>&1
 
 --exec $MYSQLXTEST -u user2_mysqlx --password='set-new-auth' --file=$MYSQL_TMP_DIR/mysqlx-set-pwd.tmp 2>&1
 
@@ -125,6 +126,8 @@ ALTER USER user4_mysqlx@localhost ACCOUNT UNLOCK;
 --let $expected_error_msg=  Current account requires TLS to be activate. \(code 1045\)
 --source ../include/mysqlxtest_expected_error.inc
 --exec $MYSQLXTEST -u user6_mysqlx --password='dwh@#ghd' --file=$MYSQL_TMP_DIR/mysqlx-connection-info.tmp 2>&1
+
+--source include/xplugin_drop_user.inc
 
 # Postamble
 UNINSTALL PLUGIN mysqlx;

@@ -2,13 +2,20 @@
   Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
   along with this program; if not, write to the Free Software
@@ -18,12 +25,12 @@
 #ifndef ABSTRACT_PROGRESS_WATCHER_INCLUDED
 #define ABSTRACT_PROGRESS_WATCHER_INCLUDED
 
+#include <atomic>
 #include <chrono>
 #include <functional>
 
-#include "abstract_chain_element.h"
-#include "base/atomic.h"
-#include "i_progress_watcher.h"
+#include "client/dump/abstract_chain_element.h"
+#include "client/dump/i_progress_watcher.h"
 #include "my_inttypes.h"
 
 namespace Mysql{
@@ -68,9 +75,9 @@ protected:
     Progress_data(const Progress_data& to_copy);
     Progress_data& operator=(const Progress_data& to_copy);
     Progress_data operator-(const Progress_data& to_subtract);
-    my_boost::atomic_uint64_t m_table_count;
-    my_boost::atomic_uint64_t m_row_data;
-    my_boost::atomic_uint64_t m_row_count;
+    std::atomic<uint64_t> m_table_count;
+    std::atomic<uint64_t> m_row_data;
+    std::atomic<uint64_t> m_row_count;
   };
 
   virtual void process_progress_step(Progress_data& change)= 0;
@@ -96,8 +103,8 @@ private:
   static const int REPORT_DELAY_MS= 1000;
 
   std::chrono::system_clock::time_point m_last_stage_time;
-  my_boost::atomic_int64_t m_step_countdown;
-  my_boost::atomic_int64_t m_stage_countdown;
+  std::atomic<int64_t> m_step_countdown;
+  std::atomic<int64_t> m_stage_countdown;
   int64 m_last_step_countdown;
 };
 

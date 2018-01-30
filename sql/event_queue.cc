@@ -1,39 +1,59 @@
 /* Copyright (c) 2004, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
+
+#define LOG_SUBSYSTEM_TAG "event"
 
 #include "sql/event_queue.h"
 
 #include <stdio.h>
+#include <atomic>
 #include <new>
 
-#include "event_db_repository.h"  // Event_db_repository
-#include "events.h"               // Events
-#include "lock.h"                 // lock_object_name
-#include "log.h"                  // sql_print_error
-#include "malloc_allocator.h"
-#include "mdl.h"
+#include "my_compiler.h"
 #include "my_dbug.h"
-#include "my_decimal.h"
+#include "my_inttypes.h"
+#include "my_loglevel.h"
 #include "my_systime.h"
+#include "mysql/psi/mysql_cond.h"
+#include "mysql/psi/mysql_mutex.h"
 #include "mysql/psi/mysql_sp.h"
-#include "psi_memory_key.h"       // key_memory_Event_scheduler_scheduler_param
-#include "sql_audit.h"            // mysql_audit_release
-#include "sql_class.h"            // THD
-#include "sql_lex.h"
+#include "mysqld_error.h"
+#include "sql/dd/cache/dictionary_client.h" // Auto_releaser
+#include "sql/event_db_repository.h" // Event_db_repository
+#include "sql/events.h"           // Events
+#include "sql/histograms/value_map.h"
+#include "sql/lock.h"             // lock_object_name
+#include "sql/log.h"              // log_*()
+#include "sql/malloc_allocator.h"
+#include "sql/mdl.h"
+#include "sql/psi_memory_key.h"   // key_memory_Event_scheduler_scheduler_param
+#include "sql/sql_audit.h"        // mysql_audit_release
+#include "sql/sql_class.h"        // THD
+#include "sql/sql_lex.h"
+#include "sql/sql_table.h"        // write_bin_log
+#include "sql/transaction.h"      // trans_commit*, trans_rollback*
+#include "sql/tztime.h"           // my_tz_OFFSET0
+#include "sql_string.h"
 #include "thr_mutex.h"
-#include "tztime.h"               // my_tz_OFFSET0
 
 /**
   @addtogroup Event_Scheduler
@@ -107,7 +127,7 @@ Event_queue::init_queue()
 
   if (queue.reserve(EVENT_QUEUE_INITIAL_SIZE))
   {
-    sql_print_error("Event Scheduler: Can't initialize the execution queue");
+    LogErr(ERROR_LEVEL, ER_EVENT_CANT_INIT_QUEUE);
     goto err;
   }
 
@@ -145,7 +165,7 @@ Event_queue::deinit_queue()
   Adds an event to the queue.
 
   Compute the next execution time for an event, and if it is still
-  active, add it to the queue. Otherwise delete it.
+  active, add it to the queue.
   The object is left intact in case of an error. Otherwise
   the queue container assumes ownership of it.
 
@@ -172,7 +192,6 @@ Event_queue::create_event(THD *thd, Event_queue_element *new_element,
   new_element->compute_next_execution_time(thd);
   if (new_element->m_status != Event_parse_data::ENABLED)
   {
-    delete new_element;
     *created= false;
     DBUG_RETURN(false);
   }
@@ -419,6 +438,13 @@ Event_queue::recalculate_activation_times(THD *thd)
     queue[i]->compute_next_execution_time(thd);
   }
   queue.build_heap();
+
+  /*
+    Prevent InnoDB from automatically committing the InnoDB transaction after
+    updating the data-dictionary table.
+  */
+  Disable_autocommit_guard autocommit_guard(thd);
+
   /*
     The disabled elements are moved to the end during the `fix`.
     Start from the end and remove all of the elements which are
@@ -426,10 +452,15 @@ Event_queue::recalculate_activation_times(THD *thd)
     have removed all. The queue has been ordered in a way the disabled
     events are at the end.
   */
+  dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
+  Disable_gtid_state_update_guard disabler(thd);
   for (size_t i= queue.size(); i > 0; i--)
   {
     Event_queue_element *element = queue[i - 1];
     if (element->m_status != Event_parse_data::DISABLED)
+      break;
+    if (lock_object_name(thd, MDL_key::EVENT,
+                         element->m_schema_name.str, element->m_event_name.str))
       break;
     /*
       This won't cause queue re-order, because we remove
@@ -441,12 +472,40 @@ Event_queue::recalculate_activation_times(THD *thd)
     */
     if (element->m_dropped)
     {
-      // Acquire exclusive MDL lock.
-      if (lock_object_name(thd, MDL_key::EVENT, element->m_schema_name.str,
-                           element->m_event_name.str))
-        break;
-      db_repository->drop_event(thd, element->m_schema_name,
-                                element->m_event_name, false);
+      bool ret;
+      bool event_exists;
+      if (!(ret= db_repository->drop_event(thd, element->m_schema_name,
+                                           element->m_event_name, false,
+                                           &event_exists)))
+      {
+        String sp_sql;
+        if ((ret= construct_drop_event_sql(thd, &sp_sql,
+                                          element->m_schema_name,
+                                          element->m_event_name)))
+        {
+         LogErr(WARNING_LEVEL, ER_FAILED_TO_CONSTRUCT_DROP_EVENT_QUERY);
+        }
+        else
+        {
+          // Write drop event to bin log.
+          thd->add_to_binlog_accessed_dbs(element->m_schema_name.str);
+          if((ret= write_bin_log(thd, true, sp_sql.c_ptr_safe(),
+                                 sp_sql.length(), event_exists)))
+          {
+            LogErr(WARNING_LEVEL, ER_FAILED_TO_BINLOG_DROP_EVENT,
+                   element->m_schema_name.str,
+                   element->m_event_name.str);
+          }
+        }
+      }
+
+      if (!ret)
+        ret= trans_commit_stmt(thd) || trans_commit(thd);
+      else
+      {
+        trans_rollback_stmt(thd);
+        trans_rollback(thd);
+      }
     }
     delete element;
   }
@@ -482,7 +541,7 @@ Event_queue::empty_queue()
   DBUG_ENTER("Event_queue::empty_queue");
   DBUG_PRINT("enter", ("Purging the queue. %u element(s)",
                        static_cast<unsigned>(queue.size())));
-  sql_print_information("Event Scheduler: Purging the queue. %u events",
+  LogErr(INFORMATION_LEVEL, ER_EVENT_PURGING_QUEUE,
                         static_cast<unsigned>(queue.size()));
   /* empty the queue */
   queue.delete_elements();
@@ -500,7 +559,7 @@ Event_queue::empty_queue()
 */
 
 void
-Event_queue::dbug_dump_queue(time_t now)
+Event_queue::dbug_dump_queue(time_t now MY_ATTRIBUTE((unused)))
 {
 #ifndef DBUG_OFF
   DBUG_ENTER("Event_queue::dbug_dump_queue");
@@ -558,7 +617,7 @@ Event_queue::get_top_for_execution_if_time(THD *thd,
     /* Break loop if thd has been killed */
     if (thd->killed)
     {
-      DBUG_PRINT("info", ("thd->killed=%d", thd->killed));
+      DBUG_PRINT("info", ("thd->killed=%d", thd->killed.load()));
       goto end;
     }
 
@@ -624,10 +683,10 @@ Event_queue::get_top_for_execution_if_time(THD *thd,
     if (top->m_status == Event_parse_data::DISABLED)
     {
       DBUG_PRINT("info", ("removing from the queue"));
-      sql_print_information("Event Scheduler: Last execution of %s.%s. %s",
-                            top->m_schema_name.str,
-                            top->m_event_name.str,
-                            top->m_dropped? "Dropping.":"");
+      LogErr(INFORMATION_LEVEL, ER_EVENT_LAST_EXECUTION,
+             top->m_schema_name.str,
+             top->m_event_name.str,
+             top->m_dropped? "Dropping.":"");
       delete top;
       queue.pop();
       /*

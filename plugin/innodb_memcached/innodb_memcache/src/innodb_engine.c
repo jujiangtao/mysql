@@ -2,18 +2,25 @@
 
 Copyright (c) 2011, 2017, Oracle and/or its affiliates. All rights reserved.
 
-This program is free software; you can redistribute it and/or modify it
-under the terms of the GNU General Public License as published by the
-Free Software Foundation; version 2 of the License.
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License, version 2.0,
+as published by the Free Software Foundation.
 
-This program is distributed in the hope that it will be useful, but
-WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
-Public License for more details.
+This program is also distributed with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have included with MySQL.
 
-You should have received a copy of the GNU General Public License along
-with this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License, version 2.0, for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 ***********************************************************************/
 
@@ -40,6 +47,7 @@ Extracted and modified from NDB memcached project
 #include "innodb_api.h"
 #include "hash_item_util.h"
 #include "innodb_cb_api.h"
+#include "my_thread.h"
 
 /** Define also present in daemon/memcached.h */
 #define KEY_MAX_LENGTH	250
@@ -91,11 +99,6 @@ typedef struct eng_config_info {
 
 extern option_t config_option_names[];
 
-/** Check if global read lock is active  */
-extern
-bool
-handler_check_global_read_lock_active();
-
 /** Check the input key name implies a table mapping switch. The name
 would start with "@@", and in the format of "@@new_table_mapping.key"
 or simply "@@new_table_mapping" */
@@ -135,6 +138,52 @@ innodb_conn_clean_data(
 	innodb_conn_data_t*	conn_data,
 	bool			has_lock,
 	bool			free_all);
+
+/*******************************************************************//**
+Destroy and Free InnoDB Memcached engine */
+static
+void
+innodb_destroy(
+/*===========*/
+	ENGINE_HANDLE*	handle,		/*!< in: Destroy the engine instance */
+	bool		force);		/*!< in: Force to destroy */
+
+/*******************************************************************//**
+Support memcached "INCR" and "DECR" command, add or subtract a "delta"
+value from an integer key value
+@return ENGINE_SUCCESS if successfully, otherwise error code */
+static
+ENGINE_ERROR_CODE
+innodb_arithmetic(
+/*==============*/
+	ENGINE_HANDLE*	handle,		/*!< in: Engine Handle */
+	const void*	cookie,		/*!< in: connection cookie */
+	const void*	key,		/*!< in: key for the value to add */
+	const int	nkey,		/*!< in: key length */
+	const bool	increment,	/*!< in: whether to increment
+					or decrement */
+	const bool	create,		/*!< in: whether to create the key
+					value pair if can't find */
+	const uint64_t	delta,		/*!< in: value to add/substract */
+	const uint64_t	initial,	/*!< in: initial */
+	const rel_time_t exptime,	/*!< in: expiration time */
+	uint64_t*	cas,		/*!< out: new cas value */
+	uint64_t*	result,		/*!< out: result out */
+	uint16_t	vbucket);	/*!< in: bucket, used by default
+					engine only */
+
+/*******************************************************************//**
+Callback functions used by Memcached's process_command() function
+to get the result key/value information
+@return TRUE if info fetched */
+static
+bool
+innodb_get_item_info(
+/*=================*/
+	ENGINE_HANDLE*	handle,		/*!< in: Engine Handle */
+	const void*	cookie,		/*!< in: connection cookie */
+	const item*	item,		/*!< in: item in question */
+	item_info*	item_info);	/*!< out: item info got */
 
 /*******************************************************************//**
 Get default Memcached engine handle
@@ -269,7 +318,7 @@ create_instance(
 	innodb_eng->info.info.features[0].feature = ENGINE_FEATURE_CAS;
 	innodb_eng->info.info.features[1].feature =
 		ENGINE_FEATURE_PERSISTENT_STORAGE;
-	innodb_eng->info.info.features[0].feature = ENGINE_FEATURE_LRU;
+	innodb_eng->info.info.features[2].feature = ENGINE_FEATURE_LRU;
 
 	/* Now call create_instace() for the default engine */
 	err_ret = create_my_default_instance(interface, get_server_api,
@@ -300,19 +349,17 @@ innodb_bk_thread(
 	ENGINE_HANDLE*		handle;
 	struct innodb_engine*	innodb_eng;
 	innodb_conn_data_t*	conn_data;
-	void*			thd = NULL;
 
 	bk_thd_exited = false;
 
 	handle = (ENGINE_HANDLE*) (arg);
 	innodb_eng = innodb_handle(handle);
 
-	if (innodb_eng->enable_binlog) {
-		/* This thread will commit the transactions
-		on behalf of the other threads. It will "pretend"
-		to be each connection thread while doing it. */
-		thd = handler_create_thd(true);
-	}
+	my_thread_init();
+
+	/* While we commit transactions on behalf of the other
+	threads, we will "pretend" to be each connection. */
+	void*		thd = handler_create_thd(innodb_eng->enable_binlog);
 
 	conn_data = UT_LIST_GET_FIRST(innodb_eng->conn_data);
 
@@ -475,11 +522,10 @@ next_item:
 	bk_thd_exited = true;
 
 	/* Change to its original state before close the MySQL THD */
-	if (thd) {
-		handler_thd_attach(thd, NULL);
-		handler_close_thd(thd);
-	}
+	handler_thd_attach(thd, NULL);
+	handler_close_thd(thd);
 
+	my_thread_end();
 	pthread_detach(pthread_self());
         pthread_exit(NULL);
 
@@ -595,11 +641,6 @@ innodb_close_mysql_table(
 				     HDL_READ);
                 conn_data->mysql_tbl = NULL;
 	}
-
-	if (conn_data->thd) {
-		handler_close_thd(conn_data->thd);
-		conn_data->thd = NULL;
-	}
 }
 
 #define	NUM_MAX_MEM_SLOT	1024
@@ -677,6 +718,11 @@ innodb_conn_clean_data(
 	UNLOCK_CURRENT_CONN_IF_NOT_LOCKED(has_lock, conn_data);
 
 	if (free_all) {
+		if (conn_data->thd) {
+			handler_close_thd(conn_data->thd);
+			conn_data->thd = NULL;
+		}
+
 		conn_data->is_stale = false;
 
 		if (conn_data->result) {
@@ -746,8 +792,9 @@ innodb_conn_clean(
 	int			num_freed = 0;
 	void*			thd = NULL;
 
-	if (engine->enable_binlog && clear_all) {
-		thd = handler_create_thd(true);
+	if (clear_all) {
+		my_thread_init();
+		thd = handler_create_thd(engine->enable_binlog);
 	}
 
 	LOCK_CONN_IF_NOT_LOCKED(has_lock, engine);
@@ -791,7 +838,7 @@ innodb_conn_clean(
 				UT_LIST_REMOVE(conn_list, engine->conn_data,
 					       conn_data);
 
-				if (thd) {
+				if (thd && conn_data->thd ) {
 					handler_thd_attach(conn_data->thd,
 							   NULL);
 				}
@@ -820,6 +867,7 @@ innodb_conn_clean(
 	if (thd) {
 		handler_thd_attach(thd, NULL);
 		handler_close_thd(thd);
+		my_thread_end();
 	}
 
 	return(num_freed);
@@ -1015,6 +1063,7 @@ innodb_conn_init(
                }
 		conn_data->cmd_buf_len = 1024;
 
+		conn_data->thd = handler_create_thd(engine->enable_binlog);
 #ifdef UNIV_MEMCACHED_SDI
 		conn_data->sdi_buf = NULL;
 #endif /* UNIV_MEMCACHED_SDI */
@@ -1083,7 +1132,8 @@ have_conn:
 	if (lock_mode == IB_LOCK_TABLE_X) {
 		if(!conn_data->crsr_trx) {
 			conn_data->crsr_trx = ib_cb_trx_begin(
-				engine->trx_level, true, false);
+				engine->trx_level, true, false,
+				conn_data->thd);
 		} else {
 			/* Write cursor transaction exists.
 			   Reuse this transaction.*/
@@ -1094,7 +1144,7 @@ have_conn:
 
 			err = ib_cb_trx_start(conn_data->crsr_trx,
 					      engine->trx_level,
-					      true, false, NULL);
+					      true, false, conn_data->thd);
 			assert(err == DB_SUCCESS);
 
 		}
@@ -1131,7 +1181,8 @@ have_conn:
 		if (!crsr) {
 			if (!conn_data->crsr_trx) {
 				conn_data->crsr_trx = ib_cb_trx_begin(
-					engine->trx_level, true, false);
+					engine->trx_level, true, false,
+					conn_data->thd);
 				trx_updated = true;
 			} else {
 				if (ib_cb_trx_read_only(conn_data->crsr_trx)) {
@@ -1141,7 +1192,7 @@ have_conn:
 
 				ib_cb_trx_start(conn_data->crsr_trx,
 						engine->trx_level,
-						true, false, NULL);
+						true, false, conn_data->thd);
 			}
 
 			err = innodb_api_begin(
@@ -1173,7 +1224,8 @@ have_conn:
 			/* There exists a cursor, just need update
 			with a new transaction */
 			conn_data->crsr_trx = ib_cb_trx_begin(
-				engine->trx_level, true, false);
+				engine->trx_level, true, false,
+				conn_data->thd);
 
 			innodb_cb_cursor_new_trx(crsr, conn_data->crsr_trx);
 			trx_updated = true;
@@ -1212,7 +1264,7 @@ have_conn:
 
 			ib_cb_trx_start(conn_data->crsr_trx,
 					engine->trx_level,
-					true, false, NULL);
+					true, false, conn_data->thd);
 			ib_cb_cursor_stmt_begin(crsr);
 			err = innodb_cb_cursor_lock(engine, crsr, lock_mode);
 
@@ -1254,14 +1306,15 @@ have_conn:
 				with "read_write" parameter set to false */
 				conn_data->crsr_trx = ib_cb_trx_begin(
 					engine->trx_level, false,
-					engine->read_batch_size == 1);
+					engine->read_batch_size == 1,
+					conn_data->thd);
 				trx_updated = true;
 			} else {
 				ib_cb_trx_start(conn_data->crsr_trx,
 						engine->trx_level,
 						false,
 						engine->read_batch_size == 1,
-						NULL);
+						conn_data->thd);
 			}
 
 			err = innodb_api_begin(
@@ -1295,7 +1348,8 @@ have_conn:
 			with "read_write" parameter set to false */
 			conn_data->crsr_trx = ib_cb_trx_begin(
 				engine->trx_level, false,
-				engine->read_batch_size == 1);
+				engine->read_batch_size == 1,
+				conn_data->thd);
 
 			trx_updated = true;
 
@@ -1343,7 +1397,7 @@ have_conn:
 					engine->trx_level,
 					false,
 					engine->read_batch_size == 1,
-					NULL);
+					conn_data->thd);
 
 			ib_cb_cursor_stmt_begin(conn_data->read_crsr);
 
@@ -2231,7 +2285,7 @@ search_done:
 
 			if (col_value->value_len != 0) {
 				if (!col_value->is_str) {
-					int	int_len;
+					ib_ulint_t	int_len;
 					memset(int_buf, 0, sizeof int_buf);
 
 					int_len = convert_to_char(
@@ -2293,7 +2347,8 @@ search_done:
 			conn_data->mul_col_buf_len = int_len;
 		}
 
-		memcpy(conn_data->mul_col_buf, int_buf, int_len);
+		if (int_len > 0)
+			memcpy(conn_data->mul_col_buf, int_buf, int_len);
 		result->col_value[MCI_COL_VALUE].value_str =
 			 conn_data->mul_col_buf;
 
@@ -2868,7 +2923,7 @@ innodb_sdi_get(
 	uint64_t	ret_len;
 	if (check_key_name_for_sdi(key, nkey, SDI_CREATE_PREFIX)) {
 		/* Create SDI Index in the tablespace */
-		err = ib_cb_sdi_create_copies(crsr);
+		err = ib_cb_sdi_create(crsr);
 		ib_cb_cursor_close(crsr);
 		*err_ret = ENGINE_KEY_ENOENT;
 		return(true);
@@ -2876,7 +2931,7 @@ innodb_sdi_get(
 
 	if (check_key_name_for_sdi(key, nkey, SDI_DROP_PREFIX)) {
 		/* Create SDI Index in the tablespace */
-		err = ib_cb_sdi_drop_copies(crsr);
+		err = ib_cb_sdi_drop(crsr);
 		ib_cb_cursor_close(crsr);
 		*err_ret = ENGINE_KEY_ENOENT;
 		return(true);
@@ -2909,6 +2964,7 @@ innodb_sdi_get(
 		}
 
 		conn_data->sdi_buf = new_mem;
+		ret_len = mem_size;
 		err = ib_cb_sdi_get(
 			crsr, key, conn_data->sdi_buf, &ret_len, trx);
 

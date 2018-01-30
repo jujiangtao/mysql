@@ -20,7 +20,6 @@
 ###############################################################################
 --source include/not_group_replication_plugin.inc
 --source include/not_windows.inc
---source include/not_embedded.inc
 --source include/big_test.inc
 # Test in this file is binlog format agnostic, thus no need
 # to rerun it for every format.
@@ -80,7 +79,7 @@ let $mysqld=$MYSQLD_CMD --core-file --console >> $error_log 2>&1 $server_filter_
 --source include/grep_pattern.inc
 
 # The server restart aborts. Count should be 4.
---let $grep_pattern= \[ERROR\] Aborting
+--let $grep_pattern= \[ERROR\] \[[^]]*\] Aborting
 --let $grep_output= print_count
 --source include/grep_pattern.inc
 
@@ -133,7 +132,7 @@ let $mysqld=$MYSQLD_CMD --core-file --console >> $error_log 2>&1 $server_filter_
 --source include/grep_pattern.inc
 
 # The server restart aborts. Count should be 4.
---let $grep_pattern= \[ERROR\] Aborting
+--let $grep_pattern= \[ERROR\] \[[^]]*\] Aborting
 --let $grep_output= print_count
 --source include/grep_pattern.inc
 
@@ -171,7 +170,7 @@ let $mysqld=$MYSQLD_CMD --core-file --console >> $error_log 2>&1 $server_filter_
 --source include/grep_pattern.inc
 
 # The server restart aborts. Count should be 3.
---let $grep_pattern= \[ERROR\] Aborting
+--let $grep_pattern= \[ERROR\] \[[^]]*\] Aborting
 --let $grep_output= print_count
 --source include/grep_pattern.inc
 
@@ -209,7 +208,7 @@ let $mysqld=$MYSQLD_CMD --core-file --console >> $error_log 2>&1 $server_filter_
 --source include/grep_pattern.inc
 
 # The server restart aborts. Count should be 3.
---let $grep_pattern= \[ERROR\] Aborting
+--let $grep_pattern= \[ERROR\] \[[^]]*\] Aborting
 --let $grep_output= print_count
 --source include/grep_pattern.inc
 

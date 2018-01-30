@@ -1,38 +1,62 @@
-/* Copyright (c) 2014, 2016 Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "dd/impl/dictionary_impl.h"
+#include "sql/dd/impl/dictionary_impl.h"
 
 #include <string.h>
 #include <memory>
 
-#include "auth_common.h"                   // acl_init
-#include "binlog_event.h"
-#include "bootstrap.h"                     // bootstrap::bootstrap_functor
-#include "dd/cache/dictionary_client.h"    // dd::Dictionary_client
-#include "dd/dd.h"                         // enum_dd_init_type
-#include "dd/impl/bootstrapper.h"          // dd::Bootstrapper
-#include "dd/impl/system_registry.h"       // dd::System_tables
-#include "dd/impl/tables/version.h"        // get_actual_dd_version()
 #include "m_ctype.h"
-#include "mdl.h"
+#include "m_string.h"
 #include "my_dbug.h"
+#include "my_inttypes.h"
+#include "my_sys.h"
 #include "mysql/thread_type.h"
-#include "opt_costconstantcache.h"         // init_optimizer_cost_module
-#include "sql_class.h"                     // THD
-#include "system_variables.h"
+#include "mysql/udf_registration_types.h"
+#include "mysql_com.h"
+#include "mysqld_error.h"
+#include "sql/auth/auth_common.h"          // acl_init
+#include "sql/auth/sql_security_ctx.h"
+#include "sql/auto_thd.h"                  // Auto_thd
+#include "sql/bootstrap.h"                 // bootstrap::bootstrap_functor
+#include "sql/dd/cache/dictionary_client.h" // dd::Dictionary_client
+#include "sql/dd/dd.h"                     // enum_dd_init_type
+#include "sql/dd/dd_schema.h"              // dd::Schema_MDL_locker
+#include "sql/dd/dd_version.h"             // dd::DD_VERSION
+#include "sql/dd/impl/bootstrapper.h"      // dd::Bootstrapper
+#include "sql/dd/impl/cache/shared_dictionary_cache.h" // Shared_dictionary_cache
+#include "sql/dd/impl/system_registry.h"   // dd::System_tables
+#include "sql/dd/impl/tables/dd_properties.h" // get_actual_dd_version()
+#include "sql/dd/info_schema/metadata.h"   // dd::info_schema::store_dynamic...
+#include "sql/dd/types/object_table_definition.h"
+#include "sql/dd/types/system_view.h"
+#include "sql/dd/upgrade/upgrade.h"        // dd::upgrade
+#include "sql/derror.h"
+#include "sql/handler.h"
+#include "sql/mdl.h"
+#include "sql/opt_costconstantcache.h"     // init_optimizer_cost_module
+#include "sql/sql_class.h"                 // THD
+#include "sql/system_variables.h"
+#include "storage/perfschema/pfs_dd_version.h" // PFS_DD_VERSION
 
 ///////////////////////////////////////////////////////////////////////////
 
@@ -43,6 +67,7 @@ namespace dd {
 ///////////////////////////////////////////////////////////////////////////
 
 class Object_table;
+class Table;
 
 Dictionary_impl *Dictionary_impl::s_instance= NULL;
 
@@ -52,6 +77,7 @@ Dictionary_impl *Dictionary_impl::instance()
 }
 
 Object_id Dictionary_impl::DEFAULT_CATALOG_ID= 1;
+Object_id Dictionary_impl::DD_TABLESPACE_ID= 1;
 const String_type Dictionary_impl::DEFAULT_CATALOG_NAME("def");
 
 ///////////////////////////////////////////////////////////////////////////
@@ -94,26 +120,38 @@ bool Dictionary_impl::init(enum_dd_init_type dd_init)
     result= ::bootstrap::run_bootstrap_thread(NULL, &bootstrap::initialize,
                                               SYSTEM_THREAD_DD_INITIALIZE);
 
+  // Creation of INFORMATION_SCHEMA system views.
+  else if (dd_init == enum_dd_init_type::DD_INITIALIZE_SYSTEM_VIEWS)
+    result= ::bootstrap::run_bootstrap_thread(NULL,
+                                              &dd::info_schema::initialize,
+                                              SYSTEM_THREAD_DD_INITIALIZE);
+
   /*
     Creation of Dictionary Tables in old Data Directory
     This function also takes care of normal server restart.
   */
   else if (dd_init == enum_dd_init_type::DD_RESTART_OR_UPGRADE)
     result= ::bootstrap::run_bootstrap_thread(NULL,
-                         &bootstrap::upgrade_do_pre_checks_and_initialize_dd,
+                         &upgrade_57::do_pre_checks_and_initialize_dd,
                          SYSTEM_THREAD_DD_INITIALIZE);
 
   // Populate metadata in DD tables from old data directory and do cleanup.
   else if (dd_init == enum_dd_init_type::DD_POPULATE_UPGRADE)
     result= ::bootstrap::run_bootstrap_thread(NULL,
-                         &bootstrap::upgrade_fill_dd_and_finalize,
+                         &upgrade_57::fill_dd_and_finalize,
                          SYSTEM_THREAD_DD_INITIALIZE);
 
 
   // Delete DD tables and do cleanup in case of error in upgrade
   else if (dd_init == enum_dd_init_type::DD_DELETE)
     result= ::bootstrap::run_bootstrap_thread(NULL,
-                         &bootstrap::delete_dictionary_and_cleanup,
+                         &upgrade_57::terminate,
+                         SYSTEM_THREAD_DD_INITIALIZE);
+
+  // Update server and plugin I_S table metadata into DD tables.
+  else if (dd_init == enum_dd_init_type::DD_UPDATE_I_S_METADATA)
+    result= ::bootstrap::run_bootstrap_thread(NULL,
+                         &dd::info_schema::update_I_S_metadata,
                          SYSTEM_THREAD_DD_INITIALIZE);
 
   /* Now that the dd is initialized, delete the cost model. */
@@ -122,17 +160,6 @@ bool Dictionary_impl::init(enum_dd_init_type dd_init)
   // TODO: See above.
   acl_free(true);
   return result;
-}
-
-///////////////////////////////////////////////////////////////////////////
-
-bool Dictionary_impl::install_plugin_IS_table_metadata()
-{
-  DBUG_ASSERT(Dictionary_impl::instance());
-
-  return ::bootstrap::run_bootstrap_thread(
-           NULL, &bootstrap::store_plugin_IS_table_metadata,
-           SYSTEM_THREAD_DD_INITIALIZE);
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -153,20 +180,73 @@ bool Dictionary_impl::shutdown()
 ///////////////////////////////////////////////////////////////////////////
 
 uint Dictionary_impl::get_target_dd_version()
-{ return dd::tables::Version::get_target_dd_version(); }
+{ return dd::DD_VERSION; }
 
 ///////////////////////////////////////////////////////////////////////////
 
 uint Dictionary_impl::get_actual_dd_version(THD *thd)
 {
-  bool not_used;
-  return dd::tables::Version::instance().get_actual_dd_version(thd, &not_used);
+  bool exists= false;
+  uint version= 0;
+  bool error MY_ATTRIBUTE((unused))=
+    tables::DD_properties::instance().get(thd, "DD_VERSION",
+                                          &version, &exists);
+  DBUG_ASSERT(!error);
+  DBUG_ASSERT(exists);
+  return version;
 }
 
 ///////////////////////////////////////////////////////////////////////////
 
-uint Dictionary_impl::get_actual_dd_version(THD *thd, bool *not_used)
-{ return dd::tables::Version::instance().get_actual_dd_version(thd, not_used); }
+uint Dictionary_impl::get_target_I_S_version()
+{ return dd::info_schema::IS_DD_VERSION; }
+
+///////////////////////////////////////////////////////////////////////////
+
+uint Dictionary_impl::get_actual_I_S_version(THD *thd)
+{
+  bool exists= false;
+  uint version= 0;
+  bool error MY_ATTRIBUTE((unused))=
+    tables::DD_properties::instance().get(thd, "IS_VERSION",
+                                          &version, &exists);
+  DBUG_ASSERT(!error);
+  DBUG_ASSERT(exists);
+  return version;
+}
+
+///////////////////////////////////////////////////////////////////////////
+
+uint Dictionary_impl::set_I_S_version(THD *thd, uint version)
+{
+  return tables::DD_properties::instance().set(thd, "IS_VERSION", version);
+}
+
+///////////////////////////////////////////////////////////////////////////
+
+uint Dictionary_impl::get_target_P_S_version()
+{ return PFS_DD_VERSION; }
+
+///////////////////////////////////////////////////////////////////////////
+
+uint Dictionary_impl::get_actual_P_S_version(THD *thd)
+{
+  bool exists= false;
+  uint version= 0;
+  bool error MY_ATTRIBUTE((unused))=
+    tables::DD_properties::instance().get(thd, "PS_VERSION",
+                                          &version, &exists);
+  DBUG_ASSERT(!error);
+  DBUG_ASSERT(exists);
+  return version;
+}
+
+///////////////////////////////////////////////////////////////////////////
+
+uint Dictionary_impl::set_P_S_version(THD *thd, uint version)
+{
+  return tables::DD_properties::instance().set(thd, "PS_VERSION", version);
+}
 
 ///////////////////////////////////////////////////////////////////////////
 
@@ -178,6 +258,24 @@ const Object_table *Dictionary_impl::get_dd_table(
     return NULL;
 
   return System_tables::instance()->find_table(schema_name, table_name);
+}
+
+///////////////////////////////////////////////////////////////////////////
+
+bool Dictionary_impl::is_dd_table_name(const String_type &schema_name,
+                                       const String_type &table_name) const
+{
+  if (!is_dd_schema_name(schema_name))
+    return false;
+
+  const System_tables::Types *table_type= System_tables::instance()->
+    find_type(schema_name, table_name);
+
+  return (table_type != nullptr &&
+          (*table_type == System_tables::Types::CORE ||
+           *table_type == System_tables::Types::INERT ||
+           *table_type == System_tables::Types::SECOND ||
+           *table_type == System_tables::Types::DDSE));
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -239,13 +337,14 @@ bool Dictionary_impl::is_dd_table_access_allowed(
 
   // Access allowed for external DD tables and for DML on DDSE tables.
   return (table_type == nullptr ||
-          (*table_type == System_tables::Types::SUPPORT && !is_ddl_statement));
+          (*table_type == System_tables::Types::DDSE && !is_ddl_statement));
 }
 
 ///////////////////////////////////////////////////////////////////////////
 
 bool Dictionary_impl::is_system_view_name(const char *schema_name,
-                                          const char *table_name) const
+                                          const char *table_name,
+                                          bool *hidden) const
 {
   /*
     TODO One possible improvement here could be to try and use the variant
@@ -259,14 +358,21 @@ bool Dictionary_impl::is_system_view_name(const char *schema_name,
       is_infoschema_db(schema_name) == false)
     return false;
 
-  // The System_views registry stores the view name in lowercase.
-  // So convert the input to lowercase before search.
+  // The System_views registry stores the view name in uppercase.
+  // So convert the input to uppercase before search.
   char tab_name_buf[NAME_LEN + 1];
   my_stpcpy(tab_name_buf, table_name);
   my_caseup_str(system_charset_info, tab_name_buf);
 
-  return (System_views::instance()->find(INFORMATION_SCHEMA_NAME.str,
-                                         tab_name_buf) != NULL);
+  const system_views::System_view *s=
+    System_views::instance()->find(INFORMATION_SCHEMA_NAME.str, tab_name_buf);
+
+  if (s)
+    *hidden= s->hidden();
+  else
+    *hidden = false;
+
+  return s != nullptr;
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -281,6 +387,7 @@ static bool acquire_mdl(THD *thd,
                         const char *schema_name,
                         const char *table_name,
                         bool no_wait,
+                        ulong lock_wait_timeout,
                         enum_mdl_type lock_type,
                         enum_mdl_duration lock_duration,
                         MDL_ticket **out_mdl_ticket)
@@ -296,8 +403,7 @@ static bool acquire_mdl(THD *thd,
     if (thd->mdl_context.try_acquire_lock(&mdl_request))
       DBUG_RETURN(true);
   }
-  else if (thd->mdl_context.acquire_lock(&mdl_request,
-                                         thd->variables.lock_wait_timeout))
+  else if (thd->mdl_context.acquire_lock(&mdl_request, lock_wait_timeout))
     DBUG_RETURN(true);
 
   if (out_mdl_ticket)
@@ -314,7 +420,8 @@ bool acquire_shared_table_mdl(THD *thd,
                               MDL_ticket **out_mdl_ticket)
 {
   return acquire_mdl(thd, MDL_key::TABLE, schema_name, table_name, no_wait,
-                     MDL_SHARED, MDL_EXPLICIT, out_mdl_ticket);
+                     thd->variables.lock_wait_timeout, MDL_SHARED,
+                     MDL_EXPLICIT, out_mdl_ticket);
 }
 
 
@@ -348,7 +455,8 @@ bool acquire_exclusive_tablespace_mdl(THD *thd,
 {
   // When requesting a tablespace name lock, we leave the schema name empty.
   return acquire_mdl(thd, MDL_key::TABLESPACE, "", tablespace_name, no_wait,
-                     MDL_EXCLUSIVE, MDL_TRANSACTION, NULL);
+                     thd->variables.lock_wait_timeout, MDL_EXCLUSIVE,
+                     MDL_TRANSACTION, NULL);
 }
 
 
@@ -358,7 +466,8 @@ bool acquire_shared_tablespace_mdl(THD *thd,
 {
   // When requesting a tablespace name lock, we leave the schema name empty.
   return acquire_mdl(thd, MDL_key::TABLESPACE, "", tablespace_name, no_wait,
-                     MDL_SHARED, MDL_TRANSACTION, NULL);
+                     thd->variables.lock_wait_timeout, MDL_SHARED,
+                     MDL_TRANSACTION, NULL);
 }
 
 
@@ -392,7 +501,19 @@ bool acquire_exclusive_table_mdl(THD *thd,
                                  MDL_ticket **out_mdl_ticket)
 {
   return acquire_mdl(thd, MDL_key::TABLE, schema_name, table_name, no_wait,
-                           MDL_EXCLUSIVE, MDL_EXPLICIT, out_mdl_ticket);
+                     thd->variables.lock_wait_timeout, MDL_EXCLUSIVE,
+                     MDL_TRANSACTION, out_mdl_ticket);
+}
+
+bool acquire_exclusive_table_mdl(THD *thd,
+                                 const char *schema_name,
+                                 const char *table_name,
+                                 unsigned long int lock_wait_timeout,
+                                 MDL_ticket **out_mdl_ticket)
+{
+  return acquire_mdl(thd, MDL_key::TABLE, schema_name, table_name, false,
+                     lock_wait_timeout, MDL_EXCLUSIVE, MDL_TRANSACTION,
+                     out_mdl_ticket);
 }
 
 bool acquire_exclusive_schema_mdl(THD *thd,
@@ -401,7 +522,8 @@ bool acquire_exclusive_schema_mdl(THD *thd,
                                  MDL_ticket **out_mdl_ticket)
 {
   return acquire_mdl(thd, MDL_key::SCHEMA, schema_name, "", no_wait,
-                           MDL_EXCLUSIVE, MDL_EXPLICIT, out_mdl_ticket);
+                     thd->variables.lock_wait_timeout, MDL_EXCLUSIVE,
+                     MDL_EXPLICIT, out_mdl_ticket);
 }
 
 void release_mdl(THD *thd, MDL_ticket *mdl_ticket)
@@ -418,4 +540,134 @@ cache::Dictionary_client *get_dd_client(THD *thd)
 { return thd->dd_client(); }
 /* purecov: end */
 
+
+bool create_native_table(THD *thd, const Plugin_table *pt)
+{
+  if (dd::get_dictionary()->is_dd_table_name(pt->get_schema_name(),
+                                             pt->get_name()))
+  {
+    my_error(ER_NO_SYSTEM_TABLE_ACCESS, MYF(0),
+             ER_THD(thd, dd::get_dictionary()->table_type_error_code(
+                               pt->get_schema_name(), pt->get_name())),
+             pt->get_schema_name(), pt->get_name());
+
+    return true;
+  }
+
+  // Acquire MDL on new native table that we would create.
+  bool error= false;
+  MDL_request mdl_request;
+  MDL_REQUEST_INIT(&mdl_request,
+                   MDL_key::TABLE,
+                   pt->get_schema_name(),
+                   pt->get_name(),
+                   MDL_EXCLUSIVE, MDL_TRANSACTION);
+  dd::Schema_MDL_locker mdl_locker(thd);
+  if (mdl_locker.ensure_locked(pt->get_schema_name()) ||
+      thd->mdl_context.acquire_lock(&mdl_request,
+                                     thd->variables.lock_wait_timeout))
+    return true;
+
+  /*
+    1. Mark that we are executing a special DDL during
+    plugin initialization. This will enable DDL to not be
+    committed. The called of this API would commit the transaction.
+
+    2. Remove metadata of native table if already exists. This could
+    happen if server was crashed and restarted.
+
+    3. Create native table.
+
+    4. Undo 1.
+  */
+  dd::cache::Dictionary_client *client= thd->dd_client();
+  const dd::Table *table_def= NULL;
+  if (client->acquire(pt->get_schema_name(), pt->get_name(), &table_def))
+    return true;
+
+  thd->mark_plugin_fake_ddl(true);
+  ulong master_access= thd->security_context()->master_access();
+  thd->security_context()->set_master_access(~(ulong)0);
+
+  // Drop the table and related dynamic statistics too.
+  if (table_def)
+  {
+    error= client->drop(table_def) ||
+           client->remove_table_dynamic_statistics(pt->get_schema_name(),
+                                                   pt->get_name());
+  }
+
+  if (!error)
+    error= execute_query(thd, pt->get_ddl());
+
+  thd->security_context()->set_master_access(master_access);
+  thd->mark_plugin_fake_ddl(false);
+
+  return error;
+}
+
+
+// Remove metadata of native table from DD tables.
+bool drop_native_table(THD *thd, const char *schema_name, const char *table_name)
+{
+  if (dd::get_dictionary()->is_dd_table_name(schema_name, table_name))
+  {
+    my_error(ER_NO_SYSTEM_TABLE_ACCESS, MYF(0),
+             ER_THD(thd, dd::get_dictionary()->table_type_error_code(
+                                                 schema_name,
+                                                 table_name)),
+             schema_name, table_name);
+
+    return true;
+  }
+
+  // Acquire MDL on schema and table.
+  MDL_request mdl_request;
+  MDL_REQUEST_INIT(&mdl_request,
+                   MDL_key::TABLE,
+                   schema_name,
+                   table_name,
+                   MDL_EXCLUSIVE, MDL_TRANSACTION);
+  dd::Schema_MDL_locker mdl_locker(thd);
+  if (mdl_locker.ensure_locked(schema_name) ||
+      thd->mdl_context.acquire_lock(&mdl_request,
+                                    thd->variables.lock_wait_timeout))
+    return true;
+
+  dd::cache::Dictionary_client *client= thd->dd_client();
+  const dd::Table *table_def= NULL;
+  if (client->acquire(schema_name, table_name, &table_def))
+  {
+    // Error is reported by the dictionary subsystem.
+    return true;
+  }
+
+  // Not error is reported if table is not present.
+  if (!table_def)
+    return false;
+
+  // Drop the table and related dynamic statistics too.
+  return client->drop(table_def) ||
+         client->remove_table_dynamic_statistics(schema_name,
+                                                 table_name);
+}
+
+bool reset_tables_and_tablespaces()
+{
+  Auto_THD thd;
+  handlerton *ddse= ha_resolve_by_legacy_type(thd.thd ,DB_TYPE_INNODB);
+
+  // Acquire transactional metadata locks and evict all cached objects.
+  if (dd::cache::Shared_dictionary_cache::reset_tables_and_tablespaces(thd.thd))
+    return true;
+
+  // Evict all cached objects in the DD cache in the DDSE.
+  if (ddse->dict_cache_reset_tables_and_tablespaces != nullptr)
+    ddse->dict_cache_reset_tables_and_tablespaces();
+
+  // Release transactional metadata locks.
+  thd.thd->mdl_context.release_transactional_locks();
+
+  return false;
+}
 }

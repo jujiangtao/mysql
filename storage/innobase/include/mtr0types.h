@@ -3,16 +3,24 @@
 Copyright (c) 1995, 2017, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+the terms of the GNU General Public License, version 2.0, as published by the
+Free Software Foundation.
+
+This program is also distributed with certain software (including but not
+limited to OpenSSL) that is licensed under separate terms, as designated in a
+particular file or component or in included license documentation. The authors
+of MySQL hereby grant you an additional permission to link the program and
+your derivative works with the separately licensed software that they have
+included with MySQL.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+FOR A PARTICULAR PURPOSE. See the GNU General Public License, version 2.0,
+for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 *****************************************************************************/
 
@@ -106,9 +114,6 @@ enum mlog_id_t {
 	/** initialize a page in an undo log */
 	MLOG_UNDO_INIT = 22,
 
-	/* discard an update undo log header (unused already in 3.23.53) */
-	//MLOG_UNDO_HDR_DISCARD = 23,
-
 	/** reuse an insert undo log header */
 	MLOG_UNDO_HDR_REUSE = 24,
 
@@ -144,11 +149,11 @@ enum mlog_id_t {
 	/** dummy log record used to pad a log block full */
 	MLOG_DUMMY_RECORD = 32,
 
-	/** log record about an .ibd file creation */
-	//MLOG_FILE_CREATE = 33,
+	/** log record about creating an .ibd file, with format */
+	MLOG_FILE_CREATE = 33,
 
-	/** rename databasename/tablename (no .ibd file name suffix) */
-	//MLOG_FILE_RENAME = 34,
+	/** rename a tablespace file that starts with (space_id,page_no) */
+	MLOG_FILE_RENAME = 34,
 
 	/** delete a tablespace file that starts with (space_id,page_no) */
 	MLOG_FILE_DELETE = 35,
@@ -188,9 +193,6 @@ enum mlog_id_t {
 	/** reorganize an index page */
 	MLOG_COMP_PAGE_REORGANIZE = 46,
 
-	/** log record about creating an .ibd file, with format */
-	MLOG_FILE_CREATE2 = 47,
-
 	/** write the node pointer of a record on a compressed
 	non-leaf B-tree page */
 	MLOG_ZIP_WRITE_NODE_PTR = 48,
@@ -210,15 +212,6 @@ enum mlog_id_t {
 
 	/** reorganize a compressed page */
 	MLOG_ZIP_PAGE_REORGANIZE = 53,
-
-	/** rename a tablespace file that starts with (space_id,page_no) */
-	MLOG_FILE_RENAME2 = 54,
-
-	/** note the first use of a tablespace file since checkpoint */
-	MLOG_FILE_NAME = 55,
-
-	/** note that all buffered log was written since a checkpoint */
-	MLOG_CHECKPOINT = 56,
 
 	/** Create a R-Tree index page */
 	MLOG_PAGE_CREATE_RTREE = 57,
@@ -251,11 +244,6 @@ enum mlog_id_t {
 };
 
 /* @} */
-
-/** Size of a MLOG_CHECKPOINT record in bytes.
-The record consists of a MLOG_CHECKPOINT byte followed by
-mach_write_to_8(checkpoint_lsn). */
-#define SIZE_OF_MLOG_CHECKPOINT	9
 
 /** Types for the mlock objects to store in the mtr memo; NOTE that the
 first 3 values must be RW_S_LATCH, RW_X_LATCH, RW_NO_LATCH */

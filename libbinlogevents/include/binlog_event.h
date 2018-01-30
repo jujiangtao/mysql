@@ -1,13 +1,20 @@
 /* Copyright (c) 2011, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -157,9 +164,6 @@ const int64_t UNDEFINED_COMMIT_TIMESTAMP= MAX_COMMIT_TIMESTAMP_VALUE;
 #define FN_REFLEN       512     /* Max length of full path-name */
 #endif
 
-/* The number of event types need to be permuted. */
-static const unsigned int EVENT_TYPE_PERMUTATION_NUM= 23;
-
 /**
    Splits server 'version' string into three numeric pieces stored
    into 'split_versions':
@@ -266,6 +270,10 @@ enum Log_event_type
     - Fix Format_description_event::Format_description_event().
   */
   UNKNOWN_EVENT= 0,
+  /*
+    Deprecated since mysql 8.0.2. It is just a placeholder,
+    should not be used anywhere else.
+  */
   START_EVENT_V3= 1,
   QUERY_EVENT= 2,
   STOP_EVENT= 3,
@@ -329,6 +337,13 @@ enum Log_event_type
 
   /* Prepared XA transaction terminal event similar to Xid */
   XA_PREPARE_LOG_EVENT= 38,
+
+  /**
+    Extension of UPDATE_ROWS_EVENT, allowing partial values according
+    to binlog_row_value_options.
+  */
+  PARTIAL_UPDATE_ROWS_EVENT= 39,
+
   /**
     Add new events here - right above this comment!
     Existing events (except ENUM_END_EVENT) should never change their numbers
@@ -366,7 +381,6 @@ enum Log_event_type
 #define ST_COMMON_HEADER_LEN_OFFSET (ST_CREATED_OFFSET + 4)
 
 #define LOG_EVENT_HEADER_LEN 19U    /* the fixed header length */
-#define OLD_HEADER_LEN       13U    /* the fixed header length in 3.23 */
 
 /**
    Fixed header length, where 4.x and 5.0 agree. That is, 5.0 may have a longer

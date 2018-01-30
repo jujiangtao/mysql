@@ -1,13 +1,20 @@
 /* Copyright (c) 2013, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -20,16 +27,16 @@
 #include <cstdlib>
 #include <new>
 
-#include "check_stack.h"
-#include "mem_root_array.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_sys.h"
-#include "parse_error.h"
-#include "parse_location.h"
-#include "sql_const.h"
-#include "thr_malloc.h"
+#include "mysql/udf_registration_types.h"
+#include "sql/check_stack.h"
+#include "sql/mem_root_array.h"
+#include "sql/parse_location.h"
+#include "sql/sql_const.h"
+#include "sql/thr_malloc.h"
 
 class SELECT_LEX;
 class Sql_alloc;
@@ -62,7 +69,9 @@ enum enum_parsing_context
   CTX_MESSAGE, ///< "No tables used" messages etc.
   CTX_TABLE, ///< for single-table UPDATE/DELETE/INSERT/REPLACE
   CTX_SELECT_LIST, ///< SELECT (subquery), (subquery)...
-  CTX_UPDATE_VALUE_LIST, ///< UPDATE ... SET field=(subquery)...
+  CTX_UPDATE_VALUE, ///< UPDATE ... SET field=(subquery)...
+  CTX_INSERT_VALUES, ///< INSERT ... VALUES
+  CTX_INSERT_UPDATE, ///< INSERT ... ON DUPLICATE KEY UPDATE ...
   CTX_JOIN,
   CTX_QEP_TAB,
   CTX_MATERIALIZATION,
@@ -70,6 +79,7 @@ enum enum_parsing_context
   CTX_DERIVED, ///< "Derived" subquery
   CTX_WHERE, ///< Subquery in WHERE clause item tree
   CTX_ON,    ///< ON clause context
+  CTX_WINDOW, ///< Named or unnamed window
   CTX_HAVING, ///< Subquery in HAVING clause item tree
   CTX_ORDER_BY, ///< ORDER BY clause execution context
   CTX_GROUP_BY, ///< GROUP BY clause execution context
@@ -108,7 +118,7 @@ struct Parse_context {
 
 
 /**
-  Base class for parse tree nodes
+  Base class for parse tree nodes (excluding the Parse_tree_root hierarchy)
 */
 template<typename Context>
 class Parse_tree_node_tmpl
@@ -125,6 +135,8 @@ private:
 #endif//DBUG_OFF
 
 public:
+  typedef Context context_t;
+
   static void *operator new(size_t size, MEM_ROOT *mem_root,
                             const std::nothrow_t &arg MY_ATTRIBUTE((unused))
                             = std::nothrow) throw ()
@@ -220,20 +232,32 @@ public:
   }
 
   /**
-    my_syntax_error() function replacement for deferred reporting of syntax
+    syntax_error() function replacement for deferred reporting of syntax
     errors
 
     @param      pc      Current parse context.
     @param      pos     Location of the error in lexical scanner buffers.
-    @param      msg     Error message: NULL default means ER(ER_SYNTAX_ERROR).
   */
-  void error(Context *pc, const POS &pos, const char * msg= NULL) const
+  void error(Context *pc, const POS &pos) const
   {
-    syntax_error_at(pc->thd, pos, msg);
+    pc->thd->syntax_error_at(pos);
   }
 
   /**
-    my_syntax_error() function replacement for deferred reporting of syntax
+    syntax_error() function replacement for deferred reporting of syntax
+    errors
+
+    @param      pc      Current parse context.
+    @param      pos     Location of the error in lexical scanner buffers.
+    @param      msg     Error message.
+  */
+  void error(Context *pc, const POS &pos, const char *msg) const
+  {
+    pc->thd->syntax_error_at(pos, msg);
+  }
+
+  /**
+    syntax_error() function replacement for deferred reporting of syntax
     errors
 
     @param      pc      Current parse context.
@@ -244,7 +268,7 @@ public:
   {
     va_list args;
     va_start(args, format);
-    vsyntax_error_at(pc->thd, pos, format, args);
+    pc->thd->vsyntax_error_at(pos, format, args);
     va_end(args);
   }
 };

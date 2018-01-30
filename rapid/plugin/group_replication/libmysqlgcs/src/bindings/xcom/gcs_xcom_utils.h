@@ -1,13 +1,20 @@
 /* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -16,36 +23,35 @@
 #ifndef GCS_XCOM_UTILS_INCLUDED
 #define GCS_XCOM_UTILS_INCLUDED
 
-#include "mysql/gcs/xplatform/my_xp_thread.h"
-#include "mysql/gcs/xplatform/my_xp_mutex.h"
-#include "mysql/gcs/xplatform/my_xp_cond.h"
-#include "mysql/gcs/xplatform/my_xp_util.h"
-
-#include "mysql/gcs/gcs_member_identifier.h"
-#include "mysql/gcs/gcs_group_identifier.h"
-#include "mysql/gcs/gcs_types.h"
-#include "gcs_xcom_group_member_information.h"
-
-#include <simset.h>
-#include <xcom_vp.h>
-#include <xcom_common.h>
-#include <node_list.h>
-#include <node_set.h>
-#include <task.h>
-#include <server_struct.h>
-#include <xcom_detector.h>
-#include <site_struct.h>
-#include <site_def.h>
-#include <xcom_transport.h>
-#include <xcom_base.h>
-#include <task_net.h>
-#include <node_connection.h>
-#include "node_no.h"
-
-#include <vector>
+#include <atomic>
 #include <string>
+#include <vector>
+
+#include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/gcs_group_identifier.h"
+#include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/gcs_member_identifier.h"
+#include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/gcs_types.h"
+#include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/xplatform/my_xp_cond.h"
+#include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/xplatform/my_xp_mutex.h"
+#include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/xplatform/my_xp_thread.h"
+#include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/xplatform/my_xp_util.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_xcom_group_member_information.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/node_connection.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/node_list.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/node_set.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/server_struct.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/simset.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/site_def.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/site_struct.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/task.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/task_net.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/xcom_base.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/xcom_common.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/xcom_detector.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/xcom_transport.h"
+#include "plugin/group_replication/libmysqlgcs/xdr_gen/xcom_vp.h"
 
 #define XCOM_COMM_STATUS_UNDEFINED -1
+#define XCOM_PREFIX "[XCOM] "
 
 /**
   @class gcs_xcom_utils
@@ -573,6 +579,121 @@ public:
    */
   virtual int xcom_client_force_config(connection_descriptor *fd, node_list *nl,
                                        uint32_t group_id)= 0;
+
+  /**
+    Function used to boot a node in XCOM.
+
+    @param node Node information.
+    @param group_id_hash Hash of group identifier.
+  */
+  virtual int xcom_boot_node(Gcs_xcom_node_information &node,
+                             uint32_t group_id_hash)= 0;
+
+  /**
+    Function to remove a set of nodes from XCOM.
+
+    @param nodes Set of nodes.
+    @param group_id_hash Hash of group identifier.
+  */
+
+  virtual int xcom_remove_nodes(Gcs_xcom_nodes &nodes,
+                                uint32_t group_id_hash)= 0;
+
+  /**
+    Function to remove a node from XCOM.
+
+    @param node Node information.
+    @param group_id_hash Hash of group identifier.
+  */
+
+  virtual int xcom_remove_node(const Gcs_xcom_node_information &node,
+                               uint32_t group_id_hash)= 0;
+
+  /**
+    Function to add a set of nodes to XCOM.
+
+    @param con Connection to a node that will carry on the request.
+    @param nodes Set of nodes.
+    @param group_id_hash Hash of group identifier.
+  */
+
+  virtual int xcom_add_nodes(connection_descriptor& con,
+                             Gcs_xcom_nodes &nodes,
+                             uint32_t group_id_hash)= 0;
+
+
+  /**
+    Function to add a node to XCOM.
+
+  @param con Connection to a node that will carry on the request.
+  @param node Node information.
+  @param group_id_hash Hash of group identifier.
+  */
+
+  virtual int xcom_add_node(connection_descriptor& con,
+                            const Gcs_xcom_node_information &node,
+                            uint32_t group_id_hash)= 0;
+
+
+  /**
+    Function to force the set of nodes in XCOM's configuration.
+
+    @param nodes Set of nodes.
+    @param group_id_hash Hash of group identifier.
+  */
+
+  virtual int xcom_force_nodes(Gcs_xcom_nodes &nodes,
+                               unsigned int group_id_hash)= 0;
+
+  /**
+    Function that retrieves the value that signals that XCom
+    must be forcefully stopped.
+
+    @return 1 if XCom needs to forcefully exit. 0 otherwise.
+   */
+  virtual bool get_should_exit()= 0;
+
+  /**
+    Function that sets the value that signals that XCom
+    must be forcefully stopped.
+   */
+  virtual void set_should_exit(bool should_exit)= 0;
+};
+
+
+/*
+  Virtual class that contains implementation of methods used to
+  map a node representation into XCOM's representation.
+  This layer becomes necessary to avoid duplicating code in test
+  cases.
+*/
+class Gcs_xcom_proxy_base : public Gcs_xcom_proxy
+{
+public:
+  explicit Gcs_xcom_proxy_base() {}
+  virtual ~Gcs_xcom_proxy_base() {};
+
+  int xcom_boot_node(Gcs_xcom_node_information &node,
+                     uint32_t group_id_hash);
+  int xcom_remove_nodes(Gcs_xcom_nodes &nodes,
+                     uint32_t group_id_hash);
+  int xcom_remove_node(const Gcs_xcom_node_information &node,
+                       uint32_t group_id_hash);
+  int xcom_add_nodes(connection_descriptor& con,
+                     Gcs_xcom_nodes &nodes,
+                     uint32_t group_id_hash);
+  int xcom_add_node(connection_descriptor& con,
+                    const Gcs_xcom_node_information &node,
+                    uint32_t group_id_hash);
+  int xcom_force_nodes(Gcs_xcom_nodes &nodes,
+                       uint32_t group_id_hash);
+private:
+
+  /* Serialize information on nodes to be sent to XCOM */
+  bool serialize_nodes_information(Gcs_xcom_nodes &nodes, node_list &nl);
+
+  /* Free information on nodes sent to XCOM */
+  void free_nodes_information(node_list& nl);
 };
 
 
@@ -583,7 +704,7 @@ public:
   instantiates Gcs_xcom_control_interface to be used in a real
   scenario.
 */
-class Gcs_xcom_proxy_impl : public Gcs_xcom_proxy
+class Gcs_xcom_proxy_impl : public Gcs_xcom_proxy_base
 {
 private:
   class Xcom_handler
@@ -660,9 +781,9 @@ public:
   int xcom_client_force_config(node_list *nl, uint32_t group_id);
   int xcom_client_force_config(connection_descriptor *fd, node_list *nl,
                                uint32_t group_id);
-
+  bool get_should_exit();
+  void set_should_exit(bool should_exit);
 private:
-
   /* A pointer to the next local XCom connection to use. */
   int m_xcom_handlers_cursor;
 
@@ -708,6 +829,7 @@ private:
   const char *m_cipher;
   const char *m_tls_version;
 
+  std::atomic_bool m_should_exit;
 
   /*
     Disabling the copy constructor and assignment operator.
@@ -752,98 +874,6 @@ typedef struct st_gcs_xcom_thread_startup_parameters
   unsigned int   port;
 } Gcs_xcom_thread_startup_parameters;
 
-
-/**
-  This class contains information on the configuration, i.e set of nodes
-  or simply site definition, used by XCOM to deliver a message or view.
-*/
-class Gcs_xcom_nodes
-{
-public:
-  /**
-    Constructor that reads the site definition and whether a node
-    is considered dead or alive to build a list of addresses and
-    statuses.
-  */
-
-  explicit Gcs_xcom_nodes(const site_def *site, node_set &nodes);
-
-
-  /**
-    Return the index of the current node (i.e. member).
-  */
-
-  unsigned int get_node_no() const;
-
-
-  /**
-    Return a reference to the addresses' vector.
-  */
-
-  const std::vector<std::string> &get_addresses() const;
-
-  /**
-    Return a reference to the member uuids' vector.
-  */
-  const std::vector<Gcs_uuid> &get_uuids() const;
-
-  /**
-    Return a reference to the statuses' vector.
-  */
-
-  const std::vector<bool> &get_statuses() const;
-
-
-  /**
-    Return the number of nodes.
-  */
-
-  unsigned int get_size() const;
-
-
-  /**
-    Return with the configuration is valid or not.
-  */
-  inline bool is_valid() const
-  {
-    /*
-      Unfortunately a node may get notifications even when its configuration
-      inside XCOM is not properly established and this may trigger view
-      changes and may lead to problems because the node is not really ready.
-
-      We detect this fact by checking the node identification is valid.
-    */
-    return m_node_no != VOID_NODE_NO;
-  }
-
-private:
-  /*
-    Number of the current node which is used as an index to
-    the other data structures.
-  */
-  unsigned int m_node_no;
-
-  /*
-    List of addresses.
-  */
-  std::vector<std::string> m_addresses;
-
-  /*
-    List of uuids.
-  */
-  std::vector<Gcs_uuid> m_uuids;
-
-  /*
-    List that defines whether a node is alive or dead.
-  */
-  std::vector<bool> m_statuses;
-
-  /*
-    The size of the lists.
-  */
-  unsigned int m_size;
-};
-
 /*****************************************************
  *****************************************************
 
@@ -879,11 +909,10 @@ void
 fix_parameters_syntax(Gcs_interface_parameters &params);
 
 /**
- Checks that parameters are syntatically valid.
+ Checks that parameters are syntactically valid.
 
- @param params The parameters to validate syntatically.
+ @param params The parameters to validate syntactically.
  @returns false if there is a syntax error, true otherwise.
  */
 bool is_parameters_syntax_correct(const Gcs_interface_parameters &params);
-
 #endif  /* GCS_XCOM_UTILS_INCLUDED */

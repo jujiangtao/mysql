@@ -1,17 +1,24 @@
 /* Copyright (c) 2008, 2017, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
-  along with this program; if not, write to the Free Software Foundation,
-  51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+  along with this program; if not, write to the Free Software
+  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 /**
   @file storage/perfschema/table_events_waits.cc
@@ -20,18 +27,18 @@
 
 #include "storage/perfschema/table_events_waits.h"
 
-#include "field.h"
 #include "lex_string.h"
 #include "m_string.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_thread.h"
-#include "pfs_buffer_container.h"
-#include "pfs_events_waits.h"
-#include "pfs_global.h"
-#include "pfs_instr.h"
-#include "pfs_instr_class.h"
-#include "pfs_timer.h"
+#include "sql/field.h"
+#include "storage/perfschema/pfs_buffer_container.h"
+#include "storage/perfschema/pfs_events_waits.h"
+#include "storage/perfschema/pfs_global.h"
+#include "storage/perfschema/pfs_instr.h"
+#include "storage/perfschema/pfs_instr_class.h"
+#include "storage/perfschema/pfs_timer.h"
 
 bool
 PFS_index_events_waits::match(PFS_thread *pfs)
@@ -63,112 +70,38 @@ PFS_index_events_waits::match(PFS_events_waits *pfs)
 
 THR_LOCK table_events_waits_current::m_table_lock;
 
-/* clang-format off */
-static const TABLE_FIELD_TYPE field_types[]=
-{
-  {
-    { C_STRING_WITH_LEN("THREAD_ID") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("EVENT_ID") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("END_EVENT_ID") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("EVENT_NAME") },
-    { C_STRING_WITH_LEN("varchar(128)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("SOURCE") },
-    { C_STRING_WITH_LEN("varchar(64)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("TIMER_START") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("TIMER_END") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("TIMER_WAIT") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("SPINS") },
-    { C_STRING_WITH_LEN("int(10)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("OBJECT_SCHEMA") },
-    { C_STRING_WITH_LEN("varchar(64)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("OBJECT_NAME") },
-    { C_STRING_WITH_LEN("varchar(512)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("INDEX_NAME") },
-    { C_STRING_WITH_LEN("varchar(64)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("OBJECT_TYPE") },
-    { C_STRING_WITH_LEN("varchar(64)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("OBJECT_INSTANCE_BEGIN") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("NESTING_EVENT_ID") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("NESTING_EVENT_TYPE") },
-    { C_STRING_WITH_LEN("enum(\'TRANSACTION\',\'STATEMENT\',\'STAGE\',\'WAIT\'") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("OPERATION") },
-    { C_STRING_WITH_LEN("varchar(32)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("NUMBER_OF_BYTES") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("FLAGS") },
-    { C_STRING_WITH_LEN("int(10)") },
-    { NULL, 0}
-  }
-};
-/* clang-format on */
-
-TABLE_FIELD_DEF
-table_events_waits_current::m_field_def = {19, field_types};
+Plugin_table table_events_waits_current::m_table_def(
+  /* Schema name */
+  "performance_schema",
+  /* Name */
+  "events_waits_current",
+  /* Definition */
+  "  THREAD_ID BIGINT unsigned not null,\n"
+  "  EVENT_ID BIGINT unsigned not null,\n"
+  "  END_EVENT_ID BIGINT unsigned,\n"
+  "  EVENT_NAME VARCHAR(128) not null,\n"
+  "  SOURCE VARCHAR(64),\n"
+  "  TIMER_START BIGINT unsigned,\n"
+  "  TIMER_END BIGINT unsigned,\n"
+  "  TIMER_WAIT BIGINT unsigned,\n"
+  "  SPINS INTEGER unsigned,\n"
+  "  OBJECT_SCHEMA VARCHAR(64),\n"
+  "  OBJECT_NAME VARCHAR(512),\n"
+  "  INDEX_NAME VARCHAR(64),\n"
+  "  OBJECT_TYPE VARCHAR(64),\n"
+  "  OBJECT_INSTANCE_BEGIN BIGINT unsigned not null,\n"
+  "  NESTING_EVENT_ID BIGINT unsigned,\n"
+  "  NESTING_EVENT_TYPE ENUM('TRANSACTION', 'STATEMENT', 'STAGE', 'WAIT'),\n"
+  "  OPERATION VARCHAR(32) not null,\n"
+  "  NUMBER_OF_BYTES BIGINT,\n"
+  "  FLAGS INTEGER unsigned,\n"
+  "  PRIMARY KEY (THREAD_ID, EVENT_ID)\n",
+  /* Options */
+  " ENGINE=PERFORMANCE_SCHEMA",
+  /* Tablespace */
+  nullptr);
 
 PFS_engine_table_share table_events_waits_current::m_share = {
-  {C_STRING_WITH_LEN("events_waits_current")},
   &pfs_truncatable_acl,
   table_events_waits_current::create,
   NULL, /* write_row */
@@ -176,15 +109,47 @@ PFS_engine_table_share table_events_waits_current::m_share = {
   table_events_waits_current::get_row_count,
   sizeof(pos_events_waits_current), /* ref length */
   &m_table_lock,
-  &m_field_def,
-  false, /* checked */
-  false  /* perpetual */
+  &m_table_def,
+  false, /* perpetual */
+  PFS_engine_table_proxy(),
+  {0},
+  false /* m_in_purgatory */
 };
 
 THR_LOCK table_events_waits_history::m_table_lock;
 
+Plugin_table table_events_waits_history::m_table_def(
+  /* Schema name */
+  "performance_schema",
+  /* Name */
+  "events_waits_history",
+  /* Definition */
+  "  THREAD_ID BIGINT unsigned not null,\n"
+  "  EVENT_ID BIGINT unsigned not null,\n"
+  "  END_EVENT_ID BIGINT unsigned,\n"
+  "  EVENT_NAME VARCHAR(128) not null,\n"
+  "  SOURCE VARCHAR(64),\n"
+  "  TIMER_START BIGINT unsigned,\n"
+  "  TIMER_END BIGINT unsigned,\n"
+  "  TIMER_WAIT BIGINT unsigned,\n"
+  "  SPINS INTEGER unsigned,\n"
+  "  OBJECT_SCHEMA VARCHAR(64),\n"
+  "  OBJECT_NAME VARCHAR(512),\n"
+  "  INDEX_NAME VARCHAR(64),\n"
+  "  OBJECT_TYPE VARCHAR(64),\n"
+  "  OBJECT_INSTANCE_BEGIN BIGINT unsigned not null,\n"
+  "  NESTING_EVENT_ID BIGINT unsigned,\n"
+  "  NESTING_EVENT_TYPE ENUM('TRANSACTION', 'STATEMENT', 'STAGE', 'WAIT'),\n"
+  "  OPERATION VARCHAR(32) not null,\n"
+  "  NUMBER_OF_BYTES BIGINT,\n"
+  "  FLAGS INTEGER unsigned,\n"
+  "  PRIMARY KEY (THREAD_ID, EVENT_ID)\n",
+  /* Options */
+  " ENGINE=PERFORMANCE_SCHEMA",
+  /* Tablespace */
+  nullptr);
+
 PFS_engine_table_share table_events_waits_history::m_share = {
-  {C_STRING_WITH_LEN("events_waits_history")},
   &pfs_truncatable_acl,
   table_events_waits_history::create,
   NULL, /* write_row */
@@ -192,15 +157,46 @@ PFS_engine_table_share table_events_waits_history::m_share = {
   table_events_waits_history::get_row_count,
   sizeof(pos_events_waits_history), /* ref length */
   &m_table_lock,
-  &table_events_waits_current::m_field_def,
-  false, /* checked */
-  false  /* perpetual */
+  &m_table_def,
+  false, /* perpetual */
+  PFS_engine_table_proxy(),
+  {0},
+  false /* m_in_purgatory */
 };
 
 THR_LOCK table_events_waits_history_long::m_table_lock;
 
+Plugin_table table_events_waits_history_long::m_table_def(
+  /* Schema name */
+  "performance_schema",
+  /* Name */
+  "events_waits_history_long",
+  /* Definition */
+  "  THREAD_ID BIGINT unsigned not null,\n"
+  "  EVENT_ID BIGINT unsigned not null,\n"
+  "  END_EVENT_ID BIGINT unsigned,\n"
+  "  EVENT_NAME VARCHAR(128) not null,\n"
+  "  SOURCE VARCHAR(64),\n"
+  "  TIMER_START BIGINT unsigned,\n"
+  "  TIMER_END BIGINT unsigned,\n"
+  "  TIMER_WAIT BIGINT unsigned,\n"
+  "  SPINS INTEGER unsigned,\n"
+  "  OBJECT_SCHEMA VARCHAR(64),\n"
+  "  OBJECT_NAME VARCHAR(512),\n"
+  "  INDEX_NAME VARCHAR(64),\n"
+  "  OBJECT_TYPE VARCHAR(64),\n"
+  "  OBJECT_INSTANCE_BEGIN BIGINT unsigned not null,\n"
+  "  NESTING_EVENT_ID BIGINT unsigned,\n"
+  "  NESTING_EVENT_TYPE ENUM('TRANSACTION', 'STATEMENT', 'STAGE', 'WAIT'),\n"
+  "  OPERATION VARCHAR(32) not null,\n"
+  "  NUMBER_OF_BYTES BIGINT,\n"
+  "  FLAGS INTEGER unsigned\n",
+  /* Options */
+  " ENGINE=PERFORMANCE_SCHEMA",
+  /* Tablespace */
+  nullptr);
+
 PFS_engine_table_share table_events_waits_history_long::m_share = {
-  {C_STRING_WITH_LEN("events_waits_history_long")},
   &pfs_truncatable_acl,
   table_events_waits_history_long::create,
   NULL, /* write_row */
@@ -208,15 +204,18 @@ PFS_engine_table_share table_events_waits_history_long::m_share = {
   table_events_waits_history_long::get_row_count,
   sizeof(PFS_simple_index), /* ref length */
   &m_table_lock,
-  &table_events_waits_current::m_field_def,
-  false, /* checked */
-  false  /* perpetual */
+  &m_table_def,
+  false, /* perpetual */
+  PFS_engine_table_proxy(),
+  {0},
+  false /* m_in_purgatory */
 };
 
 table_events_waits_common::table_events_waits_common(
   const PFS_engine_table_share *share, void *pos)
   : PFS_engine_table(share, pos)
 {
+  m_normalizer = time_normalizer::get_wait();
 }
 
 void
@@ -430,6 +429,10 @@ table_events_waits_common::make_metadata_lock_object_columns(
 
   if (safe_metadata_lock->get_version() == wait->m_weak_version)
   {
+    // TODO: remove code duplication with PFS_column_row::make_row()
+    static_assert(MDL_key::NAMESPACE_END == 16,
+                  "Adjust performance schema when changing enum_mdl_namespace");
+
     MDL_key *mdl = &safe_metadata_lock->m_mdl_key;
 
     switch (mdl->mdl_namespace())
@@ -439,78 +442,120 @@ table_events_waits_common::make_metadata_lock_object_columns(
       m_row.m_object_type_length = 6;
       m_row.m_object_schema_length = 0;
       m_row.m_object_name_length = 0;
-      break;
-    case MDL_key::SCHEMA:
-      m_row.m_object_type = "SCHEMA";
-      m_row.m_object_type_length = 6;
-      m_row.m_object_schema_length = mdl->db_name_length();
-      m_row.m_object_name_length = 0;
-      break;
-    case MDL_key::TABLE:
-      m_row.m_object_type = "TABLE";
-      m_row.m_object_type_length = 5;
-      m_row.m_object_schema_length = mdl->db_name_length();
-      m_row.m_object_name_length = mdl->name_length();
-      break;
-    case MDL_key::FUNCTION:
-      m_row.m_object_type = "FUNCTION";
-      m_row.m_object_type_length = 8;
-      m_row.m_object_schema_length = mdl->db_name_length();
-      m_row.m_object_name_length = mdl->name_length();
-      break;
-    case MDL_key::PROCEDURE:
-      m_row.m_object_type = "PROCEDURE";
-      m_row.m_object_type_length = 9;
-      m_row.m_object_schema_length = mdl->db_name_length();
-      m_row.m_object_name_length = mdl->name_length();
-      break;
-    case MDL_key::TRIGGER:
-      m_row.m_object_type = "TRIGGER";
-      m_row.m_object_type_length = 7;
-      m_row.m_object_schema_length = mdl->db_name_length();
-      m_row.m_object_name_length = mdl->name_length();
-      break;
-    case MDL_key::EVENT:
-      m_row.m_object_type = "EVENT";
-      m_row.m_object_type_length = 5;
-      m_row.m_object_schema_length = mdl->db_name_length();
-      m_row.m_object_name_length = mdl->name_length();
-      break;
-    case MDL_key::COMMIT:
-      m_row.m_object_type = "COMMIT";
-      m_row.m_object_type_length = 6;
-      m_row.m_object_schema_length = 0;
-      m_row.m_object_name_length = 0;
-      break;
-    case MDL_key::USER_LEVEL_LOCK:
-      m_row.m_object_type = "USER LEVEL LOCK";
-      m_row.m_object_type_length = 15;
-      m_row.m_object_schema_length = 0;
-      m_row.m_object_name_length = mdl->name_length();
+      m_row.m_index_name_length = 0;
       break;
     case MDL_key::TABLESPACE:
       m_row.m_object_type = "TABLESPACE";
       m_row.m_object_type_length = 10;
       m_row.m_object_schema_length = 0;
       m_row.m_object_name_length = mdl->name_length();
+      m_row.m_index_name_length = 0;
+      break;
+    case MDL_key::SCHEMA:
+      m_row.m_object_type = "SCHEMA";
+      m_row.m_object_type_length = 6;
+      m_row.m_object_schema_length = mdl->db_name_length();
+      m_row.m_object_name_length = 0;
+      m_row.m_index_name_length = 0;
+      break;
+    case MDL_key::TABLE:
+      m_row.m_object_type = "TABLE";
+      m_row.m_object_type_length = 5;
+      m_row.m_object_schema_length = mdl->db_name_length();
+      m_row.m_object_name_length = mdl->name_length();
+      m_row.m_index_name_length = 0;
+      break;
+    case MDL_key::FUNCTION:
+      m_row.m_object_type = "FUNCTION";
+      m_row.m_object_type_length = 8;
+      m_row.m_object_schema_length = mdl->db_name_length();
+      m_row.m_object_name_length = mdl->name_length();
+      m_row.m_index_name_length = 0;
+      break;
+    case MDL_key::PROCEDURE:
+      m_row.m_object_type = "PROCEDURE";
+      m_row.m_object_type_length = 9;
+      m_row.m_object_schema_length = mdl->db_name_length();
+      m_row.m_object_name_length = mdl->name_length();
+      m_row.m_index_name_length = 0;
+      break;
+    case MDL_key::TRIGGER:
+      m_row.m_object_type = "TRIGGER";
+      m_row.m_object_type_length = 7;
+      m_row.m_object_schema_length = mdl->db_name_length();
+      m_row.m_object_name_length = mdl->name_length();
+      m_row.m_index_name_length = 0;
+      break;
+    case MDL_key::EVENT:
+      m_row.m_object_type = "EVENT";
+      m_row.m_object_type_length = 5;
+      m_row.m_object_schema_length = mdl->db_name_length();
+      m_row.m_object_name_length = mdl->name_length();
+      m_row.m_index_name_length = 0;
+      break;
+    case MDL_key::COMMIT:
+      m_row.m_object_type = "COMMIT";
+      m_row.m_object_type_length = 6;
+      m_row.m_object_schema_length = 0;
+      m_row.m_object_name_length = 0;
+      m_row.m_index_name_length = 0;
+      break;
+    case MDL_key::USER_LEVEL_LOCK:
+      m_row.m_object_type = "USER LEVEL LOCK";
+      m_row.m_object_type_length = 15;
+      m_row.m_object_schema_length = 0;
+      m_row.m_object_name_length = mdl->name_length();
+      m_row.m_index_name_length = 0;
       break;
     case MDL_key::LOCKING_SERVICE:
       m_row.m_object_type = "LOCKING SERVICE";
       m_row.m_object_type_length = 15;
       m_row.m_object_schema_length = mdl->db_name_length();
       m_row.m_object_name_length = mdl->name_length();
+      m_row.m_index_name_length = 0;
+      break;
+    case MDL_key::SRID:
+      m_row.m_object_type = "SRID";
+      m_row.m_object_type_length = 4;
+      m_row.m_object_schema_length = 0;
+      m_row.m_object_name_length = mdl->name_length();
+      m_row.m_index_name_length = 0;
       break;
     case MDL_key::ACL_CACHE:
       m_row.m_object_type = "ACL CACHE";
       m_row.m_object_type_length = 9;
       m_row.m_object_schema_length = mdl->db_name_length();
       m_row.m_object_name_length = mdl->name_length();
+      m_row.m_index_name_length = 0;
+      break;
+    case MDL_key::COLUMN_STATISTICS:
+      m_row.m_object_type = "COLUMN STATISTICS";
+      m_row.m_object_type_length = 17;
+      m_row.m_object_schema_length = mdl->db_name_length();
+      m_row.m_object_name_length = mdl->name_length();
+      // Reusing the INDEX_NAME column for COLUMN_NAME
+      m_row.m_index_name_length = mdl->col_name_length();
+      break;
+    case MDL_key::BACKUP_LOCK:
+      m_row.m_object_type = "BACKUP_LOCK";
+      m_row.m_object_type_length = sizeof("BACKUP_LOCK") - 1;
+      m_row.m_object_schema_length = 0;
+      m_row.m_object_name_length = 0;
+      m_row.m_index_name_length = 0;
+      break;
+    case MDL_key::RESOURCE_GROUPS:
+      m_row.m_object_type = "RESOURCE_GROUPS";
+      m_row.m_object_type_length = 15;
+      m_row.m_object_schema_length = mdl->db_name_length();
+      m_row.m_object_name_length = mdl->name_length();
+      m_row.m_index_name_length = 0;
       break;
     case MDL_key::NAMESPACE_END:
     default:
       m_row.m_object_type_length = 0;
       m_row.m_object_schema_length = 0;
       m_row.m_object_name_length = 0;
+      m_row.m_index_name_length = 0;
       break;
     }
 
@@ -519,8 +564,10 @@ table_events_waits_common::make_metadata_lock_object_columns(
       return 1;
     }
     if (m_row.m_object_schema_length > 0)
+    {
       memcpy(
         m_row.m_object_schema, mdl->db_name(), m_row.m_object_schema_length);
+    }
 
     if (m_row.m_object_name_length > sizeof(m_row.m_object_name))
     {
@@ -531,6 +578,15 @@ table_events_waits_common::make_metadata_lock_object_columns(
       memcpy(m_row.m_object_name, mdl->name(), m_row.m_object_name_length);
     }
 
+    if (m_row.m_index_name_length > sizeof(m_row.m_index_name))
+    {
+      return 1;
+    }
+    if (m_row.m_index_name_length > 0)
+    {
+      memcpy(m_row.m_index_name, mdl->col_name(), m_row.m_index_name_length);
+    }
+
     m_row.m_object_instance_addr = (intptr)wait->m_object_instance_addr;
   }
   else
@@ -538,11 +594,9 @@ table_events_waits_common::make_metadata_lock_object_columns(
     m_row.m_object_type_length = 0;
     m_row.m_object_schema_length = 0;
     m_row.m_object_name_length = 0;
+    m_row.m_index_name_length = 0;
     m_row.m_object_instance_addr = 0;
   }
-
-  /* INDEX NAME */
-  m_row.m_index_name_length = 0;
 
   return 0;
 }
@@ -558,8 +612,9 @@ table_events_waits_common::make_row(PFS_events_waits *wait)
   PFS_instr_class *safe_class;
   const char *base;
   const char *safe_source_file;
-  enum_timer_name timer_name = wait_timer;
   ulonglong timer_end;
+  /* wait normalizer for most rows. */
+  time_normalizer *normalizer = m_normalizer;
 
   /*
     Design choice:
@@ -597,7 +652,7 @@ table_events_waits_common::make_row(PFS_events_waits *wait)
     clear_object_columns();
     m_row.m_object_instance_addr = 0;
     safe_class = sanitize_idle_class(wait->m_class);
-    timer_name = idle_timer;
+    normalizer = time_normalizer::get_idle();
     break;
   case WAIT_CLASS_MUTEX:
     clear_object_columns();
@@ -651,22 +706,27 @@ table_events_waits_common::make_row(PFS_events_waits *wait)
   m_row.m_nesting_event_id = wait->m_nesting_event_id;
   m_row.m_nesting_event_type = wait->m_nesting_event_type;
 
-  get_normalizer(safe_class);
-
   if (m_row.m_end_event_id == 0)
   {
-    timer_end = get_timer_raw_value(timer_name);
+    if (wait->m_wait_class == WAIT_CLASS_IDLE)
+    {
+      timer_end = get_idle_timer();
+    }
+    else
+    {
+      timer_end = get_wait_timer();
+    }
   }
   else
   {
     timer_end = wait->m_timer_end;
   }
 
-  m_normalizer->to_pico(wait->m_timer_start,
-                        timer_end,
-                        &m_row.m_timer_start,
-                        &m_row.m_timer_end,
-                        &m_row.m_timer_wait);
+  normalizer->to_pico(wait->m_timer_start,
+                      timer_end,
+                      &m_row.m_timer_start,
+                      &m_row.m_timer_end,
+                      &m_row.m_timer_wait);
 
   m_row.m_name = safe_class->m_name;
   m_row.m_name_length = safe_class->m_name_length;
@@ -975,7 +1035,7 @@ table_events_waits_common::read_row_values(TABLE *table,
 }
 
 PFS_engine_table *
-table_events_waits_current::create(void)
+table_events_waits_current::create(PFS_engine_table_share *)
 {
   return new table_events_waits_current();
 }
@@ -1095,7 +1155,7 @@ table_events_waits_current::rnd_pos(const void *pos)
 }
 
 int
-table_events_waits_current::index_init(uint idx, bool)
+table_events_waits_current::index_init(uint idx MY_ATTRIBUTE((unused)), bool)
 {
   PFS_index_events_waits *result;
   DBUG_ASSERT(idx == 0);
@@ -1178,7 +1238,7 @@ table_events_waits_current::get_row_count(void)
 }
 
 PFS_engine_table *
-table_events_waits_history::create(void)
+table_events_waits_history::create(PFS_engine_table_share *)
 {
   return new table_events_waits_history();
 }
@@ -1277,7 +1337,7 @@ table_events_waits_history::rnd_pos(const void *pos)
 }
 
 int
-table_events_waits_history::index_init(uint idx, bool)
+table_events_waits_history::index_init(uint idx MY_ATTRIBUTE((unused)), bool)
 {
   PFS_index_events_waits *result;
   DBUG_ASSERT(idx == 0);
@@ -1366,7 +1426,7 @@ table_events_waits_history::get_row_count(void)
 }
 
 PFS_engine_table *
-table_events_waits_history_long::create(void)
+table_events_waits_history_long::create(PFS_engine_table_share *)
 {
   return new table_events_waits_history_long();
 }

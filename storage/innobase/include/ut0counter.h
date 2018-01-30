@@ -3,16 +3,24 @@
 Copyright (c) 2012, 2017, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+the terms of the GNU General Public License, version 2.0, as published by the
+Free Software Foundation.
+
+This program is also distributed with certain software (including but not
+limited to OpenSSL) that is licensed under separate terms, as designated in a
+particular file or component or in included license documentation. The authors
+of MySQL hereby grant you an additional permission to link the program and
+your derivative works with the separately licensed software that they have
+included with MySQL.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+FOR A PARTICULAR PURPOSE. See the GNU General Public License, version 2.0,
+for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 *****************************************************************************/
 
@@ -33,9 +41,9 @@ Created 2012/04/12 by Sunny Bains
 
 /** CPU cache line size */
 #ifdef __powerpc__
-#define CACHE_LINE_SIZE		128
+#define INNOBASE_CACHE_LINE_SIZE		128
 #else
-#define CACHE_LINE_SIZE		64
+#define INNOBASE_CACHE_LINE_SIZE		64
 #endif /* __powerpc__ */
 
 /** Default number of slots to use in ib_counter_t */
@@ -49,7 +57,8 @@ struct generic_indexer_t {
         /** @return offset within m_counter */
         static size_t offset(size_t index) UNIV_NOTHROW
 	{
-                return(((index % N) + 1) * (CACHE_LINE_SIZE / sizeof(Type)));
+                return(((index % N) + 1) *
+                      (INNOBASE_CACHE_LINE_SIZE / sizeof(Type)));
         }
 };
 
@@ -95,7 +104,7 @@ struct single_indexer_t {
         static size_t offset(size_t index) UNIV_NOTHROW
 	{
 		ut_ad(N == 1);
-                return((CACHE_LINE_SIZE / sizeof(Type)));
+                return((INNOBASE_CACHE_LINE_SIZE / sizeof(Type)));
         }
 
 	/** @return 1 */
@@ -111,7 +120,7 @@ struct single_indexer_t {
 /** Class for using fuzzy counters. The counter is not protected by any
 mutex and the results are not guaranteed to be 100% accurate but close
 enough. Creates an array of counters and separates each element by the
-CACHE_LINE_SIZE bytes */
+INNOBASE_CACHE_LINE_SIZE bytes */
 template <
 	typename Type,
 	int N = IB_N_SLOTS,
@@ -129,7 +138,7 @@ public:
 
 	bool validate() UNIV_NOTHROW {
 #ifdef UNIV_DEBUG
-		size_t	n = (CACHE_LINE_SIZE / sizeof(Type));
+		size_t	n = (INNOBASE_CACHE_LINE_SIZE / sizeof(Type));
 
 		/* Check that we aren't writing outside our defined bounds. */
 		for (size_t i = 0; i < UT_ARR_SIZE(m_counter); i += n) {
@@ -207,7 +216,8 @@ private:
 	Indexer<Type, N>m_policy;
 
         /** Slot 0 is unused. */
-	Type		m_counter[(N + 1) * (CACHE_LINE_SIZE / sizeof(Type))];
+	Type		m_counter[(N + 1) *
+                                (INNOBASE_CACHE_LINE_SIZE / sizeof(Type))];
 };
 
 #endif /* ut0counter_h */

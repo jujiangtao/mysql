@@ -1,13 +1,25 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
+
+   Without limiting anything contained in the foregoing, this file,
+   which is part of C Driver for MySQL (Connector/C), is also subject to the
+   Universal FOSS Exception, version 1.0, a copy of which can be found at
+   http://oss.oracle.com/licenses/universal-foss-exception.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -17,13 +29,14 @@
 
 #include <fcntl.h>
 #include <limits.h>
-#include <m_ctype.h>
-#include <m_string.h>
 #include <math.h>
-#include <my_sys.h>
-#include <my_time.h>
-#include <mysys_err.h>
 #include <sys/types.h>
+
+#include "m_ctype.h"
+#include "m_string.h"
+#include "my_sys.h"
+#include "my_time.h"
+#include "mysys_err.h"
 #ifndef _WIN32
 #include <netdb.h>
 #endif
@@ -32,7 +45,6 @@
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <time.h>
-#include <violite.h>
 
 #include "errmsg.h"
 #include "my_compiler.h"
@@ -50,6 +62,7 @@
 #include "mysql_version.h"
 #include "mysqld_error.h"
 #include "template_utils.h"
+#include "violite.h"
 
 #ifdef	 HAVE_PWD_H
 #include <pwd.h>
@@ -58,23 +71,23 @@
 #include <sys/select.h>
 #endif
 #ifdef HAVE_POLL
-#include <sys/poll.h>
+#include <poll.h>
 #endif
 #ifdef HAVE_SYS_UN_H
 #include <sys/un.h>
 #endif
 #if !defined(_WIN32)
-#include <my_thread.h>				/* because of signal()	*/
+#include "my_thread.h"				/* because of signal()	*/
 #endif
 #ifndef INADDR_NONE
 #define INADDR_NONE	-1
 #endif
 
-#include <sql_common.h>
 #include <memory>
 
 #include "client_settings.h"
 #include "mysql_trace.h"
+#include "sql_common.h"
 
 /*
   Temporary replacement for COM_SHUTDOWN. This will be removed once
@@ -204,7 +217,6 @@ void STDCALL mysql_server_end()
   }
   else
   {
-    free_charsets();
     mysql_thread_end();
   }
 
@@ -681,7 +693,8 @@ mysql_query(MYSQL *mysql, const char *query)
 MYSQL_FIELD * STDCALL
 mysql_fetch_field(MYSQL_RES *result)
 {
-  if (result->current_field >= result->field_count)
+  if (result->current_field >= result->field_count ||
+      !result->fields)
     return(NULL);
   return &result->fields[result->current_field++];
 }
@@ -987,6 +1000,9 @@ bool STDCALL mysql_eof(MYSQL_RES *res)
 
 MYSQL_FIELD * STDCALL mysql_fetch_field_direct(MYSQL_RES *res,uint fieldnr)
 {
+  if (fieldnr >= res->field_count ||
+      !res->fields)
+    return(NULL);
   return &(res)->fields[fieldnr];
 }
 
@@ -1003,6 +1019,11 @@ MYSQL_ROW_OFFSET STDCALL mysql_row_tell(MYSQL_RES *res)
 MYSQL_FIELD_OFFSET STDCALL mysql_field_tell(MYSQL_RES *res)
 {
   return (res)->current_field;
+}
+
+enum_resultset_metadata STDCALL mysql_result_metadata(MYSQL_RES *result)
+{
+  return result->metadata;
 }
 
 /* MYSQL */
@@ -1266,11 +1287,10 @@ myodbc_remove_escape(MYSQL *mysql,char *name)
 
  mysql_stmt_* are real prototypes used by applications.
 
- To make API work in embedded library all functions performing
+ All functions performing
  real I/O are prefixed with 'cli_' (abbreviated from 'Call Level
  Interface'). This functions are invoked via pointers set in
- MYSQL::methods structure. Embedded counterparts, prefixed with
- 'emb_' reside in libmysqld/lib_sql.cc.
+ MYSQL::methods structure.
 *********************************************************************/
 
 /******************* Declarations ***********************************/
@@ -1477,10 +1497,19 @@ bool cli_read_prepare_result(MYSQL *mysql, MYSQL_STMT *stmt)
   field_count=   uint2korr(pos);   pos+= 2;
   /* Number of placeholders in the statement */
   param_count=   uint2korr(pos);   pos+= 2;
-  if (packet_length >= 12)
-    mysql->warning_count= uint2korr(pos+1);
 
-  if (param_count != 0)
+  mysql->resultset_metadata= RESULTSET_METADATA_FULL;
+  if (packet_length >= 12)
+  {
+    mysql->warning_count= uint2korr(pos+1);
+    if (mysql->client_flag & CLIENT_OPTIONAL_RESULTSET_METADATA)
+    {
+      mysql->resultset_metadata= static_cast<enum enum_resultset_metadata>(*(pos + 3));
+    }
+  }
+
+  if (param_count != 0 &&
+      mysql->resultset_metadata == RESULTSET_METADATA_FULL)
   {
     MYSQL_TRACE_STAGE(mysql, WAIT_FOR_PARAM_DEF);
     /* skip parameters data: we don't support it yet */
@@ -1495,10 +1524,13 @@ bool cli_read_prepare_result(MYSQL *mysql, MYSQL_STMT *stmt)
     if (!(mysql->server_status & SERVER_STATUS_AUTOCOMMIT))
       mysql->server_status|= SERVER_STATUS_IN_TRANS;
 
-    MYSQL_TRACE_STAGE(mysql, WAIT_FOR_FIELD_DEF);
-    if (!(stmt->fields= cli_read_metadata_ex(mysql, stmt->mem_root,
-                                             field_count, 7)))
-      DBUG_RETURN(1);
+    if (mysql->resultset_metadata == RESULTSET_METADATA_FULL)
+    {
+      MYSQL_TRACE_STAGE(mysql, WAIT_FOR_FIELD_DEF);
+      if (!(stmt->fields= cli_read_metadata_ex(mysql, stmt->mem_root,
+                                               field_count, 7)))
+        DBUG_RETURN(1);
+    }
   }
 
   MYSQL_TRACE_STAGE(mysql, READY_FOR_COMMAND);
@@ -1727,6 +1759,14 @@ static void alloc_stmt_fields(MYSQL_STMT *stmt)
   free_root(fields_mem_root, MYF(0));
 
   /*
+    mysql->fields is NULL when the client set CLIENT_OPTIONAL_RESULTSET_METADATA flag
+    and server @@session.resultset_metadata is "NONE".
+    That means that the client received a resultset without metadata.
+  */
+  if (!mysql->fields)
+    return;
+
+  /*
     Get the field information for non-select statements
     like SHOW and DESCRIBE commands
   */
@@ -1813,6 +1853,14 @@ static void update_stmt_fields(MYSQL_STMT *stmt)
     set_stmt_error(stmt, CR_NEW_STMT_METADATA, unknown_sqlstate, NULL);
     return;
   }
+
+  /*
+    mysql->fields is NULL when the client set CLIENT_OPTIONAL_RESULTSET_METADATA flag
+    and server @@session.resultset_metadata is "NONE".
+    That means that the client received a resultset without metadata.
+  */
+  if (!field)
+    return;
 
   for (; field < field_end; ++field, ++stmt_field)
   {
@@ -2157,9 +2205,9 @@ static bool execute(MYSQL_STMT *stmt, char *packet, ulong length)
   buff[4]= (char) stmt->flags;
   int4store(buff+5, 1);                         /* iteration count */
 
-  res= MY_TEST(cli_advanced_command(mysql, COM_STMT_EXECUTE, buff, sizeof(buff),
-                                    (uchar*) packet, length, 1, stmt) ||
-               (*mysql->methods->read_query_result)(mysql));
+  res= (cli_advanced_command(mysql, COM_STMT_EXECUTE, buff, sizeof(buff),
+                             (uchar*) packet, length, 1, stmt) ||
+        (*mysql->methods->read_query_result)(mysql));
 
   if ((mysql->server_capabilities & CLIENT_DEPRECATE_EOF))
   {
@@ -2679,7 +2727,7 @@ int STDCALL mysql_stmt_execute(MYSQL_STMT *stmt)
     reinit_result_set_metadata(stmt);
     prepare_to_fetch_result(stmt);
   }
-  DBUG_RETURN(MY_TEST(stmt->last_errno));
+  DBUG_RETURN(stmt->last_errno != 0);
 }
 
 
@@ -3799,7 +3847,7 @@ static void fetch_result_with_conversion(MYSQL_BIND *param, MYSQL_FIELD *field,
 static void fetch_result_tinyint(MYSQL_BIND *param, MYSQL_FIELD *field,
                                  uchar **row)
 {
-  bool field_is_unsigned= MY_TEST(field->flags & UNSIGNED_FLAG);
+  bool field_is_unsigned= (field->flags & UNSIGNED_FLAG);
   uchar data= **row;
   *(uchar *)param->buffer= data;
   *param->error= param->is_unsigned != field_is_unsigned && data > INT_MAX8;
@@ -3809,7 +3857,7 @@ static void fetch_result_tinyint(MYSQL_BIND *param, MYSQL_FIELD *field,
 static void fetch_result_short(MYSQL_BIND *param, MYSQL_FIELD *field,
                                uchar **row)
 {
-  bool field_is_unsigned= MY_TEST(field->flags & UNSIGNED_FLAG);
+  bool field_is_unsigned= (field->flags & UNSIGNED_FLAG);
   ushort data= (ushort) sint2korr(*row);
   shortstore(pointer_cast<uchar*>(param->buffer), data);
   *param->error= param->is_unsigned != field_is_unsigned && data > INT_MAX16;
@@ -3820,7 +3868,7 @@ static void fetch_result_int32(MYSQL_BIND *param,
                                MYSQL_FIELD *field MY_ATTRIBUTE((unused)),
                                uchar **row)
 {
-  bool field_is_unsigned= MY_TEST(field->flags & UNSIGNED_FLAG);
+  bool field_is_unsigned= (field->flags & UNSIGNED_FLAG);
   uint32 data= (uint32) sint4korr(*row);
   longstore(pointer_cast<uchar*>(param->buffer), data);
   *param->error= param->is_unsigned != field_is_unsigned && data > INT_MAX32;
@@ -3831,7 +3879,7 @@ static void fetch_result_int64(MYSQL_BIND *param,
                                MYSQL_FIELD *field MY_ATTRIBUTE((unused)),
                                uchar **row)
 {
-  bool field_is_unsigned= MY_TEST(field->flags & UNSIGNED_FLAG);
+  bool field_is_unsigned= (field->flags & UNSIGNED_FLAG);
   ulonglong data= (ulonglong) sint8korr(*row);
   *param->error= param->is_unsigned != field_is_unsigned && data > LLONG_MAX;
   longlongstore(pointer_cast<uchar*>(param->buffer), data);
@@ -4862,10 +4910,14 @@ bool STDCALL mysql_stmt_close(MYSQL_STMT *stmt)
         mysql->status= MYSQL_STATUS_READY;
       }
       int4store(buff, stmt->stmt_id);
-      if ((rc= stmt_command(mysql, COM_STMT_CLOSE, buff, 4, stmt)))
-      {
-        set_stmt_errmsg(stmt, &mysql->net);
-      }
+      /*
+        If stmt_command failed, it would have already raised
+        error using set_mysql_error. Caller should use
+        mysql_error() or mysql_errno() to find out details.
+        Memory allocated for stmt will be released regardless
+        of the error.
+      */
+      rc= stmt_command(mysql, COM_STMT_CLOSE, buff, 4, stmt);
     }
   }
 
@@ -4874,7 +4926,7 @@ bool STDCALL mysql_stmt_close(MYSQL_STMT *stmt)
   my_free(stmt->extension);
   my_free(stmt);
 
-  DBUG_RETURN(MY_TEST(rc));
+  DBUG_RETURN(rc != 0);
 }
 
 /*

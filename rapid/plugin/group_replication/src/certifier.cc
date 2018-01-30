@@ -1,31 +1,37 @@
 /* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include <assert.h>
 #include <signal.h>
 #include <time.h>
 #include <map>
 
-#include "certifier.h"
 #include "my_dbug.h"
 #include "my_systime.h"
-#include "observer_trans.h"
-#include "plugin.h"
-#include "plugin_log.h"
-#include "sql_service_command.h"
-#include "sql_service_gr_user.h"
+#include "plugin/group_replication/include/certifier.h"
+#include "plugin/group_replication/include/observer_trans.h"
+#include "plugin/group_replication/include/plugin.h"
+#include "plugin/group_replication/include/plugin_log.h"
+#include "plugin/group_replication/include/sql_service/sql_service_command.h"
 
 const std::string Certifier::GTID_EXTRACTED_NAME= "gtid_extracted";
 
@@ -152,10 +158,14 @@ void Certifier_broadcast_thread::dispatcher()
   {
     broadcast_counter++;
 
-    applier_module->get_pipeline_stats_member_collector()
-        ->send_stats_member_message();
+    // Broadcast Transaction identifiers every 30 seconds
+    if (broadcast_counter % 30 == 0)
+    {
+      applier_module->get_pipeline_stats_member_collector()
+        ->set_send_transaction_identifiers();
+    }
 
-    applier_module->get_flow_control_module()->flow_control_step();
+    applier_module->run_flow_control_step();
 
     if (broadcast_counter % broadcast_gtid_executed_period == 0)
       broadcast_gtid_executed();
@@ -330,7 +340,7 @@ int Certifier::initialize_server_gtid_set(bool get_server_gtid_retrieved)
   DBUG_ENTER("initialize_server_gtid_set");
   mysql_mutex_assert_owner(&LOCK_certification_info);
   int error= 0;
-  Sql_service_command *sql_command_interface= NULL;
+  Sql_service_command_interface *sql_command_interface= NULL;
   std::string gtid_executed;
   std::string applier_retrieved_gtids;
 
@@ -373,9 +383,9 @@ int Certifier::initialize_server_gtid_set(bool get_server_gtid_retrieved)
     goto end; /* purecov: inspected */
   }
 
-  sql_command_interface= new Sql_service_command();
-  if (sql_command_interface->establish_session_connection(false) ||
-      sql_command_interface->set_interface_user(GROUPREPL_USER))
+  sql_command_interface= new Sql_service_command_interface();
+  if (sql_command_interface->establish_session_connection(PSESSION_USE_THREAD,
+                                                          GROUPREPL_USER))
   {
     log_message(MY_ERROR_LEVEL,
                 "Error when establishing a server connection during"
@@ -782,6 +792,27 @@ rpl_gno Certifier::certify(Gtid_set *snapshot_version,
   else
   {
     /*
+      Check if it is an already used GTID
+    */
+    rpl_sidno sidno_for_group_gtid_sid_map= gle->get_sidno(group_gtid_sid_map);
+    if (sidno_for_group_gtid_sid_map < 1)
+    {
+      log_message(MY_ERROR_LEVEL,
+                  "Error fetching transaction sidno after transaction"
+                  " being positively certified"); /* purecov: inspected */
+      goto end; /* purecov: inspected */
+    }
+    if (group_gtid_executed->contains_gtid(sidno_for_group_gtid_sid_map, gle->get_gno()))
+    {
+      char buf[rpl_sid::TEXT_LENGTH + 1];
+      gle->get_sid()->to_string(buf);
+
+      log_message(MY_ERROR_LEVEL,
+                  "The requested GTID '%s:%lld' was already used, the transaction will rollback"
+                  , buf, gle->get_gno());
+      goto end;
+    }
+    /*
       Add received transaction GTID to transaction snapshot version.
     */
     rpl_sidno sidno= gle->get_sidno(snapshot_version->get_sid_map());
@@ -792,6 +823,7 @@ rpl_gno Certifier::certify(Gtid_set *snapshot_version,
                   " being positively certified"); /* purecov: inspected */
       goto end; /* purecov: inspected */
     }
+
     if (snapshot_version->ensure_sidno(sidno) != RETURN_STATUS_OK)
     {
       log_message(MY_ERROR_LEVEL,
@@ -891,7 +923,7 @@ rpl_gno Certifier::certify(Gtid_set *snapshot_version,
   }
 
 end:
-  update_certified_transaction_count(result>0);
+  update_certified_transaction_count(result>0, local_transaction);
 
   mysql_mutex_unlock(&LOCK_certification_info);
   DBUG_PRINT("info", ("Group replication Certifier: certification result: %llu",
@@ -1197,6 +1229,9 @@ bool Certifier::set_group_stable_transactions_set(Gtid_set* executed_gtid_set)
 void Certifier::garbage_collect()
 {
   DBUG_ENTER("Certifier::garbage_collect");
+  DBUG_EXECUTE_IF("group_replication_do_not_clear_certification_database",
+                    { DBUG_VOID_RETURN; };);
+
   mysql_mutex_lock(&LOCK_certification_info);
 
   /*
@@ -1309,22 +1344,7 @@ int Certifier::handle_certifier_data(const uchar *data, ulong len,
     {
       this->incoming->push(new Data_packet(data, len));
     }
-    else
-    {
-      /*
-        As member is already received we can throw the necessary warning of the
-        member message already received.
-      */
-      Group_member_info *member_info=
-          group_member_mgr->get_group_member_info_by_member_id(gcs_member_id);
-      if (member_info != NULL)
-      {
-        log_message(MY_WARNING_LEVEL, "The member with address %s:%u has "
-                    "already sent the stable set. Therefore discarding the second "
-                    "message.", member_info->get_hostname().c_str(),
-                    member_info->get_port());
-      }
-    }
+    //else: ignore the message, no point in alerting the user about this.
 
     mysql_mutex_unlock(&LOCK_members);
 
@@ -1346,9 +1366,10 @@ int Certifier::handle_certifier_data(const uchar *data, ulong len,
   }
   else
   {
-    log_message(MY_WARNING_LEVEL, "Skipping this round of stable set "
-                "computation as certification garbage collection process is "
-                "still running."); /* purecov: inspected */
+    log_message(MY_WARNING_LEVEL, "Skipping the computation of "
+                "the Transactions_committed_all_members field as "
+                "an older instance of this computation is still "
+                "ongoing."); /* purecov: inspected */
     mysql_mutex_unlock(&LOCK_members); /* purecov: inspected */
   }
 
@@ -1601,9 +1622,9 @@ int Certifier::set_certification_info(std::map<std::string, std::string> *cert_i
   DBUG_RETURN(0);
 }
 
-void Certifier::update_certified_transaction_count(bool result)
+void Certifier::update_certified_transaction_count(bool result, bool local_transaction)
 {
-  if(result)
+  if (result)
     positive_cert++;
   else
     negative_cert++;
@@ -1612,6 +1633,16 @@ void Certifier::update_certified_transaction_count(bool result)
   {
     applier_module->get_pipeline_stats_member_collector()
         ->increment_transactions_certified();
+
+    /*
+      If transaction is local and rolledback
+      increment local negative certifier count
+    */
+    if (local_transaction && !result)
+    {
+      applier_module->get_pipeline_stats_member_collector()
+          ->increment_transactions_local_rollback();
+    }
   }
 }
 
@@ -1672,11 +1703,6 @@ void Certifier::enable_conflict_detection()
   conflict_detection_enable= true;
   local_member_info->enable_conflict_detection();
   mysql_mutex_unlock(&LOCK_certification_info);
-
-  log_message(MY_INFORMATION_LEVEL,
-              "A new primary was elected, enabled conflict detection "
-              "until the new primary applies all relay logs");
-
   DBUG_VOID_RETURN;
 }
 

@@ -1,39 +1,52 @@
-/* Copyright (c) 2013, 2017 Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2013, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "auth_acls.h"
-#include "derror.h"
-#include "handler.h"
-#include "item_create.h"
+#include "sql/parse_tree_helpers.h"
+
 #include "m_string.h"
 #include "my_dbug.h"
+#include "my_inttypes.h"
 #include "my_sqlcommand.h"
 #include "my_sys.h"
+#include "mysql/mysql_lex_string.h"
 #include "mysqld_error.h"
-#include "parse_tree_helpers.h"
-#include "sp_head.h"
-#include "sp_instr.h"
-#include "sp_pcontext.h"
-#include "sql_class.h"
-#include "sql_error.h"
-#include "sql_lex.h"
-#include "sql_plugin.h"
-#include "sql_plugin_ref.h"
-#include "system_variables.h"
-#include "trigger_def.h"
-#include "parse_tree_nodes.h"
+#include "sql/auth/auth_acls.h"
+#include "sql/auth/sql_security_ctx.h"
+#include "sql/derror.h"
+#include "sql/handler.h"
+#include "sql/key.h"
+#include "sql/mysqld.h"
+#include "sql/parse_tree_nodes.h"
+#include "sql/resourcegroups/resource_group_mgr.h" // Resource_group_mgr
+#include "sql/sp_head.h"
+#include "sql/sp_instr.h"
+#include "sql/sp_pcontext.h"
+#include "sql/sql_class.h"
+#include "sql/sql_error.h"
+#include "sql/sql_lex.h"
+#include "sql/sql_plugin_ref.h"
+#include "sql/system_variables.h"
+#include "sql/trigger_def.h"
+#include "sql_string.h"
 
 
 /**
@@ -163,8 +176,8 @@ set_system_variable(THD *thd, struct sys_var_with_base *var_with_base,
     return TRUE;
   }
 
-  if (! (var= new set_var(var_type, var_with_base->var,
-         &var_with_base->base_name, val)))
+  if (! (var= new (*THR_MALLOC) set_var(var_type, var_with_base->var,
+                                        &var_with_base->base_name, val)))
     return TRUE;
 
   return lex->var_list.push_back(var);
@@ -456,7 +469,7 @@ bool apply_privileges(THD *thd,
   for (PT_role_or_privilege *p : privs)
   {
     Privilege *privilege= p->get_privilege(thd);
-    if (p == NULL)
+    if (privilege == NULL)
       return true;
 
     if (privilege->type == Privilege::DYNAMIC)
@@ -504,7 +517,7 @@ bool apply_privileges(THD *thd,
             point->rights |= grant;
           else
           {
-            LEX_COLUMN *col= new LEX_COLUMN (*new_str, grant);
+            LEX_COLUMN *col= new (*THR_MALLOC) LEX_COLUMN (*new_str, grant);
             if (col == NULL)
               return true;
             lex->columns.push_back(col);
@@ -513,5 +526,78 @@ bool apply_privileges(THD *thd,
       }
     }
   } // end for
+  return false;
+}
+
+
+bool validate_vcpu_range(const resourcegroups::Range &range)
+{
+  auto vcpus= resourcegroups::Resource_group_mgr::instance()->num_vcpus();
+  for (resourcegroups::platform::cpu_id_t cpu : { range.m_start, range.m_end })
+  {
+    if (cpu >= vcpus)
+    {
+      my_error(ER_INVALID_VCPU_ID, MYF(0), cpu);
+      return true;
+    }
+  }
+  return false;
+}
+
+
+bool validate_resource_group_priority(THD *thd, int *priority,
+                                      const LEX_CSTRING &name,
+                                      const resourcegroups::Type &type)
+{
+  auto mgr_ptr= resourcegroups::Resource_group_mgr::instance();
+  if (mgr_ptr->thread_priority_available())
+  {
+    int min= resourcegroups::platform::min_thread_priority_value();
+    int max= resourcegroups::platform::max_thread_priority_value();
+
+    if (type == resourcegroups::Type::USER_RESOURCE_GROUP)
+      min= 0;
+    else
+      max= 0;
+
+    if ( *priority < min || *priority > max)
+    {
+      my_error(ER_INVALID_THREAD_PRIORITY, MYF(0), *priority,
+               mgr_ptr->resource_group_type_str(type), name.str, min, max);
+      return true;
+    }
+  }
+  else if (*priority != 0)
+  {
+    push_warning_printf(thd, Sql_condition::SL_WARNING,
+                        ER_ATTRIBUTE_IGNORED,
+                        ER_THD(thd, ER_ATTRIBUTE_IGNORED),
+                        "thread_priority", "using default value");
+    *priority= 0;
+  }
+  return false;
+}
+
+
+bool check_resource_group_support()
+{
+  auto res_grp_mgr= resourcegroups::Resource_group_mgr::instance();
+  if (!res_grp_mgr->resource_group_support())
+  {
+    my_error(ER_FEATURE_UNSUPPORTED, MYF(0), "Resource Groups",
+             res_grp_mgr->unsupport_reason());
+    return true;
+  }
+  return false;
+}
+
+
+bool check_resource_group_name_len(const LEX_CSTRING& name)
+{
+  if (name.length > NAME_CHAR_LEN)
+  {
+    my_error(ER_TOO_LONG_IDENT, MYF(0), name.str);
+    return true;
+  }
   return false;
 }

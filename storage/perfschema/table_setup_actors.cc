@@ -1,17 +1,24 @@
 /* Copyright (c) 2010, 2017, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
-  along with this program; if not, write to the Free Software Foundation,
-  51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+  along with this program; if not, write to the Free Software
+  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 /**
   @file storage/perfschema/table_setup_actors.cc
@@ -20,55 +27,37 @@
 
 #include "storage/perfschema/table_setup_actors.h"
 
-#include "field.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_thread.h"
-#include "pfs_buffer_container.h"
-#include "pfs_column_types.h"
-#include "pfs_column_values.h"
-#include "pfs_global.h"
-#include "pfs_instr_class.h"
-#include "pfs_setup_actor.h"
+#include "sql/field.h"
+#include "storage/perfschema/pfs_buffer_container.h"
+#include "storage/perfschema/pfs_column_types.h"
+#include "storage/perfschema/pfs_column_values.h"
+#include "storage/perfschema/pfs_global.h"
+#include "storage/perfschema/pfs_instr_class.h"
+#include "storage/perfschema/pfs_setup_actor.h"
 
 THR_LOCK table_setup_actors::m_table_lock;
 
-/* clang-format off */
-static const TABLE_FIELD_TYPE field_types[]=
-{
-  {
-    { C_STRING_WITH_LEN("HOST") },
-    { C_STRING_WITH_LEN("char(60)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("USER") },
-    { C_STRING_WITH_LEN("char(" USERNAME_CHAR_LENGTH_STR ")") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("ROLE") },
-    { C_STRING_WITH_LEN("char(32)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("ENABLED") },
-    { C_STRING_WITH_LEN("enum(\'YES\',\'NO\')") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("HISTORY") },
-    { C_STRING_WITH_LEN("enum(\'YES\',\'NO\')") },
-    { NULL, 0}
-  }
-};
-/* clang-format on */
-
-TABLE_FIELD_DEF
-table_setup_actors::m_field_def = {5, field_types};
+Plugin_table table_setup_actors::m_table_def(
+  /* Schema name */
+  "performance_schema",
+  /* Name */
+  "setup_actors",
+  /* Definition */
+  "  HOST CHAR(60) COLLATE utf8_bin default '%' not null,\n"
+  "  USER CHAR(32) COLLATE utf8_bin default '%' not null,\n"
+  "  `ROLE` CHAR(32) COLLATE utf8_bin default '%' not null,\n"
+  "  ENABLED ENUM ('YES', 'NO') not null default 'YES',\n"
+  "  HISTORY ENUM ('YES', 'NO') not null default 'YES',\n"
+  "  PRIMARY KEY (HOST, USER, `ROLE`) USING HASH\n",
+  /* Options */
+  " ENGINE=PERFORMANCE_SCHEMA",
+  /* Tablespace */
+  nullptr);
 
 PFS_engine_table_share table_setup_actors::m_share = {
-  {C_STRING_WITH_LEN("setup_actors")},
   &pfs_editable_acl,
   table_setup_actors::create,
   table_setup_actors::write_row,
@@ -76,9 +65,11 @@ PFS_engine_table_share table_setup_actors::m_share = {
   table_setup_actors::get_row_count,
   sizeof(PFS_simple_index),
   &m_table_lock,
-  &m_field_def,
-  false, /* checked */
-  false  /* perpetual */
+  &m_table_def,
+  false, /* perpetual */
+  PFS_engine_table_proxy(),
+  {0},
+  false /* m_in_purgatory */
 };
 
 bool
@@ -112,13 +103,16 @@ PFS_index_setup_actors::match(PFS_setup_actor *pfs)
 }
 
 PFS_engine_table *
-table_setup_actors::create()
+table_setup_actors::create(PFS_engine_table_share *)
 {
   return new table_setup_actors();
 }
 
 int
-table_setup_actors::write_row(TABLE *table, unsigned char *, Field **fields)
+table_setup_actors::write_row(PFS_engine_table *,
+                              TABLE *table,
+                              unsigned char *,
+                              Field **fields)
 {
   Field *f;
   String user_data("%", 1, &my_charset_utf8_bin);
@@ -242,7 +236,7 @@ table_setup_actors::rnd_pos(const void *pos)
 }
 
 int
-table_setup_actors::index_init(uint idx, bool)
+table_setup_actors::index_init(uint idx MY_ATTRIBUTE((unused)), bool)
 {
   PFS_index_setup_actors *result = NULL;
   DBUG_ASSERT(idx == 0);

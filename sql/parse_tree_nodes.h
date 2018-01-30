@@ -1,13 +1,20 @@
-/* Copyright (c) 2013, 2017 Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2013, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -16,44 +23,72 @@
 #ifndef PARSE_TREE_NODES_INCLUDED
 #define PARSE_TREE_NODES_INCLUDED
 
+#include <cctype>                    // std::isspace
+#include <limits>
 #include <stddef.h>
 #include <sys/types.h>
 
-#include "auth_common.h"
-#include "handler.h"
-#include "item.h"
-#include "item_create.h"
-#include "item_func.h"
-#include "key.h"
-#include "key_spec.h"
 #include "lex_string.h"
 #include "m_ctype.h"
-#include "mem_root_array.h"
 #include "my_base.h"
 #include "my_bit.h"                  // is_single_bit
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_sqlcommand.h"
 #include "my_sys.h"
-#include "mysqld.h"                  // table_alias_charset
+#include "my_time.h"
+#include "mysql/psi/mysql_statement.h"
+#include "mysql/udf_registration_types.h"
 #include "mysqld_error.h"
-#include "parse_location.h"
-#include "parse_tree_helpers.h"      // PT_item_list
-#include "parse_tree_node_base.h"
-#include "query_result.h"            // Query_result
-#include "set_var.h"
-#include "sp_head.h"                 // sp_head
-#include "sql_admin.h"               // Sql_cmd_shutdown etc.
-#include "sql_alter.h"
-#include "sql_class.h"               // THD
-#include "sql_cmd_ddl_table.h"       // Sql_cmd_create_table
-#include "sql_lex.h"                 // LEX
-#include "sql_list.h"
-#include "sql_parse.h"               // add_join_natural
-#include "sql_security_ctx.h"
-#include "table.h"
-#include "table.h"                   // Common_table_expr
+#include "sql/auth/auth_common.h"
+#include "sql/auth/sql_security_ctx.h"
+#include "sql/enum_query_type.h"
+#include "sql/handler.h"
+#include "sql/item.h"
+#include "sql/item_create.h"
+#include "sql/item_func.h"
+#include "sql/key.h"
+#include "sql/key_spec.h"
+#include "sql/sql_load.h"            // Sql_cmd_load_table
+#include "sql/mdl.h"
+#include "sql/mem_root_array.h"
+#include "sql/mysqld.h"              // table_alias_charset
+#include "sql/opt_explain.h"         // Sql_cmd_explain_other_thread
+#include "sql/parse_location.h"
+#include "sql/parse_tree_helpers.h"  // PT_item_list
+#include "sql/parse_tree_node_base.h"
+#include "sql/parse_tree_partitions.h"
+#include "sql/partition_info.h"
+#include "sql/query_result.h"        // Query_result
+#include "sql/resourcegroups/resource_group_sql_cmd.h"
+#include "sql/resourcegroups/resource_group_sql_cmd.h" // Type, Range
+#include "sql/sql_restart_server.h"  // Sql_cmd_restart_server
+#include "sql/session_tracker.h"
+#include "sql/set_var.h"
+#include "sql/sp_head.h"             // sp_head
+#include "sql/sql_admin.h"           // Sql_cmd_shutdown etc.
+#include "sql/sql_alloc.h"
+#include "sql/sql_alter.h"
+#include "sql/sql_class.h"           // THD
+#include "sql/sql_cmd_ddl_table.h"   // Sql_cmd_create_table
+#include "sql/sql_cmd_srs.h"
+#include "sql/sql_lex.h"             // LEX
+#include "sql/sql_list.h"
+#include "sql/sql_parse.h"           // add_join_natural
+#include "sql/sql_partition_admin.h"
+#include "sql/sql_servers.h"
+#include "sql/sql_show.h"
+#include "sql/sql_truncate.h"        // Sql_cmd_truncate_table
+#include "sql/table.h"               // Common_table_expr
+#include "sql/window.h"              // Window
+#include "sql/window_lex.h"
+#include "sql_string.h"
+#include "sql/sql_tablespace.h"          // Tablespace_options
+#include "sql/sql_truncate.h"            // Sql_cmd_truncate_table
+#include "sql/table.h"                   // Common_table_expr
+
 #include "thr_lock.h"
+#include "sql/table_function.h"          // Json_table_column
 
 class PT_field_def_base;
 class PT_hint_list;
@@ -113,9 +148,9 @@ struct st_mysql_lex_string;
 /**
   Calls contextualize() on every node in the array.
 */
-template<class Node_type>
+template<class Node_type, class Parse_context_type>
 bool contextualize_nodes(Mem_root_array_YY<Node_type *> nodes,
-                         Parse_context *pc)
+                         Parse_context_type *pc)
 {
   for (Node_type *i : nodes)
     if (i->contextualize(pc))
@@ -129,24 +164,75 @@ bool contextualize_nodes(Mem_root_array_YY<Node_type *> nodes,
 
   @ingroup ptn_stmt
 */
-class PT_statement : public Parse_tree_node
+class Parse_tree_root : public Sql_alloc
 {
+  Parse_tree_root(const Parse_tree_root &)= delete;
+  void operator=(const Parse_tree_root &)= delete;
+
+protected:
+  virtual ~Parse_tree_root() {};
+  Parse_tree_root() {}
+
 public:
   virtual Sql_cmd *make_cmd(THD *thd)= 0;
 };
+
+
+class PT_table_ddl_stmt_base : public Parse_tree_root
+{
+public:
+  explicit
+  PT_table_ddl_stmt_base(MEM_ROOT *mem_root) : m_alter_info(mem_root) {}
+
+  virtual ~PT_table_ddl_stmt_base()= 0; // force abstract class
+
+protected:
+  Alter_info m_alter_info;
+};
+
+inline PT_table_ddl_stmt_base::~PT_table_ddl_stmt_base() {}
 
 
 /**
   Convenience function that calls Parse_tree_node::contextualize() on the node
   if it's non-NULL.
 */
-inline bool contextualize_safe(Parse_context *pc, Parse_tree_node *node)
+template<class Context, class Node>
+bool contextualize_safe(Context *pc, Node *node)
 {
   if (node == NULL)
     return false;
 
   return node->contextualize(pc);
 }
+
+
+/**
+  Parse context for the table DDL (ALTER TABLE and CREATE TABLE) nodes.
+
+  For internal use in the contextualization code.
+*/
+struct Table_ddl_parse_context final : public Parse_context
+{
+  Table_ddl_parse_context(THD *thd,
+                          SELECT_LEX *select,
+                          Alter_info *alter_info)
+    : Parse_context(thd, select),
+      create_info(thd->lex->create_info),
+      alter_info(alter_info),
+      key_create_info(&thd->lex->key_create_info)
+  {}
+
+  HA_CREATE_INFO * const create_info;
+  Alter_info * const alter_info;
+  KEY_CREATE_INFO * const key_create_info;
+};
+
+
+/**
+  Base class for all table DDL (ALTER TABLE and CREATE TABLE) nodes.
+*/
+typedef Parse_tree_node_tmpl<Table_ddl_parse_context> Table_ddl_node;
 
 
 /**
@@ -471,17 +557,17 @@ class PT_table_factor_table_ident : public PT_table_reference
 
   Table_ident *table_ident;
   List<String> *opt_use_partition;
-  LEX_STRING *opt_table_alias;
+  const char * const opt_table_alias;
   List<Index_hint> *opt_key_definition;
 
 public:
   PT_table_factor_table_ident(Table_ident *table_ident_arg,
                               List<String> *opt_use_partition_arg,
-                              LEX_STRING *opt_table_alias_arg,
+                              const LEX_CSTRING &opt_table_alias_arg,
                               List<Index_hint> *opt_key_definition_arg)
   : table_ident(table_ident_arg),
     opt_use_partition(opt_use_partition_arg),
-    opt_table_alias(opt_table_alias_arg),
+    opt_table_alias(opt_table_alias_arg.str),
     opt_key_definition(opt_key_definition_arg)
   {}
 
@@ -504,6 +590,38 @@ public:
       return true;
     return false;
   }
+};
+
+
+class PT_json_table_column : public Parse_tree_node
+{
+public:
+  virtual Json_table_column *get_column() = 0;
+};
+
+
+class PT_table_factor_function : public PT_table_reference
+{
+  typedef PT_table_reference super;
+
+public:
+  PT_table_factor_function(Item *expr,
+                           const LEX_STRING &path,
+                           Trivial_array<PT_json_table_column *> *nested_cols,
+                           const LEX_STRING &table_alias)
+    : m_expr(expr),
+      m_path(path),
+      m_nested_columns(nested_cols),
+      m_table_alias(table_alias)
+  {}
+
+  bool contextualize(Parse_context *pc) override;
+
+private:
+  Item *m_expr;
+  const LEX_STRING m_path;
+  Trivial_array<PT_json_table_column *> *m_nested_columns;
+  const LEX_STRING m_table_alias;
 };
 
 
@@ -536,14 +654,14 @@ class PT_derived_table : public PT_table_reference
   typedef PT_table_reference super;
 
 public:
-  PT_derived_table(PT_subquery *subquery, LEX_STRING *table_alias,
+  PT_derived_table(PT_subquery *subquery, const LEX_CSTRING &table_alias,
                    Create_col_name_list *column_names);
 
   virtual bool contextualize(Parse_context *pc);
 
 private:
   PT_subquery *m_subquery;
-  LEX_STRING *m_table_alias;
+  const char * const m_table_alias;
   /// List of explicitely specified column names; if empty, no list.
   const Create_col_name_list column_names;
 };
@@ -676,6 +794,8 @@ protected:
     return false;
   }
 };
+
+inline PT_joined_table::~PT_joined_table() {}
 
 
 class PT_cross_join : public PT_joined_table
@@ -1133,7 +1253,7 @@ public:
     item= new (pc->mem_root) Item_func_set_user_var(name, expr, false);
     if (item == NULL)
       return true;
-    set_var_user *var= new set_var_user(item);
+    set_var_user *var= new (*THR_MALLOC) set_var_user(item);
     if (var == NULL)
       return true;
     thd->lex->var_list.push_back(var);
@@ -1295,7 +1415,7 @@ public:
       user->host.length= sctx_priv_host.length;
     }
 
-    var= new set_var_password(user, const_cast<char *>(password));
+    var= new (*THR_MALLOC) set_var_password(user, const_cast<char *>(password));
     if (var == NULL)
       return true;
     lex->var_list.push_back(var);
@@ -1447,10 +1567,9 @@ public:
     Item *item= new (pc->mem_root) Item_int(value);
     if (item == NULL)
       return true;
-    set_var *var= new set_var(lex->option_type,
-                              find_sys_var(thd, name),
-                              &null_lex_str,
-                              item);
+    set_var *var= new (*THR_MALLOC) set_var(lex->option_type,
+                                            find_sys_var(thd, name),
+                                            &null_lex_str, item);
     if (var == NULL)
       return true;
     lex->var_list.push_back(var);
@@ -1466,7 +1585,7 @@ class PT_transaction_access_mode : public PT_transaction_characteristic
 
 public:
   explicit PT_transaction_access_mode(bool is_read_only)
-  : super("tx_read_only", (int32) is_read_only)
+  : super("transaction_read_only", (int32) is_read_only)
   {}
 };
 
@@ -1477,7 +1596,7 @@ class PT_isolation_level : public PT_transaction_characteristic
 
 public:
   explicit PT_isolation_level(enum_tx_isolation level)
-  : super("tx_isolation", (int32) level)
+  : super("transaction_isolation", (int32) level)
   {}
 };
 
@@ -1692,14 +1811,9 @@ public:
 };
 
 
-class PT_into_destination_outfile : public PT_into_destination
+class PT_into_destination_outfile final : public PT_into_destination
 {
   typedef PT_into_destination super;
-
-  const char *file_name;
-  const CHARSET_INFO *charset;
-  const Field_separators field_term;
-  const Line_separators line_term;
 
 public:
   PT_into_destination_outfile(const POS &pos,
@@ -1707,62 +1821,59 @@ public:
                               const CHARSET_INFO *charset_arg,
                               const Field_separators &field_term_arg,
                               const Line_separators &line_term_arg)
-    : PT_into_destination(pos),
-      file_name(file_name_arg.str),
-      charset(charset_arg),
-      field_term(field_term_arg),
-      line_term(line_term_arg)
-  {}
+    : PT_into_destination(pos), m_exchange(file_name_arg.str, false)
+  {
+    m_exchange.cs= charset_arg;
+    m_exchange.field.merge_field_separators(field_term_arg);
+    m_exchange.line.merge_line_separators(line_term_arg);
+  }
 
-  virtual bool contextualize(Parse_context *pc)
+  bool contextualize(Parse_context *pc) override
   {
     if (super::contextualize(pc))
       return true;
 
     LEX *lex= pc->thd->lex;
     lex->set_uncacheable(pc->select, UNCACHEABLE_SIDEEFFECT);
-    if (!(lex->exchange= new sql_exchange(file_name, 0)) ||
-        !(lex->result= new Query_result_export(pc->thd, lex->exchange)))
+    if (!(lex->result= new (*THR_MALLOC) Query_result_export(pc->thd,
+                                                             &m_exchange)))
       return true;
-
-    lex->exchange->cs= charset;
-    lex->exchange->field.merge_field_separators(field_term);
-    lex->exchange->line.merge_line_separators(line_term);
 
     return false;
   }
+
+private:
+  sql_exchange m_exchange;
 };
 
 
-class PT_into_destination_dumpfile : public PT_into_destination
+class PT_into_destination_dumpfile final : public PT_into_destination
 {
   typedef PT_into_destination super;
 
-  const char *file_name;
-
 public:
-  explicit PT_into_destination_dumpfile(const POS &pos,
-                                        const LEX_STRING &file_name_arg)
-    : PT_into_destination(pos),
-      file_name(file_name_arg.str)
+  PT_into_destination_dumpfile(const POS &pos, const LEX_STRING &file_name_arg)
+    : PT_into_destination(pos), m_exchange(file_name_arg.str, true)
   {}
 
-  virtual bool contextualize(Parse_context *pc)
+  bool contextualize(Parse_context *pc) override
   {
     if (super::contextualize(pc))
       return true;
 
     LEX *lex= pc->thd->lex;
-    if (!lex->describe)
+    if (!lex->is_explain())
     {
       lex->set_uncacheable(pc->select, UNCACHEABLE_SIDEEFFECT);
-      if (!(lex->exchange= new sql_exchange(file_name, 1)))
-        return true;
-      if (!(lex->result= new Query_result_dump(pc->thd, lex->exchange)))
+      if (!(lex->result= new (*THR_MALLOC) Query_result_dump(pc->thd,
+                                                             &m_exchange)))
         return true;
     }
     return false;
   }
+
+private:
+  sql_exchange m_exchange;
 };
 
 
@@ -1825,7 +1936,7 @@ public:
     }
 
     LEX * const lex= pc->thd->lex;
-    if (lex->describe)
+    if (lex->is_explain())
       return false;
 
     Query_dumpvar *dumpvar= new (pc->mem_root) Query_dumpvar(pc->thd);
@@ -1840,6 +1951,160 @@ public:
   }
 
   bool push_back(PT_select_var *var) { return value.push_back(var); }
+};
+
+
+/**
+  Parse tree node for a single of a window extent's borders,
+  cf. \<window frame extent\> in SQL 2003.
+*/
+class PT_border : public Parse_tree_node {
+  friend class Window;
+  Item *m_value;       ///< only relevant iff m_border_type == WBT_VALUE_*
+public:
+  enum_window_border_type m_border_type;
+  const bool m_date_time;
+  interval_type m_int_type;
+
+  ///< For unbounded border
+  PT_border(enum_window_border_type type)
+    : m_border_type(type), m_date_time(false)
+  {
+    DBUG_ASSERT(type != WBT_VALUE_PRECEDING &&
+                type != WBT_VALUE_FOLLOWING);
+  }
+
+  ///< For bounded non-temporal border, e.g. 2 PRECEDING: 'value' is 2.
+  PT_border(enum_window_border_type type, Item *value)
+    : m_value(value), m_border_type(type), m_date_time(false)
+  {}
+
+  ///< For bounded INTERVAL 2 DAYS, 'value' is 2, int_type is DAYS.
+  PT_border(enum_window_border_type type, Item *value,
+            interval_type int_type)
+  : m_value(value), m_border_type(type), m_date_time(true),
+    m_int_type(int_type)
+  {}
+
+  ///< @returns the '2' in '2 PRECEDING' or 'INTERVAL 2 DAYS PRECEDING'
+  Item *border() const { return m_value; }
+  /// Need such low-level access so that fix_fields updates the right pointer
+  Item **border_ptr() { return &m_value; }
+
+  /**
+    @returns Addition operator for computation of frames, nullptr if error.
+    @param  order_expr  Expression to add/substract to
+    @param  prec    true if PRECEDING
+    @param  asc     true if ASC
+    @param  window  only used for error generation
+  */
+  Item *build_addop(Item_cache *order_expr,
+                    bool prec, bool asc, const Window *window);
+};
+
+
+/**
+  Parse tree node for one or both of a window extent's borders, cf.
+  \<window frame extent\> in SQL 2003.
+*/
+class PT_borders : public Parse_tree_node {
+  PT_border *m_borders[2];
+  friend class PT_frame;
+public:
+  /**
+    Constructor.
+
+    Frames of the form "frame_start no_frame_end" are translated during
+    parsing to "BETWEEN frame_start AND CURRENT ROW". So both 'start' and
+    'end' are non-nullptr.
+  */
+  PT_borders(PT_border *start, PT_border *end)
+  {
+    m_borders[0]= start;
+    m_borders[1]= end;
+  }
+};
+
+
+/**
+  Parse tree node for a window frame's exclusions, cf. the
+  \<window frame exclusion\> clause in SQL 2003.
+*/
+class PT_exclusion : public Parse_tree_node {
+  enum_window_frame_exclusion m_exclusion;
+
+public:
+  PT_exclusion(enum_window_frame_exclusion e) : m_exclusion(e) {}
+  // enum_window_frame_exclusion exclusion() { return m_exclusion; }
+};
+
+
+/**
+  Parse tree node for a window's frame, cf. the \<window frame clause\>
+  in SQL 2003.
+*/
+class PT_frame : public Parse_tree_node
+{
+
+public:
+  enum_window_frame_unit m_unit;
+
+  PT_border *m_from;
+  PT_border *m_to;
+
+  PT_exclusion *m_exclusion;
+
+  PT_frame(enum_window_frame_unit unit, PT_borders *from_to,
+           PT_exclusion *exclusion)
+    : m_unit(unit),
+      m_from(from_to->m_borders[0]),
+      m_to(from_to->m_borders[1]),
+      m_exclusion(exclusion)
+  {};
+};
+
+
+/**
+  Parse tree node for a window; just a shallow wrapper for
+  class Window, q.v.
+*/
+class PT_window : public Parse_tree_node, public Window
+{
+  typedef Parse_tree_node super;
+
+public:
+  PT_window(PT_order_list *partition_by, PT_order_list *order_by,
+            PT_frame *frame)
+    : Window(partition_by, order_by, frame)
+  {}
+
+  PT_window(PT_order_list *partition_by, PT_order_list *order_by,
+            PT_frame *frame, Item_string *inherit)
+    : Window(partition_by, order_by, frame, inherit)
+  {}
+
+  PT_window(Item_string *name)
+    : Window(name)
+  {}
+
+  virtual bool contextualize(Parse_context *pc);
+};
+
+/**
+  Parse tree node for a list of window definitions corresponding
+  to a \<window clause\> in SQL 2003.
+*/
+class PT_window_list : public Parse_tree_node
+{
+  typedef Parse_tree_node super;
+  List<Window> m_windows;
+
+public:
+  PT_window_list() {}
+
+  virtual bool contextualize(Parse_context *pc);
+
+  bool push_back(PT_window *w) { return m_windows.push_back(w); }
 };
 
 
@@ -1863,6 +2128,7 @@ class PT_query_specification : public PT_query_primary
   Item *opt_where_clause;
   PT_group *opt_group_clause;
   Item *opt_having_clause;
+  PT_window_list *opt_window_clause;
 
 public:
   PT_query_specification(
@@ -1873,7 +2139,8 @@ public:
     const Mem_root_array_YY<PT_table_reference *> &from_clause_arg,
     Item *opt_where_clause_arg,
     PT_group *opt_group_clause_arg,
-    Item *opt_having_clause_arg)
+    Item *opt_having_clause_arg,
+    PT_window_list *opt_window_clause_arg)
   : opt_hints(opt_hints_arg),
     options(options_arg),
     item_list(item_list_arg),
@@ -1881,7 +2148,8 @@ public:
     from_clause(from_clause_arg),
     opt_where_clause(opt_where_clause_arg),
     opt_group_clause(opt_group_clause_arg),
-    opt_having_clause(opt_having_clause_arg)
+    opt_having_clause(opt_having_clause_arg),
+    opt_window_clause(opt_window_clause_arg)
   {}
 
   PT_query_specification(
@@ -1896,7 +2164,8 @@ public:
     from_clause(from_clause_arg),
     opt_where_clause(opt_where_clause_arg),
     opt_group_clause(NULL),
-    opt_having_clause(NULL)
+    opt_having_clause(NULL),
+    opt_window_clause(NULL)
   {}
 
   explicit PT_query_specification(
@@ -1908,7 +2177,8 @@ public:
     opt_into1(NULL),
     opt_where_clause(NULL),
     opt_group_clause(NULL),
-    opt_having_clause(NULL)
+    opt_having_clause(NULL),
+    opt_window_clause(NULL)
   {
     from_clause.init_empty_const();
   }
@@ -2204,9 +2474,9 @@ private:
 };
 
 
-class PT_select_stmt : public Parse_tree_node
+class PT_select_stmt : public Parse_tree_root
 {
-  typedef Parse_tree_node super;
+  typedef Parse_tree_root super;
 
 public:
   /**
@@ -2233,18 +2503,7 @@ public:
 
   PT_select_stmt(PT_query_expression *qe) : PT_select_stmt(qe, NULL) {}
 
-  virtual bool contextualize(Parse_context *pc)
-  {
-    if (super::contextualize(pc))
-      return true;
-
-    pc->thd->lex->sql_command= m_sql_command;
-
-    return m_qe->contextualize(pc) ||
-      contextualize_safe(pc, m_into);
-  }
-
-  virtual Sql_cmd *make_cmd(THD *thd);
+  Sql_cmd *make_cmd(THD *thd) override;
 
 private:
   enum_sql_command m_sql_command;
@@ -2258,10 +2517,8 @@ private:
 
   @ingroup ptn_stmt
 */
-class PT_delete : public PT_statement
+class PT_delete final : public Parse_tree_root
 {
-  typedef PT_statement super;
-
 private:
   PT_with_clause *m_with_clause;
   PT_hint_list *opt_hints;
@@ -2315,17 +2572,15 @@ public:
     opt_delete_limit_clause(NULL)
   {}
 
-  virtual bool contextualize(Parse_context *pc);
+  Sql_cmd *make_cmd(THD *thd) override;
 
-  virtual Sql_cmd *make_cmd(THD *thd);
-
+private:
   bool is_multitable() const
   {
     DBUG_ASSERT((table_ident != NULL) ^ (table_list.size() > 0));
     return table_ident == NULL;
   }
 
-private:
   bool add_table(Parse_context *pc, Table_ident *table);
 };
 
@@ -2335,10 +2590,8 @@ private:
 
   @ingroup ptn_stmt
 */
-class PT_update : public PT_statement
+class PT_update : public Parse_tree_root
 {
-  typedef PT_statement super;
-
   PT_with_clause *m_with_clause;
   PT_hint_list *opt_hints;
   thr_lock_type opt_low_priority;
@@ -2349,7 +2602,6 @@ class PT_update : public PT_statement
   Item *opt_where_clause;
   PT_order *opt_order_clause;
   Item *opt_limit_clause;
-  bool multitable;
 
 public:
   PT_update(PT_with_clause *with_clause_arg,
@@ -2373,11 +2625,7 @@ public:
     opt_limit_clause(opt_limit_clause_arg)
   {}
 
-  virtual bool contextualize(Parse_context *pc);
-
-  virtual Sql_cmd *make_cmd(THD *thd);
-
-  bool is_multitable() const { return multitable; }
+  Sql_cmd *make_cmd(THD *thd) override;
 };
 
 
@@ -2405,10 +2653,8 @@ public:
 
   @ingroup ptn_stmt
 */
-class PT_insert : public PT_statement
+class PT_insert final : public Parse_tree_root
 {
-  typedef PT_statement super;
-
   const bool is_replace;
   PT_hint_list *opt_hints;
   const thr_lock_type lock_option;
@@ -2458,8 +2704,6 @@ public:
                  opt_on_duplicate_value_list->elements()));
   }
 
-  virtual bool contextualize(Parse_context *pc);
-
   virtual Sql_cmd *make_cmd(THD *thd);
 
 private:
@@ -2467,10 +2711,8 @@ private:
 };
 
 
-class PT_call : public PT_statement
+class PT_call final : public Parse_tree_root
 {
-  typedef PT_statement super;
-
   sp_name *proc_name;
   PT_item_list *opt_expr_list;
 
@@ -2482,9 +2724,7 @@ public:
   {
   }
 
-  virtual bool contextualize(Parse_context *pc);
-
-  virtual Sql_cmd *make_cmd(THD *thd);
+  Sql_cmd *make_cmd(THD *thd) override;
 };
 
 
@@ -2493,64 +2733,270 @@ public:
 
   @ingroup ptn_stmt
 */
-class PT_shutdown : public PT_statement
+class PT_shutdown final : public Parse_tree_root
 {
   Sql_cmd_shutdown sql_cmd;
 
 public:
-  virtual Sql_cmd *make_cmd(THD *) { return &sql_cmd; }
+  Sql_cmd *make_cmd(THD *) override { return &sql_cmd; }
 };
 
 
-class PT_field_ident : public Parse_tree_node
+/**
+  Top-level node for the CREATE [OR REPLACE] SPATIAL REFERENCE SYSTEM statement.
+
+  @ingroup ptn_stmt
+*/
+class PT_create_srs final : public Parse_tree_root
 {
-public:
-  const LEX_STRING field_name;
+  /// The SQL command object.
+  Sql_cmd_create_srs sql_cmd;
+  /// Whether OR REPLACE is specified.
+  bool m_or_replace;
+  /// Whether IF NOT EXISTS is specified.
+  bool m_if_not_exists;
+  /// SRID of the SRS to create.
+  ///
+  /// The range is larger than that of gis::srid_t, so it must be
+  /// verified to be less than the uint32 maximum value.
+  unsigned long long m_srid;
+  /// All attributes except SRID.
+  const Sql_cmd_srs_attributes &m_attributes;
 
-public:
-  explicit PT_field_ident(const LEX_STRING &field_name)
-  : field_name(field_name)
-  {}
-};
-
-
-class PT_field_ident_3d : public PT_field_ident
-{
-  typedef PT_field_ident super;
-
-  const char *db_name;
-  const char *table_name;
-
-public:
-  PT_field_ident_3d(const LEX_STRING &db_name,
-                    const LEX_STRING &table_name,
-                    const LEX_STRING &field_name)
-  : super(field_name), db_name(db_name.str), table_name(table_name.str)
-  {}
-
-  PT_field_ident_3d(const LEX_STRING &table_name,
-                    const LEX_STRING &field_name)
-  : super(field_name), db_name(NULL), table_name(table_name.str)
-  {}
-
-  virtual bool contextualize(Parse_context *pc)
+  /// Check if a UTF-8 string contains control characters.
+  ///
+  /// @note This function only checks single byte control characters (U+0000 to
+  /// U+001F, and U+007F). There are some control characters at U+0080 to U+00A0
+  /// that are not detected by this function.
+  ///
+  /// @param str The string.
+  /// @param length Length of the string.
+  ///
+  /// @retval false The string contains no control characters.
+  /// @retval true The string contains at least one control character.
+  bool contains_control_char(char *str, size_t length)
   {
-    if (super::contextualize(pc))
-      return true;
-
-    TABLE_LIST *table= pc->select->table_list.first;
-
-    if (db_name && my_strcasecmp(table_alias_charset, db_name, table->db))
+    for (size_t pos= 0; pos < length; pos++)
     {
-      my_error(ER_WRONG_DB_NAME, MYF(0), db_name);
-      return true;
-    }
-    if (my_strcasecmp(table_alias_charset, table_name, table->table_name))
-    {
-      my_error(ER_WRONG_TABLE_NAME, MYF(0), table_name);
-      return true;
+      if (std::iscntrl(str[pos]))
+        return true;
     }
     return false;
+  }
+
+public:
+  PT_create_srs (unsigned long long srid,
+                 const Sql_cmd_srs_attributes &attributes,
+                 bool or_replace, bool if_not_exists)
+    : m_or_replace(or_replace), m_if_not_exists(if_not_exists), m_srid(srid),
+      m_attributes(attributes)
+  {}
+
+  Sql_cmd *make_cmd(THD *thd) override
+  {
+    // Note: This function hard-codes the maximum length of various
+    // strings. These lengths must match those in
+    // sql/dd/impl/tables/spatial_reference_systems.cc.
+
+    thd->lex->sql_command= SQLCOM_CREATE_SRS;
+
+    if (m_srid > std::numeric_limits<gis::srid_t>::max())
+    {
+      my_error(ER_DATA_OUT_OF_RANGE, MYF(0), "SRID",
+               m_or_replace ? "CREATE OR REPLACE SPATIAL REFERENCE SYSTEM"
+                            : "CREATE SPATIAL REFERENCE SYSTEM");
+      return nullptr;
+    }
+    if (m_srid == 0)
+    {
+      my_error(ER_CANT_MODIFY_SRID_0, MYF(0));
+      return nullptr;
+    }
+
+    if (m_attributes.srs_name.str == nullptr)
+    {
+      my_error(ER_SRS_MISSING_MANDATORY_ATTRIBUTE, MYF(0), "NAME");
+      return nullptr;
+    }
+    MYSQL_LEX_STRING srs_name_utf8= {nullptr, 0};
+    if (thd->convert_string(&srs_name_utf8,
+                            &my_charset_utf8_bin,
+                            m_attributes.srs_name.str,
+                            m_attributes.srs_name.length,
+                            thd->charset()))
+    {
+      /* purecov: begin inspected */
+      my_error(ER_OOM, MYF(0));
+      return nullptr;
+      /* purecov: end */
+    }
+    if (srs_name_utf8.length == 0 ||
+        std::isspace(srs_name_utf8.str[0]) ||
+        std::isspace(srs_name_utf8.str[srs_name_utf8.length - 1]))
+    {
+      my_error(ER_SRS_NAME_CANT_BE_EMPTY_OR_WHITESPACE, MYF(0));
+      return nullptr;
+    }
+    if (contains_control_char(srs_name_utf8.str, srs_name_utf8.length))
+    {
+      my_error(ER_SRS_INVALID_CHARACTER_IN_ATTRIBUTE, MYF(0), "NAME");
+      return nullptr;
+    }
+    String srs_name_str(srs_name_utf8.str, srs_name_utf8.length,
+                        &my_charset_utf8_bin);
+    if (srs_name_str.numchars() > 80)
+    {
+      my_error(ER_SRS_ATTRIBUTE_STRING_TOO_LONG, MYF(0), "NAME", 80);
+      return nullptr;
+    }
+
+    if (m_attributes.definition.str == nullptr)
+    {
+      my_error(ER_SRS_MISSING_MANDATORY_ATTRIBUTE, MYF(0), "DEFINITION");
+      return nullptr;
+    }
+    MYSQL_LEX_STRING definition_utf8= {nullptr, 0};
+    if (thd->convert_string(&definition_utf8,
+                            &my_charset_utf8_bin,
+                            m_attributes.definition.str,
+                            m_attributes.definition.length,
+                            thd->charset()))
+    {
+      /* purecov: begin inspected */
+      my_error(ER_OOM, MYF(0));
+      return nullptr;
+      /* purecov: end */
+    }
+    String definition_str(definition_utf8.str, definition_utf8.length,
+                        &my_charset_utf8_bin);
+    if (contains_control_char(definition_utf8.str, definition_utf8.length))
+    {
+      my_error(ER_SRS_INVALID_CHARACTER_IN_ATTRIBUTE, MYF(0), "DEFINITION");
+      return nullptr;
+    }
+    if (definition_str.numchars() > 4096)
+    {
+      my_error(ER_SRS_ATTRIBUTE_STRING_TOO_LONG, MYF(0), "DEFINITION", 4096);
+      return nullptr;
+    }
+
+    MYSQL_LEX_STRING organization_utf8= {nullptr, 0};
+    if (m_attributes.organization.str != nullptr)
+    {
+      if (thd->convert_string(&organization_utf8,
+                              &my_charset_utf8_bin,
+                              m_attributes.organization.str,
+                              m_attributes.organization.length,
+                              thd->charset()))
+      {
+        /* purecov: begin inspected */
+        my_error(ER_OOM, MYF(0));
+        return nullptr;
+        /* purecov: end */
+      }
+      if (organization_utf8.length == 0 ||
+          std::isspace(organization_utf8.str[0]) ||
+          std::isspace(organization_utf8.str[organization_utf8.length - 1]))
+      {
+        my_error(ER_SRS_ORGANIZATION_CANT_BE_EMPTY_OR_WHITESPACE, MYF(0));
+        return nullptr;
+      }
+      String organization_str(organization_utf8.str, organization_utf8.length,
+                            &my_charset_utf8_bin);
+      if (contains_control_char(organization_utf8.str,
+                                organization_utf8.length))
+      {
+        my_error(ER_SRS_INVALID_CHARACTER_IN_ATTRIBUTE, MYF(0), "ORGANIZATION");
+        return nullptr;
+      }
+      if (organization_str.numchars() > 256)
+      {
+        my_error(ER_SRS_ATTRIBUTE_STRING_TOO_LONG, MYF(0), "ORGANIZATION", 256);
+        return nullptr;
+      }
+
+      if (m_attributes.organization_coordsys_id >
+          std::numeric_limits<gis::srid_t>::max())
+      {
+        my_error(ER_DATA_OUT_OF_RANGE, MYF(0), "IDENTIFIED BY",
+                 m_or_replace ? "CREATE OR REPLACE SPATIAL REFERENCE SYSTEM"
+                 : "CREATE SPATIAL REFERENCE SYSTEM");
+        return nullptr;
+      }
+    }
+
+    MYSQL_LEX_STRING description_utf8= {nullptr, 0};
+    if (m_attributes.description.str != nullptr)
+    {
+      if (thd->convert_string(&description_utf8,
+                              &my_charset_utf8_bin,
+                              m_attributes.description.str,
+                              m_attributes.description.length,
+                              thd->charset()))
+      {
+        /* purecov: begin inspected */
+        my_error(ER_OOM, MYF(0));
+        return nullptr;
+        /* purecov: end */
+      }
+      String description_str(description_utf8.str, description_utf8.length,
+                            &my_charset_utf8_bin);
+      if (contains_control_char(description_utf8.str, description_utf8.length))
+      {
+        my_error(ER_SRS_INVALID_CHARACTER_IN_ATTRIBUTE, MYF(0), "DESCRIPTION");
+        return nullptr;
+      }
+      if (description_str.numchars() > 2048)
+      {
+        my_error(ER_SRS_ATTRIBUTE_STRING_TOO_LONG, MYF(0), "DESCRIPTION", 2048);
+        return nullptr;
+      }
+    }
+
+    sql_cmd.init(m_or_replace, m_if_not_exists, m_srid, srs_name_utf8,
+                 definition_utf8, organization_utf8,
+                 m_attributes.organization_coordsys_id, description_utf8);
+    return &sql_cmd;
+  }
+};
+
+
+/**
+  Top-level node for the DROP SPATIAL REFERENCE SYSTEM statement.
+
+  @ingroup ptn_stmt
+*/
+class PT_drop_srs final : public Parse_tree_root
+{
+  /// The SQL command object.
+  Sql_cmd_drop_srs sql_cmd;
+  /// SRID of the SRS to drop.
+  ///
+  /// The range is larger than that of gis::srid_t, so it must be
+  /// verified to be less than the uint32 maximum value.
+  unsigned long long m_srid;
+
+public:
+  PT_drop_srs (unsigned long long srid, bool if_exists)
+    : sql_cmd(srid, if_exists), m_srid(srid)
+  {}
+
+  Sql_cmd *make_cmd(THD *thd) override {
+    thd->lex->sql_command= SQLCOM_DROP_SRS;
+
+    if (m_srid > std::numeric_limits<gis::srid_t>::max())
+    {
+      my_error(ER_DATA_OUT_OF_RANGE, MYF(0), "SRID",
+               "DROP SPATIAL REFERENCE SYSTEM");
+      return nullptr;
+    }
+    if (m_srid == 0)
+    {
+      my_error(ER_CANT_MODIFY_SRID_0, MYF(0));
+      return nullptr;
+    }
+
+    return &sql_cmd;
   }
 };
 
@@ -2560,10 +3006,8 @@ public:
 
   @ingroup ptn_stmt
 */
-class PT_alter_instance : public PT_statement
+class PT_alter_instance final : public Parse_tree_root
 {
-  typedef PT_statement super;
-
   Sql_cmd_alter_instance sql_cmd;
 
 public:
@@ -2571,8 +3015,11 @@ public:
     : sql_cmd(alter_instance_action)
   {}
 
-  virtual Sql_cmd *make_cmd(THD *thd);
-  virtual bool contextualize(Parse_context *pc);
+  Sql_cmd *make_cmd(THD *thd) override
+  {
+    thd->lex->no_write_to_binlog= false;
+    return &sql_cmd;
+  }
 };
 
 
@@ -2580,48 +3027,7 @@ public:
   A template-free base class for index options that we can predeclare in
   sql_lex.h
 */
-class PT_base_index_option : public Parse_tree_node {};
-
-
-/**
-  Parse tree node that calls a setter function in thd->lex->alter_info for
-  setting an `<alter option>`.
-
-  @tparam Setter Pointer-to-member-function for the setter in Alter_info.
-  @tparam Error_code The error code to use for illegal values of option_value.
-*/
-template<bool (Alter_info::*Setter)(const st_mysql_lex_string*),
-         int Error_code>
-class PT_alter_option : public PT_base_index_option
-{
-public:
-  /// @param option_value The value of the option.
-  PT_alter_option(const LEX_STRING &option_value) :
-    m_option_value(option_value)
-  {}
-
-  bool contextualize(Parse_context *pc)
-  {
-    if ((pc->thd->lex->alter_info.*Setter)(&m_option_value))
-    {
-      my_error(Error_code, MYF(0), m_option_value.str);
-      return true;
-    }
-    return false;
-  }
-
-private:
-  const LEX_STRING m_option_value;
-};
-
-
-typedef PT_alter_option<&Alter_info::set_requested_algorithm,
-                        ER_UNKNOWN_ALTER_ALGORITHM>
-PT_requested_algorithm;
-
-typedef PT_alter_option<&Alter_info::set_requested_lock,
-                        ER_UNKNOWN_ALTER_LOCK>
-PT_requested_lock;
+class PT_base_index_option : public Table_ddl_node {};
 
 
 /**
@@ -2638,9 +3044,9 @@ public:
   /// @param option_value The value of the option.
   PT_index_option(Option_type option_value) : m_option_value(option_value) {}
 
-  bool contextualize(Parse_context *pc)
+  bool contextualize(Table_ddl_parse_context *pc)
   {
-    pc->thd->lex->key_create_info.*Property= m_option_value;
+    pc->key_create_info->*Property= m_option_value;
     return false;
   }
 
@@ -2662,10 +3068,10 @@ public:
     m_option_value(option_value)
   {}
 
-  bool contextualize(Parse_context *pc)
+  bool contextualize(Table_ddl_parse_context *pc)
   {
-    pc->thd->lex->key_create_info.*Property= m_option_value;
-    pc->thd->lex->key_create_info.*Property_is_explicit= true;
+    pc->key_create_info->*Property= m_option_value;
+    pc->key_create_info->*Property_is_explicit= true;
     return false;
   }
 
@@ -2686,7 +3092,7 @@ typedef PT_index_option<bool, &KEY_CREATE_INFO::is_visible> PT_index_visibility;
   The data structure (B-tree, Hash, etc) used for an index is called
   'index_type' in the manual. Internally, this is stored in
   KEY_CREATE_INFO::algorithm, while what the manual calls 'algorithm' is
-  stored in partition_info::key_algorithm. In an `<index_definition_stmt>`
+  stored in partition_info::key_algorithm. In an `<create_index_stmt>`
   it's ignored. The terminology is somewhat confusing, but we stick to the
   manual in the parser.
 */
@@ -2694,60 +3100,41 @@ typedef PT_traceable_index_option<ha_key_alg, &KEY_CREATE_INFO::algorithm,
                                   &KEY_CREATE_INFO::is_algorithm_explicit>
 PT_index_type;
 
-/**
-  Base class for parse tree nodes that define an index,
-  i.e. PT_index_definition_stmt and PT_inline_index_definition.
-*/
-class PT_index_definition : public Parse_tree_node {};
 
-class PT_index_definition_stmt : public PT_index_definition
+class PT_create_index_stmt final : public PT_table_ddl_stmt_base
 {
 public:
-  PT_index_definition_stmt(keytype type_par,
-                           const LEX_STRING &name_arg,
-                           PT_base_index_option *type,
-                           Table_ident *table_ident,
-                           List<Key_part_spec> *cols,
-                           Index_options options,
-                           Index_options lock_and_algorithm_options)
-    : m_keytype(type_par),
-      m_field_ident(NULL),
+  PT_create_index_stmt(MEM_ROOT *mem_root,
+                       keytype type_par,
+                       const LEX_STRING &name_arg,
+                       PT_base_index_option *type,
+                       Table_ident *table_ident,
+                       List<Key_part_spec> *cols,
+                       Index_options options,
+                       Alter_info::enum_alter_table_algorithm algo,
+                       Alter_info::enum_alter_table_lock lock)
+    : PT_table_ddl_stmt_base(mem_root),
+      m_keytype(type_par),
       m_name(name_arg),
       m_type(type),
       m_table_ident(table_ident),
       m_columns(cols),
       m_options(options),
-      m_lock_and_algorithm_options(lock_and_algorithm_options)
+      m_algo(algo),
+      m_lock(lock)
   {}
 
-  PT_index_definition_stmt(keytype type_par,
-                           PT_field_ident *field_ident,
-                           PT_base_index_option *type,
-                           Table_ident *table_ident,
-                           List<Key_part_spec> *cols,
-                           Index_options options,
-                           Index_options lock_and_algorithm_options)
-    : m_keytype(type_par),
-      m_field_ident(field_ident),
-      m_name({0, 0}),
-      m_type(type),
-      m_table_ident(table_ident),
-      m_columns(cols),
-      m_options(options),
-      m_lock_and_algorithm_options(lock_and_algorithm_options)
-  {}
-
-  bool contextualize(Parse_context *pc);
+  Sql_cmd *make_cmd(THD *thd) override;
 
 private:
   keytype m_keytype;
-  PT_field_ident *m_field_ident;
   LEX_STRING m_name;
   PT_base_index_option *m_type;
   Table_ident *m_table_ident;
   List<Key_part_spec> *m_columns;
   Index_options m_options;
-  Index_options m_lock_and_algorithm_options;
+  const Alter_info::enum_alter_table_algorithm m_algo;
+  const Alter_info::enum_alter_table_lock m_lock;
 };
 
 
@@ -2756,7 +3143,7 @@ private:
 
   @ingroup ptn_create_table_stuff
 */
-class PT_table_element : public Parse_tree_node {};
+class PT_table_element : public Table_ddl_node {};
 
 class PT_table_constraint_def : public PT_table_element {};
 
@@ -2766,7 +3153,7 @@ class PT_inline_index_definition : public PT_table_constraint_def
 
 public:
   PT_inline_index_definition(keytype type_par,
-                             PT_field_ident *name_arg,
+                             const LEX_STRING &name_arg,
                              PT_base_index_option *type,
                              List<Key_part_spec> *cols,
                              Index_options options)
@@ -2777,11 +3164,11 @@ public:
       m_options(options)
   {}
 
- bool contextualize(Parse_context *pc);
+ bool contextualize(Table_ddl_parse_context *pc) override;
 
 private:
   keytype m_keytype;
-  PT_field_ident *m_name;
+  const LEX_STRING m_name;
   PT_base_index_option *m_type;
   List<Key_part_spec> *m_columns;
   Index_options m_options;
@@ -2793,8 +3180,8 @@ class PT_foreign_key_definition : public PT_table_constraint_def
   typedef PT_table_constraint_def super;
 
 public:
-  PT_foreign_key_definition(PT_field_ident *constraint_name,
-                            PT_field_ident *key_name,
+  PT_foreign_key_definition(const LEX_STRING &constraint_name,
+                            const LEX_STRING &key_name,
                             List<Key_part_spec> *columns,
                             Table_ident *referenced_table,
                             List<Key_part_spec> *ref_list,
@@ -2811,11 +3198,11 @@ public:
       m_fk_delete_opt(fk_delete_opt)
   {}
 
- bool contextualize(Parse_context *pc);
+ bool contextualize(Table_ddl_parse_context *pc);
 
 private:
-  PT_field_ident *m_constraint_name;
-  PT_field_ident *m_key_name;
+  const LEX_STRING m_constraint_name;
+  const LEX_STRING m_key_name;
   List<Key_part_spec> *m_columns;
   Table_ident *m_referenced_table;
   List<Key_part_spec> *m_ref_list;
@@ -2826,11 +3213,43 @@ private:
 
 
 /**
+  Common base class for CREATE TABLE and ALTER TABLE option nodes
+
+  @ingroup ptn_create_or_alter_table_options
+*/
+class PT_ddl_table_option : public Table_ddl_node
+{
+public:
+  virtual ~PT_ddl_table_option()= 0; // Force abstract class declaration
+
+  virtual bool is_rename_table() const { return false; }
+};
+
+inline PT_ddl_table_option::~PT_ddl_table_option() {}
+
+
+/**
   Base class for CREATE TABLE option nodes
 
   @ingroup ptn_create_or_alter_table_options
 */
-class PT_create_table_option : public Parse_tree_node {};
+class PT_create_table_option : public PT_ddl_table_option
+{
+  typedef PT_ddl_table_option super;
+
+public:
+  virtual ~PT_create_table_option()= 0; // Force abstract class declaration
+
+  bool contextualize(Table_ddl_parse_context *pc) override
+  {
+    if (super::contextualize(pc))
+      return true;
+    pc->alter_info->flags|= Alter_info::ALTER_OPTIONS;
+    return false;
+  }
+};
+
+inline PT_create_table_option::~PT_create_table_option() {}
 
 
 /**
@@ -2850,12 +3269,12 @@ public:
   : value(value)
   {}
 
-  virtual bool contextualize(Parse_context *pc)
+  bool contextualize(Table_ddl_parse_context *pc) override
   {
     if (super::contextualize(pc))
       return true;
-    pc->thd->lex->create_info->*Property= value;
-    pc->thd->lex->create_info->used_fields|= Property_flag;
+    pc->create_info->*Property= value;
+    pc->create_info->used_fields|= Property_flag;
     return false;
   }
 };
@@ -2999,24 +3418,24 @@ public:
   : value(value)
   {}
 
-  virtual bool contextualize(Parse_context *pc)
+  bool contextualize(Table_ddl_parse_context *pc) override
   {
     if (super::contextualize(pc))
       return true;
-    pc->thd->lex->create_info->table_options&= ~(Yes | No);
+    pc->create_info->table_options&= ~(Yes | No);
     switch (value) {
     case Ternary_option::ON:
-      pc->thd->lex->create_info->table_options|= Yes;
+      pc->create_info->table_options|= Yes;
       break;
     case Ternary_option::OFF:
-      pc->thd->lex->create_info->table_options|= No;
+      pc->create_info->table_options|= No;
       break;
     case Ternary_option::DEFAULT:
       break;
     default:
       DBUG_ASSERT(false);
     }
-    pc->thd->lex->create_info->used_fields|= Property_flag;
+    pc->create_info->used_fields|= Property_flag;
     return false;
   }
 };
@@ -3072,13 +3491,13 @@ class PT_bool_create_table_option : public PT_create_table_option
 public:
   explicit PT_bool_create_table_option(bool value) : value(value) {}
 
-  virtual bool contextualize(Parse_context *pc)
+  bool contextualize(Table_ddl_parse_context *pc) override
   {
     if (super::contextualize(pc))
       return true;
-    pc->thd->lex->create_info->table_options&= ~(Yes | No);
-    pc->thd->lex->create_info->table_options|= value ? Yes : No;
-    pc->thd->lex->create_info->used_fields|= Property_flag;
+    pc->create_info->table_options&= ~(Yes | No);
+    pc->create_info->table_options|= value ? Yes : No;
+    pc->create_info->used_fields|= Property_flag;
     return false;
   }
 };
@@ -3136,7 +3555,7 @@ public:
   : engine(engine)
   {}
 
-  virtual bool contextualize(Parse_context *pc);
+  bool contextualize(Table_ddl_parse_context *pc) override;
 };
 
 
@@ -3162,7 +3581,7 @@ public:
   */
   PT_create_stats_auto_recalc_option(Ternary_option value) : value(value) {}
 
-  virtual bool contextualize(Parse_context *pc);
+  bool contextualize(Table_ddl_parse_context *pc) override;
 };
 
 
@@ -3193,7 +3612,7 @@ public:
   */
   PT_create_stats_stable_pages() : value(0) {} // DEFAULT
 
-  virtual bool contextualize(Parse_context *pc);
+  bool contextualize(Table_ddl_parse_context *pc) override;
 };
 
 class PT_create_union_option : public PT_create_table_option
@@ -3207,7 +3626,7 @@ public:
   : tables(tables)
   {}
 
-  virtual bool contextualize(Parse_context *pc);
+  bool contextualize(Table_ddl_parse_context *pc) override;
 };
 
 
@@ -3220,11 +3639,11 @@ class PT_create_storage_option : public PT_create_table_option
 public:
   explicit PT_create_storage_option(ha_storage_media value) : value(value) {}
 
-  virtual bool contextualize(Parse_context *pc)
+  bool contextualize(Table_ddl_parse_context *pc) override
   {
     if (super::contextualize(pc))
       return true;
-    pc->thd->lex->create_info->storage_media= value;
+    pc->create_info->storage_media= value;
     return false;
   }
 };
@@ -3241,7 +3660,7 @@ public:
   : value(value)
   {}
 
-  virtual bool contextualize(Parse_context *pc);
+  bool contextualize(Table_ddl_parse_context *pc) override;
 };
 
 
@@ -3256,7 +3675,7 @@ public:
   : value(value)
   {}
 
-  virtual bool contextualize(Parse_context *pc);
+  bool contextualize(Table_ddl_parse_context *pc) override;
 };
 
 
@@ -3269,7 +3688,7 @@ class PT_check_constraint : public PT_table_constraint_def
 public:
   explicit PT_check_constraint(Item *expr) : expr(expr) {}
 
-  virtual bool contextualize(Parse_context *pc)
+  bool contextualize(Table_ddl_parse_context *pc) override
   {
     return super::contextualize(pc) && expr->itemize(pc, &expr);
   }
@@ -3278,24 +3697,28 @@ public:
 
 class PT_column_def : public PT_table_element
 {
-  typedef Parse_tree_node super;
+  typedef PT_table_element super;
 
-  PT_field_ident *field_ident;
+  const LEX_STRING field_ident;
   PT_field_def_base *field_def;
 
   /// Currently we ignore that constraint in the executor.
   PT_table_constraint_def *opt_column_constraint;
 
+  const char *opt_place;
+
 public:
-  PT_column_def(PT_field_ident *field_ident,
+  PT_column_def(const LEX_STRING &field_ident,
                 PT_field_def_base *field_def,
-                PT_table_constraint_def *opt_column_constraint)
+                PT_table_constraint_def *opt_column_constraint,
+                const char *opt_place= NULL)
   : field_ident(field_ident),
     field_def(field_def),
-    opt_column_constraint(opt_column_constraint)
+    opt_column_constraint(opt_column_constraint),
+    opt_place(opt_place)
   {}
 
-  virtual bool contextualize(Parse_context *pc);
+  bool contextualize(Table_ddl_parse_context *pc) override;
 };
 
 
@@ -3304,10 +3727,8 @@ public:
 
   @ingroup ptn_create_table
 */
-class PT_create_table_stmt : public PT_statement
+class PT_create_table_stmt final : public PT_table_ddl_stmt_base
 {
-  typedef PT_statement super;
-
   bool is_temporary;
   bool only_if_not_exists;
   Table_ident *table_name;
@@ -3318,10 +3739,11 @@ class PT_create_table_stmt : public PT_statement
   PT_query_expression *opt_query_expression;
   Table_ident *opt_like_clause;
 
-  Sql_cmd_create_table cmd;
+  HA_CREATE_INFO m_create_info;
 
 public:
   /**
+    @param mem_root                   MEM_ROOT to use for allocation
     @param is_temporary               True if @SQL{CREATE @B{TEMPORARY} %TABLE}
     @param only_if_not_exists  True if @SQL{CREATE %TABLE ... @B{IF NOT EXISTS}}
     @param table_name                 @SQL{CREATE %TABLE ... @B{@<table name@>}}
@@ -3338,6 +3760,7 @@ public:
     @param opt_query_expression       NULL or the @SQL{@B{SELECT}} clause.
   */
   PT_create_table_stmt(
+    MEM_ROOT *mem_root,
     bool is_temporary,
     bool only_if_not_exists,
     Table_ident *table_name,
@@ -3346,7 +3769,8 @@ public:
     PT_partition *opt_partitioning,
     On_duplicate on_duplicate,
     PT_query_expression *opt_query_expression)
-  : is_temporary(is_temporary),
+  : PT_table_ddl_stmt_base(mem_root),
+    is_temporary(is_temporary),
     only_if_not_exists(only_if_not_exists),
     table_name(table_name),
     opt_table_element_list(opt_table_element_list),
@@ -3357,16 +3781,19 @@ public:
     opt_like_clause(NULL)
   {}
   /**
+    @param mem_root           MEM_ROOT to use for allocation
     @param is_temporary       True if @SQL{CREATE @B{TEMPORARY} %TABLE}.
     @param only_if_not_exists True if @SQL{CREATE %TABLE ... @B{IF NOT EXISTS}}.
     @param table_name         @SQL{CREATE %TABLE ... @B{@<table name@>}}.
     @param opt_like_clause    NULL or the @SQL{@B{LIKE @<table name@>}} clause.
   */
-  PT_create_table_stmt(bool is_temporary,
+  PT_create_table_stmt(MEM_ROOT *mem_root,
+                       bool is_temporary,
                        bool only_if_not_exists,
                        Table_ident *table_name,
                        Table_ident *opt_like_clause)
-  : is_temporary(is_temporary),
+  : PT_table_ddl_stmt_base(mem_root),
+    is_temporary(is_temporary),
     only_if_not_exists(only_if_not_exists),
     table_name(table_name),
     opt_table_element_list(NULL),
@@ -3377,14 +3804,12 @@ public:
     opt_like_clause(opt_like_clause)
   {}
 
-  virtual bool contextualize(Parse_context *pc);
-  virtual Sql_cmd *make_cmd(THD *thd);
+  Sql_cmd *make_cmd(THD *thd) override;
 };
 
-class PT_create_role : public PT_statement
-{
-  typedef PT_statement super;
 
+class PT_create_role final : public Parse_tree_root
+{
   Sql_cmd_create_role sql_cmd;
 
 public:
@@ -3392,26 +3817,16 @@ public:
   : sql_cmd(if_not_exists, roles)
   {}
 
-  virtual Sql_cmd *make_cmd(THD *thd)
+  Sql_cmd *make_cmd(THD *thd) override
   {
-    Parse_context pc(thd, thd->lex->current_select());
-    if (contextualize(&pc))
-      return NULL;
+    thd->lex->sql_command= SQLCOM_CREATE_ROLE;
     return &sql_cmd;
-  }
-  virtual bool contextualize(Parse_context *pc)
-  {
-    if (super::contextualize(pc))
-      return true;
-    return false;
   }
 };
 
 
-class PT_drop_role : public PT_statement
+class PT_drop_role final : public Parse_tree_root
 {
-  typedef PT_statement super;
-
   Sql_cmd_drop_role sql_cmd;
 
 public:
@@ -3419,26 +3834,16 @@ public:
   : sql_cmd(ignore_errors, roles)
   {}
 
-  virtual Sql_cmd *make_cmd(THD *thd)
+  Sql_cmd *make_cmd(THD *thd) override
   {
-    Parse_context pc(thd, thd->lex->current_select());
-    if (contextualize(&pc))
-      return NULL;
+    thd->lex->sql_command= SQLCOM_DROP_ROLE;
     return &sql_cmd;
-  }
-  virtual bool contextualize(Parse_context *pc)
-  {
-    if (super::contextualize(pc))
-      return true;
-    return false;
   }
 };
 
 
-class PT_set_role : public PT_statement
+class PT_set_role : public Parse_tree_root
 {
-  typedef PT_statement super;
-
   Sql_cmd_set_role sql_cmd;
 
 public:
@@ -3446,32 +3851,14 @@ public:
                        const List<LEX_USER> *opt_except_roles= NULL)
   : sql_cmd(role_type, opt_except_roles)
   {
-    DBUG_ASSERT(role_type == ROLE_ALL || opt_except_roles == NULL);
+    DBUG_ASSERT(role_type == role_enum::ROLE_ALL || opt_except_roles == NULL);
   }
   explicit PT_set_role(const List<LEX_USER> *roles) : sql_cmd(roles) {}
 
-  virtual Sql_cmd *make_cmd(THD *thd)
+  Sql_cmd *make_cmd(THD *thd) override
   {
-    Parse_context pc(thd, thd->lex->current_select());
-    if (contextualize(&pc))
-      return NULL;
+    thd->lex->sql_command= SQLCOM_SET_ROLE;
     return &sql_cmd;
-  }
-  virtual bool contextualize(Parse_context *pc)
-  {
-    if (super::contextualize(pc))
-      return true;
-    switch (sql_cmd.role_type) {
-    case ROLE_NONE:
-      break;
-    case ROLE_DEFAULT:
-      break;
-    case ROLE_ALL:
-      break;
-    case ROLE_NAME:
-      break;
-    }
-    return false;
   }
 };
 
@@ -3524,12 +3911,12 @@ public:
 
   virtual st_lex_user *get_user(THD *thd)
   {
-    syntax_error_at(thd, pos, "role or user name with the ON clause");
+    thd->syntax_error_at(pos, "Illegal authorization identifier");
     return NULL;
   }
   virtual Privilege *get_privilege(THD *thd)
   {
-    syntax_error_at(thd, pos, "privilege name without the ON clause");
+    thd->syntax_error_at(pos, "Illegal privilege identifier");
     return NULL;
   }
 };
@@ -3588,29 +3975,23 @@ public:
 class PT_dynamic_privilege final : public PT_role_or_privilege
 {
   LEX_STRING ident;
-  const Trivial_array<LEX_CSTRING> *columns;
 
 public:
   PT_dynamic_privilege(const POS &pos,
-                       const LEX_STRING &ident,
-                       const Trivial_array<LEX_CSTRING> *columns)
+                       const LEX_STRING &ident)
   : PT_role_or_privilege(pos), ident(ident)
   {}
 
   Privilege *get_privilege(THD *thd) override
-  { return new(thd->mem_root) Dynamic_privilege(ident, columns); }
+  { return new(thd->mem_root) Dynamic_privilege(ident, nullptr); }
 };
 
 
-class PT_grant_roles : public PT_statement
+class PT_grant_roles final : public Parse_tree_root
 {
-  typedef PT_statement super;
-
   const Trivial_array<PT_role_or_privilege *> *roles;
   const List<LEX_USER> *users;
   const bool with_admin_option;
-
-  List<LEX_USER> *role_objects;
 
 public:
   PT_grant_roles(const Trivial_array<PT_role_or_privilege *> *roles,
@@ -3619,81 +4000,57 @@ public:
   : roles(roles), users(users), with_admin_option(with_admin_option)
   {}
 
-  virtual Sql_cmd *make_cmd(THD *thd)
+  Sql_cmd *make_cmd(THD *thd) override
   {
-    Parse_context pc(thd, thd->lex->current_select());
-    if (contextualize(&pc))
-      return NULL;
+    thd->lex->sql_command= SQLCOM_GRANT_ROLE;
+
+    List<LEX_USER> *role_objects= new(thd->mem_root) List<LEX_USER>;
+    if (role_objects == NULL)
+      return NULL; // OOM
+    for (PT_role_or_privilege *r : *roles)
+    {
+      st_lex_user *user= r->get_user(thd);
+      if (r == NULL || role_objects->push_back(user))
+        return NULL;
+    }
 
     return new (thd->mem_root) Sql_cmd_grant_roles(role_objects, users,
                                                    with_admin_option);
   }
-  virtual bool contextualize(Parse_context *pc)
-  {
-    if (super::contextualize(pc))
-      return true;
-
-    role_objects= new(pc->thd->mem_root) List<LEX_USER>;
-    if (role_objects == NULL)
-      return NULL; // OOM
-    for (PT_role_or_privilege *r : *roles)
-    {
-      st_lex_user *user= r->get_user(pc->thd);
-      if (r == NULL || role_objects->push_back(user))
-        return NULL;
-    }
-    return false;
-  }
 };
 
 
-class PT_revoke_roles : public PT_statement
+class PT_revoke_roles final : public Parse_tree_root
 {
-  typedef PT_statement super;
-
   const Trivial_array<PT_role_or_privilege *> *roles;
   const List<LEX_USER> *users;
-
-  List<LEX_USER> *role_objects;
 
 public:
   PT_revoke_roles(Trivial_array<PT_role_or_privilege *> *roles,
                   const List<LEX_USER> *users)
-  : roles(roles), users(users), role_objects(NULL)
+  : roles(roles), users(users)
   {}
 
-  virtual Sql_cmd *make_cmd(THD *thd)
+  Sql_cmd *make_cmd(THD *thd) override
   {
-    Parse_context pc(thd, thd->lex->current_select());
-    if (contextualize(&pc))
-      return NULL;
+    thd->lex->sql_command= SQLCOM_REVOKE_ROLE;
 
-    return new (thd->mem_root) Sql_cmd_revoke_roles(role_objects, users);
-  }
-
-  virtual bool contextualize(Parse_context *pc)
-  {
-    if (super::contextualize(pc))
-      return true;
-
-    role_objects= new(pc->thd->mem_root) List<LEX_USER>;
+    List<LEX_USER> *role_objects= new(thd->mem_root) List<LEX_USER>;
     if (role_objects == NULL)
       return NULL; // OOM
     for (PT_role_or_privilege *r : *roles)
     {
-      st_lex_user *user= r->get_user(pc->thd);
+      st_lex_user *user= r->get_user(thd);
       if (r == NULL || role_objects->push_back(user))
         return NULL;
     }
-    return false;
+    return new (thd->mem_root) Sql_cmd_revoke_roles(role_objects, users);
   }
 };
 
 
-class PT_alter_user_default_role : public PT_statement
+class PT_alter_user_default_role final : public Parse_tree_root
 {
-  typedef PT_statement super;
-
   Sql_cmd_alter_user_default_role sql_cmd;
 
 public:
@@ -3704,52 +4061,30 @@ public:
   : sql_cmd(if_exists, users, roles, role_type)
   {}
 
-  virtual Sql_cmd *make_cmd(THD *thd)
+  Sql_cmd *make_cmd(THD *thd) override
   {
-    Parse_context pc(thd, thd->lex->current_select());
-    if (contextualize(&pc))
-      return NULL;
+    thd->lex->sql_command= SQLCOM_ALTER_USER_DEFAULT_ROLE;
     return &sql_cmd;
-  }
-  virtual bool contextualize(Parse_context *pc)
-  {
-    if (super::contextualize(pc))
-      return true;
-    // TODO: parse-time processing (if any) of the LEX_USER *sql_cmd.role
-    //       for the ALTER USER ... DEFAULT ROLE statement
-    return false;
   }
 };
 
 
-class PT_show_privileges : public PT_statement
+class PT_show_grants final : public Parse_tree_root
 {
-  typedef PT_statement super;
-
-  Sql_cmd_show_privileges sql_cmd;
+  Sql_cmd_show_grants sql_cmd;
 
 public:
-   PT_show_privileges(const LEX_USER *opt_for_user,
+   PT_show_grants(const LEX_USER *opt_for_user,
                       const List<LEX_USER> *opt_using_users)
   : sql_cmd(opt_for_user, opt_using_users)
   {
     DBUG_ASSERT(opt_using_users == NULL || opt_for_user != NULL);
   }
 
-  virtual Sql_cmd *make_cmd(THD *thd)
+  Sql_cmd *make_cmd(THD *thd) override
   {
-    Parse_context pc(thd, thd->lex->current_select());
-    if (contextualize(&pc))
-      return NULL;
+    thd->lex->sql_command= SQLCOM_SHOW_GRANTS;
     return &sql_cmd;
-  }
-  virtual bool contextualize(Parse_context *pc)
-  {
-    if (super::contextualize(pc))
-      return true;
-    // TODO: parse-time processing (if any) of sql_cmd.for_user and
-    //       sql_cmd.using_users for the SHOW PRIVILEGES FOR ... statement
-    return false;
   }
 };
 
@@ -3757,7 +4092,7 @@ public:
 /**
   Base class for Parse tree nodes of SHOW FIELDS/SHOW INDEX statements.
 */
-class PT_show_fields_and_keys : public PT_statement
+class PT_show_fields_and_keys : public Parse_tree_root
 {
 protected:
   enum Type
@@ -3782,12 +4117,9 @@ protected:
   }
 
 public:
-  virtual Sql_cmd *make_cmd(THD *thd);
-  virtual bool contextualize(Parse_context *pc);
+  Sql_cmd *make_cmd(THD *thd) override;
 
 private:
-  typedef PT_statement super;
-
   // Sql_cmd for SHOW COLUMNS/SHOW INDEX statements.
   Sql_cmd_show m_sql_cmd;
 
@@ -3809,46 +4141,1926 @@ private:
 /**
   Parse tree node for SHOW FIELDS statement.
 */
-class PT_show_fields : public PT_show_fields_and_keys
+class PT_show_fields final : public PT_show_fields_and_keys
 {
+  typedef PT_show_fields_and_keys super;
+
 public:
   PT_show_fields(const POS &pos,
-                 bool verbose,
+                 Show_cmd_type show_cmd_type,
                  Table_ident *table,
                  const LEX_STRING &wild)
     : PT_show_fields_and_keys(pos, SHOW_FIELDS, table, wild, nullptr),
-      m_verbose(verbose)
+      m_show_cmd_type(show_cmd_type)
   {}
 
   PT_show_fields(const POS &pos,
-                 bool verbose,
+                 Show_cmd_type show_cmd_type,
                  Table_ident *table_ident,
                  Item *where_condition= nullptr)
     : PT_show_fields_and_keys(pos, SHOW_FIELDS, table_ident, NULL_STR,
                               where_condition),
-      m_verbose(verbose)
+      m_show_cmd_type(show_cmd_type)
   {}
 
-  virtual bool contextualize(Parse_context *pc);
+  Sql_cmd *make_cmd(THD *thd) override;
 
 private:
-  typedef PT_show_fields_and_keys super;
-
-  // Flag to indicate FULL keyword usage in the statement.
-  bool m_verbose;
+  Show_cmd_type m_show_cmd_type;
 };
 
 
 /**
   Parse tree node for SHOW INDEX statement.
 */
-class PT_show_keys : public PT_show_fields_and_keys
+class PT_show_keys final : public PT_show_fields_and_keys
 {
 public:
   PT_show_keys(const POS &pos,
+               bool extended_show,
                Table_ident *table,
                Item *where_condition)
-    : PT_show_fields_and_keys(pos, SHOW_KEYS, table, NULL_STR, where_condition)
+    : PT_show_fields_and_keys(pos, SHOW_KEYS, table, NULL_STR, where_condition),
+      m_extended_show(extended_show)
+  {}
+
+  Sql_cmd *make_cmd(THD *thd) override;
+
+private:
+  typedef PT_show_fields_and_keys super;
+
+  // Flag to indicate EXTENDED keyword usage in the statement.
+  bool m_extended_show;
+};
+
+
+class PT_alter_table_action : public PT_ddl_table_option
+{
+  typedef PT_ddl_table_option super;
+
+protected:
+  explicit
+  PT_alter_table_action(Alter_info::Alter_info_flag flag) : flag(flag) {}
+
+public:
+  bool contextualize(Table_ddl_parse_context *pc) override
+  {
+    if (super::contextualize(pc))
+      return true;
+    pc->alter_info->flags|= flag;
+    return false;
+  }
+
+protected:
+  /**
+    A routine used by the parser to decide whether we are specifying a full
+    partitioning or if only partitions to add or to reorganize.
+
+    @retval  true    ALTER TABLE ADD/REORGANIZE PARTITION.
+    @retval  false   Something else.
+  */
+  bool is_add_or_reorganize_partition() const
+  {
+    return (flag == Alter_info::ALTER_ADD_PARTITION ||
+            flag == Alter_info::ALTER_REORGANIZE_PARTITION);
+  }
+
+public:
+  const Alter_info::Alter_info_flag flag;
+};
+
+
+class PT_alter_table_add_column final : public PT_alter_table_action
+{
+  typedef PT_alter_table_action super;
+
+public:
+  PT_alter_table_add_column(const LEX_STRING &field_ident,
+                            PT_field_def_base *field_def,
+                            PT_table_constraint_def *opt_column_constraint,
+                            const char *opt_place)
+    : super(Alter_info::ALTER_ADD_COLUMN),
+      m_column_def(field_ident, field_def, opt_column_constraint, opt_place)
+  {}
+
+  bool contextualize(Table_ddl_parse_context *pc) override
+  {
+    return super::contextualize(pc) || m_column_def.contextualize(pc);
+  }
+
+private:
+  PT_column_def m_column_def;
+};
+
+
+class PT_alter_table_add_columns  final : public PT_alter_table_action
+{
+  typedef PT_alter_table_action super;
+
+public:
+  explicit
+  PT_alter_table_add_columns(const Trivial_array<PT_table_element *> *columns)
+    : super(Alter_info::ALTER_ADD_COLUMN), m_columns(columns)
+  {}
+
+  bool contextualize(Table_ddl_parse_context *pc) override
+  {
+    if (super::contextualize(pc))
+      return true;
+
+    for (auto *column : *m_columns)
+      if (column->contextualize(pc))
+        return true;
+
+    return false;
+  }
+
+private:
+  const Trivial_array<PT_table_element *> *m_columns;
+};
+
+
+class PT_alter_table_add_constraint final : public PT_alter_table_action
+{
+  typedef PT_alter_table_action super;
+
+public:
+  explicit
+  PT_alter_table_add_constraint(PT_table_constraint_def *constraint)
+    : super(Alter_info::ALTER_ADD_INDEX), m_constraint(constraint)
+  {}
+
+  bool contextualize(Table_ddl_parse_context *pc) override
+  {
+    return super::contextualize(pc) || m_constraint->contextualize(pc);
+  }
+
+private:
+  PT_table_constraint_def *m_constraint;
+};
+
+
+class PT_alter_table_change_column final : public PT_alter_table_action
+{
+  typedef PT_alter_table_action super;
+
+public:
+  PT_alter_table_change_column(const LEX_STRING &old_name,
+                               const LEX_STRING &new_name,
+                               PT_field_def_base *field_def,
+                               const char *opt_place)
+    : super(Alter_info::ALTER_CHANGE_COLUMN),
+      m_old_name(old_name),
+      m_new_name(new_name),
+      m_field_def(field_def),
+      m_opt_place(opt_place)
+  {}
+
+  PT_alter_table_change_column(const LEX_STRING &name,
+                               PT_field_def_base *field_def,
+                               const char *opt_place)
+    : PT_alter_table_change_column(name, name, field_def, opt_place)
+  {}
+
+  bool contextualize(Table_ddl_parse_context *pc) override;
+
+private:
+  const LEX_STRING m_old_name;
+  const LEX_STRING m_new_name;
+  PT_field_def_base *m_field_def;
+  const char *m_opt_place;
+};
+
+
+
+class PT_alter_table_drop : public PT_alter_table_action
+{
+  typedef PT_alter_table_action super;
+
+protected:
+  PT_alter_table_drop(Alter_drop::drop_type drop_type,
+                      Alter_info::Alter_info_flag flag,
+                      const char *name)
+    : super(flag), m_alter_drop(drop_type, name)
+  {}
+
+public:
+  bool contextualize(Table_ddl_parse_context *pc) override
+  {
+    return (super::contextualize(pc) ||
+            pc->alter_info->drop_list.push_back(&m_alter_drop));
+  }
+
+private:
+  Alter_drop m_alter_drop;
+};
+
+
+class PT_alter_table_drop_column final : public PT_alter_table_drop
+{
+public:
+  explicit PT_alter_table_drop_column(const char *name)
+    : PT_alter_table_drop(Alter_drop::COLUMN,
+                          Alter_info::ALTER_DROP_COLUMN,
+                          name)
   {}
 };
+
+
+class PT_alter_table_drop_foreign_key final : public PT_alter_table_drop
+{
+public:
+  explicit PT_alter_table_drop_foreign_key(const char *name)
+    : PT_alter_table_drop(Alter_drop::FOREIGN_KEY,
+                          Alter_info::DROP_FOREIGN_KEY,
+                          name)
+  {}
+};
+
+
+class PT_alter_table_drop_key final : public PT_alter_table_drop
+{
+public:
+  explicit PT_alter_table_drop_key(const char *name)
+    : PT_alter_table_drop(Alter_drop::KEY,
+                          Alter_info::ALTER_DROP_INDEX,
+                          name)
+  {}
+};
+
+
+class PT_alter_table_enable_keys final : public PT_alter_table_action
+{
+  typedef PT_alter_table_action super;
+
+public:
+  explicit PT_alter_table_enable_keys(bool enable)
+    : super(Alter_info::ALTER_KEYS_ONOFF), m_enable(enable)
+  {}
+
+  bool contextualize(Table_ddl_parse_context *pc) override
+  {
+    pc->alter_info->keys_onoff= m_enable ? Alter_info::ENABLE
+                                         : Alter_info::DISABLE;
+    return super::contextualize(pc);
+  }
+
+private:
+  bool m_enable;
+};
+
+
+class PT_alter_table_set_default final : public PT_alter_table_action
+{
+  typedef PT_alter_table_action super;
+
+public:
+  PT_alter_table_set_default(const char *col_name, Item *opt_default_expr)
+    : super(Alter_info::ALTER_CHANGE_COLUMN_DEFAULT),
+      m_alter_column(col_name, opt_default_expr)
+  {}
+
+  bool contextualize(Table_ddl_parse_context *pc) override
+  {
+    return (super::contextualize(pc) ||
+            itemize_safe(pc, &m_alter_column.def) ||
+            pc->alter_info->alter_list.push_back(&m_alter_column));
+  }
+
+private:
+  Alter_column m_alter_column;
+};
+
+
+class PT_alter_table_index_visible final : public PT_alter_table_action
+{
+  typedef PT_alter_table_action super;
+
+public:
+  PT_alter_table_index_visible(const char *name, bool visible)
+    : super(Alter_info::ALTER_INDEX_VISIBILITY),
+      m_alter_index_visibility(name, visible)
+  {}
+
+  bool contextualize(Table_ddl_parse_context *pc) override
+  {
+    return (super::contextualize(pc) ||
+            pc->alter_info->alter_index_visibility_list.push_back(
+                &m_alter_index_visibility));
+  }
+
+private:
+  Alter_index_visibility m_alter_index_visibility;
+};
+
+
+class PT_alter_table_rename final : public PT_alter_table_action
+{
+  typedef PT_alter_table_action super;
+
+public:
+  explicit PT_alter_table_rename(const Table_ident *ident)
+    : super(Alter_info::ALTER_RENAME), m_ident(ident)
+  {}
+
+  bool contextualize(Table_ddl_parse_context *pc) override;
+
+  bool is_rename_table() const override { return true; }
+
+private:
+  const Table_ident * const m_ident;
+};
+
+
+class PT_alter_table_rename_key final : public PT_alter_table_action
+{
+  typedef PT_alter_table_action super;
+
+public:
+  PT_alter_table_rename_key(const char *from, const char *to)
+    : super(Alter_info::ALTER_RENAME_INDEX), m_rename_key(from, to)
+  {}
+
+  bool contextualize(Table_ddl_parse_context *pc) override
+  {
+    return super::contextualize(pc) ||
+      pc->alter_info->alter_rename_key_list.push_back(&m_rename_key);
+  }
+
+private:
+  Alter_rename_key m_rename_key;
+};
+
+
+class PT_alter_table_rename_column final : public PT_alter_table_action
+{
+  typedef PT_alter_table_action super;
+
+public:
+  PT_alter_table_rename_column(const char *from, const char *to)
+    : super(Alter_info::ALTER_CHANGE_COLUMN), m_rename_column(from, to)
+  {}
+
+  bool contextualize(Table_ddl_parse_context *pc) override
+  {
+    return super::contextualize(pc) ||
+            pc->alter_info->alter_list.push_back(&m_rename_column);
+  }
+
+private:
+  Alter_column m_rename_column;
+};
+
+class PT_alter_table_convert_to_charset final : public PT_alter_table_action
+{
+  typedef PT_alter_table_action super;
+
+public:
+  PT_alter_table_convert_to_charset(const CHARSET_INFO *charset,
+                                    const CHARSET_INFO *opt_collation)
+    : super(Alter_info::ALTER_OPTIONS),
+      m_charset(charset),
+      m_collation(opt_collation)
+  {}
+
+  bool contextualize(Table_ddl_parse_context *pc) override;
+
+private:
+  const CHARSET_INFO * const m_charset;
+  const CHARSET_INFO * const m_collation;
+};
+
+
+class PT_alter_table_force final : public PT_alter_table_action
+{
+  typedef PT_alter_table_action super;
+
+public:
+  PT_alter_table_force() : super(Alter_info::ALTER_RECREATE) {}
+};
+
+
+class PT_alter_table_order final : public PT_alter_table_action
+{
+  typedef PT_alter_table_action super;
+
+public:
+  explicit PT_alter_table_order(PT_order_list *order)
+    : super(Alter_info::ALTER_ORDER), m_order(order)
+  {}
+
+  bool contextualize(Table_ddl_parse_context *pc) override
+  {
+    if (super::contextualize(pc) || m_order->contextualize(pc))
+      return true;
+    pc->select->order_list= m_order->value;
+    return false;
+  }
+
+private:
+  PT_order_list * const m_order;
+};
+
+
+class PT_alter_table_partition_by final : public PT_alter_table_action
+{
+  typedef PT_alter_table_action super;
+
+public:
+  explicit PT_alter_table_partition_by(PT_partition *partition)
+    : super(Alter_info::ALTER_PARTITION), m_partition(partition)
+  {}
+
+  bool contextualize(Table_ddl_parse_context *pc) override
+  {
+    if (super::contextualize(pc) || m_partition->contextualize(pc))
+      return true;
+    pc->thd->lex->part_info= &m_partition->part_info;
+    return false;
+  }
+
+private:
+  PT_partition * const m_partition;
+};
+
+
+class PT_alter_table_remove_partitioning : public PT_alter_table_action
+{
+  typedef PT_alter_table_action super;
+
+public:
+  PT_alter_table_remove_partitioning()
+    : super(Alter_info::ALTER_REMOVE_PARTITIONING)
+  {}
+};
+
+
+class PT_alter_table_standalone_action : public PT_alter_table_action
+{
+  typedef PT_alter_table_action super;
+
+  friend class PT_alter_table_standalone_stmt; // to access make_cmd()
+
+protected:
+  PT_alter_table_standalone_action(Alter_info::Alter_info_flag flag)
+    : super(flag)
+  {}
+
+private:
+  virtual Sql_cmd *make_cmd(Table_ddl_parse_context *pc)= 0;
+};
+
+
+/**
+  Node for the @SQL{ALTER TABLE ADD PARTITION} statement
+
+  @ingroup ptn_alter_table
+*/
+class PT_alter_table_add_partition : public PT_alter_table_standalone_action
+{
+  typedef PT_alter_table_standalone_action super;
+
+public:
+  explicit PT_alter_table_add_partition(bool no_write_to_binlog)
+    : super(Alter_info::ALTER_ADD_PARTITION),
+      m_no_write_to_binlog(no_write_to_binlog)
+  {}
+
+  bool contextualize(Table_ddl_parse_context *pc) override
+  {
+    if (super::contextualize(pc))
+      return true;
+
+    LEX * const lex= pc->thd->lex;
+    lex->no_write_to_binlog= m_no_write_to_binlog;
+    DBUG_ASSERT(lex->part_info == nullptr);
+    lex->part_info= &m_part_info;
+    return false;
+  }
+
+  Sql_cmd *make_cmd(Table_ddl_parse_context *pc) override final
+  {
+    return new (pc->mem_root) Sql_cmd_alter_table(pc->alter_info);
+  }
+
+protected:
+  partition_info m_part_info;
+
+private:
+  const bool m_no_write_to_binlog;
+};
+
+
+/**
+  Node for the @SQL{ALTER TABLE ADD PARTITION (@<partition list@>)} statement
+
+  @ingroup ptn_alter_table
+*/
+class PT_alter_table_add_partition_def_list final :
+  public PT_alter_table_add_partition
+{
+  typedef PT_alter_table_add_partition super;
+
+public:
+  PT_alter_table_add_partition_def_list(
+      bool no_write_to_binlog,
+      const Trivial_array<PT_part_definition *> *def_list)
+  : super(no_write_to_binlog), m_def_list(def_list)
+  {}
+
+  bool contextualize(Table_ddl_parse_context *pc) override;
+
+private:
+  const Trivial_array<PT_part_definition *> *m_def_list;
+};
+
+
+/**
+  Node for the @SQL{ALTER TABLE ADD PARTITION PARTITIONS (@<n>@)} statement
+
+  @ingroup ptn_alter_table
+*/
+class PT_alter_table_add_partition_num final :
+  public PT_alter_table_add_partition
+{
+  typedef PT_alter_table_add_partition super;
+
+public:
+  PT_alter_table_add_partition_num(bool no_write_to_binlog, uint num_parts)
+    : super(no_write_to_binlog)
+  {
+    m_part_info.num_parts= num_parts;
+  }
+};
+
+
+class PT_alter_table_drop_partition final :
+  public PT_alter_table_standalone_action
+{
+  typedef PT_alter_table_standalone_action super;
+
+public:
+  explicit PT_alter_table_drop_partition(const List<String> &partitions)
+    : super(Alter_info::ALTER_DROP_PARTITION), m_partitions(partitions)
+  {}
+
+  bool contextualize(Table_ddl_parse_context *pc) override
+  {
+    if (super::contextualize(pc))
+      return true;
+
+    DBUG_ASSERT(pc->alter_info->partition_names.is_empty());
+    pc->alter_info->partition_names= m_partitions;
+    return false;
+  }
+
+  Sql_cmd *make_cmd(Table_ddl_parse_context *pc) override final
+  {
+    return new (pc->mem_root) Sql_cmd_alter_table(pc->alter_info);
+  }
+
+private:
+  const List<String> m_partitions;
+};
+
+
+class PT_alter_table_partition_list_or_all :
+  public PT_alter_table_standalone_action
+{
+  typedef PT_alter_table_standalone_action super;
+
+public:
+  explicit
+  PT_alter_table_partition_list_or_all(Alter_info::Alter_info_flag flag,
+                                       const List<String> *opt_partition_list)
+    : super(flag), m_opt_partition_list(opt_partition_list)
+  {}
+
+  bool contextualize(Table_ddl_parse_context *pc) override
+  {
+    DBUG_ASSERT(pc->alter_info->partition_names.is_empty());
+    if (m_opt_partition_list == NULL)
+      pc->alter_info->flags|= Alter_info::ALTER_ALL_PARTITION;
+    else
+      pc->alter_info->partition_names= *m_opt_partition_list;
+    return super::contextualize(pc);
+  }
+
+private:
+  const List<String> *m_opt_partition_list;
+};
+
+
+class PT_alter_table_rebuild_partition final :
+  public PT_alter_table_partition_list_or_all
+{
+  typedef PT_alter_table_partition_list_or_all super;
+
+public:
+  PT_alter_table_rebuild_partition(bool no_write_to_binlog,
+                                   const List<String> *opt_partition_list)
+    : super(Alter_info::ALTER_REBUILD_PARTITION, opt_partition_list),
+      m_no_write_to_binlog(no_write_to_binlog)
+  {}
+
+  bool contextualize(Table_ddl_parse_context *pc) override
+  {
+    if (super::contextualize(pc))
+      return true;
+    pc->thd->lex->no_write_to_binlog= m_no_write_to_binlog;
+    return false;
+  }
+
+  Sql_cmd *make_cmd(Table_ddl_parse_context *pc) override
+  {
+    return new (pc->mem_root) Sql_cmd_alter_table(pc->alter_info);
+  }
+
+private:
+  const bool m_no_write_to_binlog;
+};
+
+
+class PT_alter_table_optimize_partition final :
+  public PT_alter_table_partition_list_or_all
+{
+  typedef PT_alter_table_partition_list_or_all super;
+
+public:
+  PT_alter_table_optimize_partition(bool no_write_to_binlog,
+                                    const List<String> *opt_partition_list)
+    : super(Alter_info::ALTER_ADMIN_PARTITION, opt_partition_list),
+      m_no_write_to_binlog(no_write_to_binlog)
+  {}
+
+  bool contextualize(Table_ddl_parse_context *pc) override
+  {
+    if (super::contextualize(pc))
+      return true;
+    pc->thd->lex->no_write_to_binlog= m_no_write_to_binlog;
+    pc->thd->lex->check_opt.init();
+    return false;
+  }
+
+  Sql_cmd *make_cmd(Table_ddl_parse_context *pc) override
+  {
+    return
+      new (pc->mem_root) Sql_cmd_alter_table_optimize_partition(pc->alter_info);
+  }
+
+private:
+  const bool m_no_write_to_binlog;
+};
+
+
+class PT_alter_table_analyze_partition :
+  public PT_alter_table_partition_list_or_all
+{
+  typedef PT_alter_table_partition_list_or_all super;
+
+public:
+  PT_alter_table_analyze_partition(bool no_write_to_binlog,
+                                   const List<String> *opt_partition_list)
+    : super(Alter_info::ALTER_ADMIN_PARTITION, opt_partition_list),
+      m_no_write_to_binlog(no_write_to_binlog)
+  {}
+
+  bool contextualize(Table_ddl_parse_context *pc) override
+  {
+    if (super::contextualize(pc))
+      return true;
+    pc->thd->lex->no_write_to_binlog= m_no_write_to_binlog;
+    pc->thd->lex->check_opt.init();
+    return false;
+  }
+
+  Sql_cmd *make_cmd(Table_ddl_parse_context *pc) override
+  {
+    return
+      new (pc->mem_root) Sql_cmd_alter_table_analyze_partition(pc->thd,
+                                                               pc->alter_info);
+  }
+
+private:
+  const bool m_no_write_to_binlog;
+};
+
+
+class PT_alter_table_check_partition :
+  public PT_alter_table_partition_list_or_all
+{
+  typedef PT_alter_table_partition_list_or_all super;
+
+public:
+  PT_alter_table_check_partition(const List<String> *opt_partition_list,
+                                 uint flags,
+                                 uint sql_flags)
+    : super(Alter_info::ALTER_ADMIN_PARTITION, opt_partition_list),
+      m_flags(flags),
+      m_sql_flags(sql_flags)
+  {}
+
+  bool contextualize(Table_ddl_parse_context *pc) override
+  {
+    if (super::contextualize(pc))
+      return true;
+
+    LEX * const lex= pc->thd->lex;
+    lex->check_opt.init();
+    lex->check_opt.flags|= m_flags;
+    lex->check_opt.sql_flags|= m_sql_flags;
+    return false;
+  }
+
+  Sql_cmd *make_cmd(Table_ddl_parse_context *pc) override
+  {
+    return
+      new (pc->mem_root) Sql_cmd_alter_table_check_partition(pc->alter_info);
+  }
+
+private:
+  uint m_flags;
+  uint m_sql_flags;
+};
+
+
+class PT_alter_table_repair_partition :
+  public PT_alter_table_partition_list_or_all
+{
+  typedef PT_alter_table_partition_list_or_all super;
+
+public:
+  PT_alter_table_repair_partition(bool no_write_to_binlog,
+                                  const List<String> *opt_partition_list,
+                                  uint flags,
+                                  uint sql_flags)
+    : super(Alter_info::ALTER_ADMIN_PARTITION, opt_partition_list),
+      m_no_write_to_binlog(no_write_to_binlog),
+      m_flags(flags),
+      m_sql_flags(sql_flags)
+  {}
+
+  bool contextualize(Table_ddl_parse_context *pc) override
+  {
+    if (super::contextualize(pc))
+      return true;
+
+    LEX * const lex= pc->thd->lex;
+    lex->no_write_to_binlog= m_no_write_to_binlog;
+
+    lex->check_opt.init();
+    lex->check_opt.flags|= m_flags;
+    lex->check_opt.sql_flags|= m_sql_flags;
+
+    return false;
+  }
+
+  Sql_cmd *make_cmd(Table_ddl_parse_context *pc) override
+  {
+    return
+      new (pc->mem_root) Sql_cmd_alter_table_repair_partition(pc->alter_info);
+  }
+
+private:
+  const bool m_no_write_to_binlog;
+  uint m_flags;
+  uint m_sql_flags;
+};
+
+
+class PT_alter_table_coalesce_partition final :
+  public PT_alter_table_standalone_action
+{
+  typedef PT_alter_table_standalone_action super;
+
+public:
+  PT_alter_table_coalesce_partition(bool no_write_to_binlog, uint num_parts)
+    : super(Alter_info::ALTER_COALESCE_PARTITION),
+      m_no_write_to_binlog(no_write_to_binlog),
+      m_num_parts(num_parts)
+  {}
+
+  bool contextualize(Table_ddl_parse_context *pc) override
+  {
+    if (super::contextualize(pc))
+      return true;
+
+    pc->thd->lex->no_write_to_binlog= m_no_write_to_binlog;
+    pc->alter_info->num_parts= m_num_parts;
+    return false;
+  }
+
+  Sql_cmd *make_cmd(Table_ddl_parse_context *pc) override
+  {
+    return new (pc->mem_root) Sql_cmd_alter_table(pc->alter_info);
+  }
+
+private:
+  const bool m_no_write_to_binlog;
+  const uint m_num_parts;
+};
+
+
+class PT_alter_table_truncate_partition :
+  public PT_alter_table_partition_list_or_all
+{
+  typedef PT_alter_table_partition_list_or_all super;
+
+public:
+  explicit
+  PT_alter_table_truncate_partition(const List<String> *opt_partition_list)
+    : super(static_cast<Alter_info::Alter_info_flag>(
+              Alter_info::ALTER_ADMIN_PARTITION |
+              Alter_info::ALTER_TRUNCATE_PARTITION),
+            opt_partition_list)
+  {}
+
+  bool contextualize(Table_ddl_parse_context *pc) override
+  {
+    if (super::contextualize(pc))
+      return true;
+    pc->thd->lex->check_opt.init();
+    return false;
+  }
+
+  Sql_cmd *make_cmd(Table_ddl_parse_context *pc) override
+  {
+    return
+      new (pc->mem_root) Sql_cmd_alter_table_truncate_partition(pc->alter_info);
+  }
+};
+
+
+class PT_alter_table_reorganize_partition final :
+  public PT_alter_table_standalone_action
+{
+  typedef PT_alter_table_standalone_action super;
+
+public:
+  explicit
+  PT_alter_table_reorganize_partition(bool no_write_to_binlog)
+    : super(Alter_info::ALTER_TABLE_REORG),
+      m_no_write_to_binlog(no_write_to_binlog)
+  {}
+
+  bool contextualize(Table_ddl_parse_context *pc) override
+  {
+    if (super::contextualize(pc))
+      return true;
+    pc->thd->lex->part_info= &m_partition_info;
+    pc->thd->lex->no_write_to_binlog= m_no_write_to_binlog;
+    return false;
+  }
+
+  Sql_cmd *make_cmd(Table_ddl_parse_context *pc) override
+  {
+    return new (pc->mem_root) Sql_cmd_alter_table(pc->alter_info);
+  }
+
+private:
+  const bool m_no_write_to_binlog;
+  partition_info m_partition_info;
+};
+
+
+class PT_alter_table_reorganize_partition_into final :
+  public PT_alter_table_standalone_action
+{
+  typedef PT_alter_table_standalone_action super;
+
+public:
+  explicit
+  PT_alter_table_reorganize_partition_into(
+      bool no_write_to_binlog,
+      const List<String> &partition_names,
+      const Trivial_array<PT_part_definition*> *into)
+    : super(Alter_info::ALTER_REORGANIZE_PARTITION),
+      m_no_write_to_binlog(no_write_to_binlog),
+      m_partition_names(partition_names),
+      m_into(into)
+  {}
+
+  bool contextualize(Table_ddl_parse_context *pc) override;
+
+  Sql_cmd *make_cmd(Table_ddl_parse_context *pc) override
+  {
+    return new (pc->mem_root) Sql_cmd_alter_table(pc->alter_info);
+  }
+
+private:
+  const bool m_no_write_to_binlog;
+  const List<String> m_partition_names;
+  const Trivial_array<PT_part_definition*> *m_into;
+  partition_info m_partition_info;
+};
+
+
+class PT_alter_table_exchange_partition final :
+  public PT_alter_table_standalone_action
+{
+  typedef PT_alter_table_standalone_action super;
+
+public:
+  PT_alter_table_exchange_partition(const LEX_STRING &partition_name,
+                                    Table_ident *table_name,
+                                    Alter_info::enum_with_validation validation)
+    : super(Alter_info::ALTER_EXCHANGE_PARTITION),
+      m_partition_name(partition_name),
+      m_table_name(table_name),
+      m_validation(validation)
+  {}
+
+  bool contextualize(Table_ddl_parse_context *pc) override;
+
+  Sql_cmd *make_cmd(Table_ddl_parse_context *pc) override
+  {
+    return
+      new (pc->mem_root) Sql_cmd_alter_table_exchange_partition(pc->alter_info);
+  }
+
+private:
+  const LEX_STRING &m_partition_name;
+  Table_ident *m_table_name;
+  const Alter_info::enum_with_validation m_validation;
+};
+
+
+class PT_alter_table_discard_partition_tablespace final :
+  public PT_alter_table_partition_list_or_all
+{
+  typedef PT_alter_table_partition_list_or_all super;
+
+public:
+  explicit
+  PT_alter_table_discard_partition_tablespace(const List<String>
+                                              *opt_partition_list)
+    : super(Alter_info::ALTER_DISCARD_TABLESPACE, opt_partition_list)
+  {}
+
+  Sql_cmd *make_cmd(Table_ddl_parse_context *pc) override
+  {
+    return new (pc->mem_root) Sql_cmd_discard_import_tablespace(pc->alter_info);
+  }
+};
+
+
+class PT_alter_table_import_partition_tablespace final :
+  public PT_alter_table_partition_list_or_all
+{
+  typedef PT_alter_table_partition_list_or_all super;
+
+public:
+  explicit
+  PT_alter_table_import_partition_tablespace(const List<String>
+                                             *opt_partition_list)
+    : super(Alter_info::ALTER_IMPORT_TABLESPACE, opt_partition_list)
+  {}
+
+  Sql_cmd *make_cmd(Table_ddl_parse_context *pc) override
+  {
+    return new (pc->mem_root) Sql_cmd_discard_import_tablespace(pc->alter_info);
+  }
+};
+
+
+class PT_alter_table_discard_tablespace final :
+  public PT_alter_table_standalone_action
+{
+  typedef PT_alter_table_standalone_action super;
+
+public:
+  PT_alter_table_discard_tablespace()
+    : super(Alter_info::ALTER_DISCARD_TABLESPACE)
+  {}
+
+  Sql_cmd *make_cmd(Table_ddl_parse_context *pc) override
+  {
+    return new (pc->mem_root) Sql_cmd_discard_import_tablespace(pc->alter_info);
+  }
+};
+
+
+class PT_alter_table_import_tablespace final :
+  public PT_alter_table_standalone_action
+{
+  typedef PT_alter_table_standalone_action super;
+
+public:
+  PT_alter_table_import_tablespace()
+    : super(Alter_info::ALTER_IMPORT_TABLESPACE)
+  {}
+
+  Sql_cmd *make_cmd(Table_ddl_parse_context *pc) override
+  {
+    return new (pc->mem_root) Sql_cmd_discard_import_tablespace(pc->alter_info);
+  }
+};
+
+
+class PT_alter_table_stmt final : public PT_table_ddl_stmt_base
+{
+public:
+  explicit
+  PT_alter_table_stmt(MEM_ROOT *mem_root,
+                      Table_ident *table_name,
+                      Trivial_array<PT_ddl_table_option *> *opt_actions,
+                      Alter_info::enum_alter_table_algorithm algo,
+                      Alter_info::enum_alter_table_lock lock,
+                      Alter_info::enum_with_validation validation)
+    : PT_table_ddl_stmt_base(mem_root),
+      m_table_name(table_name),
+      m_opt_actions(opt_actions),
+      m_algo(algo),
+      m_lock(lock),
+      m_validation(validation)
+  {}
+
+  Sql_cmd *make_cmd(THD *thd) override;
+
+private:
+  Table_ident * const m_table_name;
+  Trivial_array<PT_ddl_table_option *> * const m_opt_actions;
+  const Alter_info::enum_alter_table_algorithm m_algo;
+  const Alter_info::enum_alter_table_lock m_lock;
+  const Alter_info::enum_with_validation m_validation;
+
+  HA_CREATE_INFO m_create_info;
+};
+
+
+class PT_alter_table_standalone_stmt final : public PT_table_ddl_stmt_base
+{
+public:
+  explicit
+  PT_alter_table_standalone_stmt(MEM_ROOT *mem_root,
+                                 Table_ident *table_name,
+                                 PT_alter_table_standalone_action *action,
+                                 Alter_info::enum_alter_table_algorithm algo,
+                                 Alter_info::enum_alter_table_lock lock,
+                                 Alter_info::enum_with_validation validation)
+    : PT_table_ddl_stmt_base(mem_root),
+      m_table_name(table_name),
+      m_action(action),
+      m_algo(algo),
+      m_lock(lock),
+      m_validation(validation)
+  {}
+
+  Sql_cmd *make_cmd(THD *thd) override;
+
+private:
+  Table_ident * const m_table_name;
+  PT_alter_table_standalone_action * const m_action;
+  const Alter_info::enum_alter_table_algorithm m_algo;
+  const Alter_info::enum_alter_table_lock m_lock;
+  const Alter_info::enum_with_validation m_validation;
+
+  HA_CREATE_INFO m_create_info;
+};
+
+
+class PT_repair_table_stmt final : public PT_table_ddl_stmt_base
+{
+public:
+  PT_repair_table_stmt(MEM_ROOT *mem_root,
+                       bool no_write_to_binlog,
+                       Trivial_array<Table_ident *> *table_list,
+                       decltype(HA_CHECK_OPT::flags) flags,
+                       decltype(HA_CHECK_OPT::sql_flags) sql_flags)
+    : PT_table_ddl_stmt_base(mem_root),
+      m_no_write_to_binlog(no_write_to_binlog),
+      m_table_list(table_list),
+      m_flags(flags),
+      m_sql_flags(sql_flags)
+  {}
+
+  Sql_cmd *make_cmd(THD *thd) override;
+
+private:
+  bool m_no_write_to_binlog;
+  Trivial_array<Table_ident *> *m_table_list;
+  decltype(HA_CHECK_OPT::flags) m_flags;
+  decltype(HA_CHECK_OPT::sql_flags) m_sql_flags;
+};
+
+
+class PT_analyze_table_stmt final : public PT_table_ddl_stmt_base
+{
+public:
+  PT_analyze_table_stmt(MEM_ROOT *mem_root,
+                        bool no_write_to_binlog,
+                        Trivial_array<Table_ident *> *table_list,
+                        Sql_cmd_analyze_table::Histogram_command command,
+                        int num_buckets,
+                        List<String> *columns)
+    : PT_table_ddl_stmt_base(mem_root),
+      m_no_write_to_binlog(no_write_to_binlog),
+      m_table_list(table_list),
+      m_command(command),
+      m_num_buckets(num_buckets),
+      m_columns(columns)
+  {}
+
+  Sql_cmd *make_cmd(THD *thd) override;
+
+private:
+  const bool m_no_write_to_binlog;
+  const Trivial_array<Table_ident *> *m_table_list;
+  const Sql_cmd_analyze_table::Histogram_command m_command;
+  const int m_num_buckets;
+  List<String> *m_columns;
+};
+
+
+class PT_check_table_stmt final : public PT_table_ddl_stmt_base
+{
+public:
+  PT_check_table_stmt(MEM_ROOT *mem_root,
+                      Trivial_array<Table_ident *> *table_list,
+                      decltype(HA_CHECK_OPT::flags) flags,
+                      decltype(HA_CHECK_OPT::sql_flags) sql_flags)
+    : PT_table_ddl_stmt_base(mem_root),
+      m_table_list(table_list),
+      m_flags(flags),
+      m_sql_flags(sql_flags)
+  {}
+
+  Sql_cmd *make_cmd(THD *thd) override;
+
+private:
+  Trivial_array<Table_ident *> *m_table_list;
+  decltype(HA_CHECK_OPT::flags) m_flags;
+  decltype(HA_CHECK_OPT::sql_flags) m_sql_flags;
+};
+
+
+class PT_optimize_table_stmt final : public PT_table_ddl_stmt_base
+{
+public:
+  PT_optimize_table_stmt(MEM_ROOT *mem_root,
+                         bool no_write_to_binlog,
+                         Trivial_array<Table_ident *> *table_list)
+    : PT_table_ddl_stmt_base(mem_root),
+      m_no_write_to_binlog(no_write_to_binlog),
+      m_table_list(table_list)
+  {}
+
+  Sql_cmd *make_cmd(THD *thd) override;
+
+  bool m_no_write_to_binlog;
+  Trivial_array<Table_ident *> *m_table_list;
+};
+
+
+class PT_drop_index_stmt final : public PT_table_ddl_stmt_base
+{
+public:
+  PT_drop_index_stmt(MEM_ROOT *mem_root,
+                     const char *index_name,
+                     Table_ident *table,
+                     Alter_info::enum_alter_table_algorithm algo,
+                     Alter_info::enum_alter_table_lock lock)
+    : PT_table_ddl_stmt_base(mem_root),
+      m_index_name(index_name),
+      m_table(table),
+      m_algo(algo),
+      m_lock(lock),
+      m_alter_drop(Alter_drop::KEY, m_index_name)
+  {}
+
+  Sql_cmd *make_cmd(THD *thd) override;
+
+private:
+  const char *m_index_name;
+  Table_ident *m_table;
+  Alter_info::enum_alter_table_algorithm m_algo;
+  Alter_info::enum_alter_table_lock m_lock;
+
+  Alter_drop m_alter_drop;
+};
+
+
+class PT_truncate_table_stmt final : public Parse_tree_root
+{
+public:
+  explicit PT_truncate_table_stmt(Table_ident *table) : m_table(table) {}
+
+  Sql_cmd *make_cmd(THD *thd) override;
+
+private:
+  Table_ident *m_table;
+
+  Sql_cmd_truncate_table m_cmd_truncate_table;
+};
+
+
+class PT_assign_to_keycache final : public Table_ddl_node
+{
+  typedef Table_ddl_node super;
+
+public:
+  PT_assign_to_keycache(Table_ident *table, List<Index_hint> *index_hints)
+    : m_table(table), m_index_hints(index_hints)
+  {}
+
+  bool contextualize(Table_ddl_parse_context *pc) override;
+
+private:
+  Table_ident *m_table;
+  List<Index_hint> *m_index_hints;
+};
+
+
+class PT_adm_partition final : public Table_ddl_node
+{
+  typedef Table_ddl_node super;
+
+public:
+  explicit PT_adm_partition(List<String> *opt_partitions)
+    : m_opt_partitions(opt_partitions)
+  {}
+
+  bool contextualize(Table_ddl_parse_context *pc) override;
+
+private:
+  List<String> *m_opt_partitions;
+};
+
+
+class PT_cache_index_stmt final : public PT_table_ddl_stmt_base
+{
+public:
+  PT_cache_index_stmt(MEM_ROOT *mem_root,
+                      Trivial_array<PT_assign_to_keycache *> *tbl_index_lists,
+                      const LEX_STRING &key_cache_name)
+    : PT_table_ddl_stmt_base(mem_root),
+      m_tbl_index_lists(tbl_index_lists),
+      m_key_cache_name(key_cache_name)
+  {}
+
+  Sql_cmd *make_cmd(THD *thd) override;
+
+private:
+  Trivial_array<PT_assign_to_keycache *> *m_tbl_index_lists;
+  const LEX_STRING &m_key_cache_name;
+};
+
+
+class PT_cache_index_partitions_stmt : public PT_table_ddl_stmt_base
+{
+public:
+  PT_cache_index_partitions_stmt(MEM_ROOT *mem_root,
+                                 Table_ident *table,
+                                 PT_adm_partition *partitions,
+                                 List<Index_hint> *opt_key_usage_list,
+                                 const LEX_STRING &key_cache_name)
+    : PT_table_ddl_stmt_base(mem_root),
+      m_table(table),
+      m_partitions(partitions),
+      m_opt_key_usage_list(opt_key_usage_list),
+      m_key_cache_name(key_cache_name)
+  {}
+
+  Sql_cmd *make_cmd(THD *thd) override;
+
+private:
+  Table_ident *m_table;
+  PT_adm_partition *m_partitions;
+  List<Index_hint> *m_opt_key_usage_list;
+  const LEX_STRING &m_key_cache_name;
+};
+
+
+class PT_preload_keys final : public Table_ddl_node
+{
+  typedef Table_ddl_node super;
+
+public:
+  PT_preload_keys(Table_ident *table,
+                  List<Index_hint> *opt_cache_key_list,
+                  bool ignore_leaves)
+    : m_table(table),
+      m_opt_cache_key_list(opt_cache_key_list),
+      m_ignore_leaves(ignore_leaves)
+  {}
+
+  bool contextualize(Table_ddl_parse_context *pc) override
+  {
+    if (super::contextualize(pc) ||
+        !pc->select->add_table_to_list(pc->thd, m_table, NULL,
+                                       m_ignore_leaves ? TL_OPTION_IGNORE_LEAVES
+                                                       : 0,
+                                                       TL_READ,
+                                                       MDL_SHARED_READ,
+                                                       m_opt_cache_key_list))
+      return true;
+    return false;
+  }
+
+private:
+  Table_ident *m_table;
+  List<Index_hint> *m_opt_cache_key_list;
+  bool m_ignore_leaves;
+};
+
+
+class PT_load_index_partitions_stmt final : public PT_table_ddl_stmt_base
+{
+public:
+  PT_load_index_partitions_stmt(MEM_ROOT *mem_root,
+                                Table_ident *table,
+                                PT_adm_partition *partitions,
+                                List<Index_hint> *opt_cache_key_list,
+                                bool ignore_leaves)
+    : PT_table_ddl_stmt_base(mem_root),
+      m_table(table),
+      m_partitions(partitions),
+      m_opt_cache_key_list(opt_cache_key_list),
+      m_ignore_leaves(ignore_leaves)
+  {}
+
+  Sql_cmd *make_cmd(THD *thd) override;
+
+private:
+  Table_ident *m_table;
+  PT_adm_partition *m_partitions;
+  List<Index_hint> *m_opt_cache_key_list;
+  bool m_ignore_leaves;
+};
+
+
+class PT_load_index_stmt final : public PT_table_ddl_stmt_base
+{
+public:
+  PT_load_index_stmt(MEM_ROOT *mem_root,
+                     Trivial_array<PT_preload_keys *> *preload_list)
+    : PT_table_ddl_stmt_base(mem_root),
+      m_preload_list(preload_list)
+  {}
+
+  Sql_cmd *make_cmd(THD *thd) override;
+
+private:
+  Trivial_array<PT_preload_keys *> *m_preload_list;
+};
+
+/**
+  Base class for Parse tree nodes of SHOW TABLES statements.
+*/
+class PT_show_tables : public Parse_tree_root
+{
+public:
+  PT_show_tables(const POS &pos,
+                 Show_cmd_type show_cmd_type,
+                 char *opt_db,
+                 const LEX_STRING &wild,
+                 Item *where_condition)
+    : m_pos(pos),
+      m_sql_cmd(SQLCOM_SHOW_TABLES),
+      m_opt_db(opt_db),
+      m_wild(wild),
+      m_where_condition(where_condition),
+      m_show_cmd_type(show_cmd_type)
+  {
+    DBUG_ASSERT(m_wild.str == nullptr || m_where_condition == nullptr);
+  }
+
+public:
+  Sql_cmd *make_cmd(THD *thd) override;
+
+private:
+  /// Textual location of a token just parsed.
+  POS m_pos;
+
+  /// Sql_cmd for SHOW TABLES statements.
+  Sql_cmd_show m_sql_cmd;
+
+  /// Optional schema name in FROM/IN clause.
+  char *m_opt_db;
+
+  /// Wild or where clause used in the statement.
+  LEX_STRING m_wild;
+  Item *m_where_condition;
+
+  Show_cmd_type m_show_cmd_type;
+};
+
+
+class PT_json_table_column_for_ordinality final : public PT_json_table_column
+{
+  typedef PT_json_table_column super;
+
+public:
+  explicit PT_json_table_column_for_ordinality(const LEX_STRING &name)
+    : m_column(enum_jt_column::JTC_ORDINALITY),
+      m_name(name.str)
+  {}
+
+  bool contextualize(Parse_context *pc) override
+  {
+    m_column.init_for_tmp_table(MYSQL_TYPE_LONGLONG, 10, 0, true, true, 8,
+                                m_name);
+    return super::contextualize(pc);
+  }
+
+  Json_table_column *get_column() override { return &m_column; }
+
+private:
+  Json_table_column m_column;
+  const char *m_name;
+};
+
+
+class PT_json_table_column_with_path final : public PT_json_table_column
+{
+  typedef PT_json_table_column super;
+
+public:
+  PT_json_table_column_with_path(const LEX_STRING &name,
+                                 PT_type *type,
+                                 enum_jt_column col_type,
+                                 LEX_STRING path,
+                                 enum_jtc_on on_err,
+                                 const LEX_STRING &error_def,
+                                 enum_jtc_on on_empty,
+                                 const LEX_STRING &missing_def)
+    : m_column(col_type, path, on_err, error_def, on_empty, missing_def),
+      m_name(name.str),
+      m_type(type)
+  {}
+
+  bool contextualize(Parse_context *pc) override;
+
+  Json_table_column *get_column() override { return &m_column; }
+
+private:
+  Json_table_column m_column;
+  const char *m_name;
+  PT_type *m_type;
+};
+
+
+class PT_json_table_column_with_nested_path final : public PT_json_table_column
+{
+  typedef PT_json_table_column super;
+
+public:
+  PT_json_table_column_with_nested_path(
+      const LEX_STRING &path,
+      Trivial_array<PT_json_table_column *> *nested_cols)
+    : m_path(path),
+      m_nested_columns(nested_cols),
+      m_column(nullptr)
+  {}
+
+  bool contextualize(Parse_context *pc) override;
+
+  Json_table_column *get_column() override { return m_column; }
+
+private:
+  const LEX_STRING m_path;
+  const Trivial_array<PT_json_table_column *> *m_nested_columns;
+  Json_table_column *m_column;
+};
+
+
+struct Alter_tablespace_parse_context : public Tablespace_options
+{
+  THD * const thd;
+  MEM_ROOT * const mem_root;
+
+  Alter_tablespace_parse_context(THD *thd)
+    : thd(thd), mem_root(thd->mem_root)
+  {}
+};
+
+
+typedef Parse_tree_node_tmpl<Alter_tablespace_parse_context>
+    PT_alter_tablespace_option_base;
+
+
+template<typename Option_type, Option_type Tablespace_options::*Option>
+class PT_alter_tablespace_option final : public PT_alter_tablespace_option_base /* purecov: inspected */
+{
+  typedef PT_alter_tablespace_option_base super;
+
+public:
+  explicit PT_alter_tablespace_option(Option_type value) : m_value(value) {}
+
+  bool contextualize(Alter_tablespace_parse_context *pc) override
+  {
+    pc->*Option= m_value;
+    return super::contextualize(pc);
+  }
+
+private:
+  const Option_type m_value;
+};
+
+
+typedef PT_alter_tablespace_option<decltype(Tablespace_options::autoextend_size),
+                                           &Tablespace_options::autoextend_size>
+    PT_alter_tablespace_option_autoextend_size;
+
+typedef PT_alter_tablespace_option<decltype(Tablespace_options::extent_size),
+                                           &Tablespace_options::extent_size>
+    PT_alter_tablespace_option_extent_size;
+
+typedef PT_alter_tablespace_option<decltype(Tablespace_options::initial_size),
+                                           &Tablespace_options::initial_size>
+    PT_alter_tablespace_option_initial_size;
+
+typedef PT_alter_tablespace_option<decltype(Tablespace_options::max_size),
+                                           &Tablespace_options::max_size>
+    PT_alter_tablespace_option_max_size;
+
+typedef PT_alter_tablespace_option<decltype(Tablespace_options::redo_buffer_size),
+                                           &Tablespace_options::redo_buffer_size>
+    PT_alter_tablespace_option_redo_buffer_size;
+
+typedef PT_alter_tablespace_option<decltype(Tablespace_options::undo_buffer_size),
+                                           &Tablespace_options::undo_buffer_size>
+    PT_alter_tablespace_option_undo_buffer_size;
+
+typedef PT_alter_tablespace_option<decltype(Tablespace_options::wait_until_completed),
+                                           &Tablespace_options::wait_until_completed>
+    PT_alter_tablespace_option_wait_until_completed;
+
+
+class PT_alter_tablespace_option_nodegroup final : public PT_alter_tablespace_option_base /* purecov: inspected */
+{
+  typedef PT_alter_tablespace_option_base super;
+  typedef decltype(Tablespace_options::nodegroup_id) option_type;
+
+public:
+  explicit PT_alter_tablespace_option_nodegroup(option_type nodegroup_id)
+    : m_nodegroup_id(nodegroup_id)
+  {}
+
+  bool contextualize(Alter_tablespace_parse_context *pc) override
+  {
+    if (super::contextualize(pc))
+      return true; /* purecov: inspected */ // OOM
+
+    if (pc->nodegroup_id != UNDEF_NODEGROUP)
+    {
+      my_error(ER_FILEGROUP_OPTION_ONLY_ONCE, MYF(0), "NODEGROUP");
+      return true;
+    }
+    pc->nodegroup_id= m_nodegroup_id;
+    return false;
+  }
+
+private:
+  const option_type m_nodegroup_id;
+};
+
+
+class PT_alter_tablespace_option_comment final : public PT_alter_tablespace_option_base /* purecov: inspected */
+{
+  typedef PT_alter_tablespace_option_base super;
+  typedef decltype(Tablespace_options::ts_comment) option_type;
+
+public:
+  explicit PT_alter_tablespace_option_comment(option_type comment)
+    : m_comment(comment)
+  {}
+
+  bool contextualize(Alter_tablespace_parse_context *pc) override
+  {
+    if (super::contextualize(pc))
+      return true; /* purecov: inspected */ // OOM
+
+    if (pc->ts_comment.str)
+    {
+      my_error(ER_FILEGROUP_OPTION_ONLY_ONCE, MYF(0), "COMMENT");
+      return true;
+    }
+    pc->ts_comment= m_comment;
+    return false;
+  }
+
+private:
+  const option_type m_comment;
+};
+
+
+class PT_alter_tablespace_option_engine final : public PT_alter_tablespace_option_base /* purecov: inspected */
+{
+  typedef PT_alter_tablespace_option_base super;
+  typedef decltype(Tablespace_options::engine_name) option_type;
+
+public:
+  explicit PT_alter_tablespace_option_engine(option_type engine_name)
+    : m_engine_name(engine_name)
+  {}
+
+  bool contextualize(Alter_tablespace_parse_context *pc) override
+  {
+    if (super::contextualize(pc))
+      return true; /* purecov: inspected */ // OOM
+
+    if (pc->engine_name.str)
+    {
+      my_error(ER_FILEGROUP_OPTION_ONLY_ONCE, MYF(0), "STORAGE ENGINE");
+      return true;
+    }
+    pc->engine_name= m_engine_name;
+    return false;
+  }
+
+private:
+  const option_type m_engine_name;
+};
+
+
+class PT_alter_tablespace_option_file_block_size final : public PT_alter_tablespace_option_base /* purecov: inspected */
+{
+  typedef PT_alter_tablespace_option_base super;
+  typedef decltype(Tablespace_options::file_block_size) option_type;
+
+public:
+  explicit PT_alter_tablespace_option_file_block_size(option_type file_block_size)
+    : m_file_block_size(file_block_size)
+  {}
+
+  bool contextualize(Alter_tablespace_parse_context *pc) override
+  {
+    if (super::contextualize(pc))
+      return true; /* purecov: inspected */ // OOM
+
+    if (pc->file_block_size != 0)
+    {
+      my_error(ER_FILEGROUP_OPTION_ONLY_ONCE, MYF(0), "FILE_BLOCK_SIZE");
+      return true;
+    }
+    pc->file_block_size= m_file_block_size;
+    return false;
+  }
+
+private:
+  const option_type m_file_block_size;
+};
+
+
+/**
+  Parse tree node for CREATE RESOURCE GROUP statement.
+*/
+
+class PT_create_resource_group final : public Parse_tree_root
+{
+  resourcegroups::Sql_cmd_create_resource_group sql_cmd;
+  const bool has_priority;
+
+public:
+  PT_create_resource_group(const LEX_CSTRING &name,
+                           const resourcegroups::Type type,
+                           const Trivial_array<resourcegroups::Range> *cpu_list,
+                           const Value_or_default<int> &opt_priority,
+                           bool enabled)
+    : sql_cmd(name, type, cpu_list,
+              opt_priority.is_default ? 0 : opt_priority.value, enabled),
+      has_priority(!opt_priority.is_default)
+  {}
+
+
+  Sql_cmd *make_cmd(THD *thd) override
+  {
+    if (check_resource_group_support())
+      return nullptr;
+
+    if (check_resource_group_name_len(sql_cmd.m_name))
+      return nullptr;
+
+    if (has_priority &&
+        validate_resource_group_priority(thd, &sql_cmd.m_priority,
+                                         sql_cmd.m_name, sql_cmd.m_type))
+      return nullptr;
+
+    for (auto &range : *sql_cmd.m_cpu_list)
+    {
+      if (validate_vcpu_range(range))
+        return nullptr;
+    }
+
+    thd->lex->sql_command= SQLCOM_CREATE_RESOURCE_GROUP;
+    return &sql_cmd;
+  }
+
+
+  virtual ~PT_create_resource_group() {}
+};
+
+
+/**
+  Parse tree node for ALTER RESOURCE GROUP statement.
+*/
+
+class PT_alter_resource_group final : public Parse_tree_root
+{
+  resourcegroups::Sql_cmd_alter_resource_group sql_cmd;
+
+public:
+  PT_alter_resource_group(const LEX_CSTRING &name,
+                          const Trivial_array<resourcegroups::Range> *cpu_list,
+                          const Value_or_default<int> &opt_priority,
+                          const Value_or_default<bool> &enable,
+                          bool force)
+    : sql_cmd(name, cpu_list, opt_priority.is_default ? 0 : opt_priority.value,
+              enable.is_default ? false : enable.value,
+              force, !enable.is_default)
+  {}
+
+
+  Sql_cmd *make_cmd(THD *thd) override
+  {
+    if (check_resource_group_support())
+      return nullptr;
+
+    if (check_resource_group_name_len(sql_cmd.m_name))
+      return nullptr;
+
+    for (auto &range : *sql_cmd.m_cpu_list)
+    {
+      if (validate_vcpu_range(range))
+        return nullptr;
+    }
+
+    thd->lex->sql_command= SQLCOM_ALTER_RESOURCE_GROUP;
+    return &sql_cmd;
+  }
+
+
+  virtual ~PT_alter_resource_group() {}
+};
+
+
+/**
+  Parse tree node for DROP RESOURCE GROUP statement.
+*/
+
+class PT_drop_resource_group final : public Parse_tree_root
+{
+  resourcegroups::Sql_cmd_drop_resource_group sql_cmd;
+
+public:
+  PT_drop_resource_group(const LEX_CSTRING &resource_group_name,
+                         bool force)
+    : sql_cmd(resource_group_name, force)
+  {}
+
+
+  Sql_cmd *make_cmd(THD *thd) override
+  {
+    if (check_resource_group_support())
+      return nullptr;
+
+    if (check_resource_group_name_len(sql_cmd.m_name))
+      return nullptr;
+
+    thd->lex->sql_command= SQLCOM_DROP_RESOURCE_GROUP;
+    return &sql_cmd;
+  }
+
+
+  virtual ~PT_drop_resource_group() {}
+};
+
+
+/**
+  Parse tree node for SET RESOURCE GROUP statement.
+*/
+
+class PT_set_resource_group final : public Parse_tree_root
+{
+  resourcegroups::Sql_cmd_set_resource_group sql_cmd;
+
+public:
+  PT_set_resource_group(const LEX_CSTRING &name,
+                        Trivial_array<ulonglong> *thread_id_list)
+    : sql_cmd(name, thread_id_list)
+  { }
+
+
+  Sql_cmd *make_cmd(THD *thd) override
+  {
+    if (check_resource_group_support())
+      return nullptr;
+
+    if (check_resource_group_name_len(sql_cmd.m_name))
+      return nullptr;
+
+    thd->lex->sql_command= SQLCOM_SET_RESOURCE_GROUP;
+    return &sql_cmd;
+  }
+
+
+  virtual ~PT_set_resource_group() {}
+};
+
+
+class PT_explain_for_connection final : public Parse_tree_root
+{
+public:
+  explicit
+  PT_explain_for_connection(my_thread_id thread_id) : m_cmd(thread_id) {}
+
+  Sql_cmd *make_cmd(THD *thd) override;
+
+private:
+  Sql_cmd_explain_other_thread m_cmd;
+};
+
+
+class PT_explain final : public Parse_tree_root
+{
+public:
+  PT_explain(Explain_format_type format, Parse_tree_root *explainable_stmt)
+    : m_format(format), m_explainable_stmt(explainable_stmt)
+  {}
+
+  Sql_cmd *make_cmd(THD *thd) override;
+
+private:
+  const Explain_format_type m_format;
+  Parse_tree_root * const m_explainable_stmt;
+};
+
+
+class PT_load_table final : public Parse_tree_root
+{
+public:
+  PT_load_table(enum_filetype filetype,
+                thr_lock_type lock_type,
+                bool is_local_file,
+                const LEX_STRING filename,
+                On_duplicate on_duplicate,
+                Table_ident *table,
+                List<String> *opt_partitions,
+                const CHARSET_INFO *opt_charset,
+                String *opt_xml_rows_identified_by,
+                const Field_separators &opt_field_separators,
+                const Line_separators &opt_line_separators,
+                ulong opt_ignore_lines,
+                PT_item_list *opt_fields_or_vars,
+                PT_item_list *opt_set_fields,
+                PT_item_list *opt_set_exprs,
+                List<String> *opt_set_expr_strings)
+    : m_cmd(filetype,
+            is_local_file,
+            filename,
+            on_duplicate,
+            table,
+            opt_partitions,
+            opt_charset,
+            opt_xml_rows_identified_by,
+            opt_field_separators,
+            opt_line_separators,
+            opt_ignore_lines,
+            opt_fields_or_vars ? &opt_fields_or_vars->value : nullptr,
+            opt_set_fields ? &opt_set_fields->value : nullptr,
+            opt_set_exprs ? &opt_set_exprs->value : nullptr,
+            opt_set_expr_strings),
+      m_lock_type(lock_type),
+      m_opt_fields_or_vars(opt_fields_or_vars),
+      m_opt_set_fields(opt_set_fields),
+      m_opt_set_exprs(opt_set_exprs)
+  {
+      DBUG_ASSERT((opt_set_fields == nullptr) ^
+                  (opt_set_exprs != nullptr));
+      DBUG_ASSERT(opt_set_fields == nullptr ||
+                  opt_set_fields->value.elements ==
+                  opt_set_exprs->value.elements);
+  }
+
+  Sql_cmd *make_cmd(THD *thd) override;
+
+private:
+  Sql_cmd_load_table m_cmd;
+
+  const thr_lock_type m_lock_type;
+  PT_item_list *m_opt_fields_or_vars;
+  PT_item_list *m_opt_set_fields;
+  PT_item_list *m_opt_set_exprs;
+};
+
+
+/**
+  Top-level node for the SHUTDOWN statement
+
+  @ingroup ptn_stmt
+*/
+
+class PT_restart_server final : public Parse_tree_root
+{
+public:
+  Sql_cmd *make_cmd(THD *thd) override {
+    thd->lex->sql_command= SQLCOM_RESTART_SERVER;
+    return &sql_cmd;
+  }
+
+private:
+  Sql_cmd_restart_server sql_cmd;
+};
+
 #endif /* PARSE_TREE_NODES_INCLUDED */

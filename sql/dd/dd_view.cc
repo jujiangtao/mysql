@@ -1,13 +1,20 @@
 /* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -22,47 +29,52 @@
 #include <string>
 
 #include "binary_log_types.h"
-#include "dd/cache/dictionary_client.h"       // dd::cache::Dictionary_client
-#include "dd/dd.h"                            // dd::get_dictionary
-#include "dd/dd_table.h"                      // fill_dd_columns_from_create_*
-#include "dd/dictionary.h"                    // dd::Dictionary
-#include "dd/impl/dictionary_impl.h"          // default_catalog_name
-#include "dd/properties.h"                    // dd::Properties
-#include "dd/types/abstract_table.h"          // dd::enum_table_type
-#include "dd/types/schema.h"                  // dd::Schema
-#include "dd/types/view.h"                    // dd::View
-#include "dd/types/view_routine.h"            // dd::View_routine
-#include "dd/types/view_table.h"              // dd::View_table
-#include "dd_table_share.h"                   // dd_get_mysql_charset
-#include "field.h"
-#include "handler.h"
-#include "item.h"
-#include "item_func.h"                        // Item_func
-#include "key.h"
 #include "lex_string.h"
-#include "log.h"                              // sql_print_error, sql_print_..
-#include "mdl.h"
+#include "my_alloc.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
+#include "my_loglevel.h"
 #include "my_sys.h"
-#include "mysql/psi/mysql_statement.h"
+#include "my_time.h"
+#include "mysql/components/services/log_shared.h"
+#include "mysql/mysql_lex_string.h"
+#include "mysql/udf_registration_types.h"
 #include "mysql_com.h"
-#include "mysql_time.h"                       // MYSQL_TIME
 #include "mysqld_error.h"
-#include "parse_file.h"                       // PARSE_FILE_TIMESTAMPLENGTH
-#include "session_tracker.h"
-#include "sp.h"                               // Sroutine_hash_entry
-#include "sp_head.h"                          // sp_name
-#include "sql_class.h"                        // THD
-#include "sql_lex.h"
-#include "sql_list.h"
-#include "sql_plugin_ref.h"
-#include "sql_security_ctx.h"
-#include "sql_tmp_table.h"                    // create_tmp_field
-#include "system_variables.h"
-#include "table.h"
-#include "transaction.h"                      // trans_commit
-#include "tztime.h"                           // Time_zone
+#include "sql/auth/sql_security_ctx.h"
+#include "sql/dd/cache/dictionary_client.h"   // dd::cache::Dictionary_client
+#include "sql/dd/dd.h"                        // dd::get_dictionary
+#include "sql/dd/dd_table.h"                  // fill_dd_columns_from_create_*
+#include "sql/dd/dictionary.h"                // dd::Dictionary
+#include "sql/dd/impl/dictionary_impl.h"      // default_catalog_name
+#include "sql/dd/properties.h"                // dd::Properties
+#include "sql/dd/string_type.h"
+#include "sql/dd/types/abstract_table.h"      // dd::enum_table_type
+#include "sql/dd/types/schema.h"              // dd::Schema
+#include "sql/dd/types/view.h"                // dd::View
+#include "sql/dd/types/view_routine.h"        // dd::View_routine
+#include "sql/dd/types/view_table.h"          // dd::View_table
+#include "sql/dd_table_share.h"               // dd_get_mysql_charset
+#include "sql/field.h"
+#include "sql/handler.h"
+#include "sql/histograms/value_map.h"
+#include "sql/item.h"
+#include "sql/item_create.h"
+#include "sql/item_func.h"                    // Item_func
+#include "sql/key.h"
+#include "sql/log.h"
+#include "sql/mem_root_array.h"
+#include "sql/parse_file.h"                   // PARSE_FILE_TIMESTAMPLENGTH
+#include "sql/sp.h"                           // Sroutine_hash_entry
+#include "sql/sql_class.h"                    // THD
+#include "sql/sql_lex.h"
+#include "sql/sql_list.h"
+#include "sql/sql_servers.h"
+#include "sql/sql_tmp_table.h"                // create_tmp_field
+#include "sql/system_variables.h"
+#include "sql/table.h"
+#include "sql/transaction.h"                  // trans_commit
+#include "sql/tztime.h"                       // Time_zone
 
 namespace dd {
 
@@ -82,7 +94,7 @@ static ulonglong dd_get_old_view_check_type(dd::View::enum_check_option type)
   }
 
 /* purecov: begin deadcode */
-  sql_print_error("Error: Invalid view check option.");
+  LogErr(ERROR_LEVEL, ER_DD_FAILSAFE, "view check option.");
   DBUG_ASSERT(false);
 
   return VIEW_CHECK_NONE;
@@ -107,7 +119,7 @@ static dd::View::enum_check_option dd_get_new_view_check_type(ulonglong type)
   }
 
 /* purecov: begin deadcode */
-  sql_print_error("Error: Invalid view check option.");
+  LogErr(ERROR_LEVEL, ER_DD_FAILSAFE, "view check option.");
   DBUG_ASSERT(false);
 
   return dd::View::CO_NONE;
@@ -132,7 +144,7 @@ dd_get_old_view_algorithm_type(dd::View::enum_algorithm type)
   }
 
 /* purecov: begin deadcode */
-  sql_print_error("Error: Invalid view algorithm.");
+  LogErr(ERROR_LEVEL, ER_DD_FAILSAFE, "view algorithm.");
   DBUG_ASSERT(false);
 
   return VIEW_ALGORITHM_UNDEFINED;
@@ -157,7 +169,7 @@ dd_get_new_view_algorithm_type(enum enum_view_algorithm type)
   }
 
 /* purecov: begin deadcode */
-  sql_print_error("Error: Invalid view algorithm.");
+  LogErr(ERROR_LEVEL, ER_DD_FAILSAFE, "view algorithm.");
   DBUG_ASSERT(false);
 
   return dd::View::VA_UNDEFINED;
@@ -182,7 +194,7 @@ dd_get_old_view_security_type(dd::View::enum_security_type type)
   }
 
 /* purecov: begin deadcode */
-  sql_print_error("Error: Invalid view security type.");
+  LogErr(ERROR_LEVEL, ER_DD_FAILSAFE, "view security type.");
   DBUG_ASSERT(false);
 
   return VIEW_SUID_DEFAULT;
@@ -207,7 +219,7 @@ dd_get_new_view_security_type(ulonglong type)
   }
 
 /* purecov: begin deadcode */
-  sql_print_error("Error: Invalid view security type.");
+  LogErr(ERROR_LEVEL, ER_DD_FAILSAFE, "view security type.");
   DBUG_ASSERT(false);
 
   return dd::View::ST_DEFAULT;
@@ -247,7 +259,7 @@ static bool fill_dd_view_columns(THD *thd,
     ~Context_handler()
     {
       m_thd->variables.sql_mode= m_sql_mode;
-      delete m_file;
+      destroy(m_file);
     }
   private:
     // Thread Handle.
@@ -419,8 +431,13 @@ static void fill_dd_view_tables(View *view_obj, const TABLE_LIST *view,
   for (const TABLE_LIST *table= query_tables; table != nullptr;
        table= table->next_global)
   {
-    // Skip tables which are not diectly referred by the view and not
-    // a non-temporary user table.
+    /*
+      Skip tables if
+        - It is not directly referred by the view OR
+        - It is a temporary table OR
+        - It is a data-directly table OR
+        - If it is not a user or information_schema schema table.
+    */
     {
       if (table->referencing_view && table->referencing_view != view)
         continue;
@@ -430,19 +447,27 @@ static void fill_dd_view_tables(View *view_obj, const TABLE_LIST *view,
         continue;
       else
       {
-        LEX_STRING db_name= { const_cast<char*>(table->get_db_name()),
-                               strlen(table->get_db_name()) };
-        LEX_STRING table_name= { const_cast<char*>(table->get_table_name()),
+        LEX_STRING db_name= { const_cast<char *>(table->get_db_name()),
+                              strlen(table->get_db_name()) };
+        LEX_STRING table_name= { const_cast<char *>(table->get_table_name()),
                                  strlen(table->get_table_name()) };
 
-        if (get_table_category(db_name, table_name) != TABLE_CATEGORY_USER)
+        TABLE_CATEGORY table_category= get_table_category(db_name, table_name);
+        if (table_category != TABLE_CATEGORY_USER &&
+            table_category != TABLE_CATEGORY_INFORMATION)
           continue;
       }
     }
 
     LEX_CSTRING db_name;
     LEX_CSTRING table_name;
-    if (table->is_view())
+    if (table->schema_table_name)
+    {
+      db_name= { table->db, table->db_length };
+      table_name= { table->schema_table_name,
+                    strlen(table->schema_table_name) };
+    }
+    else if (table->is_view())
     {
       db_name= table->view_db;
       table_name= table->view_name;
@@ -489,32 +514,38 @@ static void fill_dd_view_tables(View *view_obj, const TABLE_LIST *view,
 /**
   Method to fill view routines from the set of routines used by view query.
 
-  @param  view_obj  DD view object.
-  @param  routines  Set of routines used by view query.
+  @param  view_obj      DD view object.
+  @param  routines_ctx  Query_table_list object for the view which contains
+                        set of routines used by view query.
 */
 
 static void fill_dd_view_routines(
   View *view_obj,
-  const SQL_I_List<Sroutine_hash_entry> *routines)
+  Query_tables_list *routines_ctx)
 {
   DBUG_ENTER("fill_dd_view_routines");
 
-  // View stored functions.
-  for (Sroutine_hash_entry *rt= routines->first; rt; rt= rt->next)
+  // View stored functions. We need only directly used routines.
+  for (Sroutine_hash_entry *rt= routines_ctx->sroutines_list.first;
+       rt != nullptr && rt != *routines_ctx->sroutines_list_own_last;
+       rt= rt->next)
   {
     View_routine *view_sf_obj= view_obj->add_routine();
 
-    char qname_buff[NAME_LEN*2+1+1];
-    sp_name sf(&rt->mdl_request.key, qname_buff);
+    /*
+      We should get only stored functions here, as procedures are not directly
+      used by views, and thus not stored as dependencies.
+    */
+    DBUG_ASSERT(rt->type() == Sroutine_hash_entry::FUNCTION);
 
     // view routine catalog
     view_sf_obj->set_routine_catalog(Dictionary_impl::default_catalog_name());
 
     // View routine schema
-    view_sf_obj->set_routine_schema(String_type(sf.m_db.str, sf.m_db.length));
+    view_sf_obj->set_routine_schema(String_type(rt->db(), rt->m_db_length));
 
     // View routine name
-    view_sf_obj->set_routine_name(String_type(sf.m_name.str, sf.m_name.length));
+    view_sf_obj->set_routine_name(String_type(rt->name(), rt->name_length()));
   }
 
   DBUG_VOID_RETURN;
@@ -620,8 +651,12 @@ static bool fill_dd_view_definition(THD *thd, View *view_obj,
   // Fill view tables information in View object.
   fill_dd_view_tables(view_obj, view, thd->lex->query_tables);
 
-  // Fill view routines information in View object.
-  fill_dd_view_routines(view_obj, &thd->lex->sroutines_list);
+  /*
+    Fill view routines information in View object. It is important that
+    THD::lex points to the view's LEX at this point, so information about
+    directly used routines in it is correct.
+  */
+  fill_dd_view_routines(view_obj, thd->lex);
 
   return false;
 }
@@ -651,9 +686,17 @@ bool update_view(THD *thd, dd::View *new_view, TABLE_LIST *view)
 bool create_view(THD *thd, const dd::Schema &schema, TABLE_LIST *view)
 {
   // Create dd::View object.
+  bool hidden_system_view= false;
   std::unique_ptr<dd::View> view_obj;
-  if (dd::get_dictionary()->is_system_view_name(view->db, view->table_name))
+  if (dd::get_dictionary()->is_system_view_name(view->db, view->table_name,
+                                                &hidden_system_view))
+  {
     view_obj.reset(schema.create_system_view(thd));
+
+    // Mark the internal system views as hidden from users.
+    if (hidden_system_view)
+      view_obj->set_hidden(dd::Abstract_table::HT_HIDDEN_SYSTEM);
+  }
   else
     view_obj.reset(schema.create_view(thd));
 

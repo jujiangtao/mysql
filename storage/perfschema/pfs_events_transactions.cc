@@ -1,17 +1,24 @@
 /* Copyright (c) 2013, 2017, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
-  along with this program; if not, write to the Free Software Foundation,
-  51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+  along with this program; if not, write to the Free Software
+  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 /**
   @file storage/perfschema/pfs_events_transactions.cc
@@ -20,19 +27,20 @@
 
 #include "storage/perfschema/pfs_events_transactions.h"
 
+#include <atomic>
+
 #include "m_string.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_sys.h"
-#include "pfs_account.h"
-#include "pfs_atomic.h"
-#include "pfs_buffer_container.h"
-#include "pfs_builtin_memory.h"
-#include "pfs_global.h"
-#include "pfs_host.h"
-#include "pfs_instr.h"
-#include "pfs_instr_class.h"
-#include "pfs_user.h"
+#include "storage/perfschema/pfs_account.h"
+#include "storage/perfschema/pfs_buffer_container.h"
+#include "storage/perfschema/pfs_builtin_memory.h"
+#include "storage/perfschema/pfs_global.h"
+#include "storage/perfschema/pfs_host.h"
+#include "storage/perfschema/pfs_instr.h"
+#include "storage/perfschema/pfs_instr_class.h"
+#include "storage/perfschema/pfs_user.h"
 
 PFS_ALIGNED ulong events_transactions_history_long_size = 0;
 /** Consumer flag for table EVENTS_TRANSACTIONS_CURRENT. */
@@ -45,7 +53,7 @@ PFS_ALIGNED bool flag_events_transactions_history_long = false;
 /** True if EVENTS_TRANSACTIONS_HISTORY_LONG circular buffer is full. */
 PFS_ALIGNED bool events_transactions_history_long_full = false;
 /** Index in EVENTS_TRANSACTIONS_HISTORY_LONG circular buffer. */
-PFS_ALIGNED PFS_cacheline_uint32 events_transactions_history_long_index;
+PFS_ALIGNED PFS_cacheline_atomic_uint32 events_transactions_history_long_index;
 /** EVENTS_TRANSACTIONS_HISTORY_LONG circular buffer. */
 PFS_ALIGNED PFS_events_transactions *events_transactions_history_long_array =
   NULL;
@@ -61,7 +69,7 @@ init_events_transactions_history_long(
   events_transactions_history_long_size =
     events_transactions_history_long_sizing;
   events_transactions_history_long_full = false;
-  PFS_atomic::store_u32(&events_transactions_history_long_index.m_u32, 0);
+  events_transactions_history_long_index.m_u32.store(0);
 
   if (events_transactions_history_long_size == 0)
   {
@@ -147,8 +155,7 @@ insert_events_transactions_history_long(PFS_events_transactions *transaction)
 
   DBUG_ASSERT(events_transactions_history_long_array != NULL);
 
-  uint index =
-    PFS_atomic::add_u32(&events_transactions_history_long_index.m_u32, 1);
+  uint index = events_transactions_history_long_index.m_u32++;
 
   index = index % events_transactions_history_long_size;
   if (index == 0)
@@ -200,7 +207,7 @@ reset_events_transactions_history(void)
 void
 reset_events_transactions_history_long(void)
 {
-  PFS_atomic::store_u32(&events_transactions_history_long_index.m_u32, 0);
+  events_transactions_history_long_index.m_u32.store(0);
   events_transactions_history_long_full = false;
 
   PFS_events_transactions *pfs = events_transactions_history_long_array;

@@ -3,16 +3,24 @@
 Copyright (c) 2007, 2017, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+the terms of the GNU General Public License, version 2.0, as published by the
+Free Software Foundation.
+
+This program is also distributed with certain software (including but not
+limited to OpenSSL) that is licensed under separate terms, as designated in a
+particular file or component or in included license documentation. The authors
+of MySQL hereby grant you an additional permission to link the program and
+your derivative works with the separately licensed software that they have
+included with MySQL.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+FOR A PARTICULAR PURPOSE. See the GNU General Public License, version 2.0,
+for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 *****************************************************************************/
 
@@ -96,7 +104,7 @@ fts_config_get_value(
 	to the actual number of bytes copied to value. */
 	pars_info_bind_varchar_literal(info, "name", (byte*) name, name_len);
 
-	fts_table->suffix = "CONFIG";
+	fts_table->suffix = FTS_SUFFIX_CONFIG;
 	fts_get_table_name(fts_table, table_name);
 	pars_info_bind_id(info, true, "table_name", table_name);
 
@@ -121,9 +129,7 @@ fts_config_get_value(
 
 	error = fts_eval_sql(trx, graph);
 
-	mutex_enter(&dict_sys->mutex);
 	que_graph_free(graph);
-	mutex_exit(&dict_sys->mutex);
 
 	return(error);
 }
@@ -149,9 +155,7 @@ fts_config_create_index_param_name(
 	::strcpy(name, param);
 	name[len] = '_';
 
-	fts_write_object_id(index->id, name + len + 1,
-			    DICT_TF2_FLAG_IS_SET(index->table,
-						 DICT_TF2_FTS_AUX_HEX_NAME));
+	fts_write_object_id(index->id, name + len + 1);
 
 	return(name);
 }
@@ -175,8 +179,8 @@ fts_config_get_index_value(
 	dberr_t		error;
 	fts_table_t	fts_table;
 
-	FTS_INIT_FTS_TABLE(&fts_table, "CONFIG", FTS_COMMON_TABLE,
-			   index->table);
+	FTS_INIT_FTS_TABLE(&fts_table, FTS_SUFFIX_CONFIG,
+			   FTS_COMMON_TABLE, index->table);
 
 	/* We are responsible for free'ing name. */
 	name = fts_config_create_index_param_name(param, index);
@@ -216,7 +220,7 @@ fts_config_set_value(
 	pars_info_bind_varchar_literal(info, "value",
 				       value->f_str, value->f_len);
 
-	fts_table->suffix = "CONFIG";
+	fts_table->suffix = FTS_SUFFIX_CONFIG;
 	fts_get_table_name(fts_table, table_name);
 	pars_info_bind_id(info, true, "table_name", table_name);
 
@@ -231,7 +235,7 @@ fts_config_set_value(
 
 	error = fts_eval_sql(trx, graph);
 
-	fts_que_graph_free_check_lock(fts_table, NULL, graph);
+	que_graph_free(graph);
 
 	n_rows_updated = trx->undo_no - undo_no;
 
@@ -257,7 +261,7 @@ fts_config_set_value(
 
 		error = fts_eval_sql(trx, graph);
 
-		fts_que_graph_free_check_lock(fts_table, NULL, graph);
+		que_graph_free(graph);
 	}
 
 	return(error);
@@ -280,8 +284,8 @@ fts_config_set_index_value(
 	dberr_t		error;
 	fts_table_t	fts_table;
 
-	FTS_INIT_FTS_TABLE(&fts_table, "CONFIG", FTS_COMMON_TABLE,
-			   index->table);
+	FTS_INIT_FTS_TABLE(&fts_table, FTS_SUFFIX_CONFIG,
+			   FTS_COMMON_TABLE, index->table);
 
 	/* We are responsible for free'ing name. */
 	name = fts_config_create_index_param_name(param, index);

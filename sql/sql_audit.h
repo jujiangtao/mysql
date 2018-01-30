@@ -4,13 +4,20 @@
 /* Copyright (c) 2007, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -18,11 +25,11 @@
 
 #include <string.h>
 
+#include "lex_string.h"
 #include "m_string.h"
 #include "my_command.h"
 #include "mysql/plugin_audit.h"
-#include "sql_plugin.h"
-#include "sql_security_ctx.h"       // Security_context
+#include "sql/auth/sql_security_ctx.h" // Security_context
 
 class THD;
 struct TABLE_LIST;
@@ -288,5 +295,33 @@ int mysql_audit_notify(THD *thd,
                        const char *database,
                        const char *name,
                        void *parameters);
+
+
+/**
+  Call audit plugins of AUTHENTICATION audit class
+
+  @param[in] thd                    Current thread data.
+  @param[in] subclass               Type of the authentication audit event.
+  @param[in] subclass_name          Name of the subclass.
+  @param[in] status                 Status of the event.
+  @param[in] user                   Name of the user.
+  @param[in] host                   Name of the host.
+  @param[in] authentication_plugin  Current authentication plugin for user.
+  @param[in] is_role                Whether given AuthID is a role or not
+  @param[in] new_user               Name of the new user - In case of rename
+  @param[in] new_host               Name of the new host - In case of rename
+
+  @return 0 continue server flow, otherwise abort.
+*/
+int mysql_audit_notify(THD *thd,
+                       mysql_event_authentication_subclass_t subclass,
+                       const char *subclass_name,
+                       int status,
+                       const char * user,
+                       const char * host,
+                       const char * authentication_plugin,
+                       bool is_role,
+                       const char * new_user,
+                       const char * new_host);
 
 #endif /* SQL_AUDIT_INCLUDED */

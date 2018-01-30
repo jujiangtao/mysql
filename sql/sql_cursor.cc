@@ -1,47 +1,55 @@
 /* Copyright (c) 2005, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "sql/sql_cursor.h"
 
 #include <stddef.h>
+#include <sys/types.h>
 #include <algorithm>
 
-#include "debug_sync.h"
-#include "field.h"
-#include "handler.h"
-#include "item.h"
+#include "my_alloc.h"
 #include "my_base.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_sys.h"
+#include "mysql/components/services/psi_statement_bits.h"
 #include "mysql_com.h"
-#include "parse_tree_node_base.h"
-#include "protocol.h"
-#include "query_options.h"
-#include "query_result.h"
-#include "sql_lex.h"
-#include "sql_list.h"
-#include "sql_parse.h"                        // mysql_execute_command
-#include "sql_tmp_table.h"                   // tmp tables
-#include "sql_union.h"                       // Query_result_union
-#include "system_variables.h"
-#include "table.h"
-
-struct PSI_statement_locker;
-struct sql_digest_state;
+#include "sql/debug_sync.h"
+#include "sql/field.h"
+#include "sql/handler.h"
+#include "sql/item.h"
+#include "sql/parse_tree_node_base.h"
+#include "sql/protocol.h"
+#include "sql/query_options.h"
+#include "sql/query_result.h"
+#include "sql/sql_digest_stream.h"
+#include "sql/sql_lex.h"
+#include "sql/sql_list.h"
+#include "sql/sql_parse.h"                    // mysql_execute_command
+#include "sql/sql_tmp_table.h"               // tmp tables
+#include "sql/sql_union.h"                   // Query_result_union
+#include "sql/system_variables.h"
+#include "sql/table.h"
 
 /****************************************************************************
   Declarations.
@@ -56,7 +64,6 @@ struct sql_digest_state;
 
 class Materialized_cursor final : public Server_side_cursor
 {
-  MEM_ROOT main_mem_root;
   /* A fake unit to supply to Query_result_send when fetching */
   SELECT_LEX_UNIT fake_unit;
   TABLE *table;
@@ -79,10 +86,10 @@ public:
 /**
   Query_result_materialize -- a mediator between a cursor query and the
   protocol. In case we were not able to open a non-materialzed
-  cursor, it creates an internal temporary HEAP table, and insert
-  all rows into it. When the table reaches max_heap_table_size,
-  it's converted to a MyISAM table. Later this table is used to
-  create a Materialized_cursor.
+  cursor, it creates an internal temporary memory table, and inserts
+  all rows into it. If the table is in the Heap engine and if it reaches
+  maximum Heap table size, it's converted to a disk-based temporary
+  table. Later this table is used to create a Materialized_cursor.
 */
 
 class Query_result_materialize final : public Query_result_union
@@ -193,7 +200,7 @@ bool mysql_open_cursor(THD *thd, Query_result *result,
   }
 
 end:
-  delete result_materialize;
+  destroy(result_materialize);
   return rc;
 }
 
@@ -206,19 +213,20 @@ Server_side_cursor::~Server_side_cursor()
 }
 
 
-void Server_side_cursor::operator delete(void *ptr, size_t size)
+void Server_side_cursor::operator delete(void *ptr,
+                                         size_t size MY_ATTRIBUTE((unused)))
 {
+  DBUG_ENTER("Server_side_cursor::operator delete");
   Server_side_cursor *cursor= (Server_side_cursor*) ptr;
+  /*
+    If this cursor has never been opened, mem_root is empty. Otherwise,
+    mem_root is allocated on itself. In this case, it's important to move
+    it out before freeing, to avoid writing into freed memory during the
+    free process.
+  */
   MEM_ROOT own_root= std::move(*cursor->mem_root);
 
-  DBUG_ENTER("Server_side_cursor::operator delete");
   TRASH(ptr, size);
-  /*
-    If this cursor has never been opened mem_root is empty. Otherwise
-    mem_root points to the memory the cursor object was allocated in.
-    In this case it's important to call free_root last, and free a copy
-    instead of *mem_root to avoid writing into freed memory.
-  */
   free_root(&own_root, MYF(0));
   DBUG_VOID_RETURN;
 }
@@ -390,10 +398,10 @@ void Materialized_cursor::close()
     (void) table->file->ha_rnd_end();
   /*
     We need to grab table->mem_root to prevent free_tmp_table from freeing:
-    the cursor object was allocated in this memory.
+    the cursor object was allocated in this memory. The mem_root will be
+    freed in Materialized_cursor::operator delete.
   */
-  main_mem_root= std::move(table->s->mem_root);
-  mem_root= &main_mem_root;
+  mem_root= new (&table->s->mem_root) MEM_ROOT(std::move(table->s->mem_root));
   free_tmp_table(table->in_use, table);
   table= 0;
 }

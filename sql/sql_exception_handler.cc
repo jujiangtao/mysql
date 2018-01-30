@@ -2,17 +2,24 @@
   Copyright (c) 2017, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
-  along with this program; if not, write to the Free Software Foundation,
-  51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+  along with this program; if not, write to the Free Software
+  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 */
 
 /**
@@ -22,35 +29,30 @@
   This file defines functions to convert exceptions to MySQL error messages.
 */
 
-#include "sql_exception_handler.h"
+#include "sql/sql_exception_handler.h"
+
+// boost::geometry::centroid_exception
+#include <boost/geometry/algorithms/centroid.hpp>
+// boost::geometry::overlay_invalid_input_exception
+#include <boost/geometry/algorithms/detail/has_self_intersections.hpp>
+// boost::geometry::turn_info_exception
+#include <boost/geometry/algorithms/detail/overlay/get_turn_info.hpp>
+// boost::geometry::inconsistent_turns_exception
+#include <boost/geometry/algorithms/detail/overlay/inconsistent_turns_exception.hpp>
+// boost::geometry::detail::self_get_turn_points::self_ip_exception
+#include <boost/geometry/algorithms/detail/overlay/self_turn_points.hpp>
+// boost::geometry::empty_input_exception
+// boost::geometry::exception
+#include <boost/geometry/core/exception.hpp>
+#include <new> // std::bad_alloc
+#include <stdexcept> // Other std exceptions
+#include <string>
 
 #include "my_inttypes.h"  // MYF
 #include "my_sys.h"       // my_error
 #include "mysqld_error.h" // Error codes
-
-#include "gis/functor.h" // gis::not_implemented_exception
-
-#include <new> // std::bad_alloc
-#include <stdexcept> // Other std exceptions
-
-// boost::geometry::centroid_exception
-#include <boost/geometry/algorithms/centroid.hpp>
-
-// boost::geometry::overlay_invalid_input_exception
-#include <boost/geometry/algorithms/detail/has_self_intersections.hpp>
-
-// boost::geometry::turn_info_exception
-#include <boost/geometry/algorithms/detail/overlay/get_turn_info.hpp>
-
-// boost::geometry::detail::self_get_turn_points::self_ip_exception
-#include <boost/geometry/algorithms/detail/overlay/self_turn_points.hpp>
-
-// boost::geometry::empty_input_exception
-// boost::geometry::exception
-#include <boost/geometry/core/exception.hpp>
-
-// boost::geometry::inconsistent_turns_exception
-#include <boost/geometry/algorithms/detail/overlay/inconsistent_turns_exception.hpp>
+#include "sql/gis/functor.h" // gis::not_implemented_exception
+#include "sql/gis/gc_utils.h" // gis::invalid_geometry_exception
 
 void handle_std_exception(const char *funcname)
 {
@@ -115,10 +117,36 @@ void handle_gis_exception(const char *funcname)
   {
     throw;
   }
+  catch (const gis::longitude_out_of_range_exception &e)
+  {
+    my_error(ER_LONGITUDE_OUT_OF_RANGE, MYF(0),
+        e.value, funcname, e.range_min, e.range_max);
+  }
+  catch (const gis::latitude_out_of_range_exception &e)
+  {
+    my_error(ER_LATITUDE_OUT_OF_RANGE, MYF(0),
+        e.value, funcname, e.range_min, e.range_max);
+  }
   catch (const gis::not_implemented_exception &e)
   {
-    my_error(ER_NOT_IMPLEMENTED_FOR_GEOGRAPHIC_SRS, MYF(0), funcname,
-             e.type_name(1), e.type_name(2));
+    int er_variant;
+    switch (e.srs_type()) {
+      default: DBUG_ASSERT(false);  // C++11 woes. /* purecov: inspected */
+      case gis::not_implemented_exception::kCartesian:
+        er_variant = ER_NOT_IMPLEMENTED_FOR_CARTESIAN_SRS;
+        break;
+      case gis::not_implemented_exception::Srs_type::kGeographic:
+        er_variant = ER_NOT_IMPLEMENTED_FOR_GEOGRAPHIC_SRS;
+        break;
+      case gis::not_implemented_exception::Srs_type::kProjected:
+        er_variant = ER_NOT_IMPLEMENTED_FOR_PROJECTED_SRS;
+        break;
+    }
+    my_error(er_variant, MYF(0), funcname, e.typenames());
+  }
+  catch (const gis::invalid_geometry_exception &e)
+  {
+    my_error(ER_GIS_INVALID_DATA, MYF(0), funcname);
   }
   catch (const boost::geometry::centroid_exception &)
   {
@@ -132,11 +160,6 @@ void handle_gis_exception(const char *funcname)
   catch (const boost::geometry::turn_info_exception &)
   {
     my_error(ER_BOOST_GEOMETRY_TURN_INFO_EXCEPTION, MYF(0), funcname);
-  }
-  catch (const boost::geometry::detail::self_get_turn_points::self_ip_exception &)
-  {
-    my_error(ER_BOOST_GEOMETRY_SELF_INTERSECTION_POINT_EXCEPTION, MYF(0),
-             funcname);
   }
   catch (const boost::geometry::empty_input_exception &)
   {

@@ -5,15 +5,15 @@ utf8mb4
 SET @session_start_value = @@character_set_connection;
 SELECT @session_start_value;
 @session_start_value
-latin1
+utf8mb4
 SET @session_start_value = @@local.character_set_connection;
 SELECT @session_start_value;
 @session_start_value
-latin1
+utf8mb4
 SET @session_start_value = @@session.character_set_connection;
 SELECT @session_start_value;
 @session_start_value
-latin1
+utf8mb4
 '#--------------------FN_DYNVARS_011_01------------------#'
 SELECT character_set_connection;
 ERROR 42S22: Unknown column 'character_set_connection' in 'field list'
@@ -455,13 +455,17 @@ ERROR 42000: Unknown character set: '-1'
 SET @@character_set_connection = 'utf8 ';
 ERROR 42000: Unknown character set: 'utf8 '
 SET @@character_set_connection = 'lätin2';
-ERROR 42000: Unknown character set: 'lätin2'
+ERROR 42000: Unknown character set: 'l?tin2'
 SET @@character_set_connection = true;
 SELECT @@character_set_connection AS res_with_true;
 res_with_true
 big5
 SET @@character_set_connection = ON;
 ERROR 42000: Unknown character set: 'ON'
+SET @@character_set_connection = repeat('e', 256);
+ERROR 42000: Unknown character set: 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
+SET @@character_set_connection = repeat('e', 1024);
+ERROR 42000: Unknown character set: 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
 '#--------------------FN_DYNVARS_011_11-------------------------#'
 SET @@global.character_set_connection = abc;
 ERROR 42000: Unknown character set: 'abc'
@@ -480,6 +484,10 @@ ERROR 42000: Unknown character set: 'utf'
 SET @@global.character_set_connection = true;
 SET @@global.character_set_connection = ON;
 ERROR 42000: Unknown character set: 'ON'
+SET @@global.character_set_connection = repeat('e', 256);
+ERROR 42000: Unknown character set: 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
+SET @@global.character_set_connection = repeat('e', 1024);
+ERROR 42000: Unknown character set: 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
 '#--------------------FN_DYNVARS_011_12-------------------------#'
 SELECT @@global.character_set_connection =
 (SELECT VARIABLE_VALUE FROM performance_schema.global_variables
@@ -518,4 +526,4 @@ utf8mb4
 SET @@session.character_set_connection = @session_start_value;
 SELECT @@session.character_set_connection;
 @@session.character_set_connection
-latin1
+utf8mb4

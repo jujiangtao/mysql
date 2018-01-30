@@ -1,17 +1,24 @@
 /* Copyright (c) 2010, 2017, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
   along with this program; if not, write to the Free Software
-  Foundation, Inc., 51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 /**
   @file storage/perfschema/table_ets_by_host_by_event_name.cc
@@ -22,115 +29,49 @@
 
 #include <stddef.h>
 
-#include "field.h"
 #include "my_dbug.h"
 #include "my_thread.h"
-#include "pfs_account.h"
-#include "pfs_buffer_container.h"
-#include "pfs_column_types.h"
-#include "pfs_column_values.h"
-#include "pfs_global.h"
-#include "pfs_instr_class.h"
-#include "pfs_visitor.h"
+#include "sql/field.h"
+#include "storage/perfschema/pfs_account.h"
+#include "storage/perfschema/pfs_buffer_container.h"
+#include "storage/perfschema/pfs_column_types.h"
+#include "storage/perfschema/pfs_column_values.h"
+#include "storage/perfschema/pfs_global.h"
+#include "storage/perfschema/pfs_instr_class.h"
+#include "storage/perfschema/pfs_visitor.h"
 
 THR_LOCK table_ets_by_host_by_event_name::m_table_lock;
 
-/* clang-format off */
-static const TABLE_FIELD_TYPE field_types[]=
-{
-  {
-    { C_STRING_WITH_LEN("HOST") },
-    { C_STRING_WITH_LEN("char(60)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("EVENT_NAME") },
-    { C_STRING_WITH_LEN("varchar(128)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("COUNT_STAR") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("SUM_TIMER_WAIT") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("MIN_TIMER_WAIT") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("AVG_TIMER_WAIT") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("MAX_TIMER_WAIT") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("COUNT_READ_WRITE") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("SUM_TIMER_READ_WRITE") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("MIN_TIMER_READ_WRITE") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("AVG_TIMER_READ_WRITE") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("MAX_TIMER_READ_WRITE") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("COUNT_READ_ONLY") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("SUM_TIMER_READ_ONLY") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("MIN_TIMER_READ_ONLY") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("AVG_TIMER_READ_ONLY") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("MAX_TIMER_READ_ONLY") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  }
-};
-/* clang-format on */
-
-TABLE_FIELD_DEF
-table_ets_by_host_by_event_name::m_field_def = {17, field_types};
+Plugin_table table_ets_by_host_by_event_name::m_table_def(
+  /* Schema name */
+  "performance_schema",
+  /* Name */
+  "events_transactions_summary_by_host_by_event_name",
+  /* Definition */
+  "  HOST CHAR(60) collate utf8_bin default null,\n"
+  "  EVENT_NAME VARCHAR(128) not null,\n"
+  "  COUNT_STAR BIGINT unsigned not null,\n"
+  "  SUM_TIMER_WAIT BIGINT unsigned not null,\n"
+  "  MIN_TIMER_WAIT BIGINT unsigned not null,\n"
+  "  AVG_TIMER_WAIT BIGINT unsigned not null,\n"
+  "  MAX_TIMER_WAIT BIGINT unsigned not null,\n"
+  "  COUNT_READ_WRITE BIGINT unsigned not null,\n"
+  "  SUM_TIMER_READ_WRITE BIGINT unsigned not null,\n"
+  "  MIN_TIMER_READ_WRITE BIGINT unsigned not null,\n"
+  "  AVG_TIMER_READ_WRITE BIGINT unsigned not null,\n"
+  "  MAX_TIMER_READ_WRITE BIGINT unsigned not null,\n"
+  "  COUNT_READ_ONLY BIGINT unsigned not null,\n"
+  "  SUM_TIMER_READ_ONLY BIGINT unsigned not null,\n"
+  "  MIN_TIMER_READ_ONLY BIGINT unsigned not null,\n"
+  "  AVG_TIMER_READ_ONLY BIGINT unsigned not null,\n"
+  "  MAX_TIMER_READ_ONLY BIGINT unsigned not null,\n"
+  "  UNIQUE KEY (HOST, EVENT_NAME) USING HASH\n",
+  /* Options */
+  " ENGINE=PERFORMANCE_SCHEMA",
+  /* Tablespace */
+  nullptr);
 
 PFS_engine_table_share table_ets_by_host_by_event_name::m_share = {
-  {C_STRING_WITH_LEN("events_transactions_summary_by_host_by_event_name")},
   &pfs_truncatable_acl,
   table_ets_by_host_by_event_name::create,
   NULL, /* write_row */
@@ -138,9 +79,11 @@ PFS_engine_table_share table_ets_by_host_by_event_name::m_share = {
   table_ets_by_host_by_event_name::get_row_count,
   sizeof(pos_ets_by_host_by_event_name),
   &m_table_lock,
-  &m_field_def,
-  false, /* checked */
-  false  /* perpetual */
+  &m_table_def,
+  false, /* perpetual */
+  PFS_engine_table_proxy(),
+  {0},
+  false /* m_in_purgatory */
 };
 
 bool
@@ -170,7 +113,7 @@ PFS_index_ets_by_host_by_event_name::match(PFS_instr_class *instr_class)
 }
 
 PFS_engine_table *
-table_ets_by_host_by_event_name::create(void)
+table_ets_by_host_by_event_name::create(PFS_engine_table_share *)
 {
   return new table_ets_by_host_by_event_name();
 }
@@ -193,6 +136,7 @@ table_ets_by_host_by_event_name::get_row_count(void)
 table_ets_by_host_by_event_name::table_ets_by_host_by_event_name()
   : PFS_engine_table(&m_share, &m_pos), m_pos(), m_next_pos()
 {
+  m_normalizer = time_normalizer::get_transaction();
 }
 
 void
@@ -205,7 +149,6 @@ table_ets_by_host_by_event_name::reset_position(void)
 int
 table_ets_by_host_by_event_name::rnd_init(bool)
 {
-  m_normalizer = time_normalizer::get(transaction_timer);
   return 0;
 }
 
@@ -255,10 +198,9 @@ table_ets_by_host_by_event_name::rnd_pos(const void *pos)
 }
 
 int
-table_ets_by_host_by_event_name::index_init(uint idx, bool)
+table_ets_by_host_by_event_name::index_init(uint idx MY_ATTRIBUTE((unused)),
+                                            bool)
 {
-  m_normalizer = time_normalizer::get(transaction_timer);
-
   PFS_index_ets_by_host_by_event_name *result = NULL;
   DBUG_ASSERT(idx == 0);
   result = PFS_NEW(PFS_index_ets_by_host_by_event_name);

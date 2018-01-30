@@ -1,11 +1,5 @@
-# The include statement below is a temp one for tests that are yet to
-#be ported to run with InnoDB,
-#but needs to be kept for tests that would need MyISAM in future.
---source include/force_myisam_default.inc
-
 # Tests which involve triggers and NDB storage engine
 --source include/have_multi_ndb.inc
---source include/not_embedded.inc
 
 # 
 # Test for bug#18437 "Wrong values inserted with a before update
@@ -17,15 +11,6 @@
 # since this engine so far is the only engine in MySQL which cares
 # about field mark-up during handler::write_row() operation.
 #
-
---disable_warnings
-connection server2;
-drop table if exists t1, t2, t3, t4, t5;
-flush status;
-connection server1;
-drop table if exists t1, t2, t3, t4, t5;
-flush status;
---enable_warnings
 
 create table t1 (id int primary key, a int not null, b decimal (63,30) default 0) engine=ndb;
 create table t2 (op char(1), a int not null, b decimal (63,30)) engine=ndb;
@@ -305,5 +290,3 @@ select c1 from t1 where c1=last_insert_id();
 select * from t1 order by c1;
 drop trigger bi_t1;
 drop table t1;
-
---echo End of 5.1 tests

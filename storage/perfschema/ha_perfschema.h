@@ -1,25 +1,32 @@
 /* Copyright (c) 2008, 2017, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
-  along with this program; if not, write to the Free Software Foundation,
-  51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+  along with this program; if not, write to the Free Software
+  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef HA_PERFSCHEMA_H
 #define HA_PERFSCHEMA_H
 
 #include <sys/types.h>
 
-#include "handler.h" /* class handler */
 #include "my_inttypes.h"
+#include "sql/handler.h" /* class handler */
 
 /**
   @file storage/perfschema/ha_perfschema.h
@@ -242,20 +249,6 @@ public:
                              THR_LOCK_DATA **to,
                              enum thr_lock_type lock_type);
 
-  virtual uint8
-  table_cache_type(void)
-  {
-    return HA_CACHE_TBL_NOCACHE;
-  }
-
-  virtual bool
-  register_query_cache_table(
-    THD *, char *, size_t, qc_engine_callback *engine_callback, ulonglong *)
-  {
-    *engine_callback = 0;
-    return FALSE;
-  }
-
   virtual void print_error(int error, myf errflags);
 
 private:
@@ -290,7 +283,7 @@ private:
   /** MySQL lock */
   THR_LOCK_DATA m_thr_lock;
   /** Performance schema table share for this table handler. */
-  const PFS_engine_table_share *m_table_share;
+  PFS_engine_table_share *m_table_share;
   /** Performance schema table cursor. */
   PFS_engine_table *m_table;
 };

@@ -2,41 +2,47 @@
    Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 */
 
+#ifndef SQL_HA_NDBCLUSTER_INCLUDED
+#define SQL_HA_NDBCLUSTER_INCLUDED
+
 /*
   This file defines the NDB Cluster handler: the interface between MySQL and
   NDB Cluster
 */
 
-#include "sql_base.h"
+#include "sql/sql_base.h"
 
 /* DDL names have to fit in system table ndb_schema */
 #define NDB_MAX_DDL_NAME_BYTESIZE 63
 #define NDB_MAX_DDL_NAME_BYTESIZE_STR "63"
 
-/* Blob tables and events are internal to NDB and must never be accessed */
-#define IS_NDB_BLOB_PREFIX(A) is_prefix(A, "NDB$BLOB")
-
-#include <kernel/ndb_limits.h>
-#include <ndbapi/NdbApi.hpp>
-#include <ndbapi/ndbapi_limits.h>
-
-#include "ndb_conflict.h"
-#include "ndb_table_map.h"
-#include "partitioning/partition_handler.h"
-#include "table.h"
+#include "sql/ndb_conflict.h"
+#include "sql/ndb_table_map.h"
+#include "sql/partitioning/partition_handler.h"
+#include "sql/table.h"
+#include "storage/ndb/include/kernel/ndb_limits.h"
+#include "storage/ndb/include/ndbapi/NdbApi.hpp"
+#include "storage/ndb/include/ndbapi/ndbapi_limits.h"
 
 #define NDB_IGNORE_VALUE(x) (void)x
 
@@ -100,8 +106,8 @@ public:
 };
 
 
-#include "ndb_ndbapi_util.h"
-#include "ndb_share.h"
+#include "sql/ndb_ndbapi_util.h"
+#include "sql/ndb_share.h"
 
 struct Ndb_local_table_statistics {
   int no_uncommitted_rows_count;
@@ -109,14 +115,13 @@ struct Ndb_local_table_statistics {
   ha_rows records;
 };
 
-#include "ndb_thd_ndb.h"
+#include "sql/ndb_thd_ndb.h"
 
 struct st_ndb_status {
   st_ndb_status() { memset(this, 0, sizeof(struct st_ndb_status)); }
   long cluster_node_id;
   const char * connected_host;
   long connected_port;
-  long number_of_replicas;
   long number_of_data_nodes;
   long number_of_ready_data_nodes;
   long connect_count;
@@ -134,6 +139,7 @@ struct st_ndb_status {
   long transaction_no_hint_count[MAX_NDB_NODES];
   long transaction_hint_count[MAX_NDB_NODES];
   long long api_client_stats[Ndb::NumClientStatistics];
+  const char * system_name;
 };
 
 int ndbcluster_commit(handlerton *hton, THD *thd, bool all);
@@ -205,8 +211,6 @@ private:
   uint first_running_range;
   uint first_range_in_batch;
   uint first_unstarted_range;
-  /* TRUE <=> need range association */
-  bool mrr_need_range_assoc;
 
   int multi_range_start_retrievals(uint first_range);
 
@@ -220,13 +224,13 @@ public:
   bool start_read_removal(void);
   ha_rows end_read_removal(void);
   int extra(enum ha_extra_function operation);
-  int extra_opt(enum ha_extra_function operation, ulong cache_size);
   int reset();
   int external_lock(THD *thd, int lock_type);
   void unlock_row();
   int start_stmt(THD *thd, thr_lock_type lock_type);
   void update_create_info(HA_CREATE_INFO *create_info);
-  void update_comment_info(HA_CREATE_INFO *create_info, const NdbDictionary::Table *tab);
+  void update_comment_info(THD* thd, HA_CREATE_INFO *create_info,
+                           const NdbDictionary::Table *tab);
   void print_error(int error, myf errflag);
   const char * table_type() const;
   ulonglong table_flags(void) const;
@@ -257,7 +261,8 @@ public:
                    dd::Table *to_table_def);
   int delete_table(const char *name, const dd::Table *table_def);
   int create(const char *name, TABLE *form, HA_CREATE_INFO *info,
-             dd::Table *table_def);
+             dd::Table* table_def);
+  int truncate(dd::Table* table_def);
   virtual bool is_ignorable_error(int error)
   {
     if (handler::is_ignorable_error(error) ||
@@ -353,17 +358,10 @@ static void set_tabname(const char *pathname, char *tabname);
 
   int index_next_pushed(uchar * buf);
 
-  uint8 table_cache_type();
-
   /*
    * Internal to ha_ndbcluster, used by C functions
    */
   int ndb_err(NdbTransaction*);
-
-  bool register_query_cache_table(THD *thd, char *table_key,
-                                  size_t key_length,
-                                  qc_engine_callback *engine_callback,
-                                  ulonglong *engine_data);
 
   enum_alter_inplace_result
   check_if_supported_inplace_alter(TABLE *altered_table,
@@ -394,17 +392,16 @@ static void set_tabname(const char *pathname, char *tabname);
 void notify_table_changed(Alter_inplace_info *ha_alter_info);
 
 private:
-  void prepare_for_alter();
-  void prepare_drop_index(uint key_num);
-  int final_drop_index(TABLE *table_arg);
+  void prepare_inplace__drop_index(uint key_num);
+  int inplace__final_drop_index(TABLE *table_arg);
 
   enum_alter_inplace_result
     check_inplace_alter_supported(TABLE *altered_table,
                                   Alter_inplace_info *ha_alter_info);
   void
-    check_implicit_column_format_change(TABLE *altered_table,
-                                        Alter_inplace_info *ha_alter_info);
-  
+  check_implicit_column_format_change(TABLE *altered_table,
+                                      Alter_inplace_info *ha_alter_info) const;
+
   bool abort_inplace_alter_table(TABLE *altered_table,
                                  Alter_inplace_info *ha_alter_info);
   int prepare_conflict_detection(enum_conflicting_op_type op_type,
@@ -422,16 +419,11 @@ private:
                                     const uchar **key_row,
                                     const uchar *record,
                                     bool use_active_index);
-  friend int ndbcluster_drop_database_impl(THD *thd, const char *path);
 
   void check_read_before_write_removal();
-  static int drop_table_impl(THD *thd, ha_ndbcluster *h, Ndb *ndb,
-                             const char *path,
-                             const char *db,
-                             const char *table_name);
 
-  int add_index_impl(THD *thd, TABLE *table_arg,
-                     KEY *key_info, uint num_of_keys);
+  int prepare_inplace__add_index(THD *thd, TABLE *table_arg,
+                                 KEY *key_info, uint num_of_keys) const;
   int create_ndb_index(THD *thd, const char *name, KEY *key_info,
                        bool unique) const;
   int create_ordered_index(THD *thd, const char *name, KEY *key_info) const;
@@ -442,8 +434,8 @@ private:
   int create_indexes(THD *thd, Ndb *ndb, TABLE *tab) const;
   int open_indexes(Ndb *ndb, TABLE *tab);
   void release_indexes(NdbDictionary::Dictionary* dict, int invalidate);
-  void renumber_indexes(uint dropped_index_num);
-  int drop_indexes(Ndb *ndb, TABLE *tab);
+  void inplace__renumber_indexes(uint dropped_index_num);
+  int inplace__drop_indexes(Ndb *ndb, TABLE *tab);
   int add_index_handle(NdbDictionary::Dictionary *dict,
                        KEY *key_info, const char *key_name, uint index_no);
   int add_table_ndb_record(NdbDictionary::Dictionary *dict);
@@ -454,18 +446,15 @@ private:
   void release_fk_data();
   int create_fks(THD *thd, Ndb *ndb);
   int copy_fk_for_offline_alter(THD * thd, Ndb*, NdbDictionary::Table* _dsttab);
-  int drop_fk_for_online_alter(THD*, Ndb*, NdbDictionary::Dictionary*,
-                               const NdbDictionary::Table*);
+  int inplace__drop_fks(THD*, Ndb*, NdbDictionary::Dictionary*,
+                       const NdbDictionary::Table*);
   static int get_fk_data_for_truncate(NdbDictionary::Dictionary*,
                                       const NdbDictionary::Table*,
                                       Ndb_fk_list&);
   static int recreate_fk_for_truncate(THD*, Ndb*, const char*,
                                       Ndb_fk_list&);
-  static bool drop_table_and_related(THD*, Ndb*, NdbDictionary::Dictionary*,
-                                     const NdbDictionary::Table*,
-                                     int drop_flags, bool skip_related);
   int check_default_values(const NdbDictionary::Table* ndbtab);
-  int get_metadata(THD *thd, const char* path);
+  int get_metadata(THD *thd, const dd::Table* table_def);
   void release_metadata(THD *thd, Ndb *ndb);
   NDB_INDEX_TYPE get_index_type(uint idx_no) const;
   NDB_INDEX_TYPE get_index_type_from_table(uint index_no) const;
@@ -493,7 +482,7 @@ private:
                       const key_range *start_key,
                       const key_range *end_key,
                       uchar *buf);
-  int flush_bulk_insert(bool allow_batch= FALSE);
+  int flush_bulk_insert(bool allow_batch= false);
   int ndb_write_row(uchar *record, bool primary_key_update,
                     bool batched_update);
 
@@ -501,9 +490,7 @@ private:
   int end_bulk_delete();
   int ndb_delete_row(const uchar *record, bool primary_key_update);
 
-  int ndb_optimize_table(THD* thd, uint delay);
-
-  int inplace_alter_frm(const char *file, class NDB_ALTER_DATA *alter_data);
+  int ndb_optimize_table(THD* thd, uint delay) const;
 
   bool check_all_operations_for_error(NdbTransaction *trans,
                                       const NdbOperation *first,
@@ -574,15 +561,12 @@ private:
   int read_multi_range_fetch_next();
   
   int primary_key_cmp(const uchar * old_row, const uchar * new_row);
-  void print_results();
 
   virtual void get_auto_increment(ulonglong offset, ulonglong increment,
                                   ulonglong nb_desired_values,
                                   ulonglong *first_value,
                                   ulonglong *nb_reserved_values);
   bool uses_blob_value(const MY_BITMAP *bitmap) const;
-
-  int write_ndb_file(const char *name) const;
 
   int check_ndb_connection(THD* thd) const;
 
@@ -716,7 +700,6 @@ private:
   ha_rows m_rows_deleted;
   ha_rows m_rows_to_insert; // TODO: merge it with handler::estimation_rows_to_insert?
   ha_rows m_rows_inserted;
-  ha_rows m_rows_changed;
   bool m_delete_cannot_batch;
   bool m_update_cannot_batch;
   uint m_bytes_per_write;
@@ -759,6 +742,7 @@ private:
   int add_handler_to_open_tables(THD*, Thd_ndb*, ha_ndbcluster* handler);
   int rename_table_impl(THD* thd, Ndb* ndb,
                         const NdbDictionary::Table* orig_tab,
+                        dd::Table* to_table_def,
                         const char* from, const char* to,
                         const char* old_dbname, const char* old_tabname,
                         const char* new_dbname, const char* new_tabname,
@@ -771,14 +755,15 @@ private:
                         bool commit_alter);
 };
 
-static const char ndbcluster_hton_name[]= "ndbcluster";
-static const int ndbcluster_hton_name_length=sizeof(ndbcluster_hton_name)-1;
-
 // Global handler synchronization
 extern mysql_mutex_t ndbcluster_mutex;
 extern mysql_cond_t  ndbcluster_cond;
 
 extern int ndb_setup_complete;
 
+static const int NDB_INVALID_SCHEMA_OBJECT = 241;
+
 
 int ndb_to_mysql_error(const NdbError *ndberr);
+
+#endif

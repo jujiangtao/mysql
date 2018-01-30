@@ -2,13 +2,20 @@
    Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -28,43 +35,47 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <cctype>
-#include <functional>
 #include <iterator>
+#include <limits>
 #include <new>
 #include <string>
 #include <unordered_map>
+#include <utility>
 
-#include "item.h"
-#include "item_cmpfunc.h"        // Item_func_any_value
-#include "item_func.h"           // Item_func_udf_str
-#include "item_geofunc.h"        // Item_func_area
-#include "item_inetfunc.h"       // Item_func_inet_ntoa
-#include "item_json_func.h"      // Item_func_json
-#include "item_strfunc.h"        // Item_func_aes_encrypt
-#include "item_sum.h"            // Item_sum_udf_str
-#include "item_timefunc.h"       // Item_func_add_time
-#include "item_xmlfunc.h"        // Item_func_xml_extractvalue
+#include "m_string.h"
 #include "my_dbug.h"
-#include "my_decimal.h"
 #include "my_inttypes.h"
 #include "my_sys.h"
 #include "my_time.h"
 #include "mysql/psi/mysql_statement.h"
-#include "mysql_com.h"
+#include "mysql/udf_registration_types.h"
 #include "mysql_time.h"
 #include "mysqld_error.h"
-#include "parse_location.h"
-#include "parse_tree_helpers.h"  // PT_item_list
-#include "psi_memory_key.h"
-#include "sql_class.h"           // THD
-#include "sql_const.h"
-#include "sql_error.h"
-#include "sql_exception_handler.h"  // handle_std_exception
-#include "sql_lex.h"
-#include "sql_security_ctx.h"
+#include "sql/auth/sql_security_ctx.h"
+#include "sql/histograms/value_map.h"
+#include "sql/item.h"
+#include "sql/item_cmpfunc.h"    // Item_func_any_value
+#include "sql/item_func.h"       // Item_func_udf_str
+#include "sql/item_geofunc.h"    // Item_func_area
+#include "sql/item_inetfunc.h"   // Item_func_inet_ntoa
+#include "sql/item_json_func.h"  // Item_func_json
+#include "sql/item_regexp_func.h"// Item_func_regexp_xxx
+#include "sql/item_strfunc.h"    // Item_func_aes_encrypt
+#include "sql/item_sum.h"        // Item_sum_udf_str
+#include "sql/item_timefunc.h"   // Item_func_add_time
+#include "sql/item_xmlfunc.h"    // Item_func_xml_extractvalue
+#include "sql/my_decimal.h"
+#include "sql/parse_location.h"
+#include "sql/parse_tree_helpers.h" // PT_item_list
+#include "sql/sql_class.h"       // THD
+#include "sql/sql_const.h"
+#include "sql/sql_error.h"
+#include "sql/sql_exception_handler.h" // handle_std_exception
+#include "sql/sql_lex.h"
+#include "sql/sql_time.h"        // str_to_datetime
+#include "sql/sql_udf.h"
+#include "sql/system_variables.h"
 #include "sql_string.h"
-#include "sql_time.h"            // str_to_datetime
-#include "sql_udf.h"
 
 
 /**
@@ -603,32 +614,6 @@ public:
 
 
 template<Item_func::Functype Functype>
-using Mbr_rel_instantiator=
-  Instantiator_with_functype<Item_func_spatial_mbr_rel, Functype, 2>;
-
-using Mbr_covered_by_instantiator=
-  Mbr_rel_instantiator<Item_func::SP_COVEREDBY_FUNC>;
-using Mbr_covers_instantiator=
-  Mbr_rel_instantiator<Item_func::SP_COVERS_FUNC>;
-using Mbr_contains_instantiator=
-  Mbr_rel_instantiator<Item_func::SP_CONTAINS_FUNC>;
-using Mbr_disjoint_instantiator=
-  Mbr_rel_instantiator<Item_func::SP_DISJOINT_FUNC>;
-using Mbr_equals_instantiator=
-  Mbr_rel_instantiator<Item_func::SP_EQUALS_FUNC>;
-using Mbr_intersects_instantiator=
-  Mbr_rel_instantiator<Item_func::SP_INTERSECTS_FUNC>;
-using Mbr_overlaps_instantiator=
-  Mbr_rel_instantiator<Item_func::SP_OVERLAPS_FUNC>;
-using Mbr_touches_instantiator=
-  Mbr_rel_instantiator<Item_func::SP_TOUCHES_FUNC>;
-using Mbr_within_instantiator=
-  Mbr_rel_instantiator<Item_func::SP_WITHIN_FUNC>;
-using Mbr_crosses_instantiator=
-  Mbr_rel_instantiator<Item_func::SP_CROSSES_FUNC>;
-
-
-template<Item_func::Functype Functype>
 using Spatial_decomp_instantiator=
   Instantiator_with_functype<Item_func_spatial_decomp, Functype, 1>;
 
@@ -725,81 +710,6 @@ using Multipolygonfromwkb_instantiator= G_i<I_wkb, wkb_ft::MULTIPOLYGONFROMWKB>;
 using Pointfromwkb_instantiator= G_i<I_wkb, wkb_ft::POINTFROMWKB>;
 using Polyfromwkb_instantiator= G_i<I_wkb, wkb_ft::POLYFROMWKB>;
 using Polygonfromwkb_instantiator= G_i<I_wkb, wkb_ft::POLYGONFROMWKB>;
-
-
-class Encrypt_instantiator
-{
-public:
-  static const uint Min_argcount= 1;
-  static const uint Max_argcount= 2;
-
-  Item *instantiate(THD *thd, PT_item_list *args)
-  {
-    if (!thd->is_error())
-      push_deprecated_warn(thd, "ENCRYPT", "AES_ENCRYPT");
-    switch (args->elements())
-    {
-    case 1:
-      return new (thd->mem_root) Item_func_encrypt(POS(), (*args)[0]);
-    case 2:
-      return new (thd->mem_root)
-        Item_func_encrypt(POS(), (*args)[0], (*args)[1]);
-    default:
-      DBUG_ASSERT(false);
-      return nullptr;
-    }
-  }
-};
-
-
-class Des_encrypt_instantiator
-{
-public:
-  static const uint Min_argcount= 1;
-  static const uint Max_argcount= 2;
-
-  Item *instantiate(THD *thd, PT_item_list *args)
-  {
-    if (!thd->is_error())
-      push_deprecated_warn(thd, "DES_ENCRYPT", "AES_ENCRYPT");
-    switch (args->elements())
-    {
-    case 1:
-      return new (thd->mem_root) Item_func_des_encrypt(POS(), (*args)[0]);
-    case 2:
-      return new (thd->mem_root)
-        Item_func_des_encrypt(POS(), (*args)[0], (*args)[1]);
-    default:
-      DBUG_ASSERT(false);
-      return nullptr;
-    }
-  }
-};
-
-
-class Des_decrypt_instantiator
-{
-public:
-  static const uint Min_argcount= 1;
-  static const uint Max_argcount= 2;
-
-  Item *instantiate(THD *thd, PT_item_list *args)
-  {
-    if (!thd->is_error())
-      push_deprecated_warn(thd, "DES_DECRYPT", "AES_DECRYPT");
-    switch (args->elements())
-    {
-    case 1:
-      return new (thd->mem_root) Item_func_des_decrypt(POS(), (*args)[0]);
-    case 2:
-      return new (thd->mem_root)
-        Item_func_des_decrypt(POS(), (*args)[0], (*args)[1]);
-    default:
-      DBUG_ASSERT(false);
-      return nullptr;
-    }
-  }
-};
 
 
 } // namespace
@@ -1282,7 +1192,8 @@ public:
   Item *create_func(THD *thd, LEX_STRING function_name, PT_item_list *item_list)
     override
   {
-    if (!thd->parsing_system_view)
+    if (!thd->parsing_system_view &&
+        DBUG_EVALUATE_IF("skip_dd_table_access_check", false, true))
     {
       my_error(ER_NO_ACCESS_TO_NATIVE_FCT, MYF(0), function_name.str);
       return nullptr;
@@ -1505,6 +1416,17 @@ Create_sp_func::create(THD *thd, LEX_STRING db, LEX_STRING name,
   &Internal_function_factory<Instantiator<F, N>>::s_singleton
 
 /**
+  Just like SQL_FN_INTERNAL, but enforces a check that the argument count
+  is even.
+
+  @param F The Item_func that the factory should make.
+  @param MIN Number of arguments that the function accepts.
+  @param MAX Number of arguments that the function accepts.
+*/
+#define SQL_FN_INTERNAL_V(F, MIN, MAX) \
+  &Internal_function_factory<Instantiator<F, MIN, MAX>>::s_singleton
+
+/**
   Like SQL_FN_LIST, but for functions that may only be referenced from system
   views.
 
@@ -1514,6 +1436,16 @@ Create_sp_func::create(THD *thd, LEX_STRING db, LEX_STRING name,
 #define SQL_FN_LIST_INTERNAL(F, N) \
   &Internal_function_factory<List_instantiator<F, N>>::s_singleton
 
+/**
+  Like SQL_FN_LIST, but enforces a check that the argument count
+  is within the range specified.
+
+  @param F The Item_func that the factory should make.
+  @param MIN Number of arguments that the function accepts.
+  @param MAX Number of arguments that the function accepts.
+*/
+#define SQL_FN_LIST_INTERNAL_V(F, MIN, MAX) \
+  &Internal_function_factory<List_instantiator<F, MIN, MAX>>::s_singleton
 
 /**
   MySQL native functions.
@@ -1566,13 +1498,8 @@ static const std::pair<const char *, Create_func *> func_array[]=
   { "DAYOFMONTH", SQL_FN(Item_func_dayofmonth, 1) },
   { "DAYOFWEEK", SQL_FACTORY(Dayofweek_instantiator) },
   { "DAYOFYEAR", SQL_FN(Item_func_dayofyear, 1) },
-  { "DECODE", SQL_FN(Item_func_decode, 2) },
   { "DEGREES", SQL_FACTORY(Degrees_instantiator) },
-  { "DES_DECRYPT", SQL_FACTORY(Des_decrypt_instantiator) },
-  { "DES_ENCRYPT", SQL_FACTORY(Des_encrypt_instantiator) },
   { "ELT", SQL_FN_V(Item_func_elt, 2, MAX_ARGLIST_SIZE) },
-  { "ENCODE", SQL_FN(Item_func_encode, 2) },
-  { "ENCRYPT", SQL_FACTORY(Encrypt_instantiator) },
   { "EXP", SQL_FN(Item_func_exp, 1) },
   { "EXPORT_SET", SQL_FN_V(Item_func_export_set, 3, 5) },
   { "EXTRACTVALUE", SQL_FN(Item_func_xml_extractvalue, 2) },
@@ -1619,7 +1546,11 @@ static const std::pair<const char *, Create_func *> func_array[]=
   { "JSON_ARRAY", SQL_FN_V_LIST_THD(Item_func_json_array, 0, MAX_ARGLIST_SIZE) },
   { "JSON_REMOVE", SQL_FN_V_LIST_THD(Item_func_json_remove, 2, MAX_ARGLIST_SIZE) },
   { "JSON_MERGE", SQL_FN_V_LIST_THD(Item_func_json_merge, 2, MAX_ARGLIST_SIZE) },
+  { "JSON_MERGE_PATCH", SQL_FN_V_LIST_THD(Item_func_json_merge_patch, 2, MAX_ARGLIST_SIZE) },
+  { "JSON_MERGE_PRESERVE", SQL_FN_V_LIST_THD(Item_func_json_merge_preserve, 2, MAX_ARGLIST_SIZE) },
   { "JSON_QUOTE", SQL_FN_LIST(Item_func_json_quote, 1) },
+  { "JSON_STORAGE_FREE", SQL_FN(Item_func_json_storage_free, 1) },
+  { "JSON_STORAGE_SIZE", SQL_FN(Item_func_json_storage_size, 1) },
   { "JSON_UNQUOTE", SQL_FN_LIST(Item_func_json_unquote, 1) },
   { "IS_FREE_LOCK", SQL_FN(Item_func_is_free_lock, 1) },
   { "IS_USED_LOCK", SQL_FN(Item_func_is_used_lock, 1) },
@@ -1645,15 +1576,15 @@ static const std::pair<const char *, Create_func *> func_array[]=
   { "MAKETIME", SQL_FN(Item_func_maketime, 3) },
   { "MAKE_SET", SQL_FACTORY(Make_set_instantiator) },
   { "MASTER_POS_WAIT", SQL_FN_V(Item_master_pos_wait, 2, 4) },
-  { "MBRCONTAINS", SQL_FACTORY(Mbr_contains_instantiator) },
-  { "MBRCOVEREDBY", SQL_FACTORY(Mbr_covered_by_instantiator) },
-  { "MBRCOVERS", SQL_FACTORY(Mbr_covers_instantiator) },
-  { "MBRDISJOINT", SQL_FACTORY(Mbr_disjoint_instantiator) },
-  { "MBREQUALS", SQL_FACTORY(Mbr_equals_instantiator) },
-  { "MBRINTERSECTS", SQL_FACTORY(Mbr_intersects_instantiator) },
-  { "MBROVERLAPS", SQL_FACTORY(Mbr_overlaps_instantiator) },
-  { "MBRTOUCHES", SQL_FACTORY(Mbr_touches_instantiator) },
-  { "MBRWITHIN", SQL_FACTORY(Mbr_within_instantiator) },
+  { "MBRCONTAINS", SQL_FN(Item_func_mbrcontains, 2) },
+  { "MBRCOVEREDBY", SQL_FN(Item_func_mbrcoveredby, 2) },
+  { "MBRCOVERS",  SQL_FN(Item_func_mbrcovers, 2)},
+  { "MBRDISJOINT", SQL_FN(Item_func_mbrdisjoint, 2) },
+  { "MBREQUALS",  SQL_FN(Item_func_mbrequals, 2) },
+  { "MBRINTERSECTS", SQL_FN(Item_func_mbrintersects, 2) },
+  { "MBROVERLAPS", SQL_FN(Item_func_mbroverlaps, 2) },
+  { "MBRTOUCHES", SQL_FN(Item_func_mbrtouches, 2) },
+  { "MBRWITHIN", SQL_FN(Item_func_mbrwithin, 2) },
   { "MD5", SQL_FN(Item_func_md5, 1) },
   { "MONTHNAME", SQL_FN(Item_func_monthname, 1) },
   { "NAME_CONST", SQL_FN(Item_name_const, 2) },
@@ -1670,6 +1601,10 @@ static const std::pair<const char *, Create_func *> func_array[]=
   { "RADIANS", SQL_FACTORY(Radians_instantiator) },
   { "RAND", SQL_FN_V(Item_func_rand, 0, 1) },
   { "RANDOM_BYTES", SQL_FN(Item_func_random_bytes, 1) },
+  { "REGEXP_INSTR", SQL_FN_V_LIST(Item_func_regexp_instr, 2, 6) },
+  { "REGEXP_LIKE", SQL_FN_V_LIST(Item_func_regexp_like, 2, 3) },
+  { "REGEXP_REPLACE", SQL_FN_V_LIST(Item_func_regexp_replace, 3, 6) },
+  { "REGEXP_SUBSTR", SQL_FN_V_LIST(Item_func_regexp_substr, 2, 5) },
   { "RELEASE_ALL_LOCKS", SQL_FN(Item_func_release_all_locks, 0) },
   { "RELEASE_LOCK", SQL_FN(Item_func_release_lock, 1) },
   { "REVERSE", SQL_FN(Item_func_reverse, 1) },
@@ -1686,6 +1621,8 @@ static const std::pair<const char *, Create_func *> func_array[]=
   { "SLEEP", SQL_FN(Item_func_sleep, 1) },
   { "SOUNDEX", SQL_FN(Item_func_soundex, 1) },
   { "SPACE", SQL_FN(Item_func_space, 1) },
+  { "STATEMENT_DIGEST", SQL_FN(Item_func_statement_digest, 1) },
+  { "STATEMENT_DIGEST_TEXT", SQL_FN(Item_func_statement_digest_text, 1) },
   { "WAIT_FOR_EXECUTED_GTID_SET", SQL_FN_V(Item_wait_for_executed_gtid_set, 1, 2) },
   { "WAIT_UNTIL_SQL_THREAD_AFTER_GTIDS", SQL_FN_V(Item_master_gtid_set_wait, 1, 3) },
   { "SQRT", SQL_FN(Item_func_sqrt, 1) },
@@ -1707,7 +1644,7 @@ static const std::pair<const char *, Create_func *> func_array[]=
   { "ST_DIMENSION", SQL_FN(Item_func_dimension, 1) },
   { "ST_DISJOINT", SQL_FN(Item_func_st_disjoint, 2) },
   { "ST_DISTANCE", SQL_FN_LIST(Item_func_distance, 2) },
-  { "ST_DISTANCE_SPHERE", SQL_FN_V_LIST(Item_func_distance_sphere, 2, 3) },
+  { "ST_DISTANCE_SPHERE", SQL_FN_V_LIST(Item_func_st_distance_sphere, 2, 3) },
   { "ST_ENDPOINT", SQL_FACTORY(Endpoint_instantiator) },
   { "ST_ENVELOPE", SQL_FN(Item_func_envelope, 1) },
   { "ST_EQUALS", SQL_FN(Item_func_st_equals, 2) },
@@ -1730,10 +1667,10 @@ static const std::pair<const char *, Create_func *> func_array[]=
   { "ST_INTERSECTION", SQL_FN(Item_func_st_intersection, 2) },
   { "ST_ISCLOSED", SQL_FN(Item_func_isclosed, 1) },
   { "ST_ISEMPTY", SQL_FN(Item_func_isempty, 1) },
-  { "ST_ISSIMPLE", SQL_FN(Item_func_issimple, 1) },
+  { "ST_ISSIMPLE", SQL_FN(Item_func_st_issimple, 1) },
   { "ST_ISVALID", SQL_FN(Item_func_isvalid, 1) },
   { "ST_LATFROMGEOHASH", SQL_FN(Item_func_latfromgeohash, 1) },
-  { "ST_LENGTH", SQL_FN(Item_func_glength, 1) },
+  { "ST_LENGTH", SQL_FN(Item_func_st_length, 1) },
   { "ST_LINEFROMTEXT", SQL_FACTORY(Linefromtext_instantiator) },
   { "ST_LINEFROMWKB", SQL_FACTORY(Linefromwkb_instantiator) },
   { "ST_LINESTRINGFROMTEXT", SQL_FACTORY(Linestringfromtext_instantiator) },
@@ -1800,31 +1737,81 @@ static const std::pair<const char *, Create_func *> func_array[]=
   { "WEEKDAY", SQL_FACTORY(Weekday_instantiator) },
   { "WEEKOFYEAR", SQL_FACTORY(Weekofyear_instantiator) },
   { "YEARWEEK", SQL_FACTORY(Yearweek_instantiator) },
-  { "GET_DD_COLUMN_PRIVILEGES", SQL_FN_INTERNAL(Item_func_get_dd_column_privileges, 3) },
-  { "GET_DD_INDEX_SUB_PART_LENGTH", SQL_FN_INTERNAL(Item_func_get_dd_index_sub_part_length, 5) },
-  { "GET_DD_CREATE_OPTIONS", SQL_FN_INTERNAL(Item_func_get_dd_create_options, 2) },
-  { "INTERNAL_DD_CHAR_LENGTH", SQL_FN_INTERNAL(Item_func_internal_dd_char_length, 4) },
+  { "GET_DD_COLUMN_PRIVILEGES",
+    SQL_FN_INTERNAL(Item_func_get_dd_column_privileges, 3) },
+  { "GET_DD_INDEX_SUB_PART_LENGTH",
+    SQL_FN_LIST_INTERNAL(Item_func_get_dd_index_sub_part_length, 5) },
+  { "GET_DD_CREATE_OPTIONS",
+    SQL_FN_INTERNAL(Item_func_get_dd_create_options, 2) },
+  { "GET_DD_TABLESPACE_PRIVATE_DATA",
+    SQL_FN_INTERNAL(Item_func_get_dd_tablespace_private_data, 2) },
+  { "GET_DD_INDEX_PRIVATE_DATA",
+    SQL_FN_INTERNAL(Item_func_get_dd_index_private_data, 2) },
+  { "INTERNAL_DD_CHAR_LENGTH",
+    SQL_FN_INTERNAL(Item_func_internal_dd_char_length, 4) },
   { "CAN_ACCESS_DATABASE", SQL_FN_INTERNAL(Item_func_can_access_database, 1) },
   { "CAN_ACCESS_TABLE", SQL_FN_INTERNAL(Item_func_can_access_table, 2) },
   { "CAN_ACCESS_COLUMN", SQL_FN_INTERNAL(Item_func_can_access_column, 3) },
   { "CAN_ACCESS_VIEW", SQL_FN_INTERNAL(Item_func_can_access_view, 4) },
   { "CAN_ACCESS_TRIGGER", SQL_FN_INTERNAL(Item_func_can_access_trigger, 2) },
-  { "CAN_ACCESS_ROUTINE", SQL_FN_LIST_INTERNAL(Item_func_can_access_routine, 5) },
+  { "CAN_ACCESS_ROUTINE",
+    SQL_FN_LIST_INTERNAL(Item_func_can_access_routine, 5) },
   { "CAN_ACCESS_EVENT", SQL_FN_INTERNAL(Item_func_can_access_event, 1) },
-  { "INTERNAL_TABLE_ROWS", SQL_FN_INTERNAL(Item_func_internal_table_rows, 4) },
-  { "INTERNAL_AVG_ROW_LENGTH", SQL_FN_INTERNAL(Item_func_internal_avg_row_length, 4) },
-  { "INTERNAL_DATA_LENGTH", SQL_FN_INTERNAL(Item_func_internal_data_length, 4) },
-  { "INTERNAL_MAX_DATA_LENGTH", SQL_FN_INTERNAL(Item_func_internal_max_data_length, 4) },
-  { "INTERNAL_INDEX_LENGTH", SQL_FN_INTERNAL(Item_func_internal_index_length, 4) },
-  { "INTERNAL_DATA_FREE", SQL_FN_INTERNAL(Item_func_internal_data_free, 4) },
-  { "INTERNAL_AUTO_INCREMENT", SQL_FN_INTERNAL(Item_func_internal_auto_increment, 4) },
-  { "INTERNAL_CHECKSUM", SQL_FN_INTERNAL(Item_func_internal_checksum, 4) },
-  { "INTERNAL_UPDATE_TIME", SQL_FN_INTERNAL(Item_func_internal_update_time, 4) },
-  { "INTERNAL_CHECK_TIME", SQL_FN_INTERNAL(Item_func_internal_check_time, 4) },
-  { "INTERNAL_KEYS_DISABLED", SQL_FN_INTERNAL(Item_func_internal_keys_disabled, 1) },
-  { "INTERNAL_INDEX_COLUMN_CARDINALITY", SQL_FN_LIST_INTERNAL(Item_func_internal_index_column_cardinality, 8) },
-  { "INTERNAL_GET_COMMENT_OR_ERROR", SQL_FN_LIST_INTERNAL(Item_func_internal_get_comment_or_error, 5) },
-  { "INTERNAL_GET_VIEW_WARNING_OR_ERROR", SQL_FN_LIST_INTERNAL(Item_func_internal_get_view_warning_or_error, 4) }
+  { "ICU_VERSION", SQL_FN(Item_func_icu_version, 0) },
+  { "CAN_ACCESS_RESOURCE_GROUP", SQL_FN_INTERNAL(Item_func_can_access_resource_group, 1) },
+  { "CONVERT_CPU_ID_MASK", SQL_FN_INTERNAL(Item_func_convert_cpu_id_mask, 1) },
+  { "IS_VISIBLE_DD_OBJECT",
+    SQL_FN_INTERNAL_V(Item_func_is_visible_dd_object, 1, 2) },
+  { "INTERNAL_TABLE_ROWS",
+    SQL_FN_LIST_INTERNAL_V(Item_func_internal_table_rows, 8, 9) },
+  { "INTERNAL_AVG_ROW_LENGTH",
+    SQL_FN_LIST_INTERNAL_V(Item_func_internal_avg_row_length, 8, 9) },
+  { "INTERNAL_DATA_LENGTH",
+    SQL_FN_LIST_INTERNAL_V(Item_func_internal_data_length, 8, 9) },
+  { "INTERNAL_MAX_DATA_LENGTH",
+    SQL_FN_LIST_INTERNAL_V(Item_func_internal_max_data_length, 8, 9) },
+  { "INTERNAL_INDEX_LENGTH",
+    SQL_FN_LIST_INTERNAL_V(Item_func_internal_index_length, 8, 9) },
+  { "INTERNAL_DATA_FREE",
+    SQL_FN_LIST_INTERNAL_V(Item_func_internal_data_free, 8, 9) },
+  { "INTERNAL_AUTO_INCREMENT",
+    SQL_FN_LIST_INTERNAL_V(Item_func_internal_auto_increment, 9, 10) },
+  { "INTERNAL_CHECKSUM",
+    SQL_FN_LIST_INTERNAL_V(Item_func_internal_checksum, 8, 9) },
+  { "INTERNAL_UPDATE_TIME",
+    SQL_FN_LIST_INTERNAL_V(Item_func_internal_update_time, 8, 9) },
+  { "INTERNAL_CHECK_TIME",
+    SQL_FN_LIST_INTERNAL_V(Item_func_internal_check_time, 8, 9) },
+  { "INTERNAL_KEYS_DISABLED",
+    SQL_FN_INTERNAL(Item_func_internal_keys_disabled, 1) },
+  { "INTERNAL_INDEX_COLUMN_CARDINALITY",
+    SQL_FN_LIST_INTERNAL(Item_func_internal_index_column_cardinality, 11) },
+  { "INTERNAL_GET_COMMENT_OR_ERROR",
+    SQL_FN_LIST_INTERNAL(Item_func_internal_get_comment_or_error, 5) },
+  { "INTERNAL_GET_VIEW_WARNING_OR_ERROR",
+    SQL_FN_LIST_INTERNAL(Item_func_internal_get_view_warning_or_error, 4) },
+  { "INTERNAL_GET_PARTITION_NODEGROUP",
+    SQL_FN_INTERNAL(Item_func_get_partition_nodegroup, 1) },
+  { "INTERNAL_TABLESPACE_ID",
+    SQL_FN_INTERNAL(Item_func_internal_tablespace_id, 4) },
+  { "INTERNAL_TABLESPACE_TYPE",
+    SQL_FN_INTERNAL(Item_func_internal_tablespace_type, 4) },
+  { "INTERNAL_TABLESPACE_FREE_EXTENTS",
+    SQL_FN_INTERNAL(Item_func_internal_tablespace_free_extents, 4) },
+  { "INTERNAL_TABLESPACE_TOTAL_EXTENTS",
+    SQL_FN_INTERNAL(Item_func_internal_tablespace_total_extents, 4) },
+  { "INTERNAL_TABLESPACE_EXTENT_SIZE",
+    SQL_FN_INTERNAL(Item_func_internal_tablespace_extent_size, 4) },
+  { "INTERNAL_TABLESPACE_INITIAL_SIZE",
+    SQL_FN_INTERNAL(Item_func_internal_tablespace_initial_size, 4) },
+  { "INTERNAL_TABLESPACE_MAXIMUM_SIZE",
+    SQL_FN_INTERNAL(Item_func_internal_tablespace_maximum_size, 4) },
+  { "INTERNAL_TABLESPACE_AUTOEXTEND_SIZE",
+    SQL_FN_INTERNAL(Item_func_internal_tablespace_autoextend_size, 4) },
+  { "INTERNAL_TABLESPACE_DATA_FREE",
+    SQL_FN_INTERNAL(Item_func_internal_tablespace_data_free, 4) },
+  { "INTERNAL_TABLESPACE_STATUS",
+    SQL_FN_INTERNAL(Item_func_internal_tablespace_status, 4) }
 };
 
 using Native_functions_hash= std::unordered_map<std::string, Create_func*>;

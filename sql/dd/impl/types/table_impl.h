@@ -1,17 +1,24 @@
 /* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
-   This program is free software; you can redistribute it and/or modify it under
-   the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef DD__TABLE_IMPL_INCLUDED
 #define DD__TABLE_IMPL_INCLUDED
@@ -21,21 +28,21 @@
 #include <new>
 #include <string>
 
-#include "dd/impl/raw/raw_record.h"
-#include "dd/impl/types/abstract_table_impl.h" // dd::Abstract_table_impl
-#include "dd/impl/types/entity_object_impl.h"
-#include "dd/impl/types/weak_object_impl.h"
-#include "dd/object_id.h"
-#include "dd/sdi_fwd.h"
-#include "dd/types/abstract_table.h"
-#include "dd/types/dictionary_object_table.h"  // dd::Dictionary_object_table
-#include "dd/types/foreign_key.h"              // dd::Foreign_key
-#include "dd/types/index.h"                    // dd::Index
-#include "dd/types/object_type.h"
-#include "dd/types/partition.h"                // dd::Partition
-#include "dd/types/table.h"                    // dd:Table
-#include "dd/types/trigger.h"                  // dd::Trigger
 #include "my_inttypes.h"
+#include "sql/dd/impl/raw/raw_record.h"
+#include "sql/dd/impl/types/abstract_table_impl.h" // dd::Abstract_table_impl
+#include "sql/dd/impl/types/entity_object_impl.h"
+#include "sql/dd/impl/types/weak_object_impl.h"
+#include "sql/dd/object_id.h"
+#include "sql/dd/properties.h"
+#include "sql/dd/sdi_fwd.h"
+#include "sql/dd/string_type.h"
+#include "sql/dd/types/abstract_table.h"
+#include "sql/dd/types/foreign_key.h"          // dd::Foreign_key
+#include "sql/dd/types/index.h"                // dd::Index
+#include "sql/dd/types/partition.h"            // dd::Partition
+#include "sql/dd/types/table.h"                // dd:Table
+#include "sql/dd/types/trigger.h"              // dd::Trigger
 
 namespace dd {
 
@@ -44,6 +51,7 @@ namespace dd {
 class Column;
 class Foreign_key;
 class Index;
+class Object_table;
 class Open_dictionary_tables_ctx;
 class Partition;
 class Properties;
@@ -51,9 +59,10 @@ class Sdi_rcontext;
 class Sdi_wcontext;
 class Trigger_impl;
 class Weak_object;
+class Object_table;
 
 class Table_impl : public Abstract_table_impl,
-                   public Table
+                   virtual public Table
 {
 public:
   Table_impl();
@@ -69,8 +78,7 @@ public:
   { return enum_table_type::BASE_TABLE; }
 
 public:
-  virtual const Dictionary_object_table &object_table() const
-  { return Table::OBJECT_TABLE(); }
+  static void register_tables(Open_dictionary_tables_ctx *otx);
 
   virtual bool validate() const;
 
@@ -122,6 +130,14 @@ public:
 
   virtual void set_tablespace_id(Object_id tablespace_id)
   { m_tablespace_id= tablespace_id; }
+
+  virtual bool is_explicit_tablespace() const
+  {
+    bool is_explicit= false;
+    if (options().exists("explicit_tablespace"))
+      options().get_bool("explicit_tablespace", &is_explicit);
+    return is_explicit;
+  }
 
   /////////////////////////////////////////////////////////////////////////
   // engine.
@@ -210,6 +226,17 @@ public:
   { m_partition_expression= partition_expression; }
 
   /////////////////////////////////////////////////////////////////////////
+  // partition_expression_utf8
+  /////////////////////////////////////////////////////////////////////////
+
+  virtual const String_type &partition_expression_utf8() const
+  { return m_partition_expression_utf8; }
+
+  virtual void set_partition_expression_utf8(
+    const String_type &partition_expression_utf8)
+  { m_partition_expression_utf8= partition_expression_utf8; }
+
+  /////////////////////////////////////////////////////////////////////////
   // subpartition_type
   /////////////////////////////////////////////////////////////////////////
 
@@ -243,6 +270,17 @@ public:
   { m_subpartition_expression= subpartition_expression; }
 
   /////////////////////////////////////////////////////////////////////////
+  // subpartition_expression_utf8
+  /////////////////////////////////////////////////////////////////////////
+
+  virtual const String_type &subpartition_expression_utf8() const
+  { return m_subpartition_expression_utf8; }
+
+  virtual void set_subpartition_expression_utf8(
+    const String_type &subpartition_expression_utf8)
+  { m_subpartition_expression_utf8= subpartition_expression_utf8; }
+
+  /////////////////////////////////////////////////////////////////////////
   // Index collection.
   /////////////////////////////////////////////////////////////////////////
 
@@ -274,6 +312,22 @@ public:
   { return &m_foreign_keys; }
 
   /////////////////////////////////////////////////////////////////////////
+  // Foreign key parent collection.
+  /////////////////////////////////////////////////////////////////////////
+
+  virtual Foreign_key_parent *add_foreign_key_parent();
+
+private:
+  bool load_foreign_key_parents(Open_dictionary_tables_ctx *otx);
+
+public:
+  virtual bool reload_foreign_key_parents(THD *thd);
+
+  virtual const Foreign_key_parent_collection &foreign_key_parents() const
+  { return m_foreign_key_parents; }
+
+
+  /////////////////////////////////////////////////////////////////////////
   // Partition collection.
   /////////////////////////////////////////////////////////////////////////
 
@@ -285,6 +339,16 @@ public:
   virtual Partition_collection *partitions()
   { return &m_partitions; }
 
+  virtual const Partition_leaf_vector &leaf_partitions() const
+  { return m_leaf_partitions; }
+
+  virtual Partition_leaf_vector *leaf_partitions()
+  { return &m_leaf_partitions; }
+
+  // non-virtual
+  void add_leaf_partition(Partition *p)
+  { m_leaf_partitions.push_back(p); }
+
   const Partition *get_partition(Object_id partition_id) const
   { return const_cast<Table_impl *> (this)->get_partition(partition_id); }
 
@@ -292,15 +356,12 @@ public:
 
   Partition *get_partition(const String_type &name);
 
-  /** Find and set parent partitions for subpartitions. */
-  virtual void fix_partitions();
-
 
   // Fix "inherits ... via dominance" warnings
-  virtual Weak_object_impl *impl()
-  { return Weak_object_impl::impl(); }
-  virtual const Weak_object_impl *impl() const
-  { return Weak_object_impl::impl(); }
+  virtual Entity_object_impl *impl()
+  { return Entity_object_impl::impl(); }
+  virtual const Entity_object_impl *impl() const
+  { return Entity_object_impl::impl(); }
   virtual Object_id id() const
   { return Entity_object_impl::id(); }
   virtual bool is_persistent() const
@@ -321,12 +382,12 @@ public:
   { return Abstract_table_impl::options(); }
   virtual bool set_options_raw(const String_type &options_raw)
   { return Abstract_table_impl::set_options_raw(options_raw); }
-  virtual ulonglong created() const
-  { return Abstract_table_impl::created(); }
+  virtual ulonglong created(bool convert_time) const
+  { return Abstract_table_impl::created(convert_time); }
   virtual void set_created(ulonglong created)
   { Abstract_table_impl::set_created(created); }
-  virtual ulonglong last_altered() const
-  { return Abstract_table_impl::last_altered(); }
+  virtual ulonglong last_altered(bool convert_time) const
+  { return Abstract_table_impl::last_altered(convert_time); }
   virtual void set_last_altered(ulonglong last_altered)
   { Abstract_table_impl::set_last_altered(last_altered); }
   virtual Column *add_column()
@@ -343,11 +404,11 @@ public:
   { return Abstract_table_impl::get_column(name); }
   Column *get_column(const String_type name)
   { return Abstract_table_impl::get_column(name); }
-  virtual bool update_aux_key(aux_key_type *key) const
+  virtual bool update_aux_key(Aux_key *key) const
   { return Table::update_aux_key(key); }
-  virtual bool hidden() const
+  virtual enum_hidden_type hidden() const
   { return Abstract_table_impl::hidden(); }
-  virtual void set_hidden(bool hidden)
+  virtual void set_hidden(enum_hidden_type hidden)
   { Abstract_table_impl::set_hidden(hidden); }
 
   /////////////////////////////////////////////////////////////////////////
@@ -365,8 +426,6 @@ public:
   virtual Trigger_collection *triggers()
   { return &m_triggers; }
 
-  virtual void clone_triggers(Prealloced_array<Trigger*, 1> *triggers) const;
-  virtual void move_triggers(Prealloced_array<Trigger*, 1> *triggers);
   virtual void copy_triggers(const Table *tab_obj);
 
   virtual Trigger *add_trigger(Trigger::enum_action_timing at,
@@ -410,17 +469,21 @@ private:
 
   enum_partition_type           m_partition_type;
   String_type                   m_partition_expression;
+  String_type                   m_partition_expression_utf8;
   enum_default_partitioning     m_default_partitioning;
 
   enum_subpartition_type        m_subpartition_type;
   String_type                   m_subpartition_expression;
+  String_type                   m_subpartition_expression_utf8;
   enum_default_partitioning     m_default_subpartitioning;
 
   // References to tightly-coupled objects.
 
   Index_collection m_indexes;
   Foreign_key_collection m_foreign_keys;
+  Foreign_key_parent_collection m_foreign_key_parents;
   Partition_collection m_partitions;
+  Partition_leaf_vector m_leaf_partitions;
   Trigger_collection m_triggers;
 
   // References to other objects.
@@ -433,17 +496,6 @@ private:
   {
     return new Table_impl(*this);
   }
-};
-
-///////////////////////////////////////////////////////////////////////////
-
-class Table_type : public Object_type
-{
-public:
-  virtual void register_tables(Open_dictionary_tables_ctx *otx) const;
-
-  virtual Weak_object *create_object() const
-  { return new (std::nothrow) Table_impl(); }
 };
 
 ///////////////////////////////////////////////////////////////////////////

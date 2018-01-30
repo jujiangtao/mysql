@@ -2,13 +2,20 @@
    Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -285,14 +292,14 @@ static int run_test(const char *filename)
 	if (verbose || (flags[j] >= 1 ||
 			(error && my_errno != HA_ERR_KEY_NOT_FOUND)))
 	  printf("key: '%.*s'  mi_rkey:  %3d  errno: %3d\n",
-		 (int) key_length,key+MY_TEST(null_fields),error,my_errno);
+		 (int) key_length,key+null_fields,error,my_errno);
       }
       else
       {
 	error=mi_delete(file,read_record);
 	if (verbose || error)
 	  printf("key: '%.*s'  mi_delete: %3d  errno: %3d\n",
-		 (int) key_length, key+MY_TEST(null_fields), error, my_errno);
+		 (int) key_length, key+null_fields, error, my_errno);
 	if (! error)
 	{
 	  deleted++;
@@ -313,7 +320,7 @@ static int run_test(const char *filename)
 	(error && (flags[i] != 0 || my_errno != HA_ERR_KEY_NOT_FOUND)))
     {
       printf("key: '%.*s'  mi_rkey: %3d  errno: %3d  record: %s\n",
-	     (int) key_length,key+MY_TEST(null_fields),error,my_errno,record+1);
+	     (int) key_length,key+null_fields,error,my_errno,record+1);
     }
   }
 

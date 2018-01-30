@@ -1,13 +1,20 @@
 /* Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -16,16 +23,45 @@
 #ifndef TEMP_TABLE_PARAM_INCLUDED
 #define TEMP_TABLE_PARAM_INCLUDED
 
-#include "mem_root_array.h"
 #include "my_base.h"
-#include "sql_alloc.h"
-#include "sql_list.h"
+#include "sql/mem_root_array.h"
+#include "sql/sql_alloc.h"
+#include "sql/sql_list.h"
 
 
 struct st_columndef;
 class KEY;
 class Copy_field;
 class Item;
+class Window;
+
+
+/**
+   Helper class for copy_funcs(); represents an Item to copy from table to
+   next tmp table.
+*/
+class Func_ptr
+{
+public:
+  Func_ptr(Item *f) : m_func(f), m_contains_alias_of_expr(false) {}
+  /**
+    Calculates if m_func contains an alias to an expression of the SELECT list
+    of 'select'.
+    @param          select     query block to search in.
+    @returns the true/false result and also stores it in the object.
+  */
+  bool set_contains_alias_of_expr(const SELECT_LEX *select);
+  /// @returns the previously calculated information.
+  bool contains_alias_of_expr() const
+  { return m_contains_alias_of_expr; }
+  Item *func() const { return m_func; }
+private:
+  Item *m_func;
+  bool m_contains_alias_of_expr;
+};
+
+/// Used by copy_funcs()
+typedef Mem_root_array<Func_ptr> Func_ptr_array;
 
 
 /**
@@ -34,11 +70,10 @@ class Item;
   used only internally by the query execution engine.
 */
 
-typedef Mem_root_array<Item*> Func_ptr_array;
-
 class Temp_table_param :public Sql_alloc
 {
 public:
+  /// Is used by copy_fields() to copy non-column expressions.
   List<Item> copy_funcs;
   Copy_field *copy_field, *copy_field_end;
   uchar	    *group_buff;
@@ -62,8 +97,9 @@ public:
   uint	field_count; 
   /**
     Number of fields in the query that have functions. Includes both
-    aggregate functions (e.g., SUM) and non-aggregates (e.g., RAND).
-    Also counts functions referred to from aggregate functions, i.e.,
+    aggregate functions (e.g., SUM) and non-aggregates (e.g., RAND)
+    and windowing functions.
+    Also counts functions referred to from windowing or aggregate functions, i.e.,
     "SELECT SUM(RAND())" sets this counter to 2.
 
     @see count_field_types
@@ -77,7 +113,7 @@ public:
 
     @see opt_sum_query, count_field_types
   */
-  uint  sum_func_count;   
+  uint  sum_func_count;
   uint  hidden_field_count;
   uint	group_parts,group_length,group_null_parts;
   uint	quick_group;
@@ -120,16 +156,17 @@ public:
   bool bit_fields_as_long;
   /// Whether the UNIQUE index can be promoted to PK
   bool can_use_pk_for_unique;
-  /**
-    Whether table scan may start from any row defined by a rnd_pos() call.
-    @todo remove in WL#8117.
-  */
-  bool allow_scan_from_position;
+
+  bool m_window_short_circuit; ///< (Last) window's tmp file step can be skipped
+  Window *m_window; ///< The window, if any,  dedicated to this tmp table
 
   Temp_table_param()
     :copy_field(NULL), copy_field_end(NULL),
+     group_buff(nullptr),
+     items_to_copy(nullptr),
      recinfo(NULL), start_recinfo(NULL),
      keyinfo(NULL),
+     end_write_records(0),
      field_count(0), func_count(0), sum_func_count(0), hidden_field_count(0),
      group_parts(0), group_length(0), group_null_parts(0),
      quick_group(1),
@@ -138,7 +175,9 @@ public:
      table_charset(NULL),
      schema_table(false), precomputed_group_by(false), force_copy_fields(false),
      skip_create_table(false), bit_fields_as_long(false),
-     can_use_pk_for_unique(true), allow_scan_from_position(false)
+     can_use_pk_for_unique(true),
+     m_window_short_circuit(false),
+     m_window(nullptr)
   {}
   ~Temp_table_param()
   {

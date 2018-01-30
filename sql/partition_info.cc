@@ -1,13 +1,20 @@
 /* Copyright (c) 2006, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -15,23 +22,20 @@
 
 /* Some general useful functions */
 
-#include "partition_info.h"                   // LIST_PART_ENTRY
+#include "sql/partition_info.h"               // LIST_PART_ENTRY
 
 #include <limits.h>
 #include <stdio.h>
 #include <string.h>
 #include <algorithm>
+#include <memory>
+#include <string>
+#include <utility>
 
-#include "auth_acls.h"
-#include "auth_common.h"                      // *_ACL
-#include "derror.h"                           // ER_THD
-#include "error_handler.h"
-#include "field.h"
-#include "hash.h"
-#include "item.h"
 #include "lex_string.h"
 #include "m_ctype.h"
 #include "m_string.h"
+#include "map_helpers.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_sqlcommand.h"
@@ -41,35 +45,44 @@
 #include "mysql/service_my_snprintf.h"
 #include "mysql_com.h"
 #include "mysqld_error.h"
-#include "partitioning/partition_handler.h"   // PART_DEF_NAME, Partition_share
-#include "set_var.h"
-#include "sql_base.h"                         // fill_record
-#include "sql_class.h"                        // THD
-#include "sql_const.h"
-#include "sql_error.h"
-#include "sql_lex.h"
-#include "sql_parse.h"                        // test_if_data_home_dir
-#include "sql_partition.h"
-#include "sql_security_ctx.h"
+#include "sql/auth/auth_acls.h"
+#include "sql/auth/auth_common.h"             // *_ACL
+#include "sql/auth/sql_security_ctx.h"
+#include "sql/derror.h"                       // ER_THD
+#include "sql/error_handler.h"
+#include "sql/field.h"
+#include "sql/item.h"
+#include "sql/item_create.h"
+#include "sql/partitioning/partition_handler.h" // PART_DEF_NAME, Partition_share
+#include "sql/set_var.h"
+#include "sql/sql_base.h"                     // fill_record
+#include "sql/sql_class.h"                    // THD
+#include "sql/sql_const.h"
+#include "sql/sql_error.h"
+#include "sql/sql_lex.h"
+#include "sql/sql_parse.h"                    // test_if_data_home_dir
+#include "sql/sql_partition.h"
+#include "sql/sql_tablespace.h"               // validate_tablespace_name
+#include "sql/system_variables.h"
+#include "sql/table.h"                        // TABLE_LIST
+#include "sql/table_trigger_dispatcher.h"     // Table_trigger_dispatcher
+#include "sql/thr_malloc.h"
+#include "sql/trigger_chain.h"                // Trigger_chain
+#include "sql/trigger_def.h"
 #include "sql_string.h"
-#include "sql_tablespace.h"                   // validate_tablespace_name
-#include "system_variables.h"
-#include "table.h"                            // TABLE_LIST
-#include "table_trigger_dispatcher.h"         // Table_trigger_dispatcher
-#include "template_utils.h"
-#include "thr_malloc.h"
-#include "trigger_chain.h"                    // Trigger_chain
-#include "trigger_def.h"
+#include "varlen_sort.h"
+
+using std::string;
 
 
 // TODO: Create ::get_copy() for getting a deep copy.
 
-partition_info *partition_info::get_clone(bool reset /* = false */)
+partition_info *partition_info::get_clone(THD *thd, bool reset /* = false */)
 {
   DBUG_ENTER("partition_info::get_clone");
   List_iterator<partition_element> part_it(partitions);
   partition_element *part;
-  partition_info *clone= new partition_info();
+  partition_info *clone= new (*THR_MALLOC) partition_info();
   if (!clone)
   {
     mem_alloc_error(sizeof(partition_info));
@@ -86,13 +99,18 @@ partition_info *partition_info::get_clone(bool reset /* = false */)
   {
     List_iterator<partition_element> subpart_it(part->subpartitions);
     partition_element *subpart;
-    partition_element *part_clone= new partition_element();
+    partition_element *part_clone= new (*THR_MALLOC) partition_element();
     if (!part_clone)
     {
       mem_alloc_error(sizeof(partition_element));
       DBUG_RETURN(NULL);
     }
     memcpy(part_clone, part, sizeof(partition_element));
+
+    /* Explicitly copy the tablespace name, use the thd->mem_root. */
+    if (part->tablespace_name != nullptr)
+      part_clone->tablespace_name= strmake_root(thd->mem_root,
+        part->tablespace_name, strlen(part->tablespace_name) + 1);
 
     /*
       Mark that RANGE and LIST values needs to be fixed so that we don't
@@ -116,13 +134,19 @@ partition_info *partition_info::get_clone(bool reset /* = false */)
     part_clone->subpartitions.empty();
     while ((subpart= (subpart_it++)))
     {
-      partition_element *subpart_clone= new partition_element();
+      partition_element *subpart_clone= new (*THR_MALLOC) partition_element();
       if (!subpart_clone)
       {
         mem_alloc_error(sizeof(partition_element));
         DBUG_RETURN(NULL);
       }
       memcpy(subpart_clone, subpart, sizeof(partition_element));
+
+      /* Explicitly copy the tablespace name, use the thd->mem_root. */
+      if (subpart->tablespace_name != nullptr)
+        subpart_clone->tablespace_name= strmake_root(thd->mem_root,
+          subpart->tablespace_name, strlen(subpart->tablespace_name) + 1);
+
       part_clone->subpartitions.push_back(subpart_clone);
     }
     clone->partitions.push_back(part_clone);
@@ -130,11 +154,11 @@ partition_info *partition_info::get_clone(bool reset /* = false */)
   DBUG_RETURN(clone);
 }
 
-partition_info *partition_info::get_full_clone()
+partition_info *partition_info::get_full_clone(THD *thd)
 {
   partition_info *clone;
   DBUG_ENTER("partition_info::get_full_clone");
-  clone= get_clone();
+  clone= get_clone(thd);
   if (!clone)
     DBUG_RETURN(NULL);
   memcpy(&clone->read_partitions, &read_partitions, sizeof(read_partitions));
@@ -157,19 +181,16 @@ partition_info *partition_info::get_full_clone()
 bool partition_info::add_named_partition(const char *part_name,
                                          size_t length)
 {
-  HASH *part_name_hash;
   PART_NAME_DEF *part_def;
   Partition_share *part_share;
   DBUG_ENTER("partition_info::add_named_partition");
   DBUG_ASSERT(table && table->s && table->s->ha_share);
   part_share= static_cast<Partition_share*>((table->s->ha_share));
-  DBUG_ASSERT(part_share->partition_name_hash_initialized);
-  part_name_hash= &part_share->partition_name_hash;
-  DBUG_ASSERT(part_name_hash->records);
+  DBUG_ASSERT(part_share->partition_name_hash != nullptr);
+  auto part_name_hash= part_share->partition_name_hash.get();
+  DBUG_ASSERT(!part_name_hash->empty());
 
-  part_def= (PART_NAME_DEF*) my_hash_search(part_name_hash,
-                                            (const uchar*) part_name,
-                                            length);
+  part_def= find_or_nullptr(*part_name_hash, string(part_name, length));
   if (!part_def)
   {
     my_error(ER_UNKNOWN_PARTITION, MYF(0), part_name, table->alias);
@@ -762,7 +783,7 @@ bool partition_info::set_up_default_partitions(Partition_handler *part_handler,
   i= 0;
   do
   {
-    partition_element *part_elem= new partition_element();
+    partition_element *part_elem= new (*THR_MALLOC) partition_element();
     if (likely(part_elem != 0 &&
                (!partitions.push_back(part_elem))))
     {
@@ -838,7 +859,7 @@ partition_info::set_up_default_subpartitions(Partition_handler *part_handler,
     j= 0;
     do
     {
-      partition_element *subpart_elem= new partition_element(part_elem);
+      partition_element *subpart_elem= new (*THR_MALLOC) partition_element(part_elem);
       if (likely(subpart_elem != 0 &&
           (!part_elem->subpartitions.push_back(subpart_elem))))
       {
@@ -987,8 +1008,7 @@ partition_element *partition_info::get_part_elem(const char *partition_name,
           if (file_name)
             create_subpartition_name(file_name, "",
                                      part_elem->partition_name,
-                                     partition_name,
-                                     NORMAL_PART_NAME);
+                                     partition_name);
           *part_id= j + (i * num_subparts);
           DBUG_RETURN(sub_part_elem);
         }
@@ -1003,8 +1023,7 @@ partition_element *partition_info::get_part_elem(const char *partition_name,
                             part_elem->partition_name, partition_name))
     {
       if (file_name)
-        create_partition_name(file_name, "", partition_name,
-                              NORMAL_PART_NAME, TRUE);
+        create_partition_name(file_name, "", partition_name, TRUE);
       *part_id= i;
       DBUG_RETURN(part_elem);
     }
@@ -1012,16 +1031,6 @@ partition_element *partition_info::get_part_elem(const char *partition_name,
   DBUG_RETURN(NULL);
 }
 
-
-/**
-  Helper function to find_duplicate_name.
-*/
-
-static const uchar *get_part_name_from_elem(const uchar *name, size_t *length)
-{
-  *length= strlen(pointer_cast<const char*>(name));
-  return name;
-}
 
 /*
   A support function to check partition names for duplication in a
@@ -1039,11 +1048,11 @@ static const uchar *get_part_name_from_elem(const uchar *name, size_t *length)
     duplicated names.
 */
 
-char *partition_info::find_duplicate_name()
+const char *partition_info::find_duplicate_name()
 {
-  HASH partition_names;
+  collation_unordered_set<string> partition_names
+    {system_charset_info, PSI_INSTRUMENT_ME};
   uint max_names;
-  const uchar *curr_name= NULL;
   List_iterator<partition_element> parts_it(partitions);
   partition_element *p_elem;
 
@@ -1058,19 +1067,11 @@ char *partition_info::find_duplicate_name()
   max_names= num_parts;
   if (is_sub_partitioned())
     max_names+= num_parts * num_subparts;
-  if (my_hash_init(&partition_names, system_charset_info, max_names, 0,
-                   get_part_name_from_elem, nullptr, HASH_UNIQUE,
-                   PSI_INSTRUMENT_ME))
-  {
-    DBUG_ASSERT(0);
-    curr_name= (const uchar*) "Internal failure";
-    goto error;
-  }
   while ((p_elem= (parts_it++)))
   {
-    curr_name= (const uchar*) p_elem->partition_name;
-    if (my_hash_insert(&partition_names, curr_name))
-      goto error;
+    const char *partition_name= p_elem->partition_name;
+    if (!partition_names.insert(partition_name).second)
+      DBUG_RETURN(partition_name);
 
     if (!p_elem->subpartitions.is_empty())
     {
@@ -1078,17 +1079,13 @@ char *partition_info::find_duplicate_name()
       partition_element *subp_elem;
       while ((subp_elem= (subparts_it++)))
       {
-        curr_name= (const uchar*) subp_elem->partition_name;
-        if (my_hash_insert(&partition_names, curr_name))
-          goto error;
+        const char *subpartition_name= subp_elem->partition_name;
+        if (!partition_names.insert(subpartition_name).second)
+          DBUG_RETURN(subpartition_name);
       }
     }
   }
-  my_hash_free(&partition_names);
-  DBUG_RETURN(NULL);
-error:
-  my_hash_free(&partition_names);
-  DBUG_RETURN((char*) curr_name);
+  DBUG_RETURN(nullptr);
 }
 
 
@@ -1316,8 +1313,7 @@ bool partition_info::check_range_constants(THD *thd)
         loc_range_col_array+= num_column_values;
         if (!first)
         {
-          if (compare_column_values((const void*)current_largest_col_val,
-                                    (const void*)col_val) >= 0)
+          if (!compare_column_values(current_largest_col_val, col_val))
             goto range_not_increasing_error;
         }
         current_largest_col_val= col_val;
@@ -1375,91 +1371,48 @@ range_not_increasing_error:
 
 
 /*
-  Support routines for check_list_constants used by qsort to sort the
-  constant list expressions. One routine for integers and one for
-  column lists.
-
-  SYNOPSIS
-    list_part_cmp()
-      a                First list constant to compare with
-      b                Second list constant to compare with
-
-  RETURN VALUE
-    +1                 a > b
-    0                  a  == b
-    -1                 a < b
-*/
-
-extern "C" {
-static int partition_info_list_part_cmp(const void* a, const void* b)
-{
-  longlong a1= ((LIST_PART_ENTRY*)a)->list_value;
-  longlong b1= ((LIST_PART_ENTRY*)b)->list_value;
-  if (a1 < b1)
-    return -1;
-  else if (a1 > b1)
-    return +1;
-  else
-    return 0;
-}
-} // extern "C"
-
-
-/*
   Compare two lists of column values in RANGE/LIST partitioning
   SYNOPSIS
     compare_column_values()
     first                    First column list argument
     second                   Second column list argument
   RETURN VALUES
-    0                        Equal
-    -1                       First argument is smaller
-    +1                       First argument is larger
+    true                     first < second
+    false                    first >= second
 */
 
-extern "C" {
 static
-int partition_info_compare_column_values(const void *first_arg,
-                                         const void *second_arg)
+bool partition_info_compare_column_values(
+  const part_column_list_val *first, const part_column_list_val *second)
 {
-  const part_column_list_val *first= (part_column_list_val*)first_arg;
-  const part_column_list_val *second= (part_column_list_val*)second_arg;
-  partition_info *part_info= first->part_info;
-  Field **field;
-
-  for (field= part_info->part_field_array; *field;
+  for (Field **field= first->part_info->part_field_array; *field;
        field++, first++, second++)
   {
+    /*
+      If both are maxvalue, they are equal (don't check the rest of the parts).
+      Otherwise, maxvalue > *.
+    */
     if (first->max_value || second->max_value)
+      return first->max_value < second->max_value;
+
+    // NULLs sort before non-NULLs.
+    if (first->null_value != second->null_value)
+      return first->null_value;
+
+    // For non-NULLs, compare the actual fields.
+    if (!first->null_value)
     {
-      if (first->max_value && second->max_value)
-        return 0;
-      if (second->max_value)
-        return -1;
-      else
-        return +1;
+      int res= (*field)->cmp(first->column_value.field_image,
+                             second->column_value.field_image);
+      if (res != 0) return res < 0;
     }
-    if (first->null_value || second->null_value)
-    {
-      if (first->null_value && second->null_value)
-        continue;
-      if (second->null_value)
-        return +1;
-      else
-        return -1;
-    }
-    int res= (*field)->cmp(first->column_value.field_image,
-                           second->column_value.field_image);
-    if (res)
-      return res;
   }
-  return 0;
+  return false;
 }
-} // extern "C"
 
 
-int partition_info::compare_column_values(const void *first_arg,
-                                          const void *second_arg)
+bool partition_info::compare_column_values(
+  const part_column_list_val *first_arg, const part_column_list_val *second_arg)
 {
   return partition_info_compare_column_values(first_arg, second_arg);
 }
@@ -1493,11 +1446,8 @@ bool partition_info::check_list_constants(THD *thd)
   part_elem_value *list_value;
   bool result= TRUE;
   longlong calc_value;
-  void *curr_value;
-  void *prev_value= NULL;
   partition_element* part_def;
   bool found_null= FALSE;
-  qsort_cmp compare_func;
   void *ptr;
   List_iterator<partition_element> list_func_it(partitions);
   DBUG_ENTER("partition_info::check_list_constants");
@@ -1553,7 +1503,6 @@ bool partition_info::check_list_constants(THD *thd)
     part_column_list_val *loc_list_col_array;
     loc_list_col_array= (part_column_list_val*)ptr;
     list_col_array= (part_column_list_val*)ptr;
-    compare_func= partition_info_compare_column_values;
     i= 0;
     do
     {
@@ -1570,10 +1519,24 @@ bool partition_info::check_list_constants(THD *thd)
         loc_list_col_array+= num_column_values;
       }
     } while (++i < num_parts);
+
+    varlen_sort(list_col_array,
+                list_col_array + num_list_values * num_column_values,
+                size_entries, partition_info_compare_column_values);
+
+    for (uint i= 1; i < num_list_values; ++i)
+    {
+      if (!partition_info_compare_column_values(
+            &list_col_array[num_column_values * (i - 1)],
+            &list_col_array[num_column_values * i]))
+      {
+        my_error(ER_MULTIPLE_DEF_CONST_IN_LIST_PART_ERROR, MYF(0));
+        goto end;
+      }
+    }
   }
   else
   {
-    compare_func= partition_info_list_part_cmp;
     list_array= (LIST_PART_ENTRY*)ptr;
     i= 0;
     /*
@@ -1595,36 +1558,25 @@ bool partition_info::check_list_constants(THD *thd)
         list_array[list_index++].partition_id= i;
       }
     } while (++i < num_parts);
+
+    LIST_PART_ENTRY *list_array_end= list_array + num_list_values;
+    std::sort(list_array, list_array_end,
+              [](const LIST_PART_ENTRY &a, const LIST_PART_ENTRY &b)
+              {
+                return a.list_value < b.list_value;
+              });
+    if (std::adjacent_find(
+         list_array, list_array_end,
+         [](const LIST_PART_ENTRY &a, const LIST_PART_ENTRY &b)
+         {
+           return a.list_value == b.list_value;
+         }) != list_array_end)
+    {
+      my_error(ER_MULTIPLE_DEF_CONST_IN_LIST_PART_ERROR, MYF(0));
+      goto end;
+    }
   }
   DBUG_ASSERT(fixed);
-  if (num_list_values)
-  {
-    bool first= TRUE;
-    /*
-      list_array and list_col_array are unions, so this works for both
-      variants of LIST partitioning.
-    */
-    my_qsort((void*)list_array, num_list_values, size_entries,
-             compare_func);
-
-    i= 0;
-    do
-    {
-      DBUG_ASSERT(i < num_list_values);
-      curr_value= column_list ? (void*)&list_col_array[num_column_values * i] :
-                                (void*)&list_array[i];
-      if (likely(first || compare_func(curr_value, prev_value)))
-      {
-        prev_value= curr_value;
-        first= FALSE;
-      }
-      else
-      {
-        my_error(ER_MULTIPLE_DEF_CONST_IN_LIST_PART_ERROR, MYF(0));
-        goto end;
-      }
-    } while (++i < num_list_values);
-  }
   result= FALSE;
 end:
   DBUG_RETURN(result);
@@ -1685,7 +1637,7 @@ bool partition_info::check_partition_info(THD *thd, handlerton **eng_type,
   handlerton *table_engine= default_engine_type;
   uint i, tot_partitions;
   bool result= TRUE, table_engine_set;
-  char *same_name;
+  const char *same_name;
   DBUG_ENTER("partition_info::check_partition_info");
 
   DBUG_PRINT("info", ("default table_engine = %s",
@@ -1997,18 +1949,9 @@ bool partition_info::set_part_expr(char *start_token, Item *item_ptr,
     return true;
   }
 
-  size_t valid_length;
-  bool dummy_len_err;
-  if (validate_string(system_charset_info, func_string, expr_len,
-                      &valid_length, &dummy_len_err))
-  {
-    char hexbuf[7];
-    octet2hex(hexbuf, func_string + valid_length,
-              std::min<size_t>(expr_len - valid_length, 3));
-    my_error(ER_INVALID_CHARACTER_STRING, MYF(0), system_charset_info->csname,
-             hexbuf);
+  if (is_invalid_string(LEX_CSTRING{func_string, expr_len},
+                        system_charset_info))
     return true;
-  }
 
   if (is_subpart)
   {
@@ -3260,7 +3203,8 @@ bool partition_info::same_key_column_order(List<Create_field> *create_list)
 }
 
 
-void partition_info::print_debug(const char *str, uint *value)
+void partition_info::print_debug(const char *str MY_ATTRIBUTE((unused)),
+                                 uint *value)
 {
   DBUG_ENTER("print_debug");
   if (value)
@@ -3319,9 +3263,10 @@ bool fill_partition_tablespace_names(
   {
     // Add tablespace name from partition elements, if used.
     if (part_elem->tablespace_name &&
-        strlen(part_elem->tablespace_name) &&
-        tablespace_set->insert(const_cast<char*>(part_elem->tablespace_name)))
-      return true;
+        strlen(part_elem->tablespace_name))
+    {
+      tablespace_set->insert(part_elem->tablespace_name);
+    }
 
     // Traverse through all subpartitions.
     List_iterator<partition_element> sub_it(part_elem->subpartitions);
@@ -3330,9 +3275,10 @@ bool fill_partition_tablespace_names(
     {
       // Add tablespace name from sub-partition elements, if used.
       if (sub_elem->tablespace_name &&
-          strlen(sub_elem->tablespace_name) &&
-          tablespace_set->insert(const_cast<char*>(sub_elem->tablespace_name)))
-        return true;
+          strlen(sub_elem->tablespace_name))
+      {
+        tablespace_set->insert(sub_elem->tablespace_name);
+      }
     }
   }
 

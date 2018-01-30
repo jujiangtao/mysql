@@ -1,50 +1,62 @@
 /* Copyright (c) 2002, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "sql/sql_help.h"
 
 #include <string.h>
 #include <sys/types.h>
+#include <algorithm>
+#include <atomic>
 
-#include "debug_sync.h"
-#include "field.h"
-#include "handler.h"
-#include "item.h"
-#include "item_cmpfunc.h"           // Item_func_like
 #include "m_ctype.h"
 #include "m_string.h"
 #include "my_base.h"
 #include "my_bitmap.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
+#include "my_macros.h"
 #include "my_sys.h"
+#include "mysql/udf_registration_types.h"
 #include "mysqld_error.h"
-#include "opt_range.h"              // SQL_SELECT
-#include "opt_trace.h"              // Opt_trace_object
-#include "protocol.h"
-#include "records.h"          // init_read_record, end_read_record
-#include "sql_base.h"               // REPORT_ALL_ERRORS
-#include "sql_bitmap.h"
-#include "sql_class.h"
-#include "sql_executor.h"                       // QEP_TAB
-#include "sql_lex.h"
-#include "sql_list.h"
-#include "sql_servers.h"
+#include "sql/debug_sync.h"
+#include "sql/field.h"
+#include "sql/handler.h"
+#include "sql/item.h"
+#include "sql/item_cmpfunc.h"       // Item_func_like
+#include "sql/key_spec.h"
+#include "sql/opt_range.h"          // SQL_SELECT
+#include "sql/opt_trace.h"          // Opt_trace_object
+#include "sql/protocol.h"
+#include "sql/records.h"      // init_read_record, end_read_record
+#include "sql/sql_base.h"           // REPORT_ALL_ERRORS
+#include "sql/sql_bitmap.h"
+#include "sql/sql_class.h"
+#include "sql/sql_executor.h"                   // QEP_TAB
+#include "sql/sql_lex.h"
+#include "sql/sql_list.h"
+#include "sql/sql_servers.h"
+#include "sql/sql_table.h"                      // primary_key_name
+#include "sql/table.h"
 #include "sql_string.h"
-#include "sql_table.h"                          // primary_key_name
-#include "table.h"
 #include "thr_lock.h"
 #include "typelib.h"
 
@@ -546,15 +558,6 @@ static int send_header_2(THD *thd, bool for_category)
     same as strcmp
 */
 
-extern "C" {
-static int string_ptr_cmp(const void* ptr1, const void* ptr2)
-{
-  String *str1= *(String**)ptr1;
-  String *str2= *(String**)ptr2;
-  return strcmp(str1->c_ptr(),str2->c_ptr());
-}
-} // extern "C"
-
 /*
   Send to client rows in format:
    column1 : <name>
@@ -586,7 +589,11 @@ static int send_variant_2_list(MEM_ROOT *mem_root, Protocol *protocol,
   List_iterator<String> it(*names);
   for (pos= pointers; pos!=end; (*pos++= it++)) ;
 
-  my_qsort(pointers,names->elements,sizeof(String*),string_ptr_cmp);
+  std::sort(pointers, pointers + names->elements,
+            [](String *str1, String *str2)
+            {
+              return strcmp(str1->c_ptr(), str2->c_ptr()) < 0;
+            });
 
   for (pos= pointers; pos!=end; pos++)
   {

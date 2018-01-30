@@ -1,13 +1,20 @@
 /*  Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -18,46 +25,55 @@
 
 #include <stddef.h>
 #include <sys/types.h>
+#include <atomic>
 #include <list>
 #include <map>
 #include <new>
 #include <utility>
 
-#include "conn_handler/connection_handler_manager.h"
-#include "current_thd.h"
 #include "decimal.h"
-#include "derror.h"             // ER_DEFAULT
 #include "lex_string.h"
-#include "log.h"                 // Query log
 #include "m_ctype.h"
+#include "m_string.h"
 #include "mutex_lock.h"
 #include "my_dbug.h"
-#include "my_decimal.h"
 #include "my_inttypes.h"
+#include "my_loglevel.h"
+#include "my_macros.h"
 #include "my_psi_config.h"
 #include "my_thread.h"
 #include "my_thread_local.h"     // my_get_thread_local & my_set_thread_local
+#include "mysql/components/services/mysql_mutex_bits.h"
+#include "mysql/components/services/mysql_rwlock_bits.h"
+#include "mysql/components/services/psi_mutex_bits.h"
+#include "mysql/components/services/psi_rwlock_bits.h"
 #include "mysql/plugin_audit.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/psi/mysql_rwlock.h"
+#include "mysql/psi/mysql_statement.h"
 #include "mysql/psi/psi_base.h"
-#include "mysql/psi/psi_mutex.h"
-#include "mysql/psi/psi_rwlock.h"
 #include "mysql/service_my_snprintf.h"
-#include "mysqld.h"              // current_thd
+#include "mysql/udf_registration_types.h"
 #include "mysqld_error.h"
-#include "mysqld_thd_manager.h"  // Global_THD_manager
+#include "pfs_thread_provider.h"
 #include "rwlock_scoped_lock.h"
-#include "sql_audit.h"           // MYSQL_AUDIT_NOTIFY_CONNECTION_CONNECT
-#include "sql_base.h"            // close_mysql_tables
-#include "sql_class.h"
-#include "sql_connect.h"         // thd_init_client_charset
-#include "sql_list.h"
-#include "sql_parse.h"           // dispatch_command()
-#include "sql_plugin_ref.h"
-#include "sql_security_ctx.h"
-#include "sql_thd_internal_api.h" // thd_set_thread_stack
-#include "system_variables.h"
+#include "sql/auth/sql_security_ctx.h"
+#include "sql/conn_handler/connection_handler_manager.h"
+#include "sql/current_thd.h"
+#include "sql/derror.h"         // ER_DEFAULT
+#include "sql/histograms/value_map.h"
+#include "sql/log.h"             // Query log
+#include "sql/mysqld.h"          // current_thd
+#include "sql/mysqld_thd_manager.h" // Global_THD_manager
+#include "sql/sql_audit.h"       // MYSQL_AUDIT_NOTIFY_CONNECTION_CONNECT
+#include "sql/sql_base.h"        // close_mysql_tables
+#include "sql/sql_class.h"
+#include "sql/sql_connect.h"     // thd_init_client_charset
+#include "sql/sql_list.h"
+#include "sql/sql_parse.h"       // dispatch_command()
+#include "sql/sql_plugin_ref.h"
+#include "sql/sql_thd_internal_api.h" // thd_set_thread_stack
+#include "sql/system_variables.h"
 #include "thr_mutex.h"
 
 /**
@@ -69,8 +85,8 @@
 
 extern void thd_clear_errors(THD *thd);
 
-static thread_local_key_t THR_stack_start_address;
-static thread_local_key_t THR_srv_session_thread;
+static thread_local const char *THR_stack_start_address= nullptr;
+static thread_local const st_plugin_int *THR_srv_session_thread= nullptr;
 static bool srv_session_THRs_initialized= false;
 
 class Thread_to_plugin_map
@@ -98,7 +114,7 @@ public:
     const char* category= "session";
     PSI_mutex_info all_mutexes[]=
     {
-      { &key_LOCK_collection, "LOCK_srv_session_threads", PSI_FLAG_GLOBAL, 0}
+      { &key_LOCK_collection, "LOCK_srv_session_threads", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME}
     };
 
     initted= true;
@@ -137,7 +153,7 @@ public:
   */
   bool add(my_thread_t thread, const void *plugin)
   {
-    Mutex_lock lock(&LOCK_collection);
+    MUTEX_LOCK(lock, &LOCK_collection);
     try
     {
       std::map<my_thread_t, const void*>::iterator it= collection.find(thread);
@@ -162,7 +178,7 @@ public:
   */
   unsigned int remove(my_thread_t thread)
   {
-    Mutex_lock lock(&LOCK_collection);
+    MUTEX_LOCK(lock, &LOCK_collection);
     std::map<my_thread_t, const void*>::iterator it= collection.find(thread);
     if (it != collection.end())
     {
@@ -181,7 +197,7 @@ public:
   */
   bool clear()
   {
-    Mutex_lock lock(&LOCK_collection);
+    MUTEX_LOCK(lock, &LOCK_collection);
     collection.clear();
     return false;
   }
@@ -191,7 +207,7 @@ public:
   */
   unsigned int size()
   {
-    Mutex_lock lock(&LOCK_collection);
+    MUTEX_LOCK(lock, &LOCK_collection);
     return collection.size();    
   }
 
@@ -206,7 +222,7 @@ public:
       return size();
 
     unsigned int ret= 0;
-    Mutex_lock lock(&LOCK_collection);
+    MUTEX_LOCK(lock, &LOCK_collection);
     std::map<my_thread_t, const void*>::iterator it= collection.begin();
     for (; it != collection.end(); ++it)
     {
@@ -225,7 +241,7 @@ public:
   {
     std::list<my_thread_t> to_remove;
 
-    Mutex_lock lock(&LOCK_collection);
+    MUTEX_LOCK(lock, &LOCK_collection);
 
     for (std::map<my_thread_t, const void*>::iterator it= collection.begin();
          it != collection.end();
@@ -248,7 +264,7 @@ public:
            until there is a solution for Windows.
         */
         thread.thread= it->first;
-        sql_print_error("Killing thread %lu", (unsigned long) it->first);
+        LogErr(ERROR_LEVEL, ER_KILLING_THREAD, (unsigned long) it->first);
         if (!my_thread_cancel(&thread))
         {
           void *dummy_retval;
@@ -321,7 +337,7 @@ public:
     const char* category= "session";
     PSI_rwlock_info all_rwlocks[]=
     {
-      { &key_LOCK_collection, "LOCK_srv_session_collection", PSI_FLAG_GLOBAL}
+      { &key_LOCK_collection, "LOCK_srv_session_collection", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME}
     };
 
     initted= true;
@@ -665,14 +681,14 @@ const struct st_command_service_cbs error_protocol_callbacks=
 
   @param thd THD
 */
+#ifdef HAVE_PSI_THREAD_INTERFACE
 static void set_psi(THD *thd)
 {
-#ifdef HAVE_PSI_THREAD_INTERFACE
   struct PSI_thread *psi= PSI_THREAD_CALL(get_thread)();
   PSI_THREAD_CALL(set_thread_id)(psi, thd? thd->thread_id() : 0);
   PSI_THREAD_CALL(set_thread_THD)(psi, thd);
-#endif
 }
+#endif
 
 
 /**
@@ -687,14 +703,16 @@ static void set_psi(THD *thd)
 */
 bool Srv_session::init_thread(const void *plugin)
 {
-  int stack_start;
-  if (my_thread_init() ||
-      my_set_thread_local(THR_srv_session_thread, const_cast<void*>(plugin)) ||
-      my_set_thread_local(THR_stack_start_address, &stack_start))
+  char stack_start;
+  if (my_thread_init())
   {
     connection_errors_internal++;
     return true;
   }
+
+  THR_srv_session_thread=
+    reinterpret_cast<st_plugin_int *>(const_cast<void *>(plugin));
+  THR_stack_start_address= &stack_start;
 
   server_session_threads.add(my_thread_self(), plugin);
 
@@ -717,12 +735,10 @@ static void close_currently_attached_session_if_any(const st_plugin_int *plugin)
 
   if (current_session)
   {
-    sql_print_error("Plugin %s is deinitializing a thread but "
-                     "left a session attached. Detaching it forcefully.",
-                     plugin->name.str);
+    LogErr(ERROR_LEVEL, ER_DETACHING_SESSION_LEFT_BY_PLUGIN, plugin->name.str);
 
     if (current_session->detach())
-      sql_print_error("Failed to detach the session.");
+      LogErr(ERROR_LEVEL, ER_CANT_DETACH_SESSION_LEFT_BY_PLUGIN);
   }
 }
 
@@ -739,9 +755,9 @@ static void close_all_sessions_of_plugin_if_any(const st_plugin_int *plugin)
   server_session_list.remove_all_of_plugin(plugin, removed_count);
 
   if (removed_count)
-     sql_print_error("Closed forcefully %u session%s left opened by plugin %s",
-                     removed_count, (removed_count > 1)? "s":"",
-                     plugin? plugin->name.str : "SERVER_INTERNAL");
+    LogErr(ERROR_LEVEL, ER_DETACHED_SESSIONS_LEFT_BY_PLUGIN,
+           removed_count, (removed_count > 1)? "s":"",
+           plugin? plugin->name.str : "SERVER_INTERNAL");
 }
 
 
@@ -750,21 +766,20 @@ static void close_all_sessions_of_plugin_if_any(const st_plugin_int *plugin)
 */
 void Srv_session::deinit_thread()
 {
-  const st_plugin_int *plugin= static_cast<const st_plugin_int *>(
-                                my_get_thread_local(THR_srv_session_thread));
+  const st_plugin_int *plugin= THR_srv_session_thread;
   if (plugin)
     close_currently_attached_session_if_any(plugin);
 
   if (server_session_threads.remove(my_thread_self()))
-    sql_print_error("Failed to decrement the number of threads");
+    LogErr(ERROR_LEVEL, ER_FAILED_TO_DECREMENT_NUMBER_OF_THREADS);
 
   if (!server_session_threads.count(plugin))
     close_all_sessions_of_plugin_if_any(plugin);
 
-  my_set_thread_local(THR_srv_session_thread, NULL);
+  THR_srv_session_thread= nullptr;
 
-  DBUG_ASSERT(my_get_thread_local(THR_stack_start_address));
-  my_set_thread_local(THR_stack_start_address, NULL);
+  DBUG_ASSERT(THR_stack_start_address);
+  THR_stack_start_address= nullptr;
   my_thread_end();
 }
 
@@ -784,12 +799,12 @@ void Srv_session::check_for_stale_threads(const st_plugin_int *plugin)
   {
     close_all_sessions_of_plugin_if_any(plugin);
 
-    sql_print_error("Plugin %s did not deinitialize %u threads",
-                    plugin->name.str, thread_count);
+    LogErr(ERROR_LEVEL, ER_PLUGIN_DID_NOT_DEINITIALIZE_THREADS,
+           plugin->name.str, thread_count);
 
     unsigned int killed_count= server_session_threads.kill(plugin);
-    sql_print_error("Killed %u threads of plugin %s",
-                    killed_count, plugin->name.str);
+    LogErr(ERROR_LEVEL, ER_KILLED_THREADS_OF_PLUGIN,
+           killed_count, plugin->name.str);
   }
 }
 
@@ -805,14 +820,9 @@ bool Srv_session::module_init()
 {
   if (srv_session_THRs_initialized)
     return false;
-
-  if (my_create_thread_local_key(&THR_stack_start_address, NULL) ||
-      my_create_thread_local_key(&THR_srv_session_thread, NULL))
-  {
-    sql_print_error("Can't create thread key for SQL session service");
-    return true;
-  }
   srv_session_THRs_initialized= true;
+  THR_stack_start_address= nullptr;
+  THR_srv_session_thread= nullptr;
 
   server_session_list.init();
   server_session_threads.init();
@@ -833,9 +843,8 @@ bool Srv_session::module_deinit()
 {
   if (srv_session_THRs_initialized)
   {
-    srv_session_THRs_initialized= false;
-    (void) my_delete_thread_local_key(THR_stack_start_address);
-    (void) my_delete_thread_local_key(THR_srv_session_thread);
+    THR_stack_start_address= nullptr;
+    THR_srv_session_thread= nullptr;
 
     server_session_list.clear();
     server_session_list.deinit();
@@ -924,13 +933,6 @@ bool Srv_session::open()
 
   DBUG_PRINT("info", ("thread_id=%d", thd.thread_id()));
 
-  /*
-    Disable QC - plugins will most probably install their own protocol
-    and it won't be compatible with the QC. In addition, Protocol_error
-    is not compatible with the QC.
-  */
-  thd.variables.query_cache_type = 0;
-
   thd.set_command(COM_SLEEP);
   thd.init_query_mem_roots();
 
@@ -945,7 +947,7 @@ bool Srv_session::open()
 
   Global_THD_manager::get_instance()->add_thd(&thd);
 
-  const void *plugin= my_get_thread_local(THR_srv_session_thread);
+  const void *plugin= THR_srv_session_thread;
 
   server_session_list.add(&thd, plugin, this);
 
@@ -997,8 +999,8 @@ bool Srv_session::attach()
 
   DBUG_PRINT("info",("current_thd=%p", current_thd));
 
-  const char *new_stack= my_get_thread_local(THR_srv_session_thread)?
-        (const char*)my_get_thread_local(THR_stack_start_address):
+  const char *new_stack= THR_srv_session_thread ?
+        THR_stack_start_address :
         (old_thd? old_thd->thread_stack : NULL);
 
   /*
@@ -1015,7 +1017,9 @@ bool Srv_session::attach()
     if (old_thd)
       old_thd->store_globals();
 
+#ifdef HAVE_PSI_THREAD_INTERFACE
     set_psi(old_thd);
+#endif
 
     set_detached();
     DBUG_RETURN(true);
@@ -1028,9 +1032,9 @@ bool Srv_session::attach()
 
   thd_clear_errors(&thd);
 
+#ifdef HAVE_PSI_THREAD_INTERFACE
   set_psi(&thd);
 
-#ifdef HAVE_PSI_THREAD_INTERFACE
    PSI_THREAD_CALL(set_connection_type)(vio_type != NO_VIO_TYPE?
                                         vio_type : thd.get_vio_type());
 #endif /* HAVE_PSI_THREAD_INTERFACE */
@@ -1043,6 +1047,11 @@ bool Srv_session::attach()
     */
     if (mysql_audit_notify(&thd, AUDIT_EVENT(MYSQL_AUDIT_CONNECTION_CONNECT)))
       DBUG_RETURN(true);
+
+#ifdef HAVE_PSI_THREAD_INTERFACE
+    PSI_THREAD_CALL(notify_session_connect)(thd.get_psi());
+#endif /* HAVE_PSI_THREAD_INTERFACE */
+
     query_logger.general_log_print(&thd, COM_CONNECT, NullS);
   }
 
@@ -1076,7 +1085,9 @@ bool Srv_session::detach()
   DBUG_ASSERT(&thd == current_thd);
   thd.restore_globals();
 
+#ifdef HAVE_PSI_THREAD_INTERFACE
   set_psi(NULL);
+#endif
   /*
     We can't call PSI_THREAD_CALL(set_connection_type)(NO_VIO_TYPE) here because
     it will assert. Thus, it will be possible to have a physical thread, which
@@ -1135,6 +1146,11 @@ bool Srv_session::close()
   */
   query_logger.general_log_print(&thd, COM_QUIT, NullS);
   mysql_audit_notify(&thd, AUDIT_EVENT(MYSQL_AUDIT_CONNECTION_DISCONNECT), 0);
+
+#ifdef HAVE_PSI_THREAD_INTERFACE
+  PSI_THREAD_CALL(notify_session_disconnect)(thd.get_psi());
+#endif /* HAVE_PSI_THREAD_INTERFACE */
+
   thd.security_context()->logout();
   thd.m_view_ctx_list.empty();
   close_mysql_tables(&thd);
@@ -1146,7 +1162,9 @@ bool Srv_session::close()
 
   thd.disconnect();
 
+#ifdef HAVE_PSI_THREAD_INTERFACE
   set_psi(NULL);
+#endif
 
   thd.release_resources();
 
@@ -1233,6 +1251,12 @@ int Srv_session::execute_command(enum enum_server_command command,
   if (command != COM_QUERY)
     thd.reset_for_next_command();
 
+  DBUG_ASSERT(thd.m_statement_psi == NULL);
+  thd.m_statement_psi= MYSQL_START_STATEMENT(&thd.m_statement_state,
+                                             stmt_info_new_packet.m_key,
+                                             thd.db().str,
+                                             thd.db().length,
+                                             thd.charset(), NULL);
   int ret= dispatch_command(&thd, data, command);
 
   thd.pop_protocol();
@@ -1296,7 +1320,7 @@ public:
   {
     if (thd->thread_id() == thread_id)
     {
-      Mutex_lock lock(&thd->LOCK_thd_data);
+      MUTEX_LOCK(lock, &thd->LOCK_thd_data);
       callback(thd, &input);
       return true;
     }
@@ -1348,4 +1372,13 @@ unsigned int Srv_session::session_count()
 unsigned int Srv_session::thread_count(const void *plugin)
 {
   return server_session_threads.count(plugin);
+}
+
+
+/**
+  Check if current physical thread was created to be used with this class.
+*/
+bool Srv_session::is_srv_session_thread()
+{
+  return nullptr != THR_srv_session_thread;
 }

@@ -1,17 +1,24 @@
 /* Copyright (c) 2008, 2017, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
-  along with this program; if not, write to the Free Software Foundation,
-  51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+  along with this program; if not, write to the Free Software
+  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef PFS_INSTR_H
 #define PFS_INSTR_H
@@ -36,6 +43,7 @@ class THD;
 
 #include <sys/types.h>
 #include <time.h>
+#include <atomic>
 
 #include "my_inttypes.h"
 #include "my_io.h"
@@ -47,18 +55,18 @@ class THD;
 #include <arpa/inet.h>
 #endif
 #include "lf.h"
-#include "mdl.h"
 #include "my_compiler.h"
-#include "pfs_column_types.h"
-#include "pfs_con_slice.h"
-#include "pfs_events_stages.h"
-#include "pfs_events_statements.h"
-#include "pfs_events_transactions.h"
-#include "pfs_events_waits.h"
-#include "pfs_instr_class.h"
-#include "pfs_lock.h"
-#include "pfs_server.h"
-#include "pfs_stat.h"
+#include "sql/mdl.h"
+#include "storage/perfschema/pfs_column_types.h"
+#include "storage/perfschema/pfs_con_slice.h"
+#include "storage/perfschema/pfs_events_stages.h"
+#include "storage/perfschema/pfs_events_statements.h"
+#include "storage/perfschema/pfs_events_transactions.h"
+#include "storage/perfschema/pfs_events_waits.h"
+#include "storage/perfschema/pfs_instr_class.h"
+#include "storage/perfschema/pfs_lock.h"
+#include "storage/perfschema/pfs_server.h"
+#include "storage/perfschema/pfs_stat.h"
 #include "violite.h" /* enum_vio_type */
 
 extern PFS_single_stat *thread_instr_class_waits_array_start;
@@ -461,12 +469,15 @@ struct PFS_ALIGNED PFS_thread : PFS_connection_slice
   ulonglong m_thread_internal_id;
   /** Parent internal thread identifier. */
   ulonglong m_parent_thread_internal_id;
-  /** External (@code SHOW PROCESSLIST @endcode) thread identifier, not unique. */
+  /** External (@code SHOW PROCESSLIST @endcode) thread identifier, not unique.
+   */
   ulong m_processlist_id;
   /** External (Operating system) thread identifier, if any. */
   my_thread_os_id_t m_thread_os_id;
   /** Thread class. */
   PFS_thread_class *m_class;
+  /** True if a system thread. */
+  bool m_system_thread;
   /**
     Stack of events waits.
     This member holds the data for the table
@@ -580,6 +591,18 @@ struct PFS_ALIGNED PFS_thread : PFS_connection_slice
     Protected by @c m_stmt_lock.
   */
   uint m_dbname_length;
+  /**
+    Resource group name.
+    Protected by @c m_session_lock.
+  */
+  char m_groupname[NAME_LEN];
+  /**
+    Length of @c m_groupname.
+    Protected by @c m_session_lock.
+  */
+  uint m_groupname_length;
+  /** User-defined data. */
+  void *m_user_data;
   /** Current command. */
   int m_command;
   /** Connection type. */
@@ -619,6 +642,11 @@ struct PFS_ALIGNED PFS_thread : PFS_connection_slice
   PFS_host *m_host;
   PFS_user *m_user;
   PFS_account *m_account;
+
+  /** Raw socket address */
+  struct sockaddr_storage m_sock_addr;
+  /** Length of address */
+  socklen_t m_sock_addr_len;
 
   /** Reset session connect attributes */
   void reset_session_connect_attrs();
@@ -662,7 +690,7 @@ void carry_global_memory_stat_delta(PFS_memory_stat_delta *delta, uint index);
 extern PFS_stage_stat *global_instr_class_stages_array;
 extern PFS_statement_stat *global_instr_class_statements_array;
 extern PFS_histogram global_statements_histogram;
-extern PFS_memory_stat *global_instr_class_memory_array;
+extern std::atomic<PFS_memory_stat *> global_instr_class_memory_array;
 
 PFS_mutex *sanitize_mutex(PFS_mutex *unsafe);
 PFS_rwlock *sanitize_rwlock(PFS_rwlock *unsafe);
@@ -687,6 +715,8 @@ PFS_thread *create_thread(PFS_thread_class *klass,
                           const void *identity,
                           ulonglong processlist_id);
 
+PFS_thread *find_thread(ulonglong thread_id);
+
 void destroy_thread(PFS_thread *pfs);
 
 PFS_file *find_or_create_file(PFS_thread *thread,
@@ -694,6 +724,12 @@ PFS_file *find_or_create_file(PFS_thread *thread,
                               const char *filename,
                               uint len,
                               bool create);
+
+void find_and_rename_file(PFS_thread *thread,
+                          const char *old_filename,
+                          uint old_len,
+                          const char *new_filename,
+                          uint new_len);
 
 void release_file(PFS_file *pfs);
 void destroy_file(PFS_thread *thread, PFS_file *pfs);

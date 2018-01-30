@@ -2,25 +2,35 @@
    Copyright (c) 2011, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 */
 
+#include "sql/ndb_component.h"
+
 #include <stdarg.h>
 
-#include "ndb_component.h"
+#include "my_systime.h" // set_timespec
 
 Ndb_component::Ndb_component(const char *name)
   : m_thread_state(TS_UNINIT),
+    m_server_started(false),
     m_name(name)
 {
 }
@@ -156,10 +166,54 @@ Ndb_component::deinit()
   return do_deinit();
 }
 
-#include "ndb_log.h"
+
+void Ndb_component::set_server_started()
+{
+  mysql_mutex_lock(&m_start_stop_mutex);
+
+  // Can only transition to "server started" once
+  DBUG_ASSERT(m_server_started == false);
+  m_server_started = true;
+
+  mysql_cond_signal(&m_start_stop_cond);
+  mysql_mutex_unlock(&m_start_stop_mutex);
+}
 
 
-void Ndb_component::log_verbose(unsigned verbose_level, const char *fmt, ...)
+bool Ndb_component::wait_for_server_started(void)
+{
+  log_verbose(1, "Wait for server start");
+
+  mysql_mutex_lock(&m_start_stop_mutex);
+  while (!m_server_started)
+  {
+    // Wait max one second before checking again if server has been
+    // started or shutdown has been requested
+    struct timespec abstime;
+    set_timespec(&abstime, 1);
+    mysql_cond_timedwait(&m_start_stop_cond, &m_start_stop_mutex,
+                         &abstime);
+
+    // Has shutdown been requested
+    if (m_thread_state != TS_RUNNING)
+    {
+      mysql_mutex_unlock(&m_start_stop_mutex);
+      return false;
+    }
+  }
+  mysql_mutex_unlock(&m_start_stop_mutex);
+
+  log_verbose(1, "Detected server start");
+
+  return true;
+}
+
+
+#include "sql/ndb_log.h"
+
+
+void Ndb_component::log_verbose(unsigned verbose_level,
+                                const char *fmt, ...) const
 {
   // Print message only if verbose level is set high enough
   if (ndb_log_get_verbose_level() < verbose_level)
@@ -172,7 +226,7 @@ void Ndb_component::log_verbose(unsigned verbose_level, const char *fmt, ...)
 }
 
 
-void Ndb_component::log_error(const char *fmt, ...)
+void Ndb_component::log_error(const char *fmt, ...) const
 {
   va_list args;
   va_start(args, fmt);
@@ -181,7 +235,7 @@ void Ndb_component::log_error(const char *fmt, ...)
 }
 
 
-void Ndb_component::log_warning(const char *fmt, ...)
+void Ndb_component::log_warning(const char *fmt, ...) const
 {
   va_list args;
   va_start(args, fmt);
@@ -190,7 +244,7 @@ void Ndb_component::log_warning(const char *fmt, ...)
 }
 
 
-void Ndb_component::log_info(const char *fmt, ...)
+void Ndb_component::log_info(const char *fmt, ...) const
 {
   va_list args;
   va_start(args, fmt);

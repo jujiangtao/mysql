@@ -1,13 +1,20 @@
-/* Copyright (c) 2017 Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -17,40 +24,42 @@
 #include "sql/dd/dd_routine.h"                        // Routine methods
 
 #include <stddef.h>
+#include <string.h>
 #include <sys/types.h>
 #include <memory>
-#include <string>
 
 #include "binary_log_types.h"
-#include "dd/cache/dictionary_client.h"        // dd::cache::Dictionary_client
-#include "dd/dd_table.h"                       // dd::get_new_field_type
-#include "dd/properties.h"                     // dd::Properties
-#include "dd/types/function.h"                 // dd::Function
-#include "dd/types/parameter.h"                // dd::Parameter
-#include "dd/types/parameter_type_element.h"   // dd::Parameter_type_element
-#include "dd/types/procedure.h"                // dd::Procedure
-#include "dd/types/routine.h"
-#include "dd/types/schema.h"                   // dd::Schema
-#include "dd/types/view.h"
-#include "field.h"
-#include "key.h"
 #include "lex_string.h"
 #include "my_dbug.h"
-#include "my_decimal.h"
 #include "my_inttypes.h"
 #include "my_time.h"
-#include "mysql/psi/mysql_statement.h"
-#include "mysql_com.h"
-#include "session_tracker.h"
-#include "sp.h"
-#include "sp_head.h"                           // sp_head
-#include "sp_pcontext.h"                       // sp_variable
-#include "sql_admin.h"
-#include "sql_class.h"
-#include "sql_db.h"                            // get_default_db_collation
-#include "system_variables.h"
+#include "sql/dd/cache/dictionary_client.h"    // dd::cache::Dictionary_client
+#include "sql/dd/dd_table.h"                   // dd::get_new_field_type
+#include "sql/dd/properties.h"                 // dd::Properties
+#include "sql/dd/string_type.h"
+#include "sql/dd/types/function.h"             // dd::Function
+#include "sql/dd/types/parameter.h"            // dd::Parameter
+#include "sql/dd/types/parameter_type_element.h" // dd::Parameter_type_element
+#include "sql/dd/types/procedure.h"            // dd::Procedure
+#include "sql/dd/types/routine.h"
+#include "sql/dd/types/schema.h"               // dd::Schema
+#include "sql/dd/types/view.h"
+#include "sql/field.h"
+#include "sql/histograms/value_map.h"
+#include "sql/item_create.h"
+#include "sql/key.h"
+#include "sql/sp.h"
+#include "sql/sp_head.h"                       // sp_head
+#include "sql/sp_pcontext.h"                   // sp_variable
+#include "sql/sql_class.h"
+#include "sql/sql_connect.h"
+#include "sql/sql_db.h"                        // get_default_db_collation
+#include "sql/sql_lex.h"
+#include "sql/system_variables.h"
+#include "sql/table.h"
+#include "sql/tztime.h"                        // Time_zone
+#include "sql_string.h"
 #include "typelib.h"
-#include "tztime.h"                            // Time_zone
 
 namespace dd {
 
@@ -294,6 +303,7 @@ static bool fill_routine_parameters_info(THD *thd, sp_head *sp,
   from the sp_head.
 
   @param[in]  thd        Thread handle.
+  @param[in]  schema     Schema where the routine is to be created.
   @param[in]  sp         Stored routine object.
   @param[in]  definer    Definer of the routine.
   @param[out] routine    dd::Routine object to be prepared from the sp_head.
@@ -302,7 +312,8 @@ static bool fill_routine_parameters_info(THD *thd, sp_head *sp,
   @retval true   ON FAILURE
 */
 
-static bool fill_dd_routine_info(THD *thd, sp_head *sp, Routine *routine,
+static bool fill_dd_routine_info(THD *thd, const dd::Schema &schema,
+                                 sp_head *sp, Routine *routine,
                                  const LEX_USER *definer)
 {
   DBUG_ENTER("fill_dd_routine_info");
@@ -382,7 +393,7 @@ static bool fill_dd_routine_info(THD *thd, sp_head *sp, Routine *routine,
 
   // Set schema collation id.
   const CHARSET_INFO *db_cs= NULL;
-  if (get_default_db_collation(thd, sp->m_db.str, &db_cs))
+  if (get_default_db_collation(schema, &db_cs))
   {
     DBUG_ASSERT(thd->is_error());
     DBUG_RETURN(true);
@@ -417,7 +428,7 @@ bool create_routine(THD *thd, const Schema &schema, sp_head *sp,
     fill_dd_function_return_type(thd, sp, func.get());
 
     // Fill routine object.
-    if (fill_dd_routine_info(thd, sp, func.get(), definer))
+    if (fill_dd_routine_info(thd, schema, sp, func.get(), definer))
       DBUG_RETURN(true);
 
     // Store routine metadata in DD table.
@@ -432,7 +443,7 @@ bool create_routine(THD *thd, const Schema &schema, sp_head *sp,
     std::unique_ptr<Procedure> proc(schema.create_procedure(thd));
 
     // Fill routine object.
-    if (fill_dd_routine_info(thd, sp, proc.get(), definer))
+    if (fill_dd_routine_info(thd, schema, sp, proc.get(), definer))
       DBUG_RETURN(true);
 
     // Store routine metadata in DD table.

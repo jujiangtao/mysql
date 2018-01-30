@@ -1,17 +1,24 @@
 /* Copyright (c) 2011, 2017, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
-  along with this program; if not, write to the Free Software Foundation,
-  51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+  along with this program; if not, write to the Free Software
+  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 /**
   @file storage/perfschema/table_host_cache.cc
@@ -20,171 +27,58 @@
 
 #include "storage/perfschema/table_host_cache.h"
 
-#include "current_thd.h"
-#include "field.h"
-#include "hostname.h"
 #include "my_dbug.h"
 #include "my_thread.h"
-#include "sql_class.h"
+#include "sql/current_thd.h"
+#include "sql/field.h"
+#include "sql/hostname.h"
+#include "sql/sql_class.h"
 
 THR_LOCK table_host_cache::m_table_lock;
 
-/* clang-format off */
-static const TABLE_FIELD_TYPE field_types[]=
-{
-  {
-    { C_STRING_WITH_LEN("IP") },
-    { C_STRING_WITH_LEN("varchar(64)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("HOST") },
-    { C_STRING_WITH_LEN("varchar(255)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("HOST_VALIDATED") },
-    { C_STRING_WITH_LEN("enum(\'YES\',\'NO\')") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("SUM_CONNECT_ERRORS") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("COUNT_HOST_BLOCKED_ERRORS") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("COUNT_NAMEINFO_TRANSIENT_ERRORS") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("COUNT_NAMEINFO_PERMANENT_ERRORS") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("COUNT_FORMAT_ERRORS") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("COUNT_ADDRINFO_TRANSIENT_ERRORS") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("COUNT_ADDRINFO_PERMANENT_ERRORS") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("COUNT_FCRDNS_ERRORS") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("COUNT_HOST_ACL_ERRORS") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("COUNT_NO_AUTH_PLUGIN_ERRORS") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("COUNT_AUTH_PLUGIN_ERRORS") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("COUNT_HANDSHAKE_ERRORS") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("COUNT_PROXY_USER_ERRORS") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("COUNT_PROXY_USER_ACL_ERRORS") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("COUNT_AUTHENTICATION_ERRORS") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("COUNT_SSL_ERRORS") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("COUNT_MAX_USER_CONNECTIONS_ERRORS") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("COUNT_MAX_USER_CONNECTIONS_PER_HOUR_ERRORS") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("COUNT_DEFAULT_DATABASE_ERRORS") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("COUNT_INIT_CONNECT_ERRORS") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("COUNT_LOCAL_ERRORS") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("COUNT_UNKNOWN_ERRORS") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("FIRST_SEEN") },
-    { C_STRING_WITH_LEN("timestamp") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("LAST_SEEN") },
-    { C_STRING_WITH_LEN("timestamp") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("FIRST_ERROR_SEEN") },
-    { C_STRING_WITH_LEN("timestamp") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("LAST_ERROR_SEEN") },
-    { C_STRING_WITH_LEN("timestamp") },
-    { NULL, 0}
-  }
-};
-/* clang-format on */
-
-TABLE_FIELD_DEF
-table_host_cache::m_field_def = {29, field_types};
+Plugin_table table_host_cache::m_table_def(
+  /* Schema name */
+  "performance_schema",
+  /* Name */
+  "host_cache",
+  /* Definition */
+  "  IP VARCHAR(64) not null,\n"
+  "  HOST VARCHAR(255) collate utf8_bin,\n"
+  "  HOST_VALIDATED ENUM ('YES', 'NO') not null,\n"
+  "  SUM_CONNECT_ERRORS BIGINT not null,\n"
+  "  COUNT_HOST_BLOCKED_ERRORS BIGINT not null,\n"
+  "  COUNT_NAMEINFO_TRANSIENT_ERRORS BIGINT not null,\n"
+  "  COUNT_NAMEINFO_PERMANENT_ERRORS BIGINT not null,\n"
+  "  COUNT_FORMAT_ERRORS BIGINT not null,\n"
+  "  COUNT_ADDRINFO_TRANSIENT_ERRORS BIGINT not null,\n"
+  "  COUNT_ADDRINFO_PERMANENT_ERRORS BIGINT not null,\n"
+  "  COUNT_FCRDNS_ERRORS BIGINT not null,\n"
+  "  COUNT_HOST_ACL_ERRORS BIGINT not null,\n"
+  "  COUNT_NO_AUTH_PLUGIN_ERRORS BIGINT not null,\n"
+  "  COUNT_AUTH_PLUGIN_ERRORS BIGINT not null,\n"
+  "  COUNT_HANDSHAKE_ERRORS BIGINT not null,\n"
+  "  COUNT_PROXY_USER_ERRORS BIGINT not null,\n"
+  "  COUNT_PROXY_USER_ACL_ERRORS BIGINT not null,\n"
+  "  COUNT_AUTHENTICATION_ERRORS BIGINT not null,\n"
+  "  COUNT_SSL_ERRORS BIGINT not null,\n"
+  "  COUNT_MAX_USER_CONNECTIONS_ERRORS BIGINT not null,\n"
+  "  COUNT_MAX_USER_CONNECTIONS_PER_HOUR_ERRORS BIGINT not null,\n"
+  "  COUNT_DEFAULT_DATABASE_ERRORS BIGINT not null,\n"
+  "  COUNT_INIT_CONNECT_ERRORS BIGINT not null,\n"
+  "  COUNT_LOCAL_ERRORS BIGINT not null,\n"
+  "  COUNT_UNKNOWN_ERRORS BIGINT not null,\n"
+  "  FIRST_SEEN TIMESTAMP(0) NOT NULL default 0,\n"
+  "  LAST_SEEN TIMESTAMP(0) NOT NULL default 0,\n"
+  "  FIRST_ERROR_SEEN TIMESTAMP(0) null default 0,\n"
+  "  LAST_ERROR_SEEN TIMESTAMP(0) null default 0,\n"
+  "  PRIMARY KEY (IP) USING HASH,\n"
+  "  KEY (HOST) USING HASH\n",
+  /* Options */
+  " ENGINE=PERFORMANCE_SCHEMA",
+  /* Tablespace */
+  nullptr);
 
 PFS_engine_table_share table_host_cache::m_share = {
-  {C_STRING_WITH_LEN("host_cache")},
   &pfs_truncatable_acl,
   table_host_cache::create,
   NULL, /* write_row */
@@ -192,9 +86,11 @@ PFS_engine_table_share table_host_cache::m_share = {
   table_host_cache::get_row_count,
   sizeof(PFS_simple_index), /* ref length */
   &m_table_lock,
-  &m_field_def,
-  false, /* checked */
-  false  /* perpetual */
+  &m_table_def,
+  false, /* perpetual */
+  PFS_engine_table_proxy(),
+  {0},
+  false /* m_in_purgatory */
 };
 
 bool
@@ -224,7 +120,7 @@ PFS_index_host_cache_by_host::match(const row_host_cache *row)
 }
 
 PFS_engine_table *
-table_host_cache::create(void)
+table_host_cache::create(PFS_engine_table_share *)
 {
   table_host_cache *t = new table_host_cache();
   if (t != NULL)
@@ -271,8 +167,6 @@ table_host_cache::table_host_cache()
 void
 table_host_cache::materialize(THD *thd)
 {
-  Host_entry *current;
-  Host_entry *first;
   uint size;
   uint index;
   row_host_cache *rows;
@@ -300,15 +194,14 @@ table_host_cache::materialize(THD *thd)
   index = 0;
   row = rows;
 
-  first = hostname_cache_first();
-  current = first;
-
-  while ((current != NULL) && (index < size))
   {
-    make_row(current, row);
-    index++;
-    row++;
-    current = current->next();
+    auto end = hostname_cache_end();
+    for (auto it = hostname_cache_begin(); it != end; ++it)
+    {
+      make_row(it->get(), row);
+      index++;
+      row++;
+    }
   }
 
   m_all_rows = rows;

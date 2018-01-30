@@ -1,3 +1,7 @@
+# Prevent background threads to acquire mdl locks, which
+# the result unstable
+SET GLOBAL innodb_fast_shutdown=0;
+# restart: --debug=d,do_not_meta_lock_in_background
 TABLE: "metadata_locks"
 INDEXES: PK (OBJECT_INSTANCE_BEGIN), KEY (OBJECT_TYPE, OBJECT_SCHEMA, OBJECT_NAME), KEY (OWNER_THREAD_ID, OWNER_EVENT_ID)
 
@@ -80,6 +84,22 @@ OK: Extra rows: 0  Missing rows: 0
 ## Test OBJECT_TYPE, OBJECT_SCHEMA, OBJECT_NAME
 
 ===== BEGIN TEST =====
+========
+SELECT * FROM performance_schema.metadata_locks WHERE object_type is null
+
+OK: Handler_read_key
+
+OK: Result set: Empty  Expected: Empty
+
+OK: Extra rows: 0  Missing rows: 0
+========
+SELECT * FROM performance_schema.metadata_locks WHERE object_type is not null
+
+OK: Handler_read_key
+
+OK: Result set: Non-empty  Expected: Non-empty
+
+OK: Extra rows: 0  Missing rows: 0
 ========
 SELECT * FROM performance_schema.metadata_locks WHERE object_type = 'TABLE'
 
@@ -213,14 +233,6 @@ OK: Result set: Non-empty  Expected: Non-empty
 
 OK: Extra rows: 0  Missing rows: 0
 ========
-SELECT * FROM performance_schema.metadata_locks WHERE owner_thread_id = 9999999 OR owner_event_id != 9999999
-
-OK: Handler_read_key
-
-OK: Result set: Non-empty  Expected: Non-empty
-
-OK: Extra rows: 0  Missing rows: 0
-========
 SELECT * FROM performance_schema.metadata_locks WHERE owner_thread_id != 9999999 AND owner_event_id = @target_event_id
 
 OK: Handler_read_key
@@ -259,3 +271,4 @@ DROP USER user1@localhost;
 DROP USER user2@localhost;
 DROP USER user3@localhost;
 UPDATE performance_schema.threads SET INSTRUMENTED = 'YES';
+# restart

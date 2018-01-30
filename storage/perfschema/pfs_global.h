@@ -1,17 +1,24 @@
 /* Copyright (c) 2008, 2017, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
-  along with this program; if not, write to the Free Software Foundation,
-  51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+  along with this program; if not, write to the Free Software
+  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef PFS_GLOBAL_H
 #define PFS_GLOBAL_H
@@ -21,11 +28,11 @@
 #include <stddef.h>
 #include <sys/types.h>
 
-#include "current_thd.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
-#include "sql_class.h"
+#include "sql/current_thd.h"
+#include "sql/sql_class.h"
 
 /**
   @file storage/perfschema/pfs_global.h
@@ -55,29 +62,43 @@ extern bool pfs_initialized;
 #endif
 
 /**
-  A @c uint32 variable, guaranteed to be alone in a CPU cache line.
+  An atomic @c uint32 variable, guaranteed to be alone in a CPU cache line.
   This is for performance, for variables accessed very frequently.
 */
-struct PFS_cacheline_uint32
+struct PFS_cacheline_atomic_uint32
 {
-  uint32 m_u32;
-  char m_full_cache_line[PFS_CACHE_LINE_SIZE - sizeof(uint32)];
+  std::atomic<uint32> m_u32;
+  char m_full_cache_line[PFS_CACHE_LINE_SIZE - sizeof(std::atomic<uint32>)];
 
-  PFS_cacheline_uint32() : m_u32(0)
+  PFS_cacheline_atomic_uint32() : m_u32(0)
   {
   }
 };
 
 /**
-  A @c uint64 variable, guaranteed to be alone in a CPU cache line.
+  An atomic @c uint64 variable, guaranteed to be alone in a CPU cache line.
   This is for performance, for variables accessed very frequently.
 */
-struct PFS_cacheline_uint64
+struct PFS_cacheline_atomic_uint64
 {
-  uint64 m_u64;
-  char m_full_cache_line[PFS_CACHE_LINE_SIZE - sizeof(uint64)];
+  std::atomic<uint64> m_u64;
+  char m_full_cache_line[PFS_CACHE_LINE_SIZE - sizeof(std::atomic<uint64>)];
 
-  PFS_cacheline_uint64() : m_u64(0)
+  PFS_cacheline_atomic_uint64() : m_u64(0)
+  {
+  }
+};
+
+/**
+  An atomic @c size_t variable, guaranteed to be alone in a CPU cache line.
+  This is for performance, for variables accessed very frequently.
+*/
+struct PFS_cacheline_atomic_size_t
+{
+  std::atomic<size_t> m_size_t;
+  char m_full_cache_line[PFS_CACHE_LINE_SIZE - sizeof(std::atomic<size_t>)];
+
+  PFS_cacheline_atomic_size_t() : m_size_t(0)
   {
   }
 };

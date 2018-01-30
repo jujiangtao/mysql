@@ -109,13 +109,13 @@ if ($rpl_corrupt_channel_name != "''")
 --let $assert_cond= "[SELECT CHANNEL_NAME FROM performance_schema.replication_applier_status WHERE SERVICE_STATE= "OFF"]" = "$rpl_channel_name_without_single_quotes"
 --source include/assert.inc
 
---let $assert_text= ONLY one channel is corrupted. Good channels count should be $number_of_good_channels.
---let $assert_cond= "[SELECT COUNT(*) FROM performance_schema.replication_connection_status WHERE SERVICE_STATE="ON"]" = $number_of_good_channels
---source include/assert.inc
+--echo ===== ONLY one channel is corrupted. Waiting until started channels be $number_of_good_channels.
+--let $wait_condition= SELECT COUNT(*) = $number_of_good_channels FROM performance_schema.replication_connection_status WHERE SERVICE_STATE="ON"
+--source include/wait_condition_or_abort.inc
 
---let $assert_text= ONLY one channel is corrupted. Good channels count should be $number_of_good_channels.
---let $assert_cond= "[SELECT COUNT(*) FROM performance_schema.replication_applier_status WHERE SERVICE_STATE="ON"]" = $number_of_good_channels
---source include/assert.inc
+--echo ===== ONLY one channel is corrupted. Waiting until started channels be $number_of_good_channels.
+--let $wait_condition= SELECT COUNT(*) = $number_of_good_channels FROM performance_schema.replication_applier_status WHERE SERVICE_STATE="ON"
+--source include/wait_condition_or_abort.inc
 
 
 ###############################################################################
@@ -162,14 +162,13 @@ START SLAVE;
 --let $assert_cond= "[SELECT CHANNEL_NAME FROM performance_schema.replication_applier_status WHERE SERVICE_STATE= "OFF"]" = "$rpl_channel_name_without_single_quotes"
 --source include/assert.inc
 
---let $assert_text= ONLY one channel is corrupted. Good channels count should be $number_of_good_channels.
---let $assert_cond= "[SELECT COUNT(*) FROM performance_schema.replication_connection_status WHERE SERVICE_STATE="ON"]" = $number_of_good_channels
---source include/assert.inc
+--echo ===== ONLY one channel is corrupted. Waiting until started channels be $number_of_good_channels.
+--let $wait_condition= SELECT COUNT(*) = $number_of_good_channels FROM performance_schema.replication_connection_status WHERE SERVICE_STATE="ON"
+--source include/wait_condition_or_abort.inc
 
---let $assert_text= ONLY one channel is corrupted. Good channels count should be $number_of_good_channels.
---let $assert_cond= "[SELECT COUNT(*) FROM performance_schema.replication_applier_status WHERE SERVICE_STATE="ON"]" = $number_of_good_channels
---source include/assert.inc
-
+--echo ===== ONLY one channel is corrupted. Waiting until started channels be $number_of_good_channels.
+--let $wait_condition= SELECT COUNT(*) = $number_of_good_channels FROM performance_schema.replication_applier_status WHERE SERVICE_STATE="ON"
+--source include/wait_condition_or_abort.inc
 
 ###############################################################################
 # Step-3.3: SHOW RELAYLOG EVENTS without 'FOR CHANNEL' clause when we have
@@ -253,11 +252,13 @@ while ($i <= $number_of_channels)
     --source include/rpl_connection.inc
     --let $master_executed_gtid=`SELECT @@GLOBAL.gtid_executed`
     --let $position=query_get_value("SHOW MASTER STATUS", Position, 1)
+    --let $masked_position= POSITION
     --let $query_expected_result= 0
     if ($j == 2)
     {
       --let $master_executed_gtid= `SELECT concat(@@GLOBAL.gtid_executed, ':100')`
       --let $position= `SELECT $position + 1`
+      --let $masked_position= POSITION+1
       --let $query_expected_result= -1
     }
     if ($rpl_corrupt_channel_name == $channel_name)
@@ -268,14 +269,14 @@ while ($i <= $number_of_channels)
     --let $rpl_connection_name= server_$rpl_number_of_servers
     --source include/rpl_connection.inc
     --let $query_result= query_get_value("SELECT MASTER_POS_WAIT('server$i-bin.000001', $position, 1, $channel_name) AS VALUE", VALUE, 1)
-    --let $assert_text= MASTER_POS_WAIT should return $query_expected_result for channel $channel_name and position $position.
+    --let $assert_text= MASTER_POS_WAIT should return $query_expected_result for channel $channel_name and position $masked_position.
     --let $assert_cond= "$query_result" = "$query_expected_result"
     --source include/assert.inc
 
     if ( `SELECT @@GLOBAL.GTID_MODE = "ON"` )
     {
       --let $query_result= query_get_value("SELECT WAIT_UNTIL_SQL_THREAD_AFTER_GTIDS('$master_executed_gtid', 1, $channel_name) AS VALUE", VALUE, 1)
-      --let $assert_text= WAIT_UNTIL_SQL_THREAD_AFTER_GTIDS should return $query_expected_result for channel $channel_name and position $position.
+      --let $assert_text= WAIT_UNTIL_SQL_THREAD_AFTER_GTIDS should return $query_expected_result for channel $channel_name and position $masked_position.
       --let $assert_cond= "$query_result" = "$query_expected_result"
       # GTID_MODE OFF/ON, .result file should be same. Hence disabling the query
       # log for the following test.
@@ -300,13 +301,23 @@ while ($i <= $number_of_channels)
 
   --echo ===== Executing SHOW RELAYLOG EVENTS FOR CHANNEL on channel $channel_name.
   --let $rpl_channel_name=$channel_name
-  --source include/show_relaylog_events.inc
+  # It doesn't care the result, just make sure the query can be executed successfully
+  --disable_result_log
+  eval SHOW RELAYLOG EVENTS FOR CHANNEL $channel_name;
+  --enable_result_log
 
   #############################################################################
   # Step 4.4: SHOW SLAVE STATUS FOR CHANNEL 'channel_name'
   #############################################################################
 
   --echo ===== Executing SHOW SLAVE FOR CHANNEL on channel $channel_name.
+
+    # Wait until slave threads are synced with master
+    --let $wait_condition=SELECT COUNT(*)=$number_of_good_channels FROM performance_schema.threads WHERE NAME="thread/sql/slave_sql" AND PROCESSLIST_STATE="Slave has read all relay log; waiting for more updates";
+  --source include/wait_condition_or_abort.inc
+  --let $wait_condition=SELECT COUNT(*)=$number_of_good_channels FROM performance_schema.threads WHERE NAME="thread/sql/slave_io" AND PROCESSLIST_STATE="Waiting for master to send event";
+  --source include/wait_condition_or_abort.inc
+
   --let $status_items=Slave_IO_State,Slave_SQL_Running_State,Last_IO_Errno,Last_IO_Error,Last_SQL_Errno,Last_SQL_Error,Channel_Name
   --let $rpl_channel_name=$channel_name
   --source include/show_slave_status.inc
@@ -329,6 +340,7 @@ while ($i <= $number_of_channels)
     --let $rpl_channel_name=$channel_name
     --let $sync_slave_connection=server_$rpl_number_of_servers
     --source include/sync_slave_sql_with_master.inc
+    --dec $number_of_good_channels
   }
 
   #############################################################################

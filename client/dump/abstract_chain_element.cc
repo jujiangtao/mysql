@@ -1,28 +1,36 @@
 /*
-  Copyright (c) 2015, 2016, Oracle and/or its affiliates. All rights reserved.
+  Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
   along with this program; if not, write to the Free Software
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 */
 
-#include <functional>
+#include "client/dump/abstract_chain_element.h"
 
-#include "abstract_chain_element.h"
+#include <atomic>
+#include <functional>
 
 using namespace Mysql::Tools::Dump;
 using std::placeholders::_1;
 
-my_boost::atomic_uint64_t Abstract_chain_element::next_id;
+std::atomic<uint64_t> Abstract_chain_element::next_id;
 
 uint64 Abstract_chain_element::get_id() const
 {
@@ -73,7 +81,7 @@ Item_processing_data* Abstract_chain_element::new_task_created(
 }
 
 Item_processing_data* Abstract_chain_element::new_chain_created(
-  Chain_data* new_chain_data, Item_processing_data* parent_processing_data,
+  Chain_data*, Item_processing_data* parent_processing_data,
   I_chain_element* child_chain_element)
 {
   Item_processing_data* new_item_to_process=

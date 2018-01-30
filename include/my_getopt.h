@@ -2,13 +2,20 @@
    Copyright (c) 2002, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -28,6 +35,7 @@
 #include "my_inttypes.h"
 #include "my_macros.h"
 #include "my_sys.h"                             /* loglevel */
+#include <mysql/components/services/system_variable_source_type.h> /* enum_variable_source */
 
 C_MODE_START
 
@@ -70,33 +78,12 @@ C_MODE_START
 */
 enum get_opt_arg_type { NO_ARG, OPT_ARG, REQUIRED_ARG };
 
-/**
-  Enumeration of the my_option::arg_source.m_source attribute. This enum values
-  define how system variables are set. For example if a variable is set by
-  global option file /etc/my.cnf then my_option::arg_source.m_source
-  will be set to GLOBAL, or if a variable is set from command line then
-  my_option::arg_source.m_source will hold value as COMMAND_LINE.
-*/
-enum enum_variable_source
-{
-  COMPILED= 1,
-  GLOBAL,
-  SERVER,
-  EXPLICIT,
-  EXTRA,
-  MYSQL_USER,
-  LOGIN,
-  COMMAND_LINE,
-  PERSISTED,
-  DYNAMIC
-};
-
 struct get_opt_arg_source
 {
   /**
     config file path OR compiled default values
   */
-  const char* m_path_name;
+  char m_path_name[FN_REFLEN];
   enum enum_variable_source m_source;
 };
 
@@ -156,6 +143,8 @@ typedef void *(*my_getopt_value)(const char *, size_t, const struct my_option *,
 extern char *disabled_my_option;
 extern bool my_getopt_print_errors;
 extern bool my_getopt_skip_unknown;
+extern bool log_slave_updates_supplied;
+extern bool slave_preserve_commit_order_supplied;
 extern my_error_reporter my_getopt_error_reporter;
 
 extern int handle_options (int *argc, char ***argv, 
@@ -183,6 +172,7 @@ ulonglong getopt_double2ulonglong(double);
 double getopt_ulonglong2double(ulonglong);
 int findopt(char *, uint, const struct my_option **);
 
+bool is_key_cache_variable_suffix(const char *suffix);
 
 C_MODE_END
 

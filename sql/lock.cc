@@ -1,17 +1,24 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 
 /**
@@ -73,37 +80,37 @@
   we are forced to use mysql_lock_merge.
 */
 
-#include "lock.h"
+#include "sql/lock.h"
 
 #include <fcntl.h>
 #include <string.h>
 #include <algorithm>
 #include <atomic>
 
-#include "auth_common.h"                   // SUPER_ACL
-#include "debug_sync.h"
-#include "handler.h"
 #include "lex_string.h"
 #include "m_ctype.h"
 #include "m_string.h"
 #include "my_base.h"
 #include "my_dbug.h"
+#include "my_inttypes.h"
 #include "my_sqlcommand.h"
 #include "my_sys.h"
 #include "mysql/service_mysql_alloc.h"
 #include "mysql_com.h"
-#include "mysqld.h"                        // opt_readonly
 #include "mysqld_error.h"
-#include "psi_memory_key.h"
-#include "session_tracker.h"
-#include "sql_base.h"                       // MYSQL_LOCK_LOG_TABLE
-#include "sql_class.h"
-#include "sql_const.h"
-#include "sql_error.h"
-#include "sql_lex.h"
-#include "sql_parse.h"                     // is_log_table_write_query
-#include "system_variables.h"
-#include "table.h"
+#include "sql/auth/auth_common.h"          // SUPER_ACL
+#include "sql/debug_sync.h"
+#include "sql/handler.h"
+#include "sql/mysqld.h"                    // opt_readonly
+#include "sql/psi_memory_key.h"
+#include "sql/session_tracker.h"
+#include "sql/sql_base.h"                   // MYSQL_LOCK_LOG_TABLE
+#include "sql/sql_class.h"
+#include "sql/sql_const.h"
+#include "sql/sql_lex.h"
+#include "sql/sql_parse.h"                 // is_log_table_write_query
+#include "sql/system_variables.h"
+#include "sql/table.h"
 #include "thr_lock.h"
 
 /**
@@ -888,14 +895,6 @@ bool lock_tablespace_name(THD *thd, const char *tablespace)
   return false;
 }
 
-// Function generating hash key for Tablespace_hash_set.
-const uchar *tablespace_set_get_key(const uchar *record, size_t *length)
-{
-  const char *tblspace_name= reinterpret_cast<const char *>(record);
-  *length= strlen(tblspace_name);
-  return reinterpret_cast<uchar*>(const_cast<char*>(tblspace_name));
-}
-
 /**
   Acquire IX MDL lock each tablespace name from the given set.
 
@@ -912,22 +911,20 @@ bool lock_tablespace_names(
        ulong lock_wait_timeout)
 {
   // Stop if we have nothing to lock
-  if (tablespace_set->is_empty())
+  if (tablespace_set->empty())
     return false;
 
   // Prepare MDL_request's for all tablespace names.
   MDL_request_list mdl_tablespace_requests;
-  Tablespace_hash_set::Iterator it(*tablespace_set);
-  char *tablespace= NULL;
-  while ((tablespace= it++))
+  for (const std::string &tablespace : *tablespace_set)
   {
-    DBUG_ASSERT(strlen(tablespace));
+    DBUG_ASSERT(!tablespace.empty());
 
     MDL_request *tablespace_request= new (thd->mem_root) MDL_request;
     if (tablespace_request == NULL)
       return true;
     MDL_REQUEST_INIT(tablespace_request, MDL_key::TABLESPACE,
-                     "", tablespace, MDL_INTENTION_EXCLUSIVE,
+                     "", tablespace.c_str(), MDL_INTENTION_EXCLUSIVE,
                      MDL_TRANSACTION);
     mdl_tablespace_requests.push_front(tablespace_request);
   }
@@ -987,7 +984,8 @@ bool lock_object_name(THD *thd, MDL_key::enum_mdl_namespace mdl_type,
   */
   DBUG_ASSERT(mdl_type == MDL_key::FUNCTION ||
               mdl_type == MDL_key::PROCEDURE ||
-              mdl_type == MDL_key::EVENT);
+              mdl_type == MDL_key::EVENT ||
+              mdl_type == MDL_key::RESOURCE_GROUPS);
 
   char lc_name[NAME_LEN + 1];
   my_stpncpy(lc_name, name, NAME_LEN);

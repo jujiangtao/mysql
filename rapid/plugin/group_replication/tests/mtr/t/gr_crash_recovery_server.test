@@ -22,8 +22,7 @@
 # 12.Cleanup
 ################################################################################
 
-# This test does crashes servers, thence we skip it on asan and valgrind.
---source include/not_asan.inc
+# This test does crashes servers, thence we skip it on valgrind.
 --source include/not_valgrind.inc
 --source include/big_test.inc
 --source include/force_restart.inc
@@ -84,7 +83,7 @@ call dml_operations(1,100);
 
 set sql_log_bin=0;
 call mtr.add_suppression(".*Slave SQL for channel 'group_replication_applier': ... The slave coordinator and worker threads are stopped, possibly leaving data in inconsistent state*");
-call mtr.add_suppression("\\[Warning\\] InnoDB: Database page corruption or a failed file read of page");
+call mtr.add_suppression("\\[Warning\\] \\[[^]]*\\] InnoDB: Database page corruption or a failed file read of page");
 CREATE TABLE t1(a int primary key);
 SET sql_log_bin=1;
 LOCK TABLES t1 READ;

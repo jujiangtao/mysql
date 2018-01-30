@@ -1,13 +1,20 @@
 /* Copyright (c) 2009, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -25,11 +32,11 @@
 
 #include "my_inttypes.h"
 #include "my_thread.h"
-#include "sql_error.h"
-#include "sql_list.h"
+#include "sql/sql_error.h"
+#include "sql/sql_list.h"
+#include "sql/thr_malloc.h"
 #include "sql_string.h"
-#include "test_utils.h"
-#include "thr_malloc.h"
+#include "unittest/gunit/test_utils.h"
 
 namespace sql_list_unittest {
 
@@ -61,9 +68,7 @@ protected:
   virtual void SetUp()
   {
     init_sql_alloc(PSI_NOT_INSTRUMENTED, &m_mem_root, 1024, 0);
-    ASSERT_EQ(0, my_set_thread_local(THR_MALLOC, &m_mem_root_p));
-    MEM_ROOT *root= *static_cast<MEM_ROOT**>(my_get_thread_local(THR_MALLOC));
-    ASSERT_EQ(root, m_mem_root_p);
+    THR_MALLOC= &m_mem_root_p;
   }
 
   virtual void TearDown()
@@ -73,18 +78,8 @@ protected:
 
   static void SetUpTestCase()
   {
-    ASSERT_EQ(0, my_create_thread_local_key(&THR_THD, NULL));
-    THR_THD_initialized= true;
-    ASSERT_EQ(0, my_create_thread_local_key(&THR_MALLOC, NULL));
-    THR_MALLOC_initialized= true;
-  }
-
-  static void TearDownTestCase()
-  {
-    my_delete_thread_local_key(THR_THD);
-    THR_THD_initialized= false;
-    my_delete_thread_local_key(THR_MALLOC);
-    THR_MALLOC_initialized= false;
+    current_thd= nullptr;
+    THR_MALLOC= nullptr;
   }
 
   MEM_ROOT m_mem_root;
@@ -102,9 +97,9 @@ private:
 TEST_F(SqlListTest, ConstructAndDestruct)
 {
   EXPECT_TRUE(m_int_list.is_empty());
-  List<int> *p_int_list= new List<int>;
+  List<int> *p_int_list= new (*THR_MALLOC) List<int>;
   EXPECT_TRUE(p_int_list->is_empty());
-  delete p_int_list;
+  destroy(p_int_list);
 }
 
 
@@ -255,5 +250,87 @@ TEST_F(SqlListTest, Sort)
   EXPECT_TRUE(m_int_list.is_empty());
 }
 
+// Tests prepend on empty list followed by push_back, Bug#26813454
+TEST_F(SqlListTest, PrependBug)
+{
+  int values1[] = {1,2};
+  insert_values(values1, &m_int_list);
+  EXPECT_EQ(2U, m_int_list.elements);
 
+  List<int> ilist;
+  EXPECT_TRUE(ilist.is_empty());
+  ilist.prepend(&m_int_list);
+
+  int values2[] = {3,4};
+  insert_values(values2, &ilist);
+  EXPECT_EQ(4U, ilist.elements);
+
+  for (int i=1; i <= 4; i++)
+    EXPECT_EQ(*ilist.pop(), i);
+}
+
+// Tests swap_elts
+TEST_F(SqlListTest, Swap)
+{
+  int values[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
+  insert_values(values, &m_int_list);
+  EXPECT_EQ(m_int_list.swap_elts(1, 1), false);
+  // Expect no change
+  for (int i= 0; i < 10 ; i++)
+  {
+    EXPECT_EQ(*m_int_list.pop(), i);
+  }
+
+  insert_values(values, &m_int_list);
+  EXPECT_EQ(m_int_list.swap_elts(9, 10), true /* error */);
+  // Expect no change: 10 out of bounds
+  for (int i= 0; i < 10 ; i++)
+  {
+    EXPECT_EQ(*m_int_list.pop(), i);
+  }
+
+  insert_values(values, &m_int_list);
+  EXPECT_EQ(m_int_list.swap_elts(10, 9), true /* error */);
+  // Expect no change: 10 out of bounds
+  for (int i= 0; i < 10 ; i++)
+  {
+    EXPECT_EQ(*m_int_list.pop(), i);
+  }
+
+  insert_values(values, &m_int_list);
+  EXPECT_EQ(m_int_list.swap_elts(10, 11), true /* error */);
+  // Expect no change: 10, 11 out of bounds
+  for (int i= 0; i < 10 ; i++)
+  {
+    EXPECT_EQ(*m_int_list.pop(), i);
+  }
+
+  insert_values(values, &m_int_list);
+  EXPECT_EQ(m_int_list.swap_elts(0, 1), false);
+
+  for (int i= 0; i < 10 ; i++)
+  {
+    EXPECT_EQ(*m_int_list.pop(), (i == 0 ? 1 :
+                                  (i == 1 ? 0 : i)));
+  }
+
+  insert_values(values, &m_int_list);
+  EXPECT_EQ(m_int_list.swap_elts(0, 9), false);
+
+  for (int i= 0; i < 10 ; i++)
+  {
+    EXPECT_EQ(*m_int_list.pop(), (i == 0 ? 9 :
+                                  (i == 9 ? 0 : i)));
+  }
+
+  insert_values(values, &m_int_list);
+  EXPECT_EQ(m_int_list.swap_elts(9, 0), false);
+
+  for (int i= 0; i < 10 ; i++)
+  {
+    EXPECT_EQ(*m_int_list.pop(), (i == 0 ? 9 :
+                                  (i == 9 ? 0 : i)));
+  }
+}
+  
 }  // namespace

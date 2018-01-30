@@ -1,103 +1,97 @@
 /* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "dd_table.h"
+#include "sql/dd/dd_table.h"
 
 #include <string.h>
 #include <algorithm>
 #include <memory>                             // unique_ptr
 
-#include "dd/cache/dictionary_client.h"       // dd::cache::Dictionary_client
-#include "dd/dd.h"                            // dd::get_dictionary
-#include "dd/dd_schema.h"                     // dd::Schema_MDL_locker
-#include "dd/dictionary.h"                    // dd::Dictionary
-// TODO: Avoid exposing dd/impl headers in public files.
-#include "dd/impl/dictionary_impl.h"          // default_catalog_name
-#include "dd/impl/utils.h"                    // dd::escape
-#include "dd/properties.h"                    // dd::Properties
-#include "dd/types/abstract_table.h"
-#include "dd/types/column.h"                  // dd::Column
-#include "dd/types/column_type_element.h"     // dd::Column_type_element
-#include "dd/types/foreign_key.h"             // dd::Foreign_key
-#include "dd/types/foreign_key_element.h"     // dd::Foreign_key_element
-#include "dd/types/index.h"                   // dd::Index
-#include "dd/types/index_element.h"           // dd::Index_element
-#include "dd/types/object_table.h"            // dd::Object_table
-#include "dd/types/partition.h"               // dd::Partition
-#include "dd/types/partition_value.h"         // dd::Partition_value
-#include "dd/types/schema.h"                  // dd::Schema
-#include "dd/types/table.h"                   // dd::Table
-#include "dd/types/tablespace.h"              // dd::Tablespace
-#include "dd_table_share.h"                   // is_suitable_for_primary_key
-#include "debug_sync.h"                       // DEBUG_SYNC
-#include "default_values.h"                   // max_pack_length
-#include "field.h"
-#include "item.h"
-#include "key.h"
-#include "key_spec.h"
 #include "lex_string.h"
-#include "log.h"                              // sql_print_error
 #include "m_ctype.h"
 #include "m_string.h"
-#include "mdl.h"
+#include "my_alloc.h"
 #include "my_base.h"
-#include "my_compiler.h"
 #include "my_dbug.h"
-#include "my_decimal.h"
 #include "my_io.h"
+#include "my_loglevel.h"
 #include "my_sys.h"
 #include "mysql/service_mysql_alloc.h"
+#include "mysql/udf_registration_types.h"
 #include "mysql_com.h"
-#include "mysqld.h"                           // dd_upgrade_skip_se
 #include "mysqld_error.h"
-#include "partition_element.h"
-#include "partition_info.h"                   // partition_info
-#include "psi_memory_key.h"                   // key_memory_frm
-#include "query_options.h"
-#include "session_tracker.h"
-#include "sql_class.h"                        // THD
-#include "sql_const.h"
-#include "sql_error.h"
-#include "sql_list.h"
-#include "sql_parse.h"
-#include "sql_partition.h"                    // expr_to_string
-#include "sql_plugin_ref.h"
-#include "sql_security_ctx.h"
+#include "sql/dd/cache/dictionary_client.h"   // dd::cache::Dictionary_client
+#include "sql/dd/collection.h"                // dd::Collection
+#include "sql/dd/dd.h"                        // dd::get_dictionary
+#include "sql/dd/dictionary.h"                // dd::Dictionary
+// TODO: Avoid exposing dd/impl headers in public files.
+#include "sql/dd/impl/dictionary_impl.h"      // default_catalog_name
+#include "sql/dd/impl/system_registry.h"      // dd::System_tables
+#include "sql/dd/impl/tables/dd_properties.h"      // dd::tables:.DD_properties
+#include "sql/dd/impl/utils.h"                // dd::escape
+#include "sql/dd/performance_schema/init.h"   // performance_schema::
+                                              //   set_PS_version_for_table
+#include "sql/dd/properties.h"                // dd::Properties
+#include "sql/dd/types/abstract_table.h"
+#include "sql/dd/types/column.h"              // dd::Column
+#include "sql/dd/types/column_type_element.h" // dd::Column_type_element
+#include "sql/dd/types/foreign_key.h"         // dd::Foreign_key
+#include "sql/dd/types/foreign_key_element.h" // dd::Foreign_key_element
+#include "sql/dd/types/index.h"               // dd::Index
+#include "sql/dd/types/index_element.h"       // dd::Index_element
+#include "sql/dd/types/object_table.h"        // dd::Object_table
+#include "sql/dd/types/partition.h"           // dd::Partition
+#include "sql/dd/types/partition_value.h"     // dd::Partition_value
+#include "sql/dd/types/schema.h"              // dd::Schema
+#include "sql/dd/types/table.h"               // dd::Table
+#include "sql/dd/types/tablespace.h"          // dd::Tablespace
+#include "sql/dd_table_share.h"               // is_suitable_for_primary_key
+#include "sql/dd/dd_version.h"                // DD_VERSION
+#include "sql/debug_sync.h"                   // DEBUG_SYNC
+#include "sql/default_values.h"               // max_pack_length
+#include "sql/enum_query_type.h"
+#include "sql/field.h"
+#include "sql/item.h"
+#include "sql/key.h"
+#include "sql/key_spec.h"
+#include "sql/log.h"
+#include "sql/mdl.h"
+#include "sql/my_decimal.h"
+#include "sql/mysqld.h"                       // lower_case_table_names
+#include "sql/partition_element.h"
+#include "sql/partition_info.h"               // partition_info
+#include "sql/psi_memory_key.h"               // key_memory_frm
+#include "sql/sql_class.h"                    // THD
+#include "sql/sql_const.h"
+#include "sql/sql_list.h"
+#include "sql/sql_parse.h"
+#include "sql/sql_partition.h"                // expr_to_string
+#include "sql/sql_plugin_ref.h"
+#include "sql/sql_table.h"                    // primary_key_name
+#include "sql/srs_fetcher.h"
+#include "sql/strfunc.h"                      // lex_cstring_handle
+#include "sql/table.h"
 #include "sql_string.h"
-#include "sql_table.h"                        // primary_key_name
-#include "strfunc.h"                          // lex_cstring_handle
-#include "table.h"
-#include "transaction.h"                      // trans_commit
 #include "typelib.h"
-
-// Explicit instanciation of some template functions
-template bool dd::table_exists<dd::Abstract_table>(
-                                      dd::cache::Dictionary_client *client,
-                                      const char *schema_name,
-                                      const char *name,
-                                      bool *exists);
-template bool dd::table_exists<dd::Table>(
-                                      dd::cache::Dictionary_client *client,
-                                      const char *schema_name,
-                                      const char *name,
-                                      bool *exists);
-template bool dd::table_exists<dd::View>(
-                                      dd::cache::Dictionary_client *client,
-                                      const char *schema_name,
-                                      const char *name,
-                                      bool *exists);
 
 namespace dd {
 
@@ -208,7 +202,7 @@ dd::enum_column_types get_new_field_type(enum_field_types type)
   }
 
   /* purecov: begin deadcode */
-  sql_print_error("Error: Invalid field type.");
+  LogErr(ERROR_LEVEL, ER_DD_FAILSAFE, "field type.");
   DBUG_ASSERT(false);
 
   return dd::enum_column_types::LONG;
@@ -227,22 +221,24 @@ dd::String_type get_sql_type_by_create_field(TABLE *table,
   DBUG_ENTER("get_sql_type_by_create_field");
 
   // Create Field object from Create_field
-  std::unique_ptr<Field> fld(make_field(table->s,
-                                        0,
-                                        field->length,
-                                        NULL,
-                                        0,
-                                        field->sql_type,
-                                        field->charset,
-                                        field->geom_type,
-                                        field->auto_flags,
-                                        field->interval,
-                                        field->field_name,
-                                        field->maybe_null,
-                                        field->is_zerofill,
-                                        field->is_unsigned,
-                                        field->decimals,
-                                        field->treat_bit_as_char, 0));
+  std::unique_ptr<Field, Destroy_only<Field>>
+    fld(make_field(table->s,
+                   0,
+                   field->length,
+                   NULL,
+                   0,
+                   field->sql_type,
+                   field->charset,
+                   field->geom_type,
+                   field->auto_flags,
+                   field->interval,
+                   field->field_name,
+                   field->maybe_null,
+                   field->is_zerofill,
+                   field->is_unsigned,
+                   field->decimals,
+                   field->treat_bit_as_char, 0,
+                   field->m_srid));
   fld->init(table);
 
   // Read column display type.
@@ -282,22 +278,24 @@ static void prepare_default_value_string(uchar *buf,
                                          String *def_value)
 {
   // Create a fake field with the default value buffer 'buf'.
-  std::unique_ptr<Field > f(make_field(table->s,
-                                       buf + 1,
-                                       field.length,
-                                       buf,
-                                       0,
-                                       field.sql_type,
-                                       field.charset,
-                                       field.geom_type,
-                                       field.auto_flags,
-                                       field.interval,
-                                       field.field_name,
-                                       field.maybe_null,
-                                       field.is_zerofill,
-                                       field.is_unsigned,
-                                       field.decimals,
-                                       field.treat_bit_as_char, 0));
+  std::unique_ptr<Field, Destroy_only<Field>>
+    f(make_field(table->s,
+                 buf + 1,
+                 field.length,
+                 buf,
+                 0,
+                 field.sql_type,
+                 field.charset,
+                 field.geom_type,
+                 field.auto_flags,
+                 field.interval,
+                 field.field_name,
+                 field.maybe_null,
+                 field.is_zerofill,
+                 field.is_unsigned,
+                 field.decimals,
+                 field.treat_bit_as_char, 0,
+                 field.m_srid));
   f->init(table);
 
   if (col_obj->has_no_default())
@@ -327,6 +325,10 @@ static void prepare_default_value_string(uchar *buf,
   {
     char tmp[MAX_FIELD_WIDTH];
     String type(tmp, sizeof(tmp), f->charset());
+    const bool is_binary_type=
+      ((f->type() == MYSQL_TYPE_VARCHAR || f->type() == MYSQL_TYPE_STRING) &&
+       (f->flags & BINARY_FLAG) && f->charset() == &my_charset_bin);
+
     if (f->type() == MYSQL_TYPE_BIT)
     {
       longlong dec= f->val_int();
@@ -336,6 +338,40 @@ static void prepare_default_value_string(uchar *buf,
       tmp[1]= '\'';
       tmp[length]= '\'';
       type.length(length + 1);
+    }
+    else if (is_binary_type)
+    {
+      String type2;
+      char *ptr= type.c_ptr_safe();
+
+      // Get the default value.
+      f->val_str(&type2);
+
+      if (type2.length() > 0)
+      {
+        /*
+          The default value for BINARY and VARBINARY type is converted to the
+          hex string if hex format is used for default value at the parsing
+          stage. Converting hex string to system_charset_info charset while
+          storing value in DD table might fail because of unsupported byte
+          value in hex string. Hence converting default value to printable
+          HEX encoded string before store.
+
+          The original format as supplied by user is lost after parsing stage.
+          So regardless of the type specified by the user, default for
+          varbinary/binary is stored in the printable HEX encoded format.
+          I_S queries and SHOW COLUMNS always list such default value in HEX
+          format instead of user specified one.
+        */
+        *ptr++= '0';
+        *ptr++= 'x';
+        size_t len= bin_to_hex_str(ptr, type.length() - 2,
+                                   type2.c_ptr_safe(), strlen(type2.c_ptr_safe()));
+        type.length(len+2);
+      }
+      else
+        // For BINARY(0) and VARBINARY type with empty string as default value.
+        f->val_str(&type);
     }
     else
       f->val_str(&type);
@@ -586,6 +622,8 @@ fill_dd_columns_from_create_fields(THD *thd,
 
     col_obj->set_zerofill(field->is_zerofill);
 
+    col_obj->set_srs_id(field->m_srid);
+
     /*
       AUTO_INCREMENT, DEFAULT/ON UPDATE CURRENT_TIMESTAMP properties are
       stored in Create_field::auto_flags.
@@ -788,7 +826,7 @@ static dd::Index::enum_index_algorithm dd_get_new_index_algorithm_type(enum ha_k
   }
 
   /* purecov: begin deadcode */
-  sql_print_error("Error: Invalid index algorithm.");
+  LogErr(ERROR_LEVEL, ER_DD_FAILSAFE, "index algorithm.");
   DBUG_ASSERT(false);
 
   return dd::Index::IA_SE_SPECIFIC;
@@ -974,22 +1012,24 @@ bool is_candidate_primary_key(THD *thd,
 
     /* Prepare Field* object from Create_field */
 
-    std::unique_ptr<Field> table_field(make_field(table.s,
-                                         0,
-                                         cfield->length,
-                                         nullptr,
-                                         0,
-                                         cfield->sql_type,
-                                         cfield->charset,
-                                         cfield->geom_type,
-                                         cfield->auto_flags,
-                                         cfield->interval,
-                                         cfield->field_name,
-                                         cfield->maybe_null,
-                                         cfield->is_zerofill,
-                                         cfield->is_unsigned,
-                                         cfield->decimals,
-                                         cfield->treat_bit_as_char, 0));
+    std::unique_ptr<Field, Destroy_only<Field>>
+      table_field(make_field(table.s,
+                             0,
+                             cfield->length,
+                             nullptr,
+                             0,
+                             cfield->sql_type,
+                             cfield->charset,
+                             cfield->geom_type,
+                             cfield->auto_flags,
+                             cfield->interval,
+                             cfield->field_name,
+                             cfield->maybe_null,
+                             cfield->is_zerofill,
+                             cfield->is_unsigned,
+                             cfield->decimals,
+                             cfield->treat_bit_as_char, 0,
+                             cfield->m_srid));
     table_field->init(&table);
 
     if (is_suitable_for_primary_key(key_part, table_field.get()) == false)
@@ -1222,30 +1262,9 @@ static bool fill_dd_foreign_keys_from_create_fields(dd::Table *tab_obj,
 
     fk_obj->set_name(key->name);
 
-    /*
-      TODO: The 'unique_constraint_id' field for Foreign_key is
-      supposed to contain the ID of the index in parent table.
-      However, until WL#6049 we don't have a safe way to keep this
-      field updated. For now, it contains the ID of the index
-      in the child table in order to make it a valid Foreign_key
-      object (unique_constraint_id is NOT NULL).
-      We also plan to make this field nullable or replace it with
-      'unique_constraint_name'.
-    */
-    DBUG_ASSERT(key->unique_index_name);
-    const dd::Index *matching_index= nullptr;
-    for (const dd::Index *index : *tab_obj->indexes())
-    {
-      if (my_strcasecmp(system_charset_info,
-                        index->name().c_str(),
-                        key->unique_index_name) == 0)
-      {
-        matching_index= index;
-        break;
-      }
-    }
-    DBUG_ASSERT(matching_index != nullptr);
-    fk_obj->set_unique_constraint(matching_index);
+    // Note: Setting "" is interpreted as NULL.
+    fk_obj->set_unique_constraint_name(key->unique_index_name ?
+                                       key->unique_index_name : "");
 
     switch (key->match_opt)
     {
@@ -1266,13 +1285,13 @@ static bool fill_dd_foreign_keys_from_create_fields(dd::Table *tab_obj,
 
     fk_obj->set_delete_rule(get_fk_rule(key->delete_opt));
 
-    fk_obj->referenced_table_catalog_name(
+    fk_obj->set_referenced_table_catalog_name(
       Dictionary_impl::instance()->default_catalog_name());
 
-    fk_obj->referenced_table_schema_name(dd::String_type(key->ref_db.str,
+    fk_obj->set_referenced_table_schema_name(dd::String_type(key->ref_db.str,
                                                      key->ref_db.length));
 
-    fk_obj->referenced_table_name(dd::String_type(key->ref_table.str,
+    fk_obj->set_referenced_table_name(dd::String_type(key->ref_table.str,
                                               key->ref_table.length));
 
     for (uint i= 0; i < key->key_parts; i++)
@@ -1334,16 +1353,13 @@ static bool fill_dd_tablespace_id_or_name(THD *thd,
        tables. We store the tablespace name in 'tablespace' table
        option.
 
-    3) Innodb uses predefined/reserved tablespace names started with
-       'innodb_'. New DD does not contain metadata for these tablespaces.
-       WL7141 can decide if they are really needed to be visible to server.
-       So we just store these name in dd::Table::option so as to support
-       old behavior and make SHOW CREATE to display the tablespace name.
-
-    4) Note that we store tablespace name for non-tablespace-capable SEs
-       for compatibility reasons.
+    3) Note that we store tablespace name for non-tablespace-capable SEs
+       for compatibility reasons. This is store in the options field. We
+       also store the innodb_file_per_table tablespace name here since it
+       is not a name of a real tablespace.
   */
-  const char *innodb_prefix= "innodb_";
+  const char *innodb_prefix= "innodb_file_per_table";
+  dd::Properties *options= &obj->options();
 
   if (hton->alter_tablespace &&
       !is_temporary_table &&
@@ -1388,9 +1404,17 @@ static bool fill_dd_tablespace_id_or_name(THD *thd,
       TABLE, even though the tablespaces are not supported by
       the engine.
     */
-    dd::Properties *options= &obj->options();
     options->set("tablespace", tablespace_name);
   }
+
+  /*
+    We are here only when user explicitly specifies the tablespace clause
+    in CREATE TABLE statement. Store a boolean flag in dd::Table::options
+    properties.
+    This is required in order for SHOW CREATE and CREATE LIKE to ignore
+    implicitly assumed tablespace, e.g., 'innodb_system'
+  */
+  options->set_bool("explicit_tablespace", true);
 
   DBUG_RETURN(false);
 }
@@ -1440,13 +1464,24 @@ static void set_partition_options(partition_element *part_elem,
 }
 
 
-/** Helper function to add partition column values. */
+/*
+  Helper function to add partition column values.
+
+  @param      part_info          Parition info.
+  @param      list_value         List of partition element value.
+  @param      list_index         Element index.
+  @param      part_obj           DD partition object.
+  @param      create_info        Create info.
+  @param      create_fields      List of fields being created.
+  @param[out] part_desc_str Partiton description string.
+*/
 static bool add_part_col_vals(partition_info *part_info,
                               part_elem_value *list_value,
                               uint list_index,
                               dd::Partition *part_obj,
                               const HA_CREATE_INFO *create_info,
-                              const List<Create_field> &create_fields)
+                              const List<Create_field> &create_fields,
+                              String *part_desc_str)
 {
   uint i;
   List_iterator<char> it(part_info->part_field_list);
@@ -1462,10 +1497,12 @@ static bool add_part_col_vals(partition_info *part_info,
     if (col_val->max_value)
     {
       val_obj->set_max_value(true);
+      part_desc_str->append(partition_keywords[PKW_MAXVALUE].str);
     }
     else if (col_val->null_value)
     {
       val_obj->set_value_null(true);
+      part_desc_str->append("NULL");
     }
     else
     {
@@ -1483,9 +1520,29 @@ static bool add_part_col_vals(partition_info *part_info,
       }
       dd::String_type std_str(val_str.ptr(), val_str.length());
       val_obj->set_value_utf8(std_str);
+      part_desc_str->append(std_str.c_str());
     }
+    if (i != num_elements - 1)
+      part_desc_str->append(",");
   }
   return false;
+}
+
+
+static void collect_partition_expr(THD *thd, List<char> &field_list,
+                                   String *str)
+{
+  List_iterator<char> part_it(field_list);
+  ulong no_fields= field_list.elements;
+  const char *field_str;
+  str->length(0);
+  while ((field_str= part_it++))
+  {
+    append_identifier(thd, str, field_str, strlen(field_str));
+    if (--no_fields != 0)
+      str->append(",");
+  }
+  return;
 }
 
 
@@ -1578,22 +1635,45 @@ static bool fill_dd_partition_from_create_info(THD *thd,
     }
 
     /* Set partition_expression */
+    dd::String_type expr;
+    dd::String_type expr_utf8;
+    char expr_buff[256];
+    String tmp(expr_buff, sizeof(expr_buff), system_charset_info);
+    // Default on-stack buffer which allows to avoid malloc() in most cases.
+    tmp.length(0);
     if (part_info->list_of_part_fields)
     {
-      dd::String_type str;
-      if (get_field_list_str(str, &part_info->part_field_list))
+      if (get_field_list_str(expr, &part_info->part_field_list))
         return true;
-      tab_obj->set_partition_expression(str);
+      collect_partition_expr(thd, part_info->part_field_list, &tmp);
+      expr_utf8.assign(tmp.ptr(), tmp.length());
     }
     else
     {
       /* column_list also has list_of_part_fields set! */
       DBUG_ASSERT(!part_info->column_list);
-      /* TODO-PARTITION: use part_info->part_expr->print() instead! */
-      dd::String_type str(part_info->part_func_string,
-                      part_info->part_func_len);
-      tab_obj->set_partition_expression(str);
+
+      // Turn off ANSI_QUOTES and other SQL modes which affect printing of
+      // expressions.
+      Sql_mode_parse_guard parse_guard(thd);
+
+      // No point in including schema and table name for identifiers
+      // since any columns must be in this table.
+      part_info->part_expr->print(&tmp, enum_query_type(QT_TO_SYSTEM_CHARSET |
+                                                        QT_NO_DB |
+                                                        QT_NO_TABLE));
+
+      if (tmp.numchars() > PARTITION_EXPR_CHAR_LEN)
+      {
+        my_error(ER_PART_EXPR_TOO_LONG, MYF(0));
+        return true;
+      }
+
+      expr.assign(tmp.ptr(), tmp.length());
+      expr_utf8= expr;
     }
+    tab_obj->set_partition_expression(expr);
+    tab_obj->set_partition_expression_utf8(expr_utf8);
 
     if (part_info->use_default_partitions)
     {
@@ -1635,20 +1715,42 @@ static bool fill_dd_partition_from_create_info(THD *thd,
       }
 
       /* Set subpartition_expression */
+      expr.clear();
+      expr_utf8.clear();
+      tmp.length(0);
       if (part_info->list_of_subpart_fields)
       {
-        dd::String_type str;
-        if (get_field_list_str(str, &part_info->subpart_field_list))
+        if (get_field_list_str(expr, &part_info->subpart_field_list))
           return true;
-        tab_obj->set_subpartition_expression(str);
+
+        collect_partition_expr(thd, part_info->subpart_field_list, &tmp);
+        expr_utf8.assign(tmp.ptr(), tmp.length());
       }
       else
       {
-        /* TODO-PARTITION: use part_info->subpart_expr->print() instead! */
-        dd::String_type str(part_info->subpart_func_string,
-                        part_info->subpart_func_len);
-        tab_obj->set_subpartition_expression(str);
+        // Turn off ANSI_QUOTES and other SQL modes which affect printing of
+        // expressions.
+        Sql_mode_parse_guard parse_guard(thd);
+
+        // No point in including schema and table name for identifiers
+        // since any columns must be in this table.
+        part_info->subpart_expr->print(&tmp,
+                                       enum_query_type(QT_TO_SYSTEM_CHARSET |
+                                                       QT_NO_DB |
+                                                       QT_NO_TABLE));
+
+        if (tmp.numchars() > PARTITION_EXPR_CHAR_LEN)
+        {
+          my_error(ER_PART_EXPR_TOO_LONG, MYF(0));
+          return true;
+        }
+
+        expr.assign(tmp.ptr(), tmp.length());
+        expr_utf8= expr;
       }
+      tab_obj->set_subpartition_expression(expr);
+      tab_obj->set_subpartition_expression_utf8(expr_utf8);
+
       if (part_info->use_default_subpartitions)
       {
         if (!part_info->use_default_num_subpartitions)
@@ -1665,6 +1767,11 @@ static bool fill_dd_partition_from_create_info(THD *thd,
       List_iterator<partition_element> part_it(part_info->partitions);
       partition_element *part_elem;
       uint part_num= 0;
+      CHARSET_INFO *cs= system_charset_info;
+      char buff[2048];
+      String part_desc_res(buff, sizeof(buff), cs);
+      String part_desc_str;
+
       while ((part_elem= part_it++))
       {
         if (part_elem->part_state == PART_TO_BE_DROPPED ||
@@ -1676,7 +1783,6 @@ static bool fill_dd_partition_from_create_info(THD *thd,
 
         dd::Partition *part_obj= tab_obj->add_partition();
 
-        part_obj->set_level(0);
         part_obj->set_name(part_elem->partition_name);
         part_obj->set_engine(tab_obj->engine());
         if (part_elem->part_comment)
@@ -1700,16 +1806,22 @@ static bool fill_dd_partition_from_create_info(THD *thd,
           if (part_info->column_list)
           {
             List_iterator<part_elem_value> list_it(part_elem->list_val_list);
+            part_desc_str.length(0);
             part_elem_value *list_value= list_it++;
             if (add_part_col_vals(part_info,
                                   list_value,
                                   0,
                                   part_obj,
                                   create_info,
-                                  create_fields))
+                                  create_fields,
+                                  &part_desc_str))
             {
               return true;
             }
+
+            part_obj->set_description_utf8(String_type(part_desc_str.ptr(),
+                                                       part_desc_str.length()));
+
             DBUG_ASSERT(list_it++ == NULL);
           }
           else
@@ -1732,33 +1844,61 @@ static bool fill_dd_partition_from_create_info(THD *thd,
                                         (ulonglong) part_elem->range_value));
               }
             }
+
+            // Set partition description. Used only by I_S.
+            part_desc_str.length(0);
+            if (part_elem->range_value != LLONG_MAX)
+            {
+              part_desc_res.set(part_elem->range_value, cs);
+              part_desc_str.append(part_desc_res);
+            }
+            else
+              part_desc_str.append(partition_keywords[PKW_MAXVALUE].str);
+
+            part_obj->set_description_utf8(String_type(part_desc_str.ptr(),
+                                                       part_desc_str.length()));
+
           }
         }
         else if (part_info->part_type == partition_type::LIST)
         {
           uint list_index= 0;
           List_iterator<part_elem_value> list_val_it(part_elem->list_val_list);
+          uint num_items= part_elem->list_val_list.elements;
+          part_desc_str.length(0);
+          part_desc_res.length(0);
           if (part_elem->has_null_value)
           {
             DBUG_ASSERT(!part_info->column_list);
             dd::Partition_value *val_obj= part_obj->add_value();
             val_obj->set_value_null(true);
             val_obj->set_list_num(list_index++);
+            part_desc_str.append("NULL");
+            if (num_items > 0)
+              part_desc_str.append(",");
           }
           part_elem_value *list_value;
           while ((list_value= list_val_it++))
           {
             if (part_info->column_list)
             {
+              // Store partition description. Used by I_S only.
+              if (part_info->part_field_list.elements > 1U)
+                part_desc_str.append("(");
+
               if (add_part_col_vals(part_info,
                                     list_value,
                                     list_index,
                                     part_obj,
                                     create_info,
-                                    create_fields))
+                                    create_fields,
+                                    &part_desc_str))
               {
                 return true;
               }
+
+              if (part_info->part_field_list.elements > 1U)
+                part_desc_str.append(")");
             }
             else
             {
@@ -1768,15 +1908,23 @@ static bool fill_dd_partition_from_create_info(THD *thd,
               {
                 val_obj->set_value_utf8(dd::Properties::from_uint64(
                                         (ulonglong) list_value->value));
+                part_desc_res.set((ulonglong)list_value->value, cs);
               }
               else
               {
                 val_obj->set_value_utf8(dd::Properties::from_int64(
                                         list_value->value));
+                part_desc_res.set(list_value->value, cs);
               }
+              part_desc_str.append(part_desc_res);
             }
+            if (--num_items != 0)
+              part_desc_str.append(",");
+
             list_index++;
           }
+          part_obj->set_description_utf8(String_type(part_desc_str.ptr(),
+                                                     part_desc_str.length()));
         }
         else
         {
@@ -1794,35 +1942,15 @@ static bool fill_dd_partition_from_create_info(THD *thd,
           for (dd::Index *idx : *tab_obj->indexes())
             part_obj->add_index(idx);
         }
-
-        part_num++;
-      }
-
-      /*
-        Set up all subpartitions. Partitions collection in dd::Table
-        must contain all objects for partitions first and only then
-        objects for subpartitions.
-      */
-      if (part_info->is_sub_partitioned())
-      {
-        part_it.rewind();
-        uint sub_part_num= 0;
-
-        while ((part_elem= part_it++))
+        else
         {
-          if (part_elem->part_state == PART_TO_BE_DROPPED ||
-              part_elem->part_state == PART_REORGED_DROPPED)
-          {
-            /* These should not be included in the new table definition. */
-            continue;
-          }
-
           List_iterator<partition_element> sub_it(part_elem->subpartitions);
           partition_element *sub_elem;
+          uint sub_part_num= 0;
           while ((sub_elem= sub_it++))
           {
-            dd::Partition *sub_obj= tab_obj->add_partition();
-            sub_obj->set_level(1);
+            dd::Partition *sub_obj= part_obj->add_sub_partition();
+
             sub_obj->set_engine(tab_obj->engine());
             if (sub_elem->part_comment)
               sub_obj->set_comment(sub_elem->part_comment);
@@ -1850,8 +1978,8 @@ static bool fill_dd_partition_from_create_info(THD *thd,
             sub_part_num++;
           }
         }
-        // Properly set-up links to parent partitions for subpartitions.
-        tab_obj->fix_partitions();
+
+        part_num++;
       }
     }
   }
@@ -1891,6 +2019,53 @@ static Table::enum_row_format dd_get_new_row_format(row_type old_format)
     break;
   }
   return Table::RF_FIXED;
+}
+
+
+/**
+  Check if the storage engine supports geographic geometry columns. If not,
+  check that the columns defined only has Cartesian coordinate systems
+  (projected SRS or SRID 0).
+
+  @param thd Thread handle
+  @param table The table definition
+  @param handler Handler to the storage engine
+
+  @retval true if the engine does not supports the provided SRS id. In that case
+          my_error is called
+  @retval false on success
+*/
+static bool engine_supports_provided_srs_id(THD *thd, const dd::Table &table,
+                                            const handler *handler)
+{
+  if (!(handler->ha_table_flags() & HA_SUPPORTS_GEOGRAPHIC_GEOMETRY_COLUMN))
+  {
+    for (const auto col : table.columns())
+    {
+      if (col->srs_id().has_value() && col->srs_id() != 0)
+      {
+        Srs_fetcher fetcher(thd);
+        const dd::Spatial_reference_system *srs= nullptr;
+        dd::cache::Dictionary_client::Auto_releaser m_releaser(thd->dd_client());
+        if (fetcher.acquire(col->srs_id().value(), &srs))
+        {
+          // An error has already been flagged.
+          return true; /* purecov: deadcode */
+        }
+
+        // Non-existing spatial reference systems should already been stopped
+        DBUG_ASSERT(srs != nullptr);
+        if (srs->is_geographic())
+        {
+          my_error(ER_CHECK_NOT_IMPLEMENTED, MYF(0),
+                   "geographic spatial reference systems");
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
 }
 
 
@@ -2096,6 +2271,14 @@ static bool fill_dd_table_from_create_info(THD *thd,
                                          file))
     return true;
 
+  /*
+    Reject the create if the SRID represents a geographic spatial reference
+    system in an engine that does not support it. The function will call
+    my_error in case of any errors.
+  */
+  if (engine_supports_provided_srs_id(thd, *tab_obj, file))
+    return true;
+
   // Add index definitions
   fill_dd_indexes_from_keyinfo(thd, tab_obj, keys, keyinfo, create_fields, file);
 
@@ -2137,8 +2320,92 @@ static bool fill_dd_table_from_create_info(THD *thd,
   return false;
 }
 
+/**
+  Get the SE private data from the dd_properties table.
+
+  @note During restart, when the scaffolding is created, we assign the
+  DD tablespace id (==1) even though this is different that the scaffolding
+  DD tablespace id. This is because both server code and innodb code has
+  hard coded expectations regarding the DD tablespace id.
+
+  @param [in]     thd        Thread context.
+  @param [in,out] tab_obj    Table object to which SE private
+                             data should be added.
+
+  @returns true if error, false otherwise.
+*/
+static bool get_se_private_data(THD *thd, dd::Table *tab_obj)
+{
+  using dd::tables::DD_properties;
+  std::unique_ptr<dd::Properties> sys_tbl_props;
+  bool exists= false;
+  String_type tbl_prop_str;
+  if (dd::tables::DD_properties::instance().get(thd,
+          "SYSTEM_TABLES", &sys_tbl_props, &exists) ||
+      !exists ||
+      sys_tbl_props->get(tab_obj->name(), tbl_prop_str))
+  {
+    my_error(ER_DD_METADATA_NOT_FOUND, MYF(0), tab_obj->name().c_str());
+    return true;
+  }
+
+  std::unique_ptr<dd::Properties> tbl_props(
+    Properties::parse_properties(tbl_prop_str));
+  Object_id se_id= INVALID_OBJECT_ID;
+  Object_id space_id= INVALID_OBJECT_ID;
+  String_type se_data;
+
+  if (tbl_props->get_uint64(DD_properties::dd_key(
+        DD_properties::DD_property::ID), &se_id) ||
+      tbl_props->get_uint64(DD_properties::dd_key(
+        DD_properties::DD_property::SPACE_ID), &space_id) ||
+      tbl_props->get(DD_properties::dd_key(
+        DD_properties::DD_property::DATA), se_data))
+  {
+    my_error(ER_DD_METADATA_NOT_FOUND, MYF(0), tab_obj->name().c_str());
+    return true;
+  }
+
+  tab_obj->set_se_private_id(se_id);
+  tab_obj->set_tablespace_id(space_id);
+  tab_obj->set_se_private_data_raw(se_data);
+
+  // Assign SE private data for indexes.
+  int count= 0;
+  for (auto idx: *tab_obj->indexes())
+  {
+    std::stringstream ss;
+    ss << DD_properties::dd_key(
+            DD_properties::DD_property::IDX) << count++;
+    if (tbl_props->get(ss.str().c_str(), se_data))
+    {
+      my_error(ER_DD_METADATA_NOT_FOUND, MYF(0), tab_obj->name().c_str());
+      return true;
+    }
+    idx->set_se_private_data_raw(se_data);
+    // Assign the same tablespace id for the indexes as for the table.
+    idx->set_tablespace_id(space_id);
+  }
+
+  // Assign SE private data for columns.
+  count= 0;
+  for (auto col: *tab_obj->columns())
+  {
+    std::stringstream ss;
+    ss << DD_properties::dd_key(
+            DD_properties::DD_property::COL) << count++;
+    if (tbl_props->get(ss.str().c_str(), se_data))
+    {
+      my_error(ER_DD_METADATA_NOT_FOUND, MYF(0), tab_obj->name().c_str());
+      return true;
+    }
+    col->set_se_private_data_raw(se_data);
+  }
+  return false;
+}
 
 static bool create_dd_system_table(THD *thd,
+                                   const dd::Schema &system_schema,
                                    const dd::String_type &table_name,
                                    HA_CREATE_INFO *create_info,
                                    const List<Create_field> &create_fields,
@@ -2149,28 +2416,13 @@ static bool create_dd_system_table(THD *thd,
                                    handler *file,
                                    const dd::Object_table &dd_table)
 {
-  // Retrieve the system schema.
-  const Schema *system_schema= NULL;
-  dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
-  if (thd->dd_client()->acquire(dd::String_type(MYSQL_SCHEMA_NAME.str),
-                                &system_schema))
-  {
-    // Error is reported by the dictionary subsystem.
-    return true;
-  }
-
-  if (!system_schema)
-  {
-    my_error(ER_BAD_DB_ERROR, MYF(0), MYSQL_SCHEMA_NAME.str);
-    return true;
-  }
-
   // Create dd::Table object.
-  std::unique_ptr<dd::Table> tab_obj(const_cast<dd::Schema *>(system_schema)->
-    create_table(thd));
+  std::unique_ptr<dd::Table> tab_obj(system_schema.create_table(thd));
 
   // Set to be hidden if appropriate.
-  tab_obj->set_hidden(dd_table.hidden());
+  tab_obj->set_hidden(dd_table.is_hidden() ?
+                      dd::Abstract_table::HT_HIDDEN_SYSTEM :
+                      dd::Abstract_table::HT_VISIBLE);
 
   if (fill_dd_table_from_create_info(thd, tab_obj.get(), table_name,
                                      create_info, create_fields,
@@ -2179,32 +2431,48 @@ static bool create_dd_system_table(THD *thd,
     return true;
 
   /*
-    Get the se private data for the DD table
-
-    In upgrade scenario, to check the existence of version table,
-    version table is tried to open. This requires dd::Table object
-    for version table. Creation of version table inside Storage Engine
-    should be avoided during the existance check. We skip fetching
-    se_private_id from SE during this process. This is done as
-    a work around to reset variables in InnoDB as it is done for
-    dictionary cache and dictionary object ids.
-
-    TODO: This should be fixed as preparation for InnoDB dictionary upgrade.
+    During --initialize, and for inert tables, get the SE private data
+    from the SE, and store it in the dd_properties table at a later stage.
+    Otherwise, get the SE private data from the 'dd_properties' table.
   */
-  if (!dd_upgrade_skip_se)
+  const System_tables::Types *table_type= System_tables::instance()->
+          find_type(system_schema.name(), table_name);
+  if (opt_initialize || (table_type != nullptr &&
+                         *table_type  == System_tables::Types::INERT))
   {
     if (file->ha_get_se_private_data(tab_obj.get(),
-                                     dd_table.default_dd_version(thd)))
+              (table_type != nullptr &&
+               *table_type  == System_tables::Types::INERT)))
       return true;
   }
-  thd->dd_client()->store(tab_obj.get());
+  else
+  {
+    if (get_se_private_data(thd, tab_obj.get()))
+      return true;
+  }
 
-  return false;
+  // Register the se private id with the DDSE.
+  handlerton *ddse= ha_resolve_by_legacy_type(thd, DB_TYPE_INNODB);
+  if (ddse->dict_register_dd_table_id == nullptr)
+    return true;
+  ddse->dict_register_dd_table_id(tab_obj->se_private_id());
+
+  return thd->dd_client()->store(tab_obj.get());
+}
+
+
+bool is_server_ps_table_name(const dd::String_type& schema_name,
+                             const dd::String_type& table_name)
+{
+  return
+    is_perfschema_db(schema_name.c_str(), schema_name.length()) &&
+    System_tables::instance()->find_table(schema_name,
+                                          table_name) != nullptr;
 }
 
 
 bool create_dd_user_table(THD *thd,
-                          const dd::String_type &schema_name,
+                          const dd::Schema &sch_obj,
                           const dd::String_type &table_name,
                           HA_CREATE_INFO *create_info,
                           const List<Create_field> &create_fields,
@@ -2213,37 +2481,22 @@ bool create_dd_user_table(THD *thd,
                           Alter_info::enum_enable_or_disable keys_onoff,
                           const FOREIGN_KEY *fk_keyinfo,
                           uint fk_keys,
-                          handler *file,
-                          bool commit_dd_changes)
+                          handler *file)
 {
   // Verify that this is not a dd table.
-  DBUG_ASSERT(!dd::get_dictionary()->is_dd_table_name(schema_name,
+  DBUG_ASSERT(!dd::get_dictionary()->is_dd_table_name(sch_obj.name(),
                                                       table_name));
 
-  // Check if the schema exists. We must make sure the schema is released
-  // and unlocked in the right order.
-  dd::Schema_MDL_locker mdl_locker(thd);
-  dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
-  const dd::Schema *sch_obj= NULL;
-
-  if (mdl_locker.ensure_locked(schema_name.c_str()) ||
-      thd->dd_client()->acquire(schema_name, &sch_obj))
-  {
-    // Error is reported by the dictionary subsystem.
-    return true;
-  }
-
-  if (!sch_obj)
-  {
-    my_error(ER_BAD_DB_ERROR, MYF(0), schema_name.c_str());
-    return true;
-  }
-
   // Create dd::Table object.
-  std::unique_ptr<dd::Table> tab_obj(sch_obj->create_table(thd));
+  std::unique_ptr<dd::Table> tab_obj(sch_obj.create_table(thd));
 
   // Mark the hidden flag.
-  tab_obj->set_hidden(create_info->m_hidden);
+  tab_obj->set_hidden(create_info->m_hidden ?
+                      dd::Abstract_table::HT_HIDDEN_DDL :
+                      dd::Abstract_table::HT_VISIBLE);
+
+  if (is_server_ps_table_name(sch_obj.name(), table_name))
+    performance_schema::set_PS_version_for_table(&tab_obj->options());
 
   if (fill_dd_table_from_create_info(thd, tab_obj.get(), table_name,
                                      create_info, create_fields,
@@ -2251,37 +2504,13 @@ bool create_dd_user_table(THD *thd,
                                      fk_keyinfo, fk_keys, file))
     return true;
 
-  /*
-    TODO: Pull commits out of this layer. Should be simpler
-          once legacy partitioning DDL code is removed.
-  */
-
-  Disable_gtid_state_update_guard disabler(thd);
-
   // Store info in DD tables.
-  if (thd->dd_client()->store(tab_obj.get()))
-  {
-    if (commit_dd_changes)
-    {
-      trans_rollback_stmt(thd);
-      // Full rollback in case we have THD::transaction_rollback_request.
-      trans_rollback(thd);
-    }
-    return true;
-  }
-
-  if (commit_dd_changes)
-  {
-    if (trans_commit_stmt(thd) || trans_commit(thd))
-      return true;
-  }
-
-  return false;
+  return thd->dd_client()->store(tab_obj.get());
 }
 
 
 bool create_table(THD *thd,
-                  const dd::String_type &schema_name,
+                  const dd::Schema &sch_obj,
                   const dd::String_type &table_name,
                   HA_CREATE_INFO *create_info,
                   const List<Create_field> &create_fields,
@@ -2290,25 +2519,24 @@ bool create_table(THD *thd,
                   Alter_info::enum_enable_or_disable keys_onoff,
                   const FOREIGN_KEY *fk_keyinfo,
                   uint fk_keys,
-                  handler *file,
-                  bool commit_dd_changes)
+                  handler *file)
 {
   dd::Dictionary *dict= dd::get_dictionary();
-  const dd::Object_table *dd_table= dict->get_dd_table(schema_name, table_name);
+  const dd::Object_table *dd_table=
+    dict->get_dd_table(sch_obj.name(), table_name);
 
   return dd_table ?
-    create_dd_system_table(thd, table_name, create_info, create_fields,
-                           keyinfo, keys, fk_keyinfo, fk_keys,
+    create_dd_system_table(thd, sch_obj, table_name, create_info,
+                           create_fields, keyinfo, keys, fk_keyinfo, fk_keys,
                            file, *dd_table) :
-    create_dd_user_table(thd, schema_name, table_name, create_info,
+    create_dd_user_table(thd, sch_obj, table_name, create_info,
                          create_fields, keyinfo, keys, keys_onoff,
-                         fk_keyinfo, fk_keys, file,
-                         commit_dd_changes);
+                         fk_keyinfo, fk_keys, file);
 }
 
 
 std::unique_ptr<dd::Table> create_tmp_table(THD *thd,
-                             const dd::String_type &schema_name,
+                             const dd::Schema &sch_obj,
                              const dd::String_type &table_name,
                              HA_CREATE_INFO *create_info,
                              const List<Create_field> &create_fields,
@@ -2317,26 +2545,8 @@ std::unique_ptr<dd::Table> create_tmp_table(THD *thd,
                              Alter_info::enum_enable_or_disable keys_onoff,
                              handler *file)
 {
-  // Check if the schema exists. We must make sure the schema is released
-  // and unlocked in the right order.
-  dd::Schema_MDL_locker mdl_locker(thd);
-  dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
-  const dd::Schema *sch_obj= NULL;
-  if (mdl_locker.ensure_locked(schema_name.c_str()) ||
-      thd->dd_client()->acquire(schema_name, &sch_obj))
-  {
-    // Error is reported by the dictionary subsystem.
-    return nullptr;
-  }
-
-  if (!sch_obj)
-  {
-    my_error(ER_BAD_DB_ERROR, MYF(0), schema_name.c_str());
-    return nullptr;
-  }
-
   // Create dd::Table object.
-  std::unique_ptr<dd::Table> tab_obj(sch_obj->create_table(thd));
+  std::unique_ptr<dd::Table> tab_obj(sch_obj.create_table(thd));
 
   if (fill_dd_table_from_create_info(thd, tab_obj.get(), table_name,
                                      create_info, create_fields,
@@ -2347,137 +2557,14 @@ std::unique_ptr<dd::Table> create_tmp_table(THD *thd,
 }
 
 
-bool add_triggers(THD *thd,
-                  const dd::String_type &schema_name,
-                  const dd::String_type &table_name,
-                  Prealloced_array<dd::Trigger*, 1> *trg_info,
-                  bool commit_dd_changes)
-{
-  DBUG_ENTER("dd::add_triggers");
-  DBUG_ASSERT(trg_info != nullptr && !trg_info->empty());
-
-  dd::Table *table_def= nullptr;
-  if (thd->dd_client()->acquire_for_modification(schema_name, table_name,
-                                                 &table_def))
-    DBUG_RETURN(true);
-
-  if (trg_info != nullptr && !trg_info->empty())
-    table_def->move_triggers(trg_info);
-
-  Disable_gtid_state_update_guard disabler(thd);
-
-  if (thd->dd_client()->update(table_def))
-  {
-    if (commit_dd_changes)
-    {
-      trans_rollback_stmt(thd);
-      // Full rollback in case we have THD::transaction_rollback_request.
-      trans_rollback(thd);
-    }
-    DBUG_RETURN(true);
-  }
-
-  if (commit_dd_changes)
-
-  {
-    if (trans_commit_stmt(thd) || trans_commit(thd))
-      DBUG_RETURN(true);
-  }
-
-  DBUG_RETURN(false);
-}
-
-
 bool drop_table(THD *thd, const char *schema_name, const char *name,
-                bool commit_dd_changes)
+                const dd::Table &table_def)
 {
-  dd::cache::Dictionary_client *client= thd->dd_client();
-
-
-  // Verify that the schema exists. We must make sure the schema is released
-  // and unlocked in the right order.
-  dd::Schema_MDL_locker mdl_locker(thd);
-  dd::cache::Dictionary_client::Auto_releaser releaser(client);
-  const dd::Schema *sch= NULL;
-  if (mdl_locker.ensure_locked(schema_name) ||
-      client->acquire(schema_name, &sch))
-  {
-    // Error is reported by the dictionary subsystem.
-    return true;
-  }
-
-  if (!sch)
-  {
-    my_error(ER_BAD_DB_ERROR, MYF(0), schema_name);
-    return true;
-  }
-
-  const dd::Table *table_def= NULL;
-  if (client->acquire(schema_name, name, &table_def))
-  {
-    // Error is reported by the dictionary subsystem.
-    return true;
-  }
-
-  // A non-existing object is a legitimate scenario.
-  if (!table_def)
-    return false;
-
-  Disable_gtid_state_update_guard disabler(thd);
-
-  // Drop the table and related dynamic statistics too.
-  if (client->drop(table_def) ||
-      client->remove_table_dynamic_statistics(schema_name, name))
-  {
-    if (commit_dd_changes)
-    {
-      trans_rollback_stmt(thd);
-      // Full rollback in case we have THD::transaction_rollback_request.
-      trans_rollback(thd);
-    }
-    return true;
-  }
-
-  return commit_dd_changes &&
-         (trans_commit_stmt(thd) || trans_commit(thd));
+  return thd->dd_client()->drop(&table_def) ||
+    thd->dd_client()->remove_table_dynamic_statistics(schema_name, name);
 }
 
 
-bool drop_table(THD *thd, const char *schema_name, const char *name,
-                const dd::Table *table_def, bool commit_dd_changes)
-{
-  /*
-    Acquire lock on schema so assert in Dictionary_client::drop() checking
-    that we have proper MDL lock on the object deleted can safely get schema
-    name from the schema ID.
-
-    TODO: Change code to make this unnecessary.
-  */
-  dd::Schema_MDL_locker mdl_locker(thd);
-  if (mdl_locker.ensure_locked(schema_name))
-    return true;
-
-  Disable_gtid_state_update_guard disabler(thd);
-
-  // Drop the table
-  if (thd->dd_client()->drop(table_def) ||
-      thd->dd_client()->remove_table_dynamic_statistics(schema_name, name))
-  {
-    if (commit_dd_changes)
-    {
-      trans_rollback_stmt(thd);
-      // Full rollback in case we have THD::transaction_rollback_request.
-      trans_rollback(thd);
-    }
-    return true;
-  }
-
-  return commit_dd_changes &&
-         (trans_commit_stmt(thd) || trans_commit(thd));
-}
-
-
-template <typename T>
 bool table_exists(dd::cache::Dictionary_client *client,
                   const char *schema_name, const char *name,
                   bool *exists)
@@ -2487,7 +2574,7 @@ bool table_exists(dd::cache::Dictionary_client *client,
 
   // Tables exist if they can be acquired.
   dd::cache::Dictionary_client::Auto_releaser releaser(client);
-  const T *tab_obj= NULL;
+  const dd::Abstract_table *tab_obj= NULL;
   if (client->acquire(schema_name, name, &tab_obj))
   {
     // Error is reported by the dictionary subsystem.
@@ -2512,8 +2599,8 @@ bool table_exists(dd::cache::Dictionary_client *client,
   @returns true if error, false otherwise.
 */
 
-static bool rename_foreign_keys(const char *old_table_name,
-                                dd::Table *new_tab)
+bool rename_foreign_keys(const char *old_table_name,
+                         dd::Table *new_tab)
 {
   char fk_name_prefix[NAME_LEN + 7]; // Reserve 7 chars for _ibfk_ + NullS
   strxnmov(fk_name_prefix, sizeof(fk_name_prefix) - 1,
@@ -2548,259 +2635,6 @@ static bool rename_foreign_keys(const char *old_table_name,
     }
   }
   return false;
-}
-
-
-bool rename_table(THD *thd,
-                  const char *from_schema_name,
-                  const char *from_table_name,
-                  const char *to_schema_name,
-                  const char *to_table_name,
-                  bool mark_as_hidden,
-                  bool commit_dd_changes)
-{
-  // We must make sure the schema is released and unlocked in the right order.
-  dd::Schema_MDL_locker from_mdl_locker(thd);
-  dd::Schema_MDL_locker to_mdl_locker(thd);
-
-  // Check if source and destination schemas exist.
-  dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
-  const dd::Schema *from_sch= NULL;
-  const dd::Schema *to_sch= NULL;
-  const dd::Table *to_tab= NULL;
-  dd::Table *new_tab = nullptr;
-
-  /*
-    Acquire all objects. Uncommitted read for 'from' object allows us
-    to use this function in ALTER TABLE ALGORITHM=INPLACE implementation.
-  */
-
-  if (from_mdl_locker.ensure_locked(from_schema_name) ||
-      to_mdl_locker.ensure_locked(to_schema_name) ||
-      thd->dd_client()->acquire(from_schema_name, &from_sch) ||
-      thd->dd_client()->acquire(to_schema_name, &to_sch) ||
-      thd->dd_client()->acquire(to_schema_name, to_table_name, &to_tab) ||
-      thd->dd_client()->acquire_for_modification(from_schema_name, from_table_name,
-                                                 &new_tab))
-  {
-    // Error is reported by the dictionary subsystem.
-    return true;
-  }
-
-  // Report error if missing objects. Missing 'to_tab' is not an error.
-  if (!from_sch)
-  {
-    my_error(ER_BAD_DB_ERROR, MYF(0), from_schema_name);
-    return true;
-  }
-
-  if (!to_sch)
-  {
-    my_error(ER_BAD_DB_ERROR, MYF(0), to_schema_name);
-    return true;
-  }
-
-  Disable_gtid_state_update_guard disabler(thd);
-
-  // If 'to_tab' exists (which it may not), drop it.
-  if (to_tab)
-  {
-    if (thd->dd_client()->drop(to_tab))
-    {
-      if (commit_dd_changes)
-      {
-        // Error is reported by the dictionary subsystem.
-        trans_rollback_stmt(thd);
-        // Full rollback in case we have THD::transaction_rollback_request.
-        trans_rollback(thd);
-      }
-      return true;
-    }
-  }
-
-  // Set schema id and table name.
-  new_tab->set_schema_id(to_sch->id());
-  new_tab->set_name(to_table_name);
-
-  // Mark the hidden flag.
-  new_tab->set_hidden(mark_as_hidden);
-
-  if (rename_foreign_keys(from_table_name, new_tab))
-    return true;
-
-  // Do the update. Errors will be reported by the dictionary subsystem.
-  if (thd->dd_client()->update(new_tab))
-  {
-    if (commit_dd_changes)
-    {
-      trans_rollback_stmt(thd);
-      // Full rollback in case we have THD::transaction_rollback_request.
-      trans_rollback(thd);
-    }
-    return true;
-  }
-
-  if (commit_dd_changes)
-  {
-    if (trans_commit_stmt(thd) || trans_commit(thd))
-      return true;
-  }
-  return false;
-}
-
-
-bool rename_table(THD *thd, const char *from_table_name,
-                  dd::Table *to_table_def,
-                  bool commit_dd_changes)
-{
-  Disable_gtid_state_update_guard disabler(thd);
-
-  if (rename_foreign_keys(from_table_name, to_table_def))
-    return true;
-
-  // Do the update. Errors will be reported by the dictionary subsystem.
-  if (thd->dd_client()->update(to_table_def))
-  {
-    if (commit_dd_changes)
-    {
-      trans_rollback_stmt(thd);
-      // Full rollback in case we have THD::transaction_rollback_request.
-      trans_rollback(thd);
-    }
-    return true;
-  }
-
-  if (commit_dd_changes)
-  {
-    if (trans_commit_stmt(thd) || trans_commit(thd))
-      return true;
-  }
-  return false;
-}
-
-
-bool rename_view(THD *thd,
-                 const char *from_schema_name,
-                 const char *from_name,
-                 const char *to_schema_name,
-                 const char *to_name,
-                 bool commit_dd_changes)
-{
-  // TODO: This function can be simplified - see Bug#24930129.
-
-  // We must make sure the schema is released and unlocked in the right order.
-  dd::Schema_MDL_locker from_mdl_locker(thd);
-  dd::Schema_MDL_locker to_mdl_locker(thd);
-
-  // Check if source and destination schemas exist.
-  dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
-  const dd::Schema *from_sch= NULL;
-  const dd::Schema *to_sch= NULL;
-  const dd::View *to_view= NULL;
-  dd::View *new_view = nullptr;
-
-  // Acquire all objects.
-  if (from_mdl_locker.ensure_locked(from_schema_name) ||
-      to_mdl_locker.ensure_locked(to_schema_name) ||
-      thd->dd_client()->acquire(from_schema_name, &from_sch) ||
-      thd->dd_client()->acquire(to_schema_name, &to_sch) ||
-      thd->dd_client()->acquire(to_schema_name, to_name, &to_view) ||
-      thd->dd_client()->acquire_for_modification(from_schema_name, from_name,
-                                                 &new_view))
-  {
-    // Error is reported by the dictionary subsystem.
-    return true;
-  }
-
-  // Report error if missing objects. Missing 'to_view' is not an error.
-  if (!from_sch)
-  {
-    my_error(ER_BAD_DB_ERROR, MYF(0), from_schema_name);
-    return true;
-  }
-
-  if (!to_sch)
-  {
-    my_error(ER_BAD_DB_ERROR, MYF(0), to_schema_name);
-    return true;
-  }
-
-  if (!new_view)
-  {
-    my_error(ER_NO_SUCH_TABLE, MYF(0), from_schema_name, from_name);
-    return true;
-  }
-
-  Disable_gtid_state_update_guard disabler(thd);
-
-  // If 'to_view' exists (which it may not), drop it.
-  if (to_view)
-  {
-    if (thd->dd_client()->drop(to_view))
-    {
-      if (commit_dd_changes)
-      {
-        // Error is reported by the dictionary subsystem.
-        trans_rollback_stmt(thd);
-        // Full rollback in case we have THD::transaction_rollback_request.
-        trans_rollback(thd);
-        return true;
-      }
-    }
-  }
-
-  // Set schema id and view name.
-  new_view->set_schema_id(to_sch->id());
-  new_view->set_name(to_name);
-
-  // Do the update. Errors will be reported by the dictionary subsystem.
-  if (thd->dd_client()->update(new_view))
-  {
-    if (commit_dd_changes)
-    {
-      trans_rollback_stmt(thd);
-      // Full rollback in case we have THD::transaction_rollback_request.
-      trans_rollback(thd);
-      return true;
-    }
-  }
-
-  if (commit_dd_changes)
-  {
-    if (trans_commit_stmt(thd) || trans_commit(thd))
-      return true;
-  }
-  return false;
-}
-
-
-bool abstract_table_type(dd::cache::Dictionary_client *client,
-                         const char *schema_name,
-                         const char *table_name,
-                         dd::enum_table_type *table_type)
-{
-  DBUG_ENTER("dd::abstract_table_type");
-
-  dd::cache::Dictionary_client::Auto_releaser releaser(client);
-  // Get hold of the dd::Table object.
-  const dd::Abstract_table *table= NULL;
-  if (client->acquire(schema_name, table_name, &table))
-  {
-    // Error is reported by the dictionary subsystem.
-    DBUG_RETURN(true);
-  }
-
-  if (table == NULL)
-  {
-    my_error(ER_NO_SUCH_TABLE, MYF(0), schema_name, table_name);
-    DBUG_RETURN(true);
-  }
-
-  // Assign the table type out parameter.
-  DBUG_ASSERT(table_type);
-  *table_type= table->type();
-
-  DBUG_RETURN(false);
 }
 
 
@@ -2856,8 +2690,7 @@ bool table_legacy_db_type(THD *thd, const char *schema_name,
 /* purecov: end */
 
 
-bool table_storage_engine(THD *thd, const char *schema_name,
-                          const char *table_name, const dd::Table *table,
+bool table_storage_engine(THD *thd, const dd::Table *table,
                           handlerton **hton)
 {
   DBUG_ENTER("dd::table_storage_engine");
@@ -2869,70 +2702,14 @@ bool table_storage_engine(THD *thd, const char *schema_name,
       ha_resolve_by_name_raw(thd, lex_cstring_handle(table->engine()));
   if (!tmp_plugin)
   {
-    my_error(ER_STORAGE_ENGINE_NOT_LOADED, MYF(0), schema_name, table_name);
+    my_error(ER_UNKNOWN_STORAGE_ENGINE, MYF(0), table->engine().c_str());
     DBUG_RETURN(true);
   }
 
   *hton= plugin_data<handlerton*>(tmp_plugin);
   DBUG_ASSERT(*hton && ha_storage_engine_is_enabled(*hton));
 
-  // For a partitioned table, the SE must support partitioning natively.
-  DBUG_ASSERT(table->partition_type() == dd::Table::PT_NONE ||
-              (*hton)->partition_flags);
-
   DBUG_RETURN(false);
-}
-
-
-bool table_storage_engine(THD *thd, const TABLE_LIST *table_list,
-                          handlerton **hton)
-{
-  DBUG_ENTER("dd::table_storage_engine");
-
-  // Define pointers to schema- and table name
-  DBUG_ASSERT(table_list);
-  const char *schema_name= table_list->db;
-  const char *table_name= table_list->table_name;
-
-  // There should be at least some lock on the table
-  DBUG_ASSERT(thd->mdl_context.owns_equal_or_stronger_lock(MDL_key::TABLE,
-                                                           schema_name,
-                                                           table_name,
-                                                           MDL_SHARED));
-
-  dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
-  const dd::Table *table= NULL;
-  if (thd->dd_client()->acquire(schema_name, table_name, &table))
-  {
-    // Error is reported by the dictionary subsystem.
-    DBUG_RETURN(true);
-  }
-
-  if (table == NULL)
-  {
-    my_error(ER_NO_SUCH_TABLE, MYF(0), schema_name, table_name);
-    DBUG_RETURN(true);
-  }
-
-  DBUG_RETURN(table_storage_engine(thd, schema_name, table_name,
-                                   table, hton));
-}
-
-
-bool check_storage_engine_flag(THD *thd, const TABLE_LIST *table_list,
-                               uint32 flag, bool *yes_no)
-{
-  DBUG_ASSERT(table_list);
-
-  // Get the handlerton for the table.
-  handlerton *hton= NULL;
-  if (dd::table_storage_engine(thd, table_list, &hton))
-    return true;
-
-  DBUG_ASSERT(yes_no && hton);
-  *yes_no= ha_check_storage_engine_flag(hton, flag);
-
-  return false;
 }
 
 
@@ -2942,12 +2719,6 @@ bool recreate_table(THD *thd, const char *schema_name,
   // There should be an exclusive metadata lock on the table
   DBUG_ASSERT(thd->mdl_context.owns_equal_or_stronger_lock(MDL_key::TABLE,
               schema_name, table_name, MDL_EXCLUSIVE));
-
-  HA_CREATE_INFO create_info;
-
-  // Create a path to the table, but without a extension
-  char path[FN_REFLEN + 1];
-  build_table_filename(path, sizeof(path) - 1, schema_name, table_name, "", 0);
 
   dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
   dd::Table *table_def= nullptr;
@@ -2959,66 +2730,15 @@ bool recreate_table(THD *thd, const char *schema_name,
   // Table must exist.
   DBUG_ASSERT(table_def);
 
+  HA_CREATE_INFO create_info;
+
+  // Create a path to the table, but without a extension
+  char path[FN_REFLEN + 1];
+  build_table_filename(path, sizeof(path) - 1, schema_name, table_name, "", 0);
+
   // Attempt to reconstruct the table
   return ha_create_table(thd, path, schema_name, table_name, &create_info,
                          true, false, table_def);
-}
-
-
-bool update_keys_disabled(THD *thd,
-                          const char *schema_name,
-                          const char *table_name,
-                          Alter_info::enum_enable_or_disable keys_onoff,
-                          bool commit_dd_changes)
-{
-  dd::cache::Dictionary_client *client= thd->dd_client();
-  dd::cache::Dictionary_client::Auto_releaser releaser(client);
-
-  // Check if source and destination schema exists
-  const dd::Schema *sch= nullptr;
-  if (client->acquire(schema_name, &sch))
-  {
-    return true;
-  }
-
-  if (!sch)
-  {
-    return true;
-  }
-
-  // Get 'from' table object
-  dd::Table *tab_obj= nullptr;
-  if (client->acquire_for_modification(schema_name, table_name, &tab_obj))
-  {
-    return true;
-  }
-
-  // Rely on caller to check table existence.
-  DBUG_ASSERT(tab_obj != nullptr);
-
-  // Update option keys_disabled
-  tab_obj->options().set_uint32("keys_disabled",
-                                (keys_onoff==Alter_info::DISABLE ? 1 : 0));
-  // Save the changes
-  Disable_gtid_state_update_guard disabler(thd);
-
-  // Update the changes
-  if (client->update(tab_obj))
-  {
-    if (commit_dd_changes)
-    {
-      trans_rollback_stmt(thd);
-      trans_rollback(thd);
-    }
-    return true;
-  }
-
-  if (commit_dd_changes)
-  {
-    if (trans_commit_stmt(thd) || trans_commit(thd))
-      return true;
-  }
-  return false;
 }
 
 
@@ -3030,15 +2750,21 @@ bool update_keys_disabled(THD *thd,
   @param[in]   thd             The thread handle.
   @param[in]   field_type      Column type.
   @param[in]   field_length    Column length.
+  @param[in]   decimals        Decimals.
+  @param[in]   maybe_null      Column is null.
+  @param[in]   is_unsigned     Column is unsigned.
   @param[in]   field_charset   Column charset.
 
   @return dd::String_type representing column type.
 */
 
 dd::String_type get_sql_type_by_field_info(THD *thd,
-                                       enum_field_types field_type,
-                                       uint32 field_length,
-                                       const CHARSET_INFO *field_charset)
+                                           enum_field_types field_type,
+                                           uint32 field_length,
+                                           uint32 decimals,
+                                           bool maybe_null,
+                                           bool is_unsigned,
+                                           const CHARSET_INFO *field_charset)
 {
   DBUG_ENTER("get_sql_type_by_field_info");
 
@@ -3052,147 +2778,20 @@ dd::String_type get_sql_type_by_field_info(THD *thd,
   Create_field field;
   // Initializing field using field_type and field_length.
   field.init_for_tmp_table(field_type, field_length,
-                           0, false, false, 0);
+                           decimals, maybe_null, is_unsigned, 0);
   field.charset= field_charset;
 
   DBUG_RETURN(get_sql_type_by_create_field(&table, &field));
 }
 
 
-bool fix_row_type(THD *thd, TABLE_SHARE *share)
+bool fix_row_type(THD *thd, dd::Table *table_def, row_type correct_row_type)
 {
-  HA_CREATE_INFO create_info;
-  create_info.row_type= share->row_type;
-  create_info.table_options= share->db_options_in_use;
-
-  handler *file= get_new_handler(share, share->m_part_info != NULL,
-                                 thd->mem_root, share->db_type());
-  if (!file)
-    return true;
-
-  row_type correct_row_type= file->get_real_row_type(&create_info);
-
-  bool error= fix_row_type(thd, share, correct_row_type);
-
-  delete file;
-  return error;
-}
-
-
-bool fix_row_type(THD *thd, TABLE_SHARE *share, row_type correct_row_type)
-{
-  Disable_autocommit_guard autocommit_guard(thd);
-  dd::Schema_MDL_locker mdl_locker(thd);
-  dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
-  const dd::Schema *sch= nullptr;
-  dd::Table *table_def= nullptr;
-
-  // There should be an exclusive metadata lock on the table
-  DBUG_ASSERT(thd->mdl_context.owns_equal_or_stronger_lock(MDL_key::TABLE,
-              share->db.str, share->table_name.str, MDL_EXCLUSIVE));
-
-  if (mdl_locker.ensure_locked(share->db.str) ||
-      thd->dd_client()->acquire(share->db.str, &sch) ||
-      thd->dd_client()->acquire_for_modification(share->db.str,
-                                                 share->table_name.str,
-                                                 &table_def))
-    return true;
-
-  if (!sch)
-  {
-    DBUG_ASSERT(0);
-    my_error(ER_BAD_DB_ERROR, MYF(0), share->db.str);
-    return true;
-  }
-
-  if (!table_def)
-  {
-    DBUG_ASSERT(0);
-    my_error(ER_NO_SUCH_TABLE, MYF(0), share->db.str, share->table_name.str);
-    return true;
-  }
+  DBUG_ASSERT(table_def != nullptr);
 
   table_def->set_row_format(dd_get_new_row_format(correct_row_type));
 
-  if (thd->dd_client()->update(table_def))
-  {
-    trans_rollback_stmt(thd);
-    trans_rollback(thd);
-    return true;
-  }
-
-  return trans_commit_stmt(thd) || trans_commit(thd);
-}
-
-bool move_triggers(THD *thd,
-                   const char *from_schema_name,
-                   const char *from_name,
-                   const char *to_schema_name,
-                   const char *to_name,
-                   bool commit_dd_changes)
-{
-  // Check if source and destination schemas exist.
-  dd::cache::Dictionary_client *client= thd->dd_client();
-  dd::Schema_MDL_locker from_mdl_locker(thd), to_mdl_locker(thd);
-  dd::cache::Dictionary_client::Auto_releaser releaser(client);
-  const dd::Schema *from_sch= nullptr;
-  const dd::Schema *to_sch= nullptr;
-  dd::Table *new_from_tab= nullptr;
-  dd::Table *new_to_tab= nullptr;
-
-  // Acquire all objects.
-  if (from_mdl_locker.ensure_locked(from_schema_name) ||
-      to_mdl_locker.ensure_locked(to_schema_name) ||
-      client->acquire(from_schema_name, &from_sch) ||
-      client->acquire(to_schema_name, &to_sch) ||
-      client->acquire_for_modification(to_schema_name, to_name, &new_to_tab) ||
-      client->acquire_for_modification(from_schema_name, from_name,
-                                       &new_from_tab))
-  {
-    // Error is reported by the dictionary subsystem.
-    return true;
-  }
-
-  if (to_sch == nullptr)
-  {
-    my_error(ER_BAD_DB_ERROR, MYF(0), to_schema_name);
-    return true;
-  }
-
-  if (new_from_tab == nullptr)
-  {
-    my_error(ER_NO_SUCH_TABLE, MYF(0), from_schema_name, from_name);
-    return true;
-  }
-
-  if (new_to_tab == nullptr)
-  {
-    my_error(ER_NO_SUCH_TABLE, MYF(0), to_schema_name, to_name);
-    return true;
-  }
-
-  // Copy the triggers into new_to_tab drop it from new_from_tab.
-  new_to_tab->copy_triggers(new_from_tab);
-  new_from_tab->drop_all_triggers();
-
-  // Store from_clone and to_clone
-  if (client->update(new_from_tab) || client->update(new_to_tab))
-  {
-    if (commit_dd_changes)
-    {
-      trans_rollback_stmt(thd);
-      // Full rollback in case we have THD::transaction_rollback_request.
-      trans_rollback(thd);
-    }
-    return true;
-  }
-
-  if (commit_dd_changes)
-  {
-    if (trans_commit_stmt(thd) || trans_commit(thd))
-      return true;
-  }
-  return false;
+  return thd->dd_client()->update(table_def);
 }
 
 } // namespace dd

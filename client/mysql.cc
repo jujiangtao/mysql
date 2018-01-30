@@ -2,13 +2,20 @@
    Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -34,30 +41,29 @@
 
 #include <errno.h>
 #include <fcntl.h>
-#include <m_ctype.h>
 #include <math.h>
-#include <mf_wcomp.h>                  // wild_prefix, wild_one, wild_any
-#include <my_dir.h>
 #include <signal.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <sys/types.h>
 #include <time.h>
-#include <violite.h>
 
-#include "client_priv.h"
+#include "client/client_priv.h"
+#include "client/my_readline.h"
+#include "client/pattern_matcher.h"
 #include "lex_string.h"
+#include "m_ctype.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_default.h"
+#include "my_dir.h"
 #include "my_inttypes.h"
 #include "my_io.h"
 #include "my_loglevel.h"
 #include "my_macros.h"
-#include "my_readline.h"
 #include "mysql/service_my_snprintf.h"
-#include "prealloced_array.h"
 #include "typelib.h"
+#include "violite.h"
 
 #ifdef HAVE_SYS_IOCTL_H
 #include <sys/ioctl.h>
@@ -72,6 +78,7 @@
 #endif
 
 #if defined(HAVE_TERM_H)
+#define NOMACROS  // move() macro interferes with std::move.
 #include <curses.h>
 #include <term.h>
 #endif
@@ -90,9 +97,10 @@
 #endif
 
 #include <mysqld_error.h>
-#include <sql_common.h>
 #include <algorithm>
 #include <new>
+
+#include "sql_common.h"
 
 using std::min;
 using std::max;
@@ -121,15 +129,20 @@ static char *server_version= NULL;
 #define cmp_database(cs,A,B) strcmp((A),(B))
 #endif
 
-#include <welcome_copyright_notice.h> // ORACLE_WELCOME_COPYRIGHT_NOTICE
-
-#include "completion_hash.h"
+#include "client/completion_hash.h"
 #include "print_version.h"
+#include "welcome_copyright_notice.h" // ORACLE_WELCOME_COPYRIGHT_NOTICE
 
 #define PROMPT_CHAR '\\'
 #define DEFAULT_DELIMITER ";"
 
 #define MAX_BATCH_BUFFER_SIZE (1024L * 1024L * 1024L)
+
+/** default set of patterns used for history exclusion filter */
+const static std::string HI_DEFAULTS("*IDENTIFIED*:*PASSWORD*");
+
+/** used for matching which history lines to ignore */
+static Pattern_matcher ignore_matcher;
 
 typedef struct st_status
 {
@@ -155,11 +168,11 @@ static bool ignore_errors=0,wait_flag=0,quick=0,
             vertical=0, line_numbers=1, column_names=1,opt_html=0,
             opt_xml=0,opt_nopager=1, opt_outfile=0, named_cmds= 0,
             tty_password= 0, opt_nobeep=0, opt_reconnect=1,
-            opt_secure_auth= TRUE,
             default_pager_set= 0, opt_sigint_ignore= 0,
             auto_vertical_output= 0,
             show_warnings= 0, executing_query= 0, interrupted_query= 0,
-            ignore_spaces= 0, sigint_received= 0, opt_syslog= 0;
+            ignore_spaces= 0, sigint_received= 0, opt_syslog= 0,
+            opt_binhex= 0;
 static bool debug_info_flag, debug_check_flag;
 static bool column_types_flag;
 static bool preserve_comments= 0;
@@ -180,7 +193,6 @@ static char *current_host,*current_db,*current_user=0,*opt_password=0,
 static char *histfile;
 static char *histfile_tmp;
 static char *opt_histignore= NULL;
-DYNAMIC_STRING histignore_buffer;
 static String glob_buffer,old_buffer;
 static String processed_prompt;
 static char *full_username=0,*part_username=0,*default_prompt=0;
@@ -190,9 +202,6 @@ static STATUS status;
 static ulong select_limit,max_join_size,opt_connect_timeout=0;
 static char mysql_charsets_dir[FN_REFLEN+1];
 static char *opt_plugin_dir= 0, *opt_default_auth= 0;
-#if !defined(HAVE_YASSL)
-static char *opt_server_public_key= 0;
-#endif
 static const char *xmlmeta[] = {
   "&", "&amp;",
   "<", "&lt;",
@@ -220,6 +229,7 @@ static char *shared_memory_base_name=0;
 static uint opt_protocol=0;
 static const CHARSET_INFO *charset_info= &my_charset_latin1;
 
+#include "caching_sha2_passwordopt-vars.h"
 #include "sslopt-vars.h"
 
 const char *default_dbug_option="d:t:o,/tmp/mysql.trace";
@@ -262,8 +272,8 @@ static bool execute_buffer_conversion_done= 0;
   The same is true for stderr.
 */
 static uint win_is_console_cache= 
-  (MY_TEST(my_win_is_console(stdout)) * (1 << _fileno(stdout))) |
-  (MY_TEST(my_win_is_console(stderr)) * (1 << _fileno(stderr)));
+  ((my_win_is_console(stdout)) * (1 << _fileno(stdout))) |
+  ((my_win_is_console(stderr)) * (1 << _fileno(stderr)));
 
 static inline bool
 my_win_is_console_cached(FILE *file)
@@ -330,14 +340,6 @@ static int get_result_width(MYSQL_RES *res);
 static int get_field_disp_length(MYSQL_FIELD * field);
 static int normalize_dbname(const char *line, char *buff, uint buff_size);
 static int get_quote_count(const char *line);
-
-typedef Prealloced_array<LEX_STRING, 16> Histignore_patterns;
-Histignore_patterns *histignore_patterns;
-
-static bool check_histignore(const char *string);
-static bool parse_histignore();
-static bool init_hist_patterns();
-static void free_hist_patterns();
 
 static void add_filtered_history(const char *string);
 static void add_syslog(const char *buffer);          /* for syslog */
@@ -513,7 +515,6 @@ static COMMANDS commands[] = {
   { "DELETE", 0, 0, 0, ""},
   { "DESC", 0, 0, 0, ""},
   { "DESCRIBE", 0, 0, 0, ""},
-  { "DES_KEY_FILE", 0, 0, 0, ""},
   { "DETERMINISTIC", 0, 0, 0, ""},
   { "DIRECTORY", 0, 0, 0, ""},
   { "DISABLE", 0, 0, 0, ""},
@@ -797,7 +798,6 @@ static COMMANDS commands[] = {
   { "SQLWARNING", 0, 0, 0, ""},
   { "SQL_BIG_RESULT", 0, 0, 0, ""},
   { "SQL_BUFFER_RESULT", 0, 0, 0, ""},
-  { "SQL_CACHE", 0, 0, 0, ""},
   { "SQL_CALC_FOUND_ROWS", 0, 0, 0, ""},
   { "SQL_NO_CACHE", 0, 0, 0, ""},
   { "SQL_SMALL_RESULT", 0, 0, 0, ""},
@@ -939,15 +939,10 @@ static COMMANDS commands[] = {
   { "DAYOFMONTH", 0, 0, 0, ""},
   { "DAYOFWEEK", 0, 0, 0, ""},
   { "DAYOFYEAR", 0, 0, 0, ""},
-  { "DECODE", 0, 0, 0, ""},
   { "DEGREES", 0, 0, 0, ""},
-  { "DES_ENCRYPT", 0, 0, 0, ""},
-  { "DES_DECRYPT", 0, 0, 0, ""},
   { "DIMENSION", 0, 0, 0, ""},
   { "DISJOINT", 0, 0, 0, ""},
   { "ELT", 0, 0, 0, ""},
-  { "ENCODE", 0, 0, 0, ""},
-  { "ENCRYPT", 0, 0, 0, ""},
   { "ENDPOINT", 0, 0, 0, ""},
   { "ENVELOPE", 0, 0, 0, ""},
   { "EQUALS", 0, 0, 0, ""},
@@ -1181,10 +1176,10 @@ static void mysql_end_timer(ulong start_time,char *buff);
 static void nice_time(double sec,char *buff,bool part_second);
 static void kill_query(const char* reason);
 extern "C" void mysql_end(int sig);
-extern "C" void handle_ctrlc_signal(int sig);
+extern "C" void handle_ctrlc_signal(int);
 extern "C" void handle_quit_signal(int sig);
 #if defined(HAVE_TERMIOS_H) && defined(GWINSZ_IN_SYS_IOCTL)
-static void window_resize(int sig);
+static void window_resize(int);
 #endif
 
 const char DELIMITER_NAME[]= "delimiter";
@@ -1293,7 +1288,16 @@ int main(int argc,char *argv[])
     int stdout_fileno_copy;
     stdout_fileno_copy= dup(fileno(stdout)); /* Okay if fileno fails. */
     if (stdout_fileno_copy == -1)
+    {
       fclose(stdout);
+#ifdef LINUX_ALPINE
+      // On Alpine linux we need to open a dummy file, so that the first
+      // call to socket() does not get file number 1
+      // If socket gets file number 1, then everything printed to stdout
+      // will be sent back to the server over the socket connection.
+      fopen("/dev/null", "r");
+#endif
+    }
     else
       close(stdout_fileno_copy);             /* Clean up dup(). */
   }
@@ -1375,28 +1379,20 @@ int main(int argc,char *argv[])
 
   if (!status.batch)
   {
-    init_dynamic_string(&histignore_buffer, "*IDENTIFIED*:*PASSWORD*",
-                        1024, 1024);
+    // history ignore patterns are initialized to default values
+    ignore_matcher.add_patterns(HI_DEFAULTS);
 
     /*
-      More history-ignore patterns can be supplied using either --histignore
-      option or MYSQL_HISTIGNORE environment variable. If supplied, it will
-      get appended to the default pattern (*IDENTIFIED*:*PASSWORD*). In case
-      both are specified, pattern(s) supplied using --histignore option will
-      be used.
+      Additional patterns may be supplied using either --histignore option or
+      MYSQL_HISTIGNORE environment variable. If supplied, they'll get appended
+      to the default patterns. In case both are specified, pattern(s) supplied
+      using --histignore option will be used.
     */
-    if (opt_histignore)
-    {
-      dynstr_append(&histignore_buffer, ":");
-      dynstr_append(&histignore_buffer, opt_histignore);
-    }
-    else if (getenv("MYSQL_HISTIGNORE"))
-    {
-      dynstr_append(&histignore_buffer, ":");
-      dynstr_append(&histignore_buffer, getenv("MYSQL_HISTIGNORE"));
-    }
 
-    parse_histignore();
+    if (opt_histignore)
+      ignore_matcher.add_patterns(opt_histignore);
+    else if (getenv("MYSQL_HISTIGNORE"))
+      ignore_matcher.add_patterns(getenv("MYSQL_HISTIGNORE"));
 
   #ifdef HAVE_READLINE
     if (!quick)
@@ -1501,8 +1497,6 @@ void mysql_end(int sig)
   my_free(histfile_tmp);
 #endif
   my_free(opt_histignore);
-  dynstr_free(&histignore_buffer);
-  free_hist_patterns();
 
   my_free(current_os_user);
   my_free(current_os_sudouser);
@@ -1541,11 +1535,9 @@ void mysql_end(int sig)
     This function handles SIGINT (Ctrl - C). It sends a 'KILL [QUERY]' command
     to the server if a query is currently executing. On Windows, 'Ctrl - Break'
     is treated alike.
-
-  @param sig               Signal number
 */
 
-void handle_ctrlc_signal(int sig)
+void handle_ctrlc_signal(int)
 {
   sigint_received= 1;
 
@@ -1638,7 +1630,7 @@ err:
 
 
 #if defined(HAVE_TERMIOS_H) && defined(GWINSZ_IN_SYS_IOCTL)
-void window_resize(int sig)
+void window_resize(int)
 {
   struct winsize window_size;
 
@@ -1675,6 +1667,8 @@ static struct my_option my_long_options[] =
   {"bind-address", 0, "IP address to bind to.",
    (uchar**) &opt_bind_addr, (uchar**) &opt_bind_addr, 0, GET_STR,
    REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"binary-as-hex", 'b', "Print binary data as hex", &opt_binhex, &opt_binhex,
+   0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"character-sets-dir", OPT_CHARSETS_DIR,
    "Directory for character set files.", &charsets_dir,
    &charsets_dir, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
@@ -1823,6 +1817,7 @@ static struct my_option my_long_options[] =
   {"socket", 'S', "The socket file to use for connection.",
    &opt_mysql_unix_port, &opt_mysql_unix_port, 0, GET_STR_ALLOC,
    REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+#include "caching_sha2_passwordopt-longopts.h"
 #include "sslopt-longopts.h"
 
   {"table", 't', "Output in table format.", &output_tables,
@@ -1867,9 +1862,6 @@ static struct my_option my_long_options[] =
    "Automatic limit for rows in a join when using --safe-updates.",
    &max_join_size, &max_join_size, 0, GET_ULONG, REQUIRED_ARG, 1000000L,
    1, ULONG_MAX, 0, 1, 0},
-  {"secure-auth", OPT_SECURE_AUTH, "Refuse client connecting to server if it"
-    " uses old (pre-4.1.1) protocol. Deprecated. Always TRUE",
-    &opt_secure_auth, &opt_secure_auth, 0, GET_BOOL, NO_ARG, 1, 0, 0, 0, 0, 0},
   {"show-warnings", OPT_SHOW_WARNINGS, "Show warnings after every statement.",
     &show_warnings, &show_warnings, 0, GET_BOOL, NO_ARG,
     0, 0, 0, 0, 0, 0},
@@ -1890,12 +1882,6 @@ static struct my_option my_long_options[] =
    "piped to mysql or loaded using the 'source' command). This is necessary "
    "when processing output from mysqlbinlog that may contain blobs.",
    &opt_binary_mode, &opt_binary_mode, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
-#if !defined(HAVE_YASSL)
-  {"server-public-key-path", OPT_SERVER_PUBLIC_KEY,
-   "File path to the server public RSA key in PEM format.",
-   &opt_server_public_key, &opt_server_public_key, 0,
-   GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
-#endif
   {"connect-expired-password", 0,
    "Notify the server that this client is prepared to handle expired "
    "password sandbox mode.",
@@ -1921,19 +1907,6 @@ static void usage(int version)
     return;
   puts(ORACLE_WELCOME_COPYRIGHT_NOTICE("2000"));
   printf("Usage: %s [OPTIONS] [database]\n", my_progname);
-  /*
-    Turn default for zombies off so that the help on how to 
-    turn them off text won't show up.
-    This is safe to do since it's followed by a call to exit().
-  */
-  for (struct my_option *optp= my_long_options; optp->name; optp++)
-  {
-    if (optp->id == OPT_SECURE_AUTH)
-    {
-      optp->def_value= 0;
-      break;
-    }
-  }
   my_print_help(my_long_options);
   print_defaults("my", load_default_groups);
   my_print_variables(my_long_options);
@@ -2006,16 +1979,6 @@ get_one_option(int optid, const struct my_option *opt MY_ATTRIBUTE((unused)),
   case OPT_MYSQL_PROTOCOL:
     opt_protocol= find_type_or_exit(argument, &sql_protocol_typelib,
                                     opt->name);
-    break;
-  case OPT_SECURE_AUTH:
-    /* --secure-auth is a zombie option. */
-    if (!opt_secure_auth)
-    {
-      fprintf(stderr, "mysql: [ERROR] --skip-secure-auth is not supported.\n");
-      exit(1);
-    }
-    else
-      CLIENT_WARN_DEPRECATED_NO_REPLACEMENT("--secure-auth");
     break;
   case 'A':
     opt_rehash= 0;
@@ -2090,7 +2053,7 @@ get_one_option(int optid, const struct my_option *opt MY_ATTRIBUTE((unused)),
     opt_protocol = MYSQL_PROTOCOL_PIPE;
 #endif
     break;
-#include <sslopt-case.h>
+#include "sslopt-case.h"
 
   case 'V':
     usage(1);
@@ -2555,7 +2518,10 @@ static bool add_line(String &buffer, char *line, size_t line_length,
       if (*in_string || inchar == 'N')	// \N is short for NULL
       {					// Don't allow commands in string
 	*out++='\\';
-	*out++= (char) inchar;
+        if ((inchar == '`') && (*in_string == inchar))
+          pos--;
+        else
+	  *out++= (char) inchar;
 	continue;
       }
       if ((com= find_command((char) inchar)))
@@ -3166,98 +3132,19 @@ static void fix_line(String *final_command)
 /* Add the given line to mysql history and syslog. */
 static void add_filtered_history(const char *string)
 {
-  if (!check_histignore(string))
-  {
+  // line shouldn't be on history ignore list
+  if (ignore_matcher.is_matching(string, charset_info))
+    return;
+
 #ifdef HAVE_READLINE
-    if (!quick && not_in_history(string))
-      add_history(string);
+  if (!quick && not_in_history(string))
+    add_history(string);
 #endif
-    if (opt_syslog)
-      add_syslog(string);
-  }
+
+  if (opt_syslog)
+    add_syslog(string);
 }
 
-
-/**
-  Perform a check on the given string if it contains
-  any of the histignore patterns.
-
-  @param [in] string         String that needs to be checked.
-
-  @return Operation status
-      @retval 0    No match found
-      @retval 1    Match found
-*/
-
-static
-bool check_histignore(const char *string)
-{
-  int rc;
-
-  LEX_STRING *tmp;
-
-  DBUG_ENTER("check_histignore");
-
-  for (tmp= histignore_patterns->begin();
-       tmp != histignore_patterns->end(); ++tmp)
-  {
-    if ((rc= charset_info->coll->wildcmp(charset_info,
-                                         string, string + strlen(string),
-                                         tmp->str, tmp->str + tmp->length,
-                                         wild_prefix, wild_one,
-                                         wild_many)) == 0)
-      DBUG_RETURN(1);
-  }
-  DBUG_RETURN(0);
-}
-
-
-/**
-  Parse the histignore list into pattern tokens.
-
-  @return Operation status
-      @retval 0    Success
-      @retval 1    Failure
-*/
-
-static
-bool parse_histignore()
-{
-  LEX_STRING pattern;
-
-  char *token;
-  const char *search= ":";
-
-  DBUG_ENTER("parse_histignore");
-
-  if (init_hist_patterns())
-    DBUG_RETURN(1);
-
-  token= strtok(histignore_buffer.str, search);
-
-  while(token != NULL)
-  {
-    pattern.str= token;
-    pattern.length= strlen(pattern.str);
-    histignore_patterns->push_back(pattern);
-    token= strtok(NULL, search);
-  }
-  DBUG_RETURN(0);
-}
-
-static
-bool init_hist_patterns()
-{
-  histignore_patterns=
-    new (std::nothrow) Histignore_patterns(PSI_NOT_INSTRUMENTED);
-  return histignore_patterns == NULL;
-}
-
-static
-void free_hist_patterns()
-{
-  delete histignore_patterns;
-}
 
 void add_syslog(const char *line) {
   char buff[MAX_SYSLOG_MESSAGE_SIZE];
@@ -3648,12 +3535,13 @@ com_go(String *buffer,char *line MY_ATTRIBUTE((unused)))
       }
       else
       {
-	init_pager();
+        init_pager();
 	if (opt_html)
 	  print_table_data_html(result);
 	else if (opt_xml)
 	  print_table_data_xml(result);
-  else if (vertical || (auto_vertical_output && (terminal_width < get_result_width(result))))
+        else if (vertical || (auto_vertical_output &&
+                (terminal_width < get_result_width(result))))
 	  print_table_data_vertically(result);
 	else if (opt_silent && verbose <= 2 && !output_tables)
 	  print_tab_data(result);
@@ -3874,6 +3762,41 @@ print_field_types(MYSQL_RES *result)
 }
 
 
+/* Used to determine if we should invoke print_as_hex for this field */
+
+static bool
+is_binary_field(MYSQL_FIELD *field)
+{
+  if ((field->charsetnr == 63) &&
+      (field->type == MYSQL_TYPE_BIT ||
+       field->type == MYSQL_TYPE_BLOB ||
+       field->type == MYSQL_TYPE_LONG_BLOB ||
+       field->type == MYSQL_TYPE_MEDIUM_BLOB ||
+       field->type == MYSQL_TYPE_TINY_BLOB ||
+       field->type == MYSQL_TYPE_VAR_STRING ||
+       field->type == MYSQL_TYPE_STRING ||
+       field->type == MYSQL_TYPE_VARCHAR ||
+       field->type == MYSQL_TYPE_GEOMETRY))
+    return 1;
+  return 0;
+}
+
+
+/* Print binary value as hex literal (0x ...) */
+
+static void
+print_as_hex(FILE *output_file, const char *str, ulong len, ulong total_bytes_to_send)
+{
+  const char *ptr= str, *end= ptr+len;
+  ulong i;
+  fprintf(output_file, "0x");
+  for(; ptr < end; ptr++)
+    fprintf(output_file, "%02X", *((uchar*)ptr));
+  for (i= 2*len+2; i < total_bytes_to_send; i++)
+    tee_putc((int)' ', output_file);
+}
+
+
 static void
 print_table_data(MYSQL_RES *result)
 {
@@ -3902,7 +3825,9 @@ print_table_data(MYSQL_RES *result)
       length= max<size_t>(length, field->max_length);
     if (length < 4 && !IS_NOT_NULL(field->flags))
       length=4;					// Room for "NULL"
-    field->max_length=length;
+    if (opt_binhex && is_binary_field(field))
+      length= 2 + length * 2;
+    field->max_length=(ulong) length;
     separator.fill(separator.length()+length+2,'-');
     separator.append('+');
   }
@@ -3920,7 +3845,7 @@ print_table_data(MYSQL_RES *result)
                                                     field->name + name_length);
       size_t display_length= field->max_length + name_length - numcells;
       tee_fprintf(PAGER, " %-*s |",
-                  min<int>(display_length, MAX_COLUMN_LENGTH),
+                  min<int>((int) display_length, MAX_COLUMN_LENGTH),
                   field->name);
       num_flag[off]= IS_NUM(field->type);
     }
@@ -3969,9 +3894,11 @@ print_table_data(MYSQL_RES *result)
        many extra padding-characters we should send with the printing function.
       */
       visible_length= charset_info->cset->numcells(charset_info, buffer, buffer + data_length);
-      extra_padding= data_length - visible_length;
+      extra_padding= (uint) (data_length - visible_length);
 
-      if (field_max_length > MAX_COLUMN_LENGTH)
+      if (opt_binhex && is_binary_field(field))
+        print_as_hex(PAGER, cur[off], lengths[off], field_max_length);
+      else if (field_max_length > MAX_COLUMN_LENGTH)
         tee_print_sized_data(buffer, data_length, MAX_COLUMN_LENGTH+extra_padding, FALSE);
       else
       {
@@ -4097,11 +4024,15 @@ print_table_data_html(MYSQL_RES *result)
     if (interrupted_query)
       break;
     ulong *lengths=mysql_fetch_lengths(result);
+    field= mysql_fetch_fields(result);
     (void) tee_fputs("<TR>", PAGER);
     for (uint i=0; i < mysql_num_fields(result); i++)
     {
       (void) tee_fputs("<TD>", PAGER);
-      xmlencode_print(cur[i], lengths[i]);
+      if (opt_binhex && is_binary_field(&field[i]))
+        print_as_hex(PAGER, cur[i], lengths[i], lengths[i]);
+      else
+        xmlencode_print(cur[i], lengths[i]);
       (void) tee_fputs("</TD>", PAGER);
     }
     (void) tee_fputs("</TR>", PAGER);
@@ -4137,7 +4068,10 @@ print_table_data_xml(MYSQL_RES *result)
       if (cur[i])
       {
         tee_fprintf(PAGER, "\">");
-        xmlencode_print(cur[i], lengths[i]);
+        if (opt_binhex && is_binary_field(&fields[i]))
+          print_as_hex(PAGER, cur[i], lengths[i], lengths[i]);
+        else
+          xmlencode_print(cur[i], lengths[i]);
         tee_fprintf(PAGER, "</field>\n");
       }
       else
@@ -4182,7 +4116,10 @@ print_table_data_vertically(MYSQL_RES *result)
         tee_fprintf(PAGER, "%*s: ",(int) max_length,field->name);
       if (cur[off])
       {
-        tee_write(PAGER, cur[off], lengths[off], MY_PRINT_SPS_0 | MY_PRINT_MB);
+        if (opt_binhex && is_binary_field(field))
+          print_as_hex(PAGER, cur[off], lengths[off], lengths[off]);
+        else
+          tee_write(PAGER, cur[off], lengths[off], MY_PRINT_SPS_0 | MY_PRINT_MB);
         tee_putc('\n', PAGER);
       }
       else
@@ -4291,11 +4228,18 @@ print_tab_data(MYSQL_RES *result)
   while ((cur = mysql_fetch_row(result)))
   {
     lengths=mysql_fetch_lengths(result);
-    safe_put_field(cur[0],lengths[0]);
+    field= mysql_fetch_fields(result);
+    if (opt_binhex && is_binary_field(&field[0]))
+      print_as_hex(PAGER, cur[0], lengths[0], lengths[0]);
+    else
+      safe_put_field(cur[0],lengths[0]);
     for (uint off=1 ; off < mysql_num_fields(result); off++)
     {
       (void) tee_fputs("\t", PAGER);
-      safe_put_field(cur[off], lengths[off]);
+      if (opt_binhex && field && is_binary_field(&field[off]))
+        print_as_hex(PAGER, cur[off], lengths[off], lengths[off]);
+      else
+        safe_put_field(cur[off], lengths[off]);
     }
     (void) tee_fputs("\n", PAGER);
   }
@@ -4674,10 +4618,9 @@ com_use(String *buffer MY_ATTRIBUTE((unused)), char *line)
   memset(buff, 0, sizeof(buff));
 
   /*
-    In case number of quotes exceed 2, we try to get
-    the normalized db name.
+    In case of quotes used, try to get the normalized db name.
   */
-  if (get_quote_count(line) > 2)
+  if (get_quote_count(line) > 0)
   {
     if (normalize_dbname(line, buff, sizeof(buff)))
       return put_error(&mysql);
@@ -4908,11 +4851,13 @@ char *get_arg(char *line, bool get_next_arg)
 static int
 get_quote_count(const char *line)
 {
-  int quote_count;
-  const char *ptr= line;
+  int quote_count= 0;
+  const char *quote= line;
 
-  for(quote_count= 0; ptr ++ && *ptr; ptr= strpbrk(ptr, "\"\'`"))
-    quote_count ++;
+  while ((quote= strpbrk(quote, "'`\"")) != NULL) {
+    quote_count++;
+    quote++;
+  }
 
   return quote_count;
 }
@@ -5068,10 +5013,9 @@ init_connection_options(MYSQL *mysql)
   if (opt_default_auth && *opt_default_auth)
     mysql_options(mysql, MYSQL_DEFAULT_AUTH, opt_default_auth);
 
-#if !defined(HAVE_YASSL)
-  if (opt_server_public_key && *opt_server_public_key)
-    mysql_options(mysql, MYSQL_SERVER_PUBLIC_KEY, opt_server_public_key);
-#endif
+  set_server_public_key(mysql);
+
+  set_get_server_public_key_option(mysql);
 
   if (using_opt_enable_cleartext_plugin)
     mysql_options(mysql, MYSQL_ENABLE_CLEARTEXT_PLUGIN,
@@ -5290,6 +5234,7 @@ put_info(const char *str,INFO_TYPE info_type, uint error, const char *sqlstate)
   {
     if (info_type == INFO_ERROR)
     {
+      (void) fflush(stdout); // flush stdout before stderr
       (void) fflush(file);
       fprintf(file,"ERROR");
       if (error)

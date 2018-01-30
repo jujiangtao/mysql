@@ -3,16 +3,24 @@
 Copyright (c) 1997, 2017, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+the terms of the GNU General Public License, version 2.0, as published by the
+Free Software Foundation.
+
+This program is also distributed with certain software (including but not
+limited to OpenSSL) that is licensed under separate terms, as designated in a
+particular file or component or in included license documentation. The authors
+of MySQL hereby grant you an additional permission to link the program and
+your derivative works with the separately licensed software that they have
+included with MySQL.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+FOR A PARTICULAR PURPOSE. See the GNU General Public License, version 2.0,
+for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 *****************************************************************************/
 
@@ -231,8 +239,9 @@ row_undo_search_clust_to_pcur(
 
 		if (node->rec_type == TRX_UNDO_UPD_EXIST_REC) {
 			node->undo_row = dtuple_copy(node->row, node->heap);
-			row_upd_replace(node->undo_row, &node->undo_ext,
-					clust_index, node->update, node->heap);
+			row_upd_replace(
+				node->trx, node->undo_row, &node->undo_ext,
+				clust_index, node->update, node->heap);
 		} else {
 			node->undo_row = NULL;
 			node->undo_ext = NULL;
@@ -265,7 +274,6 @@ row_undo(
 	dberr_t		err;
 	trx_t*		trx;
 	roll_ptr_t	roll_ptr;
-	ibool		locked_data_dict;
 
 	ut_ad(node != NULL);
 	ut_ad(thr != NULL);
@@ -305,18 +313,10 @@ row_undo(
 		}
 	}
 
-	/* Prevent DROP TABLE etc. while we are rolling back this row.
-	If we are doing a TABLE CREATE or some other dictionary operation,
-	then we already have dict_operation_lock locked in x-mode. Do not
-	try to lock again, because that would cause a hang. */
-
-	locked_data_dict = (trx->dict_operation_lock_mode == 0);
-
-	if (locked_data_dict) {
-
-		row_mysql_freeze_data_dictionary(trx);
-	}
-
+	/* During rollback, trx is holding at least LOCK_IX on each
+	modified table. It may also hold MDL. A concurrent DROP TABLE
+	or ALTER TABLE should be impossible, because it should be
+	holding both LOCK_X and MDL_EXCLUSIVE on the table. */
 	if (node->state == UNDO_NODE_INSERT) {
 
 		err = row_undo_ins(node, thr);
@@ -325,11 +325,6 @@ row_undo(
 	} else {
 		ut_ad(node->state == UNDO_NODE_MODIFY);
 		err = row_undo_mod(node, thr);
-	}
-
-	if (locked_data_dict) {
-
-		row_mysql_unfreeze_data_dictionary(trx);
 	}
 
 	/* Do some cleanup */

@@ -1,10 +1,4 @@
-# The include statement below is a temp one for tests that are yet to
-#be ported to run with InnoDB,
-#but needs to be kept for tests that would need MyISAM in future.
---source include/force_myisam_default.inc
-
 --source include/have_ndb.inc
---source include/not_embedded.inc
 --source include/have_binlog_format_mixed_or_row.inc
 --source suite/ndb_rpl/ndb_master-slave.inc
 
@@ -65,7 +59,7 @@ SELECT hex(c2),hex(c3),c1 FROM t2 ORDER BY c1;
 
 #
 # now setup replication to continue from last epoch
---source include/ndb_setup_slave.inc
+--source suite/ndb_rpl/ndb_setup_slave.inc
 --connection slave
 START SLAVE;
 

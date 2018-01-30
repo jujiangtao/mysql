@@ -1,17 +1,24 @@
 /* Copyright (c) 2013, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include <assert.h>
 #include <mysql/service_rpl_transaction_ctx.h>
@@ -23,11 +30,12 @@
 #include "base64.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
-#include "observer_trans.h"
-#include "plugin_log.h"
-#include "sql_command_test.h"
-#include "sql_service_command.h"
-#include "sql_service_interface.h"
+#include "plugin/group_replication/include/observer_trans.h"
+#include "plugin/group_replication/include/plugin.h"
+#include "plugin/group_replication/include/plugin_log.h"
+#include "plugin/group_replication/include/sql_service/sql_command_test.h"
+#include "plugin/group_replication/include/sql_service/sql_service_command.h"
+#include "plugin/group_replication/include/sql_service/sql_service_interface.h"
 
 /*
   Buffer to read the write_set value as a string.
@@ -285,6 +293,11 @@ int group_replication_trans_before_commit(Trans_param *param)
         applier_module->get_pipeline_stats_member_collector()
             ->increment_transactions_applied();
       }
+      else if (local_member_info->get_recovery_status() == Group_member_info::MEMBER_IN_RECOVERY)
+      {
+        applier_module->get_pipeline_stats_member_collector()
+            ->increment_transactions_applied_during_recovery();
+      }
       shared_plugin_stop_lock->release_read_lock();
     }
 
@@ -297,6 +310,14 @@ int group_replication_trans_before_commit(Trans_param *param)
   }
 
   shared_plugin_stop_lock->grab_read_lock();
+
+  if (is_plugin_waiting_to_set_server_read_mode())
+  {
+    log_message(MY_ERROR_LEVEL,
+                "Transaction cannot be executed while Group Replication is stopping.");
+    shared_plugin_stop_lock->release_read_lock();
+    DBUG_RETURN(1);
+  }
 
   /* If the plugin is not running, before commit should return success. */
   if (!plugin_is_group_replication_running())
@@ -341,6 +362,9 @@ int group_replication_trans_before_commit(Trans_param *param)
   }
 
   // Transaction information.
+  const ulong transaction_size_limit= get_transaction_size_limit();
+  my_off_t transaction_size= 0;
+
   const bool is_gtid_specified= param->gtid_info.type == GTID_GROUP;
   Gtid gtid= { param->gtid_info.sidno, param->gtid_info.gno };
   if (!is_gtid_specified)
@@ -371,6 +395,7 @@ int group_replication_trans_before_commit(Trans_param *param)
     everthing that is in the trans cache is actually DML.
   */
   bool is_dml= !param->is_atomic_ddl;
+  bool may_have_sbr_stmts= !is_dml;
   IO_CACHE *cache_log= NULL;
   my_off_t cache_log_position= 0;
   bool reinit_cache_log_required= false;
@@ -387,6 +412,7 @@ int group_replication_trans_before_commit(Trans_param *param)
     cache_log= param->stmt_cache_log;
     cache_log_position= stmt_cache_log_position;
     is_dml= false;
+    may_have_sbr_stmts= true;
   }
   else
   {
@@ -487,6 +513,14 @@ int group_replication_trans_before_commit(Trans_param *param)
       cleanup_transaction_write_set(write_set);
       DBUG_ASSERT(is_gtid_specified || (tcle->get_write_set()->size() > 0));
     }
+    else
+    {
+      /*
+        For empty transactions we should set the GTID may_have_sbr_stmts. See
+        comment at binlog_cache_data::may_have_sbr_stmts().
+      */
+      may_have_sbr_stmts= true;
+    }
   }
 
   // Write transaction context to group replication cache.
@@ -499,15 +533,35 @@ int group_replication_trans_before_commit(Trans_param *param)
      variable so that it won't be re-defined when this GTID is written to the
      binlog
     */
-    *(param->original_commit_timestamp)= my_micro_time_ntp();
+    *(param->original_commit_timestamp)= my_micro_time();
   } // otherwise the transaction did not originate in this server
 
   // Notice the GTID of atomic DDL is written to the trans cache as well.
   gle= new Gtid_log_event(param->server_id, is_dml || param->is_atomic_ddl, 0, 1,
+                          may_have_sbr_stmts,
                           *(param->original_commit_timestamp),
                           0,
                           gtid_specification);
+  /*
+    GR does not support event checksumming. If GR start to support event
+    checksumming, the calculation below should take the checksum payload into
+    account.
+  */
+  gle->set_trx_length_by_cache_size(cache_log_position);
   gle->write(cache);
+
+  transaction_size= cache_log_position + my_b_tell(cache);
+  if (is_dml && transaction_size_limit &&
+     transaction_size > transaction_size_limit)
+  {
+    log_message(MY_ERROR_LEVEL, "Error on session %u. "
+                "Transaction of size %llu exceeds specified limit %lu. "
+                "To increase the limit please adjust group_replication_transaction_size_limit option.",
+                param->thread_id, transaction_size,
+                transaction_size_limit);
+    error= pre_wait_error;
+    goto err;
+  }
 
   // Reinit group replication cache to read.
   if (reinit_cache(cache, READ_CACHE, 0))

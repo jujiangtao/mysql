@@ -2,13 +2,20 @@
    Copyright (c) 2013, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -18,17 +25,20 @@
 #include "sql/trigger_creation_ctx.h"
 
 #include <stddef.h>
+#include <atomic>
 
-#include "derror.h"
-#include "log.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
+#include "my_loglevel.h"
 #include "my_sys.h"
+#include "mysql/components/services/log_shared.h"
 #include "mysqld_error.h"
-#include "sql_class.h"
-#include "sql_db.h" // get_default_db_collation()
-#include "sql_error.h"
-#include "system_variables.h"
+#include "sql/derror.h"
+#include "sql/log.h"
+#include "sql/sql_class.h"
+#include "sql/sql_db.h" // get_default_db_collation()
+#include "sql/sql_error.h"
+#include "sql/system_variables.h"
 
 Trigger_creation_ctx *
 Trigger_creation_ctx::create(THD *thd,
@@ -48,11 +58,11 @@ Trigger_creation_ctx::create(THD *thd,
                       thd->variables.character_set_client,
                       &client_cs))
   {
-    sql_print_warning("Trigger for table '%s'.'%s': "
-                      "invalid character_set_client value (%s).",
-                      (const char *) db_name.str,
-                      (const char *) table_name.str,
-                      (const char *) client_cs_name.str);
+    LogErr(WARNING_LEVEL, ER_TRIGGER_INVALID_VALUE,
+           (const char *) db_name.str,
+           (const char *) table_name.str,
+           "character_set_client",
+           (const char *) client_cs_name.str);
 
     invalid_creation_ctx= TRUE;
   }
@@ -61,22 +71,22 @@ Trigger_creation_ctx::create(THD *thd,
                         thd->variables.collation_connection,
                         &connection_cl))
   {
-    sql_print_warning("Trigger for table '%s'.'%s': "
-                      "invalid collation_connection value (%s).",
-                      (const char *) db_name.str,
-                      (const char *) table_name.str,
-                      (const char *) connection_cl_name.str);
+    LogErr(WARNING_LEVEL, ER_TRIGGER_INVALID_VALUE,
+           (const char *) db_name.str,
+           (const char *) table_name.str,
+           "collation_connection",
+           (const char *) connection_cl_name.str);
 
     invalid_creation_ctx= TRUE;
   }
 
   if (resolve_collation(db_cl_name.str, NULL, &db_cl))
   {
-    sql_print_warning("Trigger for table '%s'.'%s': "
-                      "invalid database_collation value (%s).",
-                      (const char *) db_name.str,
-                      (const char *) table_name.str,
-                      (const char *) db_cl_name.str);
+    LogErr(WARNING_LEVEL, ER_TRIGGER_INVALID_VALUE,
+           (const char *) db_name.str,
+           (const char *) table_name.str,
+           "database_collation",
+           (const char *) db_cl_name.str);
 
     invalid_creation_ctx= TRUE;
   }
@@ -105,5 +115,5 @@ Trigger_creation_ctx::create(THD *thd,
 
   db_cl= db_cl ? db_cl : thd->collation();
 
-  return new Trigger_creation_ctx(client_cs, connection_cl, db_cl);
+  return new (*THR_MALLOC) Trigger_creation_ctx(client_cs, connection_cl, db_cl);
 }

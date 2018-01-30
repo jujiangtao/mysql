@@ -1,17 +1,24 @@
 /* Copyright (c) 2010, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA */
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "my_config.h"
 
@@ -20,19 +27,19 @@
 #include <sys/types.h>
 #include <algorithm>
 
-#include "bounded_queue.h"
-#include "bounded_queue_boost.cc"
-#include "bounded_queue_boost.h"
-#include "bounded_queue_c.h"
-#include "bounded_queue_std.h"
-#include "fake_costmodel.h"
-#include "filesort_utils.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_sys.h"
-#include "opt_costmodel.h"
-#include "test_utils.h"
+#include "sql/bounded_queue.h"
+#include "sql/filesort_utils.h"
+#include "sql/opt_costmodel.h"
+#include "unittest/gunit/bounded_queue_boost.cc"
+#include "unittest/gunit/bounded_queue_boost.h"
+#include "unittest/gunit/bounded_queue_c.h"
+#include "unittest/gunit/bounded_queue_std.h"
+#include "unittest/gunit/fake_costmodel.h"
+#include "unittest/gunit/test_utils.h"
 
 namespace bounded_queue_unittest {
 
@@ -299,26 +306,15 @@ TEST_F(BoundedQueueTest, PushAndPopKeepSmallest)
 }
 
 
-static void my_string_ptr_sort(uchar *base, uint items, size_t size)
+static void my_string_ptr_sort(Test_key **base, uint items, size_t size)
 {
-#if INT_MAX > 65536L
-  uchar **ptr=0;
-
-  if (radixsort_is_appliccable(items, size) &&
-      (ptr= (uchar**) my_malloc(PSI_NOT_INSTRUMENTED,
-                                items*sizeof(char*),MYF(0))))
+  if (size && items)
   {
-    radixsort_for_str_ptr((uchar**) base,items,size,ptr);
-    my_free(ptr);
-  }
-  else
-#endif
-  {
-    if (size && items)
-    {
-      my_qsort2(base,items, sizeof(uchar*), my_testing::get_ptr_compare(size),
-                (void*) &size);
-    }
+    std::sort(base, base + items,
+      [](const Test_key *a, const Test_key *b)
+      {
+        return memcmp(&a->key, &b->key, sizeof(a->key)) < 0;
+      });
   }
 }
 
@@ -331,7 +327,7 @@ TEST_F(BoundedQueueTest, InsertAndSort)
   EXPECT_EQ(0, m_queue.init(num_elements/2, true, test_key_compare,
                             &m_keymaker, m_keys.key_ptrs));
   insert_test_data();
-  uchar *base=  (uchar*) &m_keys.key_ptrs[0];
+  Test_key **base=  &m_keys.key_ptrs[0];
   size_t size=  sizeof(Test_key);
   // We sort our keys as strings, so erase all the element pointers first.
   for (size_t ii= 0; ii < array_elements(m_keys.key_data); ++ii)

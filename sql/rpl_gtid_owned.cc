@@ -1,42 +1,43 @@
 /* Copyright (c) 2011, 2017, Oracle and/or its affiliates. All rights reserved.
 
-   This program is free software; you can redistribute it and/or
-   modify it under the terms of the GNU General Public License as
-   published by the Free Software Foundation; version 2 of the
-   License.
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
 
-   This program is distributed in the hope that it will be useful, but
-   WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
-   General Public License for more details.
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
-   02110-1301 USA */
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include <stddef.h>
+#include <memory>
+#include <unordered_map>
+#include <utility>
 
-#include "hash.h"
-#include "m_ctype.h"
+#include "map_helpers.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_sys.h"
 #include "my_thread_local.h"
 #include "mysql/service_mysql_alloc.h"
-#include "mysqld_error.h"      // ER_*
 #include "prealloced_array.h"
-#include "psi_memory_key.h"
-#include "rpl_gtid.h"
+#include "sql/psi_memory_key.h"
+#include "sql/rpl_gtid.h"
 
 Owned_gtids::Owned_gtids(Checkable_rwlock *_sid_lock)
   : sid_lock(_sid_lock), sidno_to_hash(key_memory_Owned_gtids_sidno_to_hash)
 {
-  /*
-  my_hash_init(&gtid_to_owner, &my_charset_bin, 20,
-               offsetof(Node, group), sizeof(Group), NULL,
-               my_free, 0);
-  */
 }
 
 
@@ -49,9 +50,7 @@ Owned_gtids::~Owned_gtids()
   rpl_sidno max_sidno= get_max_sidno();
   for (int sidno= 1; sidno <= max_sidno; sidno++)
   {
-    HASH *hash= get_hash(sidno);
-    my_hash_free(hash);
-    my_free(hash);
+    delete get_hash(sidno);
   }
   sid_lock->unlock();
   //sid_lock->assert_no_lock();
@@ -67,21 +66,12 @@ enum_return_status Owned_gtids::ensure_sidno(rpl_sidno sidno)
   {
     for (int i= max_sidno; i < sidno; i++)
     {
-      HASH *hash= (HASH *)my_malloc(key_memory_Owned_gtids_sidno_to_hash,
-                                    sizeof(HASH), MYF(MY_WME));
-      if (hash == NULL)
-        goto error;
-      my_hash_init(hash, &my_charset_bin, 20, 0,
-                   node_get_key,
-                   my_free, 0,
-                   key_memory_Owned_gtids_sidno_to_hash);
-      sidno_to_hash.push_back(hash);
+      sidno_to_hash.push_back
+        (new malloc_unordered_multimap<rpl_gno, unique_ptr_my_free<Node>>
+          (key_memory_Owned_gtids_sidno_to_hash));
     }
   }
   RETURN_OK;
-error:
-  BINLOG_ERROR(("Out of memory."), (ER_OUT_OF_RESOURCES, MYF(0)));
-  RETURN_REPORTED_ERROR;
 }
 
 
@@ -89,7 +79,6 @@ enum_return_status Owned_gtids::add_gtid_owner(const Gtid &gtid,
                                                my_thread_id owner)
 {
   DBUG_ENTER("Owned_gtids::add_gtid_owner(Gtid, my_thread_id)");
-  DBUG_ASSERT(!contains_gtid(gtid));
   DBUG_ASSERT(gtid.sidno <= get_max_sidno());
   Node *n= (Node *)my_malloc(key_memory_Sid_map_Node,
                              sizeof(Node), MYF(MY_WME));
@@ -101,43 +90,28 @@ enum_return_status Owned_gtids::add_gtid_owner(const Gtid &gtid,
   printf("Owned_gtids(%p)::add sidno=%d gno=%lld n=%p n->owner=%u\n",
          this, sidno, gno, n, n?n->owner:0);
   */
-  if (my_hash_insert(get_hash(gtid.sidno), (const uchar *)n) != 0)
-  {
-    my_free(n);
-    BINLOG_ERROR(("Out of memory."), (ER_OUT_OF_RESOURCES, MYF(0)));
-    RETURN_REPORTED_ERROR;
-  }
+  get_hash(gtid.sidno)->emplace(gtid.gno, unique_ptr_my_free<Node>(n));
   RETURN_OK;
 }
 
 
-void Owned_gtids::remove_gtid(const Gtid &gtid)
+void Owned_gtids::remove_gtid(const Gtid &gtid, const my_thread_id owner)
 {
   DBUG_ENTER("Owned_gtids::remove_gtid(Gtid)");
   //printf("Owned_gtids::remove(sidno=%d gno=%lld)\n", sidno, gno);
   //DBUG_ASSERT(contains_gtid(sidno, gno)); // allow group not owned
-  HASH *hash= get_hash(gtid.sidno);
-  DBUG_ASSERT(hash != NULL);
-  Node *node= get_node(hash, gtid.gno);
-  if (node != NULL)
+  malloc_unordered_multimap<rpl_gno, unique_ptr_my_free<Node>>
+    *hash= get_hash(gtid.sidno);
+  auto it_range= hash->equal_range(gtid.gno);
+  for (auto it= it_range.first; it != it_range.second; ++it)
   {
-#ifdef DBUG_OFF
-    my_hash_delete(hash, (uchar *)node);
-#else
-    // my_hash_delete returns nonzero if the element does not exist
-    DBUG_ASSERT(my_hash_delete(hash, (uchar *)node) == 0);
-#endif
+    if (it->second->owner == owner)
+    {
+      hash->erase(it);
+      DBUG_VOID_RETURN;
+    }
   }
   DBUG_VOID_RETURN;
-}
-
-
-my_thread_id Owned_gtids::get_owner(const Gtid &gtid) const
-{
-  Node *n= get_node(gtid);
-  if (n != NULL)
-    return n->owner;
-  return 0;
 }
 
 
@@ -174,4 +148,29 @@ void Owned_gtids::get_gtids(Gtid_set &gtid_set) const
     g= git.get();
   }
   DBUG_VOID_RETURN;
+}
+
+bool Owned_gtids::contains_gtid(const Gtid &gtid) const
+{
+  malloc_unordered_multimap<rpl_gno, unique_ptr_my_free<Node>>
+    *hash= get_hash(gtid.sidno);
+  sid_lock->assert_some_lock();
+  return hash->count(gtid.gno) != 0;
+}
+
+bool Owned_gtids::is_owned_by(const Gtid &gtid, const my_thread_id thd_id) const
+{
+  malloc_unordered_multimap<rpl_gno, unique_ptr_my_free<Node>>
+    *hash= get_hash(gtid.sidno);
+  auto it_range= hash->equal_range(gtid.gno);
+
+  if (thd_id == 0)
+    return it_range.first == it_range.second;
+
+  for (auto it= it_range.first; it != it_range.second; ++it)
+  {
+    if (it->second->owner == thd_id)
+      return true;
+  }
+  return false;
 }

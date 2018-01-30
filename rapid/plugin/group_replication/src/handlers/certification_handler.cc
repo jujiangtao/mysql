@@ -1,26 +1,32 @@
 /* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "handlers/certification_handler.h"
+#include "plugin/group_replication/include/handlers/certification_handler.h"
 
-#include "handlers/pipeline_handlers.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
-#include "plugin.h"
-#include "plugin_log.h"
-#include "sql_service_gr_user.h"
+#include "plugin/group_replication/include/handlers/pipeline_handlers.h"
+#include "plugin/group_replication/include/plugin.h"
+#include "plugin/group_replication/include/plugin_log.h"
 
 using std::string;
 const int GTID_WAIT_TIMEOUT= 30; //30 seconds
@@ -403,9 +409,12 @@ Certification_handler::handle_transaction_id(Pipeline_event *pevent,
                                                 gle->is_using_trans_cache(),
                                                 gle->last_committed,
                                                 gle->sequence_number,
+                                                gle->may_have_sbr_stmts,
                                                 gle->original_commit_timestamp,
                                                 gle->immediate_commit_timestamp,
                                                 gtid_specification);
+        // Copy the transaction length to the new event.
+        gle_generated->set_trx_length(gle->transaction_length);
 
         pevent->reset_pipeline_event();
         pevent->set_LogEvent(gle_generated);
@@ -472,6 +481,27 @@ Certification_handler::extract_certification_info(Pipeline_event *pevent,
   int error= 0;
   Log_event *event= NULL;
 
+  if (pevent->get_event_context() != SINGLE_VIEW_EVENT)
+  {
+    /*
+      If the current view event is embraced on a transaction:
+      GTID, BEGIN, VIEW, COMMIT; it means that we are handling
+      a view that was delivered by a asynchronous channel from
+      outside of the group.
+      On that case we just have to queue it on the group applier
+      channel, without any special handling.
+    */
+    next(pevent, cont);
+    DBUG_RETURN(error);
+  }
+
+  /*
+    If the current view event is a standalone event (not inside a
+    transaction), it means that it was injected from GCS on a
+    membership change.
+    On that case we need to queue it on the group applier wrapped
+    on a transaction with a group generated GTID.
+  */
   error= pevent->get_LogEvent(&event);
   if (error || (event == NULL))
   {
@@ -516,10 +546,11 @@ int Certification_handler::wait_for_local_transaction_execution()
     DBUG_RETURN(0); //empty
   }
 
-  Sql_service_command *sql_command_interface= new Sql_service_command();
+  Sql_service_command_interface *sql_command_interface=
+      new Sql_service_command_interface();
 
-  if(sql_command_interface->establish_session_connection(false) ||
-     sql_command_interface->set_interface_user(GROUPREPL_USER)
+  if (sql_command_interface->establish_session_connection(PSESSION_USE_THREAD,
+                                                          GROUPREPL_USER)
     )
   {
     /* purecov: begin inspected */
@@ -605,6 +636,7 @@ int Certification_handler::inject_transactional_events(Pipeline_event *pevent,
                                                      true,
                                                      0,
                                                      0,
+                                                     true,
                                                      0,
                                                      0,
                                                      gtid_specification);

@@ -1,20 +1,26 @@
 /*
-      Copyright (c) 2013, 2017, Oracle and/or its affiliates. All rights
-   reserved.
+  Copyright (c) 2013, 2017, Oracle and/or its affiliates. All rights reserved.
 
-      This program is free software; you can redistribute it and/or modify
-      it under the terms of the GNU General Public License as published by
-      the Free Software Foundation; version 2 of the License.
+  This program is free software; you can redistribute it and/or modify
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
 
-      This program is distributed in the hope that it will be useful,
-      but WITHOUT ANY WARRANTY; without even the implied warranty of
-      MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-      GNU General Public License for more details.
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
-      You should have received a copy of the GNU General Public License
-      along with this program; if not, write to the Free Software
-      Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
-   */
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License, version 2.0, for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this program; if not, write to the Free Software
+  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
+*/
 
 /**
   @file storage/perfschema/table_replication_connection_configuration.cc
@@ -25,123 +31,52 @@
 
 #include "my_compiler.h"
 #include "my_dbug.h"
-#include "pfs_instr.h"
-#include "pfs_instr_class.h"
-#include "rpl_info.h"
-#include "rpl_mi.h"
-#include "rpl_msr.h" /* Multisource replciation */
-#include "rpl_rli.h"
-#include "rpl_slave.h"
-#include "sql_parse.h"
+#include "sql/rpl_info.h"
+#include "sql/rpl_mi.h"
+#include "sql/rpl_msr.h" /* Multisource replciation */
+#include "sql/rpl_rli.h"
+#include "sql/rpl_slave.h"
+#include "sql/sql_parse.h"
+#include "storage/perfschema/pfs_instr.h"
+#include "storage/perfschema/pfs_instr_class.h"
 
 THR_LOCK table_replication_connection_configuration::m_table_lock;
 
-/* clang-format off */
-static const TABLE_FIELD_TYPE field_types[]=
-{
-  {
-    {C_STRING_WITH_LEN("CHANNEL_NAME")},
-    {C_STRING_WITH_LEN("char(64)")},
-    {NULL, 0}
-  },
-  {
-    {C_STRING_WITH_LEN("HOST")},
-    {C_STRING_WITH_LEN("char(60)")},
-    {NULL, 0}
-  },
-  {
-    {C_STRING_WITH_LEN("PORT")},
-    {C_STRING_WITH_LEN("int(11)")},
-    {NULL, 0}
-  },
-  {
-    {C_STRING_WITH_LEN("USER")},
-    {C_STRING_WITH_LEN("char(" USERNAME_CHAR_LENGTH_STR ")")},
-    {NULL, 0}
-  },
-  {
-    {C_STRING_WITH_LEN("NETWORK_INTERFACE")},
-    {C_STRING_WITH_LEN("char(60)")},
-    {NULL, 0}
-  },
-  {
-    {C_STRING_WITH_LEN("AUTO_POSITION")},
-    {C_STRING_WITH_LEN("enum('1','0')")},
-    {NULL, 0}
-  },
-  {
-    {C_STRING_WITH_LEN("SSL_ALLOWED")},
-    {C_STRING_WITH_LEN("enum('YES','NO','IGNORED')")},
-    {NULL, 0}
-  },
-  {
-    {C_STRING_WITH_LEN("SSL_CA_FILE")},
-    {C_STRING_WITH_LEN("varchar(512)")},
-    {NULL, 0}
-  },
-  {
-    {C_STRING_WITH_LEN("SSL_CA_PATH")},
-    {C_STRING_WITH_LEN("varchar(512)")},
-    {NULL, 0}
-  },
-  {
-    {C_STRING_WITH_LEN("SSL_CERTIFICATE")},
-    {C_STRING_WITH_LEN("varchar(512)")},
-    {NULL, 0}
-  },
-  {
-    {C_STRING_WITH_LEN("SSL_CIPHER")},
-    {C_STRING_WITH_LEN("varchar(512)")},
-    {NULL, 0}
-  },
-  {
-    {C_STRING_WITH_LEN("SSL_KEY")},
-    {C_STRING_WITH_LEN("varchar(512)")},
-    {NULL, 0}
-  },
-  {
-    {C_STRING_WITH_LEN("SSL_VERIFY_SERVER_CERTIFICATE")},
-    {C_STRING_WITH_LEN("enum('YES','NO')")},
-    {NULL, 0}
-  },
-  {
-    {C_STRING_WITH_LEN("SSL_CRL_FILE")},
-    {C_STRING_WITH_LEN("varchar(255)")},
-    {NULL, 0}
-  },
-  {
-    {C_STRING_WITH_LEN("SSL_CRL_PATH")},
-    {C_STRING_WITH_LEN("varchar(255)")},
-    {NULL, 0}
-  },
-  {
-    {C_STRING_WITH_LEN("CONNECTION_RETRY_INTERVAL")},
-    {C_STRING_WITH_LEN("int(11)")},
-    {NULL, 0}
-  },
-  {
-    {C_STRING_WITH_LEN("CONNECTION_RETRY_COUNT")},
-    {C_STRING_WITH_LEN("bigint")},
-    {NULL, 0}
-  },
-  {
-    {C_STRING_WITH_LEN("HEARTBEAT_INTERVAL")},
-    {C_STRING_WITH_LEN("double(10,3)")},
-    {NULL, 0}
-  },
-  {
-    {C_STRING_WITH_LEN("TLS_VERSION")},
-    {C_STRING_WITH_LEN("varchar(255)")},
-    {NULL, 0}
-  }
-};
-/* clang-format on */
-
-TABLE_FIELD_DEF
-table_replication_connection_configuration::m_field_def = {19, field_types};
+Plugin_table table_replication_connection_configuration::m_table_def(
+  /* Schema name */
+  "performance_schema",
+  /* Name */
+  "replication_connection_configuration",
+  /* Definition */
+  "  CHANNEL_NAME CHAR(64) collate utf8_general_ci not null,\n"
+  "  HOST CHAR(60) collate utf8_bin not null,\n"
+  "  PORT INTEGER not null,\n"
+  "  USER CHAR(32) collate utf8_bin not null,\n"
+  "  NETWORK_INTERFACE CHAR(60) collate utf8_bin not null,\n"
+  "  AUTO_POSITION ENUM('1','0') not null,\n"
+  "  SSL_ALLOWED ENUM('YES','NO','IGNORED') not null,\n"
+  "  SSL_CA_FILE VARCHAR(512) not null,\n"
+  "  SSL_CA_PATH VARCHAR(512) not null,\n"
+  "  SSL_CERTIFICATE VARCHAR(512) not null,\n"
+  "  SSL_CIPHER VARCHAR(512) not null,\n"
+  "  SSL_KEY VARCHAR(512) not null,\n"
+  "  SSL_VERIFY_SERVER_CERTIFICATE ENUM('YES','NO') not null,\n"
+  "  SSL_CRL_FILE VARCHAR(255) not null,\n"
+  "  SSL_CRL_PATH VARCHAR(255) not null,\n"
+  "  CONNECTION_RETRY_INTERVAL INTEGER not null,\n"
+  "  CONNECTION_RETRY_COUNT BIGINT unsigned not null,\n"
+  "  HEARTBEAT_INTERVAL DOUBLE(10,3) unsigned not null\n"
+  "  COMMENT 'Number of seconds after which a heartbeat will be sent .',\n"
+  "  TLS_VERSION VARCHAR(255) not null,\n"
+  "  PUBLIC_KEY_PATH VARCHAR(512) not null,\n"
+  "  GET_PUBLIC_KEY ENUM('YES', 'NO') not null,\n"
+  "  PRIMARY KEY (channel_name) USING HASH\n",
+  /* Options */
+  " ENGINE=PERFORMANCE_SCHEMA",
+  /* Tablespace */
+  nullptr);
 
 PFS_engine_table_share table_replication_connection_configuration::m_share = {
-  {C_STRING_WITH_LEN("replication_connection_configuration")},
   &pfs_readonly_acl,
   table_replication_connection_configuration::create,
   NULL, /* write_row */
@@ -149,9 +84,11 @@ PFS_engine_table_share table_replication_connection_configuration::m_share = {
   table_replication_connection_configuration::get_row_count, /* records */
   sizeof(PFS_simple_index),                                  /* ref length */
   &m_table_lock,
-  &m_field_def,
-  false, /* checked */
-  false  /* perpetual */
+  &m_table_def,
+  true, /* perpetual */
+  PFS_engine_table_proxy(),
+  {0},
+  false /* m_in_purgatory */
 };
 
 bool
@@ -176,7 +113,7 @@ PFS_index_rpl_connection_config::match(Master_info *mi)
 }
 
 PFS_engine_table *
-table_replication_connection_configuration::create(void)
+table_replication_connection_configuration::create(PFS_engine_table_share *)
 {
   return new table_replication_connection_configuration();
 }
@@ -390,6 +327,13 @@ table_replication_connection_configuration::make_row(Master_info *mi)
   m_row.tls_version_length = strlen(temp_store);
   memcpy(m_row.tls_version, temp_store, m_row.tls_version_length);
 
+  temp_store = (char *)mi->public_key_path;
+  m_row.public_key_path_length = strlen(temp_store);
+  memcpy(m_row.public_key_path, temp_store,
+         m_row.public_key_path_length);
+
+  m_row.get_public_key = mi->get_public_key ? PS_RPL_YES : PS_RPL_NO;
+
   mysql_mutex_unlock(&mi->rli->data_lock);
   mysql_mutex_unlock(&mi->data_lock);
 
@@ -473,6 +417,13 @@ table_replication_connection_configuration::read_row_values(
         break;
       case 18: /** tls_version */
         set_field_varchar_utf8(f, m_row.tls_version, m_row.tls_version_length);
+        break;
+      case 19: /** master_public_key_path */
+        set_field_varchar_utf8(f, m_row.public_key_path,
+          m_row.public_key_path_length);
+        break;
+      case 20: /** get_master_public_key */
+        set_field_enum(f, m_row.get_public_key);
         break;
       default:
         DBUG_ASSERT(false);

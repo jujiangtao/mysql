@@ -1,31 +1,48 @@
 /* Copyright (c) 2005, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef RPL_RLI_H
 #define RPL_RLI_H
 
+#if defined(__SUNPRO_CC)
+/*
+  Solaris Studio 12.5 has a bug where, if you use dynamic_cast
+  and then later #include this file (which Boost does), you will
+  get a compile error. Work around it by just including it right now.
+*/
+#include <cxxabi.h>
+#endif
+
 #include <sys/types.h>
 #include <time.h>
 #include <atomic>
+#include <memory>
 #include <string>
 #include <vector>
 
-#include "binlog.h"            // MYSQL_BIN_LOG
-#include "handler.h"
+#include "binlog_event.h"
 #include "lex_string.h"
 #include "m_string.h"
+#include "map_helpers.h"
 #include "my_bitmap.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
@@ -33,35 +50,40 @@
 #include "my_loglevel.h"
 #include "my_psi_config.h"
 #include "my_sys.h"
+#include "mysql/components/services/mysql_cond_bits.h"
+#include "mysql/components/services/mysql_mutex_bits.h"
+#include "mysql/components/services/psi_mutex_bits.h"
 #include "mysql/psi/mysql_cond.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/psi/psi_base.h"
 #include "mysql/thread_type.h"
+#include "mysql/udf_registration_types.h"
 #include "prealloced_array.h"  // Prealloced_array
-#include "query_options.h"
-#include "rpl_gtid.h"          // Gtid_set
-#include "rpl_info.h"          // Rpl_info
-#include "rpl_mts_submode.h"   // enum_mts_parallel_type
-#include "rpl_record.h"
-#include "rpl_slave_until_options.h"
-#include "rpl_tblmap.h"        // table_mapping
-#include "rpl_utility.h"       // Deferred_log_events
-#include "sql_class.h"         // THD
-#include "sql_lex.h"
-#include "sql_plugin_ref.h"
+#include "sql/binlog.h"        // MYSQL_BIN_LOG
+#include "sql/handler.h"
+#include "sql/log_event.h"    //Gtid_log_event
+#include "sql/mysqld.h"
+#include "sql/psi_memory_key.h"
+#include "sql/query_options.h"
+#include "sql/rpl_filter.h"
+#include "sql/rpl_gtid.h"      // Gtid_set
+#include "sql/rpl_info.h"      // Rpl_info
+#include "sql/rpl_mts_submode.h" // enum_mts_parallel_type
+#include "sql/rpl_slave_until_options.h"
+#include "sql/rpl_tblmap.h"    // table_mapping
+#include "sql/rpl_utility.h"   // Deferred_log_events
+#include "sql/sql_class.h"     // THD
+#include "sql/sql_lex.h"
+#include "sql/system_variables.h"
+#include "sql/table.h"
 #include "sql_string.h"
-#include "system_variables.h"
-#include "table.h"
-#include "log_event.h"        //Gtid_log_event
-#include "rpl_filter.h"
 
-struct RPL_TABLE_LIST;
 class Commit_order_manager;
 class Format_description_log_event;
 class Log_event;
 class Master_info;
-class Master_info;
 class Rows_query_log_event;
+class Rpl_filter;
 class Rpl_info_handler;
 class Slave_committed_queue;
 class Slave_worker;
@@ -260,40 +282,36 @@ public:
   } commit_timestamps_status;
 
   /**
-   @return the last processed transation information
+    @return the pointer to the Gtid_monitoring_info.
   */
-  trx_monitoring_info* get_last_processed_trx()
+  Gtid_monitoring_info* get_gtid_monitoring_info()
   {
-    return last_processed_trx;
+    return gtid_monitoring_info;
   }
 
   /**
-   @return the currently processing transaction information
-  */
-  trx_monitoring_info* get_processing_trx()
-  {
-    return processing_trx;
-  }
+    Stores the details of the transaction which has just started processing.
 
-  /**
-    Stores the details of the transaction which has just started processing
+    This function is called by the STS applier or MTS worker when applying a
+    Gtid.
 
     @param  gtid_arg         the gtid of the trx
     @param  original_ts_arg  the original commit timestamp of the transaction
     @param  immediate_ts_arg the immediate commit timestamp of the transaction
-    @param  skipped          true if the transanction was gtid skipped
+    @param  skipped          true if the transaction was gtid skipped
   */
   void started_processing(Gtid gtid_arg, ulonglong original_ts_arg,
                           ulonglong immediate_ts_arg, bool skipped= false)
   {
-    mysql_mutex_lock(&data_lock);
-    processing_trx->set(gtid_arg, original_ts_arg, immediate_ts_arg,
-                        my_getsystime() /*start_time*/, skipped);
-    mysql_mutex_unlock(&data_lock);
+    gtid_monitoring_info->start(gtid_arg, original_ts_arg, immediate_ts_arg,
+                                skipped);
   }
 
   /**
-    Stores the details of the transaction which has just started processing
+    Stores the details of the transaction which has just started processing.
+
+    This function is called by the MTS coordinator when queuing a Gtid to
+    a worker.
 
     @param  gtid_log_ev_arg the gtid log event of the trx
   */
@@ -315,51 +333,37 @@ public:
     recorded, the information is copied to last_processed_trx and the
     information in processing_trx is cleared.
 
-    If the transaction was being applied but GTID-skipped, the copy will not
+    If the transaction was "applied" but GTID-skipped, the copy will not
     happen and the last_processed_trx will keep its current value.
   */
   void finished_processing()
   {
-    mysql_mutex_lock(&data_lock);
-    processing_trx->end_time= my_getsystime();
-    last_processed_trx->copy_if_not_skipped(processing_trx);
-    processing_trx->clear();
-    mysql_mutex_unlock(&data_lock);
+    gtid_monitoring_info->finish();
   }
 
   /**
-   @return True if there is a transaction being currently processed
+    @return True if there is a transaction being currently processed
   */
   bool is_processing_trx()
   {
-    return processing_trx->is_set();
+    return gtid_monitoring_info->is_processing_trx_set();
   }
 
   /**
    Clears the processing_trx structure fields. Normally called when there is an
    error while processing the transaction.
-   @param need_lock true by default. if false then the lock has already been
-                    acquired before the method was called.
   */
-  void clear_processing_trx(bool need_lock)
+  void clear_processing_trx()
   {
-    if (need_lock)
-    {
-      mysql_mutex_lock(&data_lock);
-    }
-    processing_trx->clear();
-    if (need_lock)
-    {
-      mysql_mutex_unlock(&data_lock);
-    }
+    gtid_monitoring_info->clear_processing_trx();
   }
 
   /**
-   Clears the last_processed_trx structure fields.
+    Clears the Gtid_monitoring_info fields.
   */
-  void clear_last_processed_trx()
+  void clear_gtid_monitoring_info()
   {
-    last_processed_trx->clear();
+    gtid_monitoring_info->clear();
   }
 
   /*
@@ -434,18 +438,19 @@ private:
   bool gtid_retrieved_initialized;
 
   /**
-   Stores information on the last processed transaction or the transaction
-   that is currently being processed.
-   STS:
-     - timestamps of the currently applying/last applied transaction
-   MTS:
-     - coordinator thread: timestamps of the currently scheduling/last scheduled
-     transaction in a worker's queue
-     - worker thread: timestamps of the currently applying/last applied
-   transaction
+    Stores information on the last processed transaction or the transaction
+    that is currently being processed.
+
+    STS:
+    - timestamps of the currently applying/last applied transaction
+
+    MTS:
+    - coordinator thread: timestamps of the currently scheduling/last scheduled
+      transaction in a worker's queue
+    - worker thread: timestamps of the currently applying/last applied
+      transaction
   */
-  trx_monitoring_info *last_processed_trx;
-  trx_monitoring_info *processing_trx;
+  Gtid_monitoring_info *gtid_monitoring_info;
 
 public:
   Sid_map* get_sid_map()
@@ -473,6 +478,7 @@ public:
 
   const Gtid_set *get_gtid_set() const { return gtid_set; }
 
+  bool reinit_sql_thread_io_cache(const char* log, bool need_data_lock);
   int init_relay_log_pos(const char* log,
                          ulonglong pos, bool need_data_lock,
                          const char** errmsg,
@@ -614,8 +620,16 @@ public:
     event_relay_log_pos= future_event_relay_log_pos;
   }
 
+  /**
+    Last executed event group coordinates are updated and optionally
+    forcibly flushed to a repository.
+    @param log_pos         a value of the executed position to update to
+    @param need_data_lock  whether data_lock should be acquired
+    @param force           the value is passed to eventual flush_info()
+  */
   int inc_group_relay_log_pos(ulonglong log_pos,
-                              bool need_data_lock);
+                              bool need_data_lock,
+                              bool force= false);
 
   int wait_for_pos(THD* thd, String* log_name, longlong log_pos,
                    double timeout);
@@ -699,7 +713,10 @@ public:
   // number's is determined by global slave_parallel_workers
   Slave_worker_array workers;
 
-  HASH mapping_db_to_worker; // To map a database to a worker
+  // To map a database to a worker
+  malloc_unordered_map<std::string,
+                       unique_ptr_with_deleter<db_worker_hash_entry>>
+    mapping_db_to_worker{key_memory_db_worker_hash_entry};
   bool inited_hash_workers; //  flag to check if mapping_db_to_worker is inited
 
   mysql_mutex_t slave_worker_hash_lock; // for mapping_db_to_worker
@@ -821,7 +838,7 @@ public:
     the scheduler type.
   */
   ulong mts_wq_no_underrun_cnt;
-  longlong mts_total_wait_overlap; // Waiting time corresponding to above
+  std::atomic<longlong> mts_total_wait_overlap; // Waiting time corresponding to above
   /*
     Stats to compute Coordinator waiting time for any Worker available,
     applies solely to the Commit-clock scheduler.
@@ -1430,9 +1447,19 @@ private:
 
 
  /**
-   sets the suffix required for relay log names
-   in multisource replication.
-   The extension is "-relay-bin-<channel_name>"
+   sets the suffix required for relay log names in multisource
+   replication. When --relay-log option is not provided, the
+   names of the relay log files are relaylog.0000x or
+   relaylog-CHANNEL.00000x in the case of MSR. However, if
+   that option is provided, then the names of the relay log
+   files are <relay-log-option>.0000x or
+   <relay-log-option>-CHANNEL.00000x in the case of MSR.
+
+   The function adds a channel suffix (according to the channel to
+   file name conventions and conversions) to the relay log file.
+
+   @todo: truncate the log file if length exceeds.
+
    @param[in, out]  buff       buffer to store the complete relay log file name
    @param[in]       buff_size  size of buffer buff
    @param[in]       base_name  the base name of the relay log file

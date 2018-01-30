@@ -1,32 +1,48 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef RPL_SLAVE_H
 #define RPL_SLAVE_H
 
 #include <limits.h>
 #include <sys/types.h>
+#include <atomic>
 
+#include "m_string.h"
 #include "my_bitmap.h"
+#include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_psi_config.h"
 #include "my_thread.h"                     // my_start_routine
+#include "mysql/components/services/mysql_cond_bits.h"
+#include "mysql/components/services/mysql_mutex_bits.h"
+#include "mysql/components/services/psi_thread_bits.h"
 #include "mysql/psi/mysql_cond.h"          // mysql_cond_t
 #include "mysql/psi/mysql_mutex.h"
+#include "mysql/psi/mysql_thread.h"
 #include "mysql/psi/psi_base.h"
-#include "rpl_channel_service_interface.h" // enum_channel_type
+#include "mysql/udf_registration_types.h"
+#include "mysql_com.h"
+#include "sql/rpl_channel_service_interface.h" // enum_channel_type
 
 class Master_info;
 class Relay_log_info;
@@ -68,7 +84,7 @@ typedef enum { SLAVE_THD_IO, SLAVE_THD_SQL, SLAVE_THD_WORKER } SLAVE_THD_TYPE;
 
 #define SLAVE_NET_TIMEOUT  60
 
-#define MAX_SLAVE_ERROR    2000
+#define MAX_SLAVE_ERROR    10000
 
 #define MTS_WORKER_UNDEF ((ulong) -1)
 #define MTS_MAX_WORKERS  1024
@@ -109,12 +125,12 @@ extern bool server_id_supplied;
     I/O Thread - One of these threads is started for each master server.
                  They maintain a connection to their master server, read log
                  events from the master as they arrive, and queues them into
-                 a single, shared relay log file.  A Master_info 
-                 represents each of these threads.
+                 a single, shared relay log file.  A Master_info represents
+                 each of these threads.
 
     SQL Thread - One of these threads is started and reads from the relay log
-                 file, executing each event.  A Relay_log_info 
-                 represents this thread.
+                 file, executing each event. A Relay_log_info represents this
+                 thread.
 
   Buffering in the relay log file makes it unnecessary to reread events from
   a master server across a slave restart.  It also decouples the slave from
@@ -124,35 +140,105 @@ extern bool server_id_supplied;
 *****************************************************************************/
 
 /*
-  MUTEXES in replication:
+  # MUTEXES in replication #
 
-  channel_map lock: This is to lock the Multisource datastructure (channel_map).
-  Generally it used to retrieve an mi from channel_map.It is used to SERIALIZE ALL
-  administrative commands of replication: START SLAVE, STOP SLAVE, CHANGE
-  MASTER, RESET SLAVE, end_slave() (when mysqld stops) [init_slave() does not
-  need it it's called early]. Any of these commands holds the mutex from the
-  start till the end. This thus protects us against a handful of deadlocks
+  JAG: TODO: This guide needs to be updated after pushing WL#10406!
+
+  ## In Multisource_info (channel_map) ##
+
+  ### m_channel_map_lock ###
+
+  This rwlock is used to protect the multi source replication data structure
+  (channel_map). Any operation reading contents from the channel_map should
+  hold the rdlock during the operation. Any operation changing the
+  channel_map (either adding/removing channels to/from the channel_map)
+  should hold the wrlock during the operation.
+
+  [init_slave() does not need it it's called early].
+
   (consider start_slave_thread() which, when starting the I/O thread, releases
   mi->run_lock, keeps rli->run_lock, and tries to re-acquire mi->run_lock).
 
-  In Master_info: run_lock, data_lock
-  run_lock protects all information about the run state: slave_running, thd
-  and the existence of the I/O thread (to stop/start it, you need this mutex).
-  data_lock protects some moving members of the struct: counters (log name,
-  position) and relay log (MYSQL_BIN_LOG object).
+  ## In Master_info (mi) ##
 
-  In Relay_log_info: run_lock, data_lock
-  see Master_info
-  However, note that run_lock does not protect
-  Relay_log_info.run_state; that is protected by data_lock.
+  ### m_channel_lock ###
 
-  In MYSQL_BIN_LOG: LOCK_log, LOCK_index of the binlog and the relay log
-  LOCK_log: when you write to it. LOCK_index: when you create/delete a binlog
-  (so that you have to update the .index file).
+  This rwlock is used to protect the existence of the Master_info object
+  (protect the channel existence). As the server is able to run channel
+  administrative statements in concurrent server sessions (it is possible to
+  START SLAVE FOR CHANNEL 'ch1' while doing STOP SLAVE FOR CHANNEL 'ch2' for
+  example), any channel specific operation can:
+    a) rdlock(m_channel_map_lock) // No channels can be added or removed
+    b) mi = channel_map.get_mi(channel_name)
+    c) if (mi == NULL) // The channel does not exist
+    d) rdlock(m_channel_lock) // This channel is in use, cannot be removed
+    e) unlock(m_channel_map_lock) // Channels can be added or removed again
+    f) channel specific operations
+    g) unlock(m_channel_lock) // This channel is not in use anymore
+
+  ### run_lock ###
+
+  Protects all information about the running state: slave_running, thd
+  and the existence of the I/O thread itself (to stop/start it, you need
+  this mutex).
+
+  ### data_lock ###
+
+  Protects some moving members of the struct: counters (log name,
+  position).
+
+  ### sid_lock ###
+
+  Protects the retrieved GTID set and it's SID map from updates.
+
+  ## In Relay_log_info (rli) ##
+
+  ### run_lock ###
+
+  Same as Master_info's one. However, note that run_lock does not protect
+  Relay_log_info.run_state. That is protected by data_lock.
+
+  ### data_lock ###
+
+  Protects some moving members of the struct: counters (log name,
+  position).
+
+  ## In MYSQL_BIN_LOG (mysql_bin_log,relay_log) ##
+
+  ### LOCK_log ###
+
+  This mutex should be taken when going to write to a log file. Notice that it
+  does not prevent other threads from reading from the file being written (the
+  "hot" file) or any other older file.
+
+  ### LOCK_index ###
+
+  This mutex should be taken when going to create/delete a log file (as those
+  operations will update the .index file).
+
+  ### LOCK_binlog_end_pos ###
+
+  This mutex protects the access to the binlog_end_pos variable. The variable
+  it set with the position that other threads reading from the currently active
+  log file (the "hot" one) should not cross.
+
+  ## Gtid_state (gtid_state, global_sid_map) ##
+
+  ### global_sid_lock ###
+
+  Protects all Gtid_state GTID sets (lost_gtids, executed_gtids,
+  gtids_only_in_table, previous_gtids_logged, owned_gtids) and the global SID
+  map from updates.
 
   The global_sid_lock must not be taken after LOCK_reset_gtid_table.
 
-  ==== Order of acquisition ====
+  ## Gtid_mode (gtid_mode) ##
+
+  ### gtid_mode_lock ###
+
+  Used to arbitrate changes on server Gtid_mode.
+
+  # Order of acquisition #
 
   Here, we list most major functions that acquire multiple locks.
 
@@ -162,11 +248,32 @@ extern bool server_id_supplied;
   locks B, then we write "A | B".  If function F1 invokes function F2,
   then we write F2's name in parentheses in the list of locks for F1.
 
-    show_master_info:
-      mi.data_lock, rli.data_lock, mi.err_lock, rli.err_lock
+    Sys_var_gtid_mode::global_update:
+      gtid_mode_lock->wrlock, channel_map->wrlock, binlog.LOCK_log, global_sid_lock->wrlock
+
+    change_master_cmd:
+      channel_map.wrlock, (change_master)
+
+    change_master:
+      mi->channel_wrlock, mi.run_lock, rli.run_lock, (global_init_info), (purge_relay_logs), (init_relay_log_pos), rli.err_lock
+
+    global_init_info:
+      mi.data_lock, rli.data_lock
+
+    purge_relay_logs:
+      rli.data_lock, (relay_log.reset_logs)
+
+    relay_log.reset_logs:
+      .LOCK_log, .LOCK_index, .sid_lock->wrlock
+
+    init_relay_log_pos:
+      rli.data_lock
+
+    queue_event:
+      rli.LOCK_log, relay_log.sid_lock->rdlock, mi.data_lock
 
     stop_slave:
-      channel_map lock,
+      channel_map rdlock,
       ( mi.run_lock, thd.LOCK_thd_data
       | rli.run_lock, thd.LOCK_thd_data
       | relay.LOCK_log
@@ -175,8 +282,8 @@ extern bool server_id_supplied;
     start_slave:
       mi.run_lock, rli.run_lock, rli.data_lock, global_sid_lock->wrlock
 
-    reset_logs:
-      THD::LOCK_thd_data, .LOCK_log, .LOCK_index, global_sid_lock->wrlock
+    mysql_bin_log.reset_logs:
+      .LOCK_log, .LOCK_index, global_sid_lock->wrlock
 
     purge_relay_logs:
       rli.data_lock, (relay.reset_logs) THD::LOCK_thd_data,
@@ -215,14 +322,10 @@ extern bool server_id_supplied;
       )
 
     rotate_relay_log:
-      (relay.new_file_impl) relay.LOCK_log, relay.LOCK_index,
-      global_sid_lock->wrlock
+      (relay.new_file_impl) relay.LOCK_log, relay.LOCK_index
 
     kill_zombie_dump_threads:
       LOCK_thd_list, thd.LOCK_thd_data
-
-    init_relay_log_pos:
-      rli.data_lock, relay.log_lock
 
     rli_init_info:
       rli.data_lock,
@@ -231,13 +334,6 @@ extern bool server_id_supplied;
       | (relay.open_binlog)
       | (init_relay_log_pos) rli.data_lock, relay.log_lock
       )
-
-    change_master:
-      mi.run_lock, rli.run_lock, (init_relay_log_pos) rli.data_lock,
-      relay.log_lock
-
-    Sys_var_gtid_mode::global_update:
-      gtid_mode_lock, channel_map lock, binlog.LOCK_log, global_sid_lock
 
   So the DAG of lock acquisition order (not counting the buggy
   purge_logs) is, empirically:
@@ -267,8 +363,10 @@ extern bool use_slave_mask;
 extern char *slave_load_tmpdir;
 extern char *master_info_file, *relay_log_info_file;
 extern char *opt_relay_logname, *opt_relaylog_index_name;
+extern bool opt_relaylog_index_name_supplied;
+extern bool opt_relay_logname_supplied;
 extern char *opt_binlog_index_name;
-extern bool opt_skip_slave_start, opt_reckless_slave;
+extern bool opt_skip_slave_start;
 extern bool opt_log_slave_updates;
 extern char *opt_slave_skip_errors;
 extern ulonglong relay_log_space_limit;
@@ -388,15 +486,15 @@ int stop_slave(THD* thd, Master_info* mi, bool net_report,
   mysql_cond_wait() on start_cond, start_lock
 */
 bool start_slave_thread(
-#ifdef HAVE_PSI_INTERFACE
+#ifdef HAVE_PSI_THREAD_INTERFACE
                         PSI_thread_key thread_key,
 #endif
                         my_start_routine h_func,
                         mysql_mutex_t *start_lock,
                         mysql_mutex_t *cond_lock,
                         mysql_cond_t *start_cond,
-                        volatile uint *slave_running,
-                        volatile ulong *slave_run_id,
+                        std::atomic<uint> *slave_running,
+                        std::atomic<ulong> *slave_run_id,
                         Master_info *mi);
 
 bool show_slave_status(THD* thd, Master_info* mi);
@@ -414,7 +512,9 @@ void unlock_slave_threads(Master_info* mi);
 void init_thread_mask(int* mask,Master_info* mi,bool inverse);
 void set_slave_thread_options(THD* thd);
 void set_slave_thread_default_charset(THD *thd, Relay_log_info const *rli);
-int rotate_relay_log(Master_info* mi);
+int rotate_relay_log(Master_info* mi,
+                     bool log_master_fd= true,
+                     bool need_lock=true);
 typedef enum
 {
   QUEUE_EVENT_OK= 0,

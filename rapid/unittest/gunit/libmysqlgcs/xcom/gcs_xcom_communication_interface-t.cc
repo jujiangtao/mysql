@@ -1,32 +1,30 @@
-/* Copyright (c) 2015, 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include <gtest/gtest.h>
-#include <gmock/gmock.h>
+#include "gcs_base_test.h"
 
 #include "mysql/gcs/gcs_message.h"
-#include "mysql/gcs/gcs_log_system.h"
-
 #include "gcs_xcom_statistics_interface.h"
 #include "gcs_xcom_communication_interface.h"
-
-using ::testing::Return;
-using ::testing::ReturnArg;
-using ::testing::Invoke;
-using ::testing::WithArg;
-using ::testing::_;
 
 namespace gcs_xcom_communication_unittest {
 
@@ -66,7 +64,7 @@ public:
   MOCK_CONST_METHOD1(on_message_received, void(const Gcs_message &message));
 };
 
-class mock_gcs_xcom_proxy : public Gcs_xcom_proxy
+class mock_gcs_xcom_proxy : public Gcs_xcom_proxy_base
 {
 public:
 
@@ -135,10 +133,13 @@ public:
                                              uint32_t group_id));
   MOCK_METHOD2(xcom_client_force_config, int(node_list *nl,
                                              uint32_t group_id));
+
+  MOCK_METHOD0(get_should_exit, bool());
+  MOCK_METHOD1(set_should_exit,void(bool should_exit));
 };
 
 
-class XComCommunicationTest : public ::testing::Test
+class XComCommunicationTest : public GcsBaseTest
 {
 protected:
 
@@ -150,8 +151,6 @@ protected:
     xcom_comm_if=    new Gcs_xcom_communication(mock_stats,
                                                 mock_proxy,
                                                 mock_vce);
-    logger= new Gcs_simple_ext_logger_impl();
-    Gcs_logger::initialize(logger);
   }
 
 
@@ -161,8 +160,6 @@ protected:
     delete mock_vce;
     delete mock_proxy;
     delete xcom_comm_if;
-    Gcs_logger::finalize();
-    delete logger;
   }
 
 
@@ -170,7 +167,6 @@ protected:
   mock_gcs_xcom_statistics_updater             *mock_stats;
   mock_gcs_xcom_proxy                          *mock_proxy;
   mock_gcs_xcom_view_change_control_interface  *mock_vce;
-  Ext_logger_interface                         *logger;
 };
 
 

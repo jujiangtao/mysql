@@ -1,17 +1,24 @@
 /* Copyright (c) 2008, 2017, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
-  along with this program; if not, write to the Free Software Foundation,
-  51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+  along with this program; if not, write to the Free Software
+  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 /**
   @file storage/perfschema/pfs_server.cc
@@ -25,35 +32,32 @@
 #include "my_macros.h"
 #include "my_sys.h"
 #include "mysys_err.h"
-#include "pfs.h"
-#include "pfs_account.h"
-#include "pfs_builtin_memory.h"
-#include "pfs_defaults.h"
-#include "pfs_digest.h"
-#include "pfs_error.h"
-#include "pfs_events_stages.h"
-#include "pfs_events_statements.h"
-#include "pfs_events_transactions.h"
-#include "pfs_events_waits.h"
-#include "pfs_global.h"
-#include "pfs_host.h"
-#include "pfs_instr.h"
-#include "pfs_instr_class.h"
-#include "pfs_prepared_stmt.h"
-#include "pfs_program.h"
-#include "pfs_setup_actor.h"
-#include "pfs_setup_object.h"
-#include "pfs_timer.h"
-#include "pfs_user.h"
+#include "storage/perfschema/pfs.h"
+#include "storage/perfschema/pfs_account.h"
+#include "storage/perfschema/pfs_builtin_memory.h"
+#include "storage/perfschema/pfs_defaults.h"
+#include "storage/perfschema/pfs_digest.h"
+#include "storage/perfschema/pfs_error.h"
+#include "storage/perfschema/pfs_events_stages.h"
+#include "storage/perfschema/pfs_events_statements.h"
+#include "storage/perfschema/pfs_events_transactions.h"
+#include "storage/perfschema/pfs_events_waits.h"
+#include "storage/perfschema/pfs_global.h"
+#include "storage/perfschema/pfs_host.h"
+#include "storage/perfschema/pfs_instr.h"
+#include "storage/perfschema/pfs_instr_class.h"
+#include "storage/perfschema/pfs_plugin_table.h"
+#include "storage/perfschema/pfs_prepared_stmt.h"
+#include "storage/perfschema/pfs_program.h"
+#include "storage/perfschema/pfs_setup_actor.h"
+#include "storage/perfschema/pfs_setup_object.h"
+#include "storage/perfschema/pfs_timer.h"
+#include "storage/perfschema/pfs_user.h"
 #include "template_utils.h"
 
 PFS_global_param pfs_param;
 
 PFS_table_stat PFS_table_stat::g_reset_template;
-
-C_MODE_START
-static void destroy_pfs_thread(void* key);
-C_MODE_END
 
 static void cleanup_performance_schema(void);
 void cleanup_instrument_config(void);
@@ -72,48 +76,17 @@ pre_initialize_performance_schema()
   g_histogram_pico_timers.init();
   global_statements_histogram.reset();
 
-  if (my_create_thread_local_key(&THR_PFS, destroy_pfs_thread))
+  /*
+    There is no automatic cleanup. Please either use:
+    - my_thread_end()
+    - or PSI_server->delete_current_thread()
+    in the instrumented code, to explicitly cleanup the instrumentation.
+  */
+  THR_PFS = nullptr;
+  for (int i = 0; i < THR_PFS_NUM_KEYS; ++i)
   {
-    return;
+    THR_PFS_contexts[i] = nullptr;
   }
-  if (my_create_thread_local_key(&THR_PFS_VG, NULL))  // global_variables
-  {
-    return;
-  }
-  if (my_create_thread_local_key(&THR_PFS_SV, NULL))  // session_variables
-  {
-    return;
-  }
-  if (my_create_thread_local_key(&THR_PFS_VBT, NULL))  // variables_by_thread
-  {
-    return;
-  }
-  if (my_create_thread_local_key(&THR_PFS_SG, NULL))  // global_status
-  {
-    return;
-  }
-  if (my_create_thread_local_key(&THR_PFS_SS, NULL))  // session_status
-  {
-    return;
-  }
-  if (my_create_thread_local_key(&THR_PFS_SBT, NULL))  // status_by_thread
-  {
-    return;
-  }
-  if (my_create_thread_local_key(&THR_PFS_SBU, NULL))  // status_by_user
-  {
-    return;
-  }
-  if (my_create_thread_local_key(&THR_PFS_SBH, NULL))  // status_by_host
-  {
-    return;
-  }
-  if (my_create_thread_local_key(&THR_PFS_SBA, NULL))  // status_by_account
-  {
-    return;
-  }
-
-  THR_PFS_initialized = true;
 }
 
 int
@@ -149,12 +122,6 @@ initialize_performance_schema(PFS_global_param* param,
   *memory_bootstrap = NULL;
   *error_bootstrap = NULL;
   *data_lock_bootstrap = NULL;
-
-  if (!THR_PFS_initialized)
-  {
-    /* Pre-initialization failed. */
-    return 1;
-  }
 
   pfs_enabled = param->m_enabled;
 
@@ -273,30 +240,10 @@ initialize_performance_schema(PFS_global_param* param,
     *data_lock_bootstrap = &pfs_data_lock_bootstrap;
   }
 
+  /* Initialize plugin table services */
+  init_pfs_plugin_table();
+
   return 0;
-}
-
-static void
-destroy_pfs_thread(void* key)
-{
-  PFS_thread* pfs = reinterpret_cast<PFS_thread*>(key);
-  DBUG_ASSERT(pfs);
-  /*
-    This automatic cleanup is a last resort and best effort to avoid leaks,
-    and may not work on windows due to the implementation of
-    pthread_key_create().
-    Please either use:
-    - my_thread_end()
-    - or PSI_server->delete_current_thread()
-    in the instrumented code, to explicitly cleanup the instrumentation.
-
-    Avoid invalid writes when the main() thread completes after shutdown:
-    the memory pointed by pfs is already released.
-  */
-  if (pfs_initialized)
-  {
-    destroy_thread(pfs);
-  }
 }
 
 static void
@@ -353,6 +300,7 @@ cleanup_performance_schema(void)
     find_XXX_class(key)
     will return PSI_NOT_INSTRUMENTED
   */
+  cleanup_pfs_plugin_table();
   cleanup_error();
   cleanup_program();
   cleanup_prepared_stmt();
@@ -400,36 +348,6 @@ shutdown_performance_schema(void)
   global_transaction_class.m_enabled = false;
 
   cleanup_performance_schema();
-  /*
-    Be careful to not delete un-initialized keys,
-    this would affect key 0, which is THR_KEY_mysys,
-  */
-  if (THR_PFS_initialized)
-  {
-    my_set_thread_local(THR_PFS, NULL);
-    my_set_thread_local(THR_PFS_VG, NULL);   // global_variables
-    my_set_thread_local(THR_PFS_SV, NULL);   // session_variables
-    my_set_thread_local(THR_PFS_VBT, NULL);  // variables_by_thread
-    my_set_thread_local(THR_PFS_SG, NULL);   // global_status
-    my_set_thread_local(THR_PFS_SS, NULL);   // session_status
-    my_set_thread_local(THR_PFS_SBT, NULL);  // status_by_thread
-    my_set_thread_local(THR_PFS_SBU, NULL);  // status_by_user
-    my_set_thread_local(THR_PFS_SBH, NULL);  // status_by_host
-    my_set_thread_local(THR_PFS_SBA, NULL);  // status_by_account
-
-    my_delete_thread_local_key(THR_PFS);
-    my_delete_thread_local_key(THR_PFS_VG);
-    my_delete_thread_local_key(THR_PFS_SV);
-    my_delete_thread_local_key(THR_PFS_VBT);
-    my_delete_thread_local_key(THR_PFS_SG);
-    my_delete_thread_local_key(THR_PFS_SS);
-    my_delete_thread_local_key(THR_PFS_SBT);
-    my_delete_thread_local_key(THR_PFS_SBU);
-    my_delete_thread_local_key(THR_PFS_SBH);
-    my_delete_thread_local_key(THR_PFS_SBA);
-
-    THR_PFS_initialized = false;
-  }
 }
 
 /**

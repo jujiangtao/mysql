@@ -1,7 +1,6 @@
 #
 # mysqld --help
 #
---source include/not_embedded.inc
 
 #
 # force lower-case-table-names=1 (linux/macosx have different defaults)
@@ -12,7 +11,7 @@
 --let $TMP_DATADIR= $MYDIR/data
 --mkdir $TMP_DATADIR
 
-exec $MYSQLD_BOOTSTRAP_CMD --datadir=$TMP_DATADIR --symbolic-links=0 --lower-case-table-names=1 --help --verbose > $MYSQL_TMP_DIR/mysqld--help.txt 2>/dev/null;
+exec $MYSQLD_BOOTSTRAP_CMD --datadir=$TMP_DATADIR --symbolic-links=0 --lower-case-table-names=1 --help --verbose --relay-log=relaylog > $MYSQL_TMP_DIR/mysqld--help.txt 2>/dev/null;
 
 # The inline perl code below will copy $MYSQL_TMP_DIR/mysqld--help.txt
 # to output, but filter away some variable stuff (e.g. paths).
@@ -22,6 +21,7 @@ perl;
   # their paths may vary:
   @skipvars=qw/basedir open-files-limit general-log-file plugin-dir
                pid-file slow-query-log-file
+               language lc-messages-dir
                datadir slave-load-tmpdir tmpdir socket table-definition-cache table-open-cache
                tls-version secure-file-priv/;
                
@@ -33,7 +33,8 @@ perl;
   @plugins=qw/innodb ngram mecab ndb ndbinfo archive blackhole federated partition ndbcluster debug ssl des-key-file
               thread-concurrency super-large-pages mutex-deadlock-detector null-audit
               sha256-password-private-key-path sha256-password-public-key-path
-              sha256-password-auto-generate-rsa-keys/;
+              sha256-password-auto-generate-rsa-keys keyring-migration-socket
+              caching-sha2-password-auto-generate-rsa-keys/;
 
   # And substitute the content some environment variables with their
   # names:
@@ -57,13 +58,19 @@ perl;
     # fixes for 32-bit
     s/\b4294967295\b/18446744073709551615/;
     s/\b2146435072\b/9223372036853727232/;
-    s/\b196608\b/262144/;
-    s/\b524288\b/262144/;
-    s/\b393216\b/262144/;
+    # s/\b196608\b/262144/;
+    # s/\b524288\b/262144/;
+    # s/\b393216\b/262144/;
+    s/\b573440\b/262144/;
+    s/\b286720\b/262144/;
+    s/\b442368\b/262144/;
+    s/\b221184\b/262144/;
     # Replacing port number with string
     s/^port \d+/port ####/;
     # log-tc-size varies by platform
     s/^log-tc-size \d+/log-tc-size #####/;
+    # Avoid test failures when adding new error message
+    s/^performance-schema-error-size \d+/performance-schema-error-size ####/;
     foreach $var (@env) { s/$ENV{$var}/$var/ }
     next if /use --skip-(use-)?symbolic-links to disable/; # for valgrind, again
     next if $skip;

@@ -1,17 +1,24 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 
 #include "sql/transaction.h"
@@ -19,35 +26,38 @@
 #include <assert.h>
 #include <stddef.h>
 
-#include "auth_common.h"      // SUPER_ACL
-#include "dd/cache/dictionary_client.h"
-#include "debug_sync.h"       // DEBUG_SYNC
-#include "handler.h"
 #include "lex_string.h"
-#include "log.h"              // sql_print_warning
 #include "m_ctype.h"
-#include "mdl.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
-#include "my_macros.h"
+#include "my_loglevel.h"
 #include "my_psi_config.h"
 #include "my_sys.h"
 #include "mysql/psi/mysql_transaction.h"
+#include "mysql/udf_registration_types.h"
 #include "mysql_com.h"
-#include "mysqld.h"           // opt_readonly
 #include "mysqld_error.h"
-#include "query_options.h"
-#include "rpl_context.h"
-#include "rpl_gtid.h"
-#include "rpl_rli.h"
-#include "session_tracker.h"
-#include "sql_class.h"        // THD
-#include "sql_lex.h"
-#include "system_variables.h"
-#include "tc_log.h"
-#include "transaction_info.h"
-#include "xa.h"
+#include "sql/auth/auth_common.h" // SUPER_ACL
+#include "sql/dd/cache/dictionary_client.h"
+#include "sql/debug_sync.h"   // DEBUG_SYNC
+#include "sql/handler.h"
+#include "sql/log.h"
+#include "sql/mdl.h"
+#include "sql/mysqld.h"       // opt_readonly
+#include "sql/query_options.h"
+#include "sql/rpl_context.h"
+#include "sql/rpl_gtid.h"
+#include "sql/rpl_rli.h"
+#include "sql/rpl_transaction_write_set_ctx.h"
+#include "sql/session_tracker.h"
+#include "sql/sql_class.h"    // THD
+#include "sql/sql_lex.h"
+#include "sql/system_variables.h"
+#include "sql/table.h"
+#include "sql/tc_log.h"
+#include "sql/transaction_info.h"
+#include "sql/xa.h"
 
 
 /**
@@ -77,8 +87,8 @@ void trans_reset_one_shot_chistics(THD *thd)
     tst->set_isol_level(thd, TX_ISOL_INHERIT);
   }
 
-  thd->tx_isolation= (enum_tx_isolation) thd->variables.tx_isolation;
-  thd->tx_read_only= thd->variables.tx_read_only;
+  thd->tx_isolation= (enum_tx_isolation) thd->variables.transaction_isolation;
+  thd->tx_read_only= thd->variables.transaction_read_only;
 }
 
 /**
@@ -129,7 +139,7 @@ bool trans_check_state(THD *thd)
 
 bool trans_begin(THD *thd, uint flags)
 {
-  int res= FALSE;
+  bool res= false;
   Transaction_state_tracker *tst= NULL;
 
   DBUG_ENTER("trans_begin");
@@ -152,7 +162,7 @@ bool trans_begin(THD *thd, uint flags)
     thd->server_status&=
       ~(SERVER_STATUS_IN_TRANS | SERVER_STATUS_IN_TRANS_READONLY);
     DBUG_PRINT("info", ("clearing SERVER_STATUS_IN_TRANS"));
-    res= MY_TEST(ha_commit_trans(thd, TRUE));
+    res= ha_commit_trans(thd, TRUE);
   }
 
   thd->variables.option_bits&= ~OPTION_BEGIN;
@@ -237,7 +247,7 @@ bool trans_begin(THD *thd, uint flags)
   }
 #endif
 
-  DBUG_RETURN(MY_TEST(res));
+  DBUG_RETURN(res);
 }
 
 
@@ -269,7 +279,7 @@ bool trans_commit(THD *thd, bool ignore_global_read_lock)
   if (res == FALSE)
     if (thd->rpl_thd_ctx.session_gtids_ctx().
         notify_after_transaction_commit(thd))
-      sql_print_warning("Failed to collect GTID to send in the response packet!");
+      LogErr(WARNING_LEVEL, ER_TRX_GTID_COLLECT_REJECT);
   /*
     When gtid mode is enabled, a transaction may cause binlog
     rotation, which inserts a record into the gtid system table
@@ -297,7 +307,7 @@ bool trans_commit(THD *thd, bool ignore_global_read_lock)
 
   thd->dd_client()->commit_modified_objects();
 
-  DBUG_RETURN(MY_TEST(res));
+  DBUG_RETURN(res);
 }
 
 
@@ -340,7 +350,7 @@ bool trans_commit_implicit(THD *thd, bool ignore_global_read_lock)
     thd->server_status&=
       ~(SERVER_STATUS_IN_TRANS | SERVER_STATUS_IN_TRANS_READONLY);
     DBUG_PRINT("info", ("clearing SERVER_STATUS_IN_TRANS"));
-    res= MY_TEST(ha_commit_trans(thd, TRUE, ignore_global_read_lock));
+    res= ha_commit_trans(thd, TRUE, ignore_global_read_lock);
   }
   else if (tc_log)
     tc_log->commit(thd, true);
@@ -348,7 +358,7 @@ bool trans_commit_implicit(THD *thd, bool ignore_global_read_lock)
   if (res == FALSE)
     if (thd->rpl_thd_ctx.session_gtids_ctx().
         notify_after_transaction_commit(thd))
-      sql_print_warning("Failed to collect GTID to send in the response packet!");
+      LogErr(WARNING_LEVEL, ER_TRX_GTID_COLLECT_REJECT);
   thd->variables.option_bits&= ~OPTION_BEGIN;
   thd->get_transaction()->reset_unsafe_rollback_flags(Transaction_ctx::SESSION);
 
@@ -406,7 +416,7 @@ bool trans_rollback(THD *thd)
 
   thd->dd_client()->rollback_modified_objects();
 
-  DBUG_RETURN(MY_TEST(res));
+  DBUG_RETURN(res);
 }
 
 
@@ -456,7 +466,7 @@ bool trans_rollback_implicit(THD *thd)
 
   thd->dd_client()->rollback_modified_objects();
 
-  DBUG_RETURN(MY_TEST(res));
+  DBUG_RETURN(res);
 }
 
 
@@ -511,14 +521,14 @@ bool trans_commit_stmt(THD *thd, bool ignore_global_read_lock)
   if (res == FALSE && !thd->in_active_multi_stmt_transaction())
     if (thd->rpl_thd_ctx.session_gtids_ctx().
         notify_after_transaction_commit(thd))
-      sql_print_warning("Failed to collect GTID to send in the response packet!");
+      LogErr(WARNING_LEVEL, ER_TRX_GTID_COLLECT_REJECT);
   /* In autocommit=1 mode the transaction should be marked as complete in P_S */
   DBUG_ASSERT(thd->in_active_multi_stmt_transaction() ||
               thd->m_transaction_psi == NULL);
 
   thd->get_transaction()->reset(Transaction_ctx::STMT);
 
-  DBUG_RETURN(MY_TEST(res));
+  DBUG_RETURN(res);
 }
 
 
@@ -644,7 +654,7 @@ bool trans_commit_attachable(THD *thd)
 
   thd->get_transaction()->reset(Transaction_ctx::STMT);
 
-  DBUG_RETURN(MY_TEST(res));
+  DBUG_RETURN(res);
 }
 
 
@@ -808,7 +818,7 @@ bool trans_rollback_to_savepoint(THD *thd, LEX_STRING name)
         ->rollback_to_savepoint(name.str);
   }
 
-  DBUG_RETURN(MY_TEST(res));
+  DBUG_RETURN(res);
 }
 
 
@@ -852,5 +862,5 @@ bool trans_release_savepoint(THD *thd, LEX_STRING name)
         ->del_savepoint(name.str);
   }
 
-  DBUG_RETURN(MY_TEST(res));
+  DBUG_RETURN(res);
 }

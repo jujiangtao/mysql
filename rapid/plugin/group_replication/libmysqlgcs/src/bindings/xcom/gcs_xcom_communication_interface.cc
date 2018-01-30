@@ -1,18 +1,27 @@
 /* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
+
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_xcom_communication_interface.h"
 
 #include <assert.h>
 #include <errno.h>
@@ -22,24 +31,23 @@
 #include <sys/types.h>
 #include <iostream>
 
-#include "gcs_xcom_communication_interface.h"
-#include "app_data.h"
-#include "mysql/gcs/gcs_logging.h"
-#include "gcs_message_stages.h"
-#include "node_list.h"
-#include "node_no.h"
-#include "node_set.h"
-#include "pax_msg.h"
-#include "server_struct.h"
-#include "simset.h"
-#include "site_struct.h"
-#include "synode_no.h"
-#include "task.h"
-#include "xcom_base.h"
-#include "xcom_common.h"
-#include "xcom_detector.h"
-#include "xcom_transport.h"
-#include "xcom_vp.h"
+#include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/gcs_logging_system.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_message_stages.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/app_data.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/node_list.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/node_no.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/node_set.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/pax_msg.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/server_struct.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/simset.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/site_struct.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/synode_no.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/task.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/xcom_base.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/xcom_common.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/xcom_detector.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/xcom_transport.h"
+#include "plugin/group_replication/libmysqlgcs/xdr_gen/xcom_vp.h"
 
 #define NUMBER_OF_XCOM_SOCKET_RETRIES 1000
 
@@ -70,7 +78,7 @@ Gcs_xcom_communication::get_event_listeners()
 enum_gcs_error
 Gcs_xcom_communication::send_message(const Gcs_message &message_to_send)
 {
-  MYSQL_GCS_LOG_TRACE("Sending message.")
+  MYSQL_GCS_LOG_DEBUG("Sending message.")
 
   unsigned long long message_length= 0;
   enum_gcs_error message_result= GCS_NOK;
@@ -143,8 +151,10 @@ send_binding_message(const Gcs_message &msg,
   // reload the header information into the packet
   packet.reload_header(gcs_header);
 
-  MYSQL_GCS_LOG_TRACE("Pipelining message with payload length "
-                      << packet.get_payload_length())
+  MYSQL_GCS_LOG_TRACE(
+    "Pipelining message with payload length %llu", (long long unsigned)
+   packet.get_payload_length()
+  )
 
   // apply transformations
   if (m_msg_pipeline.outgoing(packet))
@@ -158,7 +168,7 @@ send_binding_message(const Gcs_message &msg,
     free it before exiting.
   */
   msg_length= packet.get_length();
-  MYSQL_GCS_LOG_TRACE("Sending message with payload length " << msg_length)
+  MYSQL_GCS_LOG_TRACE("Sending message with payload length %llu", msg_length)
   if (m_xcom_proxy->xcom_client_send_data(msg_length, reinterpret_cast<char *>(packet.get_buffer())))
   {
     MYSQL_GCS_LOG_ERROR(
@@ -175,9 +185,8 @@ end:
     free(packet.get_buffer());
 
   MYSQL_GCS_LOG_TRACE(
-    "send_binding_message enum_gcs_error result= " <<
-    static_cast<unsigned int>(ret) <<
-    ". Bytes sent:" << msg_length
+    "send_binding_message enum_gcs_error result(%u). Bytes sent(%llu)",
+    static_cast<unsigned int>(ret), msg_length
   )
 
   return ret;
@@ -256,9 +265,8 @@ void Gcs_xcom_communication::notify_received_message(Gcs_message *message)
     callback_it->second.on_message_received(*message);
 
     MYSQL_GCS_LOG_TRACE(
-      "Delivered message to client handler= "<< (*callback_it).first
+      "Delivered message to client handler= %d", (*callback_it).first
     )
-
     ++callback_it;
   }
 
@@ -266,10 +274,10 @@ void Gcs_xcom_communication::notify_received_message(Gcs_message *message)
                                                    .get_header_length() +
                                         message->get_message_data()
                                                    .get_payload_length()));
-
-  MYSQL_GCS_LOG_TRACE("Delivered message from origin= " <<
-                      message->get_origin().get_member_id().c_str())
-
+  MYSQL_GCS_LOG_TRACE(
+    "Delivered message from origin= %s",
+     message->get_origin().get_member_id().c_str()
+  )
   delete message;
 }
 
@@ -277,7 +285,7 @@ void Gcs_xcom_communication::notify_received_message(Gcs_message *message)
 void Gcs_xcom_communication::buffer_message(Gcs_message *message)
 {
   assert(m_view_control->is_view_changing());
-  MYSQL_GCS_LOG_TRACE("Buffering message: " << message)
+  MYSQL_GCS_LOG_TRACE("Buffering message: %p", message);
   m_buffered_messages.push_back(message);
 }
 
@@ -290,7 +298,7 @@ void Gcs_xcom_communication::deliver_buffered_messages()
        buffer_msg_it != m_buffered_messages.end();
        buffer_msg_it++)
   {
-    MYSQL_GCS_LOG_TRACE("Delivering buffered message: " << *buffer_msg_it)
+    MYSQL_GCS_LOG_TRACE("Delivering buffered message: %p", *buffer_msg_it);
     notify_received_message(*buffer_msg_it);
   }
 

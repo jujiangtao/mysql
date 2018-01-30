@@ -1,37 +1,44 @@
 // Copyright (c) 2017, Oracle and/or its affiliates. All rights reserved.
 //
-// This program is free software; you can redistribute it and/or modify it under
-// the terms of the GNU General Public License as published by the Free Software
-// Foundation; version 2 of the License.
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License, version 2.0,
+// as published by the Free Software Foundation.
 //
-// This program is distributed in the hope that it will be useful, but WITHOUT
-// ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-// FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
-// details.
+// This program is also distributed with certain software (including
+// but not limited to OpenSSL) that is licensed under separate terms,
+// as designated in a particular file or component or in included license
+// documentation.  The authors of MySQL hereby grant you an additional
+// permission to link the program and your derivative works with the
+// separately licensed software that they have included with MySQL.
 //
-// You should have received a copy of the GNU General Public License along with
-// this program; if not, write to the Free Software Foundation, 51 Franklin
-// Street, Suite 500, Boston, MA 02110-1335 USA.
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License, version 2.0, for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA.
 
 /// @file
 ///
 /// This file implements the distance functor and function.
 
-#include "distance.h"
-#include "distance_functor.h"
+#include "sql/gis/distance.h"
 
 #include <cmath>  // std::isfinite
 #include <limits>
 
 #include <boost/geometry.hpp>  // boost::geometry::distance
 
-#include "dd/types/spatial_reference_system.h"  // dd::Spatial_reference_system
-#include "geometries.h"
-#include "geometries_traits.h"
-#include "my_inttypes.h"            // MYF
-#include "my_sys.h"                 // my_error
-#include "mysqld_error.h"           // Error codes
-#include "sql_exception_handler.h"  // handle_gis_exception
+#include "my_inttypes.h"                            // MYF
+#include "my_sys.h"                                 // my_error
+#include "mysqld_error.h"                           // Error codes
+#include "sql/dd/types/spatial_reference_system.h"  // dd::Spatial_reference_system
+#include "sql/gis/distance_functor.h"
+#include "sql/gis/geometries.h"
+#include "sql/gis/geometries_traits.h"
+#include "sql/sql_exception_handler.h"  // handle_gis_exception
 
 namespace bg = boost::geometry;
 namespace bgs = boost::geometry::srs;
@@ -52,7 +59,7 @@ namespace gis {
 /// @return The minimum result of f(g1_i, g2_j), for all g1_i, element of g1,
 /// and g2_j, element of g2.
 template <typename GC>
-static double geometry_collection_apply_min(Functor<double> *f,
+static double geometry_collection_apply_min(const Functor<double> *f,
                                             const Geometry *g1,
                                             const Geometry *g2) {
   double min = std::numeric_limits<double>::infinity();
@@ -92,52 +99,53 @@ Distance::Distance(double major, double minor) {
       bgs::spheroid<double>(major, minor)));
 }
 
-double Distance::operator()(const Geometry *g1, const Geometry *g2) {
+double Distance::operator()(const Geometry *g1, const Geometry *g2) const {
   return apply(*this, g1, g2);
 }
 
-double Distance::eval(const Geometry *g1, const Geometry *g2) {
+double Distance::eval(const Geometry *g1, const Geometry *g2) const {
   // Not all geographic type combinations have been implemented.
   DBUG_ASSERT(g1->coordinate_system() == Coordinate_system::kGeographic);
-  throw not_implemented_exception(g1->coordinate_system(), g1->type(),
-                                  g2->type());
+  throw not_implemented_exception::for_non_projected(*g1, *g2);
 }
 
 //////////////////////////////////////////////////////////////////////////////
 
 // distance(Cartesian_point, *)
 
-double Distance::eval(const Cartesian_point *g1, const Cartesian_point *g2) {
+double Distance::eval(const Cartesian_point *g1,
+                      const Cartesian_point *g2) const {
   return bg::distance(*g1, *g2);
 }
 
 double Distance::eval(const Cartesian_point *g1,
-                      const Cartesian_linestring *g2) {
-  return bg::distance(*g1, *g2);
-}
-
-double Distance::eval(const Cartesian_point *g1, const Cartesian_polygon *g2) {
+                      const Cartesian_linestring *g2) const {
   return bg::distance(*g1, *g2);
 }
 
 double Distance::eval(const Cartesian_point *g1,
-                      const Cartesian_geometrycollection *g2) {
+                      const Cartesian_polygon *g2) const {
+  return bg::distance(*g1, *g2);
+}
+
+double Distance::eval(const Cartesian_point *g1,
+                      const Cartesian_geometrycollection *g2) const {
   return geometry_collection_apply_min<Cartesian_geometrycollection>(this, g1,
                                                                      g2);
 }
 
 double Distance::eval(const Cartesian_point *g1,
-                      const Cartesian_multipoint *g2) {
+                      const Cartesian_multipoint *g2) const {
   return bg::distance(*g1, *g2);
 }
 
 double Distance::eval(const Cartesian_point *g1,
-                      const Cartesian_multilinestring *g2) {
+                      const Cartesian_multilinestring *g2) const {
   return bg::distance(*g1, *g2);
 }
 
 double Distance::eval(const Cartesian_point *g1,
-                      const Cartesian_multipolygon *g2) {
+                      const Cartesian_multipolygon *g2) const {
   return bg::distance(*g1, *g2);
 }
 
@@ -146,38 +154,38 @@ double Distance::eval(const Cartesian_point *g1,
 // distance(Cartesian_linestring, *)
 
 double Distance::eval(const Cartesian_linestring *g1,
-                      const Cartesian_point *g2) {
+                      const Cartesian_point *g2) const {
   return bg::distance(*g1, *g2);
 }
 
 double Distance::eval(const Cartesian_linestring *g1,
-                      const Cartesian_linestring *g2) {
+                      const Cartesian_linestring *g2) const {
   return bg::distance(*g1, *g2);
 }
 
 double Distance::eval(const Cartesian_linestring *g1,
-                      const Cartesian_polygon *g2) {
+                      const Cartesian_polygon *g2) const {
   return bg::distance(*g1, *g2);
 }
 
 double Distance::eval(const Cartesian_linestring *g1,
-                      const Cartesian_geometrycollection *g2) {
+                      const Cartesian_geometrycollection *g2) const {
   return geometry_collection_apply_min<Cartesian_geometrycollection>(this, g1,
                                                                      g2);
 }
 
 double Distance::eval(const Cartesian_linestring *g1,
-                      const Cartesian_multipoint *g2) {
+                      const Cartesian_multipoint *g2) const {
   return bg::distance(*g1, *g2);
 }
 
 double Distance::eval(const Cartesian_linestring *g1,
-                      const Cartesian_multilinestring *g2) {
+                      const Cartesian_multilinestring *g2) const {
   return bg::distance(*g1, *g2);
 }
 
 double Distance::eval(const Cartesian_linestring *g1,
-                      const Cartesian_multipolygon *g2) {
+                      const Cartesian_multipolygon *g2) const {
   return bg::distance(*g1, *g2);
 }
 
@@ -185,38 +193,39 @@ double Distance::eval(const Cartesian_linestring *g1,
 
 // distance(Cartesian_polygon, *)
 
-double Distance::eval(const Cartesian_polygon *g1, const Cartesian_point *g2) {
+double Distance::eval(const Cartesian_polygon *g1,
+                      const Cartesian_point *g2) const {
   return bg::distance(*g1, *g2);
 }
 
 double Distance::eval(const Cartesian_polygon *g1,
-                      const Cartesian_linestring *g2) {
+                      const Cartesian_linestring *g2) const {
   return bg::distance(*g1, *g2);
 }
 
 double Distance::eval(const Cartesian_polygon *g1,
-                      const Cartesian_polygon *g2) {
+                      const Cartesian_polygon *g2) const {
   return bg::distance(*g1, *g2);
 }
 
 double Distance::eval(const Cartesian_polygon *g1,
-                      const Cartesian_geometrycollection *g2) {
+                      const Cartesian_geometrycollection *g2) const {
   return geometry_collection_apply_min<Cartesian_geometrycollection>(this, g1,
                                                                      g2);
 }
 
 double Distance::eval(const Cartesian_polygon *g1,
-                      const Cartesian_multipoint *g2) {
+                      const Cartesian_multipoint *g2) const {
   return bg::distance(*g1, *g2);
 }
 
 double Distance::eval(const Cartesian_polygon *g1,
-                      const Cartesian_multilinestring *g2) {
+                      const Cartesian_multilinestring *g2) const {
   return bg::distance(*g1, *g2);
 }
 
 double Distance::eval(const Cartesian_polygon *g1,
-                      const Cartesian_multipolygon *g2) {
+                      const Cartesian_multipolygon *g2) const {
   return bg::distance(*g1, *g2);
 }
 
@@ -225,7 +234,7 @@ double Distance::eval(const Cartesian_polygon *g1,
 // distance(Cartesian_geometrycollection, *)
 
 double Distance::eval(const Cartesian_geometrycollection *g1,
-                      const Geometry *g2) {
+                      const Geometry *g2) const {
   return geometry_collection_apply_min<Cartesian_geometrycollection>(this, g1,
                                                                      g2);
 }
@@ -235,38 +244,38 @@ double Distance::eval(const Cartesian_geometrycollection *g1,
 // distance(Cartesian_multipoint, *)
 
 double Distance::eval(const Cartesian_multipoint *g1,
-                      const Cartesian_point *g2) {
+                      const Cartesian_point *g2) const {
   return bg::distance(*g1, *g2);
 }
 
 double Distance::eval(const Cartesian_multipoint *g1,
-                      const Cartesian_linestring *g2) {
+                      const Cartesian_linestring *g2) const {
   return bg::distance(*g1, *g2);
 }
 
 double Distance::eval(const Cartesian_multipoint *g1,
-                      const Cartesian_polygon *g2) {
+                      const Cartesian_polygon *g2) const {
   return bg::distance(*g1, *g2);
 }
 
 double Distance::eval(const Cartesian_multipoint *g1,
-                      const Cartesian_geometrycollection *g2) {
+                      const Cartesian_geometrycollection *g2) const {
   return geometry_collection_apply_min<Cartesian_geometrycollection>(this, g1,
                                                                      g2);
 }
 
 double Distance::eval(const Cartesian_multipoint *g1,
-                      const Cartesian_multipoint *g2) {
+                      const Cartesian_multipoint *g2) const {
   return bg::distance(*g1, *g2);
 }
 
 double Distance::eval(const Cartesian_multipoint *g1,
-                      const Cartesian_multilinestring *g2) {
+                      const Cartesian_multilinestring *g2) const {
   return bg::distance(*g1, *g2);
 }
 
 double Distance::eval(const Cartesian_multipoint *g1,
-                      const Cartesian_multipolygon *g2) {
+                      const Cartesian_multipolygon *g2) const {
   return bg::distance(*g1, *g2);
 }
 
@@ -275,38 +284,38 @@ double Distance::eval(const Cartesian_multipoint *g1,
 // distance(Cartesian_multilinestring, *)
 
 double Distance::eval(const Cartesian_multilinestring *g1,
-                      const Cartesian_point *g2) {
+                      const Cartesian_point *g2) const {
   return bg::distance(*g1, *g2);
 }
 
 double Distance::eval(const Cartesian_multilinestring *g1,
-                      const Cartesian_linestring *g2) {
+                      const Cartesian_linestring *g2) const {
   return bg::distance(*g1, *g2);
 }
 
 double Distance::eval(const Cartesian_multilinestring *g1,
-                      const Cartesian_polygon *g2) {
+                      const Cartesian_polygon *g2) const {
   return bg::distance(*g1, *g2);
 }
 
 double Distance::eval(const Cartesian_multilinestring *g1,
-                      const Cartesian_geometrycollection *g2) {
+                      const Cartesian_geometrycollection *g2) const {
   return geometry_collection_apply_min<Cartesian_geometrycollection>(this, g1,
                                                                      g2);
 }
 
 double Distance::eval(const Cartesian_multilinestring *g1,
-                      const Cartesian_multipoint *g2) {
+                      const Cartesian_multipoint *g2) const {
   return bg::distance(*g1, *g2);
 }
 
 double Distance::eval(const Cartesian_multilinestring *g1,
-                      const Cartesian_multilinestring *g2) {
+                      const Cartesian_multilinestring *g2) const {
   return bg::distance(*g1, *g2);
 }
 
 double Distance::eval(const Cartesian_multilinestring *g1,
-                      const Cartesian_multipolygon *g2) {
+                      const Cartesian_multipolygon *g2) const {
   return bg::distance(*g1, *g2);
 }
 
@@ -315,38 +324,38 @@ double Distance::eval(const Cartesian_multilinestring *g1,
 // distance(Cartesian_multipolygon, *)
 
 double Distance::eval(const Cartesian_multipolygon *g1,
-                      const Cartesian_point *g2) {
+                      const Cartesian_point *g2) const {
   return bg::distance(*g1, *g2);
 }
 
 double Distance::eval(const Cartesian_multipolygon *g1,
-                      const Cartesian_linestring *g2) {
+                      const Cartesian_linestring *g2) const {
   return bg::distance(*g1, *g2);
 }
 
 double Distance::eval(const Cartesian_multipolygon *g1,
-                      const Cartesian_polygon *g2) {
+                      const Cartesian_polygon *g2) const {
   return bg::distance(*g1, *g2);
 }
 
 double Distance::eval(const Cartesian_multipolygon *g1,
-                      const Cartesian_geometrycollection *g2) {
+                      const Cartesian_geometrycollection *g2) const {
   return geometry_collection_apply_min<Cartesian_geometrycollection>(this, g1,
                                                                      g2);
 }
 
 double Distance::eval(const Cartesian_multipolygon *g1,
-                      const Cartesian_multipoint *g2) {
+                      const Cartesian_multipoint *g2) const {
   return bg::distance(*g1, *g2);
 }
 
 double Distance::eval(const Cartesian_multipolygon *g1,
-                      const Cartesian_multilinestring *g2) {
+                      const Cartesian_multilinestring *g2) const {
   return bg::distance(*g1, *g2);
 }
 
 double Distance::eval(const Cartesian_multipolygon *g1,
-                      const Cartesian_multipolygon *g2) {
+                      const Cartesian_multipolygon *g2) const {
   return bg::distance(*g1, *g2);
 }
 
@@ -354,12 +363,13 @@ double Distance::eval(const Cartesian_multipolygon *g1,
 
 // distance(Geographic_point, *)
 
-double Distance::eval(const Geographic_point *g1, const Geographic_point *g2) {
+double Distance::eval(const Geographic_point *g1,
+                      const Geographic_point *g2) const {
   return bg::distance(*g1, *g2, *m_geographic_strategy);
 }
 
 double Distance::eval(const Geographic_point *g1,
-                      const Geographic_multipoint *g2) {
+                      const Geographic_multipoint *g2) const {
   return bg::distance(*g1, *g2, *m_geographic_strategy);
 }
 
@@ -368,7 +378,7 @@ double Distance::eval(const Geographic_point *g1,
 // distance(Geographic_multipoint, *)
 
 double Distance::eval(const Geographic_multipoint *g1,
-                      const Geographic_point *g2) {
+                      const Geographic_point *g2) const {
   return bg::distance(*g1, *g2, *m_geographic_strategy);
 }
 

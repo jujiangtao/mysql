@@ -1,13 +1,20 @@
 /* Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -16,15 +23,18 @@
 #ifndef PARSE_TREE_COL_ATTRS_INCLUDED
 #define PARSE_TREE_COL_ATTRS_INCLUDED
 
-#include "item_timefunc.h"
 #include "my_dbug.h"
 #include "mysql/mysql_lex_string.h"
 #include "mysql_com.h"
-#include "parse_tree_node_base.h"
-#include "sql_alter.h"
-#include "sql_class.h"
-#include "sql_parse.h"
+#include "nullable.h"
+#include "sql/gis/srid.h"
+#include "sql/item_timefunc.h"
+#include "sql/parse_tree_node_base.h"
+#include "sql/sql_alter.h"
+#include "sql/sql_class.h"
+#include "sql/sql_parse.h"
 
+using Mysql::Nullable;
 
 /**
   Parse context for column type attribyte specific parse tree nodes.
@@ -61,6 +71,7 @@ public:
   virtual void apply_comment(LEX_STRING*) const {}
   virtual void apply_default_value(Item**) const {}
   virtual void apply_on_update_value(Item**) const {}
+  virtual void apply_srid_modifier(Nullable<gis::srid_t>*) const {}
   virtual bool apply_collation(const CHARSET_INFO**) const { return false; }
 };
 
@@ -367,6 +378,21 @@ public:
   }
 };
 
+
+/// Node for the SRID column attribute
+class PT_srid_column_attr : public PT_column_attr_base
+{
+  typedef PT_column_attr_base super;
+
+  gis::srid_t m_srid;
+
+public:
+  explicit
+  PT_srid_column_attr(gis::srid_t srid) : m_srid(srid) {}
+
+  void apply_srid_modifier(Nullable<gis::srid_t> *srid) const override
+  { *srid= m_srid; }
+};
 
 // Type nodes:
 
@@ -765,6 +791,7 @@ public:
   Item *default_value;
   Item *on_update_value;
   Generated_column *gcol_info;
+  Nullable<gis::srid_t> m_srid;
 
 protected:
   PT_type *type_node;
@@ -809,6 +836,7 @@ protected:
         attr->apply_comment(&comment);
         attr->apply_default_value(&default_value);
         attr->apply_on_update_value(&on_update_value);
+        attr->apply_srid_modifier(&m_srid);
         if (attr->apply_collation(&charset))
           return true;
       }

@@ -10,16 +10,24 @@ incorporated with their permission, and subject to the conditions contained in
 the file COPYING.Google.
 
 This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+the terms of the GNU General Public License, version 2.0, as published by the
+Free Software Foundation.
+
+This program is also distributed with certain software (including but not
+limited to OpenSSL) that is licensed under separate terms, as designated in a
+particular file or component or in included license documentation. The authors
+of MySQL hereby grant you an additional permission to link the program and
+your derivative works with the separately licensed software that they have
+included with MySQL.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+FOR A PARTICULAR PURPOSE. See the GNU General Public License, version 2.0,
+for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 *****************************************************************************/
 
@@ -144,7 +152,7 @@ struct sync_array_t {
 					cells in the wait array */
 	ulint		n_cells;	/*!< number of cells in the
 					wait array */
-	sync_cell_t*	array;		/*!< pointer to wait array */
+	sync_cell_t*	cells;		/*!< pointer to wait array */
 	SysMutex	mutex;		/*!< System mutex protecting the
 					data structure.  As this data
 					structure is used in constructing
@@ -204,7 +212,7 @@ sync_array_validate(
 	for (ulint i = 0; i < arr->n_cells; i++) {
 		const sync_cell_t*	cell;
 
-		cell = &arr->array[i];
+		cell = &arr->cells[i];
 
 		if (cell->latch.mutex != NULL) {
 			count++;
@@ -227,7 +235,7 @@ sync_array_t::sync_array_t(ulint num_cells)
 	:
 	n_reserved(),
 	n_cells(),
-	array(),
+	cells(),
 	mutex(),
 	res_count(),
 	next_free_slot(),
@@ -235,11 +243,11 @@ sync_array_t::sync_array_t(ulint num_cells)
 {
 	ut_a(num_cells > 0);
 
-	array = UT_NEW_ARRAY_NOKEY(sync_cell_t, num_cells);
+	cells = UT_NEW_ARRAY_NOKEY(sync_cell_t, num_cells);
 
 	ulint	sz = sizeof(sync_cell_t) * num_cells;
 
-	memset(array, 0x0, sz);
+	memset(cells, 0x0, sz);
 
 	n_cells = num_cells;
 
@@ -261,7 +269,7 @@ sync_array_t::~sync_array_t()
 
 	mutex_free(&mutex);
 
-	UT_DELETE_ARRAY(array);
+	UT_DELETE_ARRAY(cells);
 }
 
 /*****************************************************************//**
@@ -276,7 +284,7 @@ sync_array_get_nth_cell(
 {
 	ut_a(n < arr->n_cells);
 
-	return(arr->array + n);
+	return(&arr->cells[n]);
 }
 
 /******************************************************************//**
@@ -411,7 +419,7 @@ sync_array_free_cell(
 	/* Setup the list of free slots in the array */
 	cell->line = arr->first_free_slot;
 
-	arr->first_free_slot = cell - arr->array;
+	arr->first_free_slot = cell - arr->cells;
 
 	ut_a(arr->n_reserved > 0);
 	arr->n_reserved--;

@@ -1,53 +1,63 @@
-/* Copyright (c) 2014, 2016 Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA */
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef DD_INCLUDED
 #define DD_INCLUDED
 
 // First include (the generated) my_config.h, to get correct platform defines.
 #include "my_config.h"
-#include <gtest/gtest.h>
+
 #include <gmock/gmock.h>
+#include <gtest/gtest.h>
 
-#include "base_mock_handler.h"
-#include "base_mock_field.h"
-#include "fake_table.h"
+#include "sql/dd/types/charset.h"
+#include "sql/dd/types/collation.h"
+#include "sql/dd/types/column.h"
+#include "sql/dd/types/column_statistics.h"
+#include "sql/dd/types/column_type_element.h"
+#include "sql/dd/types/event.h"
+#include "sql/dd/types/foreign_key.h"
+#include "sql/dd/types/foreign_key_element.h"
+#include "sql/dd/types/index.h"
+#include "sql/dd/types/index_element.h"
+#include "sql/dd/types/parameter.h"
+#include "sql/dd/types/partition.h"
+#include "sql/dd/types/partition_index.h"
+#include "sql/dd/types/partition_value.h"
+#include "sql/dd/types/procedure.h"
+#include "sql/dd/types/schema.h"
+#include "sql/dd/types/table.h"
+#include "sql/dd/types/tablespace.h"
+#include "sql/dd/types/tablespace_file.h"
+#include "sql/dd/types/trigger.h"
+#include "sql/dd/types/view.h"
+#include "sql/dd/types/view_table.h"
+#include "sql/histograms/histogram.h"
+#include "sql/histograms/value_map.h"
+#include "unittest/gunit/base_mock_field.h"
+#include "unittest/gunit/base_mock_handler.h"
+#include "unittest/gunit/fake_table.h"
 
-#include "dd/types/charset.h"
-#include "dd/types/collation.h"
-#include "dd/types/column.h"
-#include "dd/types/column_type_element.h"
-#include "dd/types/foreign_key.h"
-#include "dd/types/foreign_key_element.h"
-#include "dd/types/index.h"
-#include "dd/types/index_element.h"
-#include "dd/types/partition.h"
-#include "dd/types/partition_value.h"
-#include "dd/types/partition_index.h"
-
-#include "dd/types/schema.h"
-#include "dd/types/table.h"
-#include "dd/types/tablespace.h"
-#include "dd/types/tablespace_file.h"
-#include "dd/types/view.h"
-#include "dd/types/view_table.h"
-#include "dd/types/event.h"
-#include "dd/types/procedure.h"
-#include "dd/types/parameter.h"
-#include "dd/types/trigger.h"
-
+class Json_wrapper;
 
 namespace dd_unittest {
 
@@ -182,18 +192,19 @@ inline Fake_TABLE *get_schema_table(THD *thd, handlerton *hton)
   Fake_TABLE_SHARE dummy_share(1); // Keep Field_varstring constructor happy.
 
   // Add fields
-  m_field_list.push_back(new Mock_dd_field_longlong());  // id
-  m_field_list.push_back(new Mock_dd_field_longlong());  // catalog_id
-  m_field_list.push_back(new Mock_dd_field_varstring(64, &dummy_share)); // name
-  m_field_list.push_back(new Mock_dd_field_longlong());  // collation_id
-  m_field_list.push_back(new Mock_dd_field_longlong());  // created
-  m_field_list.push_back(new Mock_dd_field_longlong());  // last_altered
+  m_field_list.push_back(new (*THR_MALLOC) Mock_dd_field_longlong());  // id
+  m_field_list.push_back(new (*THR_MALLOC) Mock_dd_field_longlong());  // catalog_id
+  m_field_list.push_back(new (*THR_MALLOC) Mock_dd_field_varstring(64, &dummy_share)); // name
+  m_field_list.push_back(new (*THR_MALLOC) Mock_dd_field_longlong());  // collation_id
+  m_field_list.push_back(new (*THR_MALLOC) Mock_dd_field_longlong());  // created
+  m_field_list.push_back(new (*THR_MALLOC) Mock_dd_field_longlong());  // last_altered
 
   // Create table object (and table share implicitly).
   table= new Fake_TABLE(m_field_list);
 
   // Create a strict mock handler for the share.
-  StrictMock<Mock_dd_HANDLER> *ha= new StrictMock<Mock_dd_HANDLER>(hton, table->s);
+  StrictMock<Mock_dd_HANDLER> *ha=
+    new (*THR_MALLOC) StrictMock<Mock_dd_HANDLER>(hton, table->s);
 
   // Set current open table.
   ha->change_table_ptr(table, table->s);
@@ -307,7 +318,6 @@ inline void set_attributes(dd::Table *obj, const dd::String_type &name,
 
   dd::Partition *part_obj= obj->add_partition();
   part_obj->set_name("table_part1");
-  part_obj->set_level(1);
   part_obj->set_number(2);
   part_obj->set_comment("Partition comment");
   part_obj->set_tablespace_id(1);
@@ -404,8 +414,8 @@ inline void set_attributes(dd::Foreign_key *obj, const dd::String_type &name)
   obj->set_match_option(dd::Foreign_key::OPTION_FULL);
   obj->set_update_rule(dd::Foreign_key::RULE_SET_DEFAULT);
   obj->set_delete_rule(dd::Foreign_key::RULE_CASCADE);
-  obj->referenced_table_schema_name("mysql");
-  obj->referenced_table_name("dual");
+  obj->set_referenced_table_schema_name("mysql");
+  obj->set_referenced_table_name("dual");
 
   // Create Foreign key column
   dd::Foreign_key_element *fke= obj->add_element();
@@ -422,6 +432,34 @@ inline void set_attributes(dd::Collation *obj, const dd::String_type &name)
 {
   obj->set_name(name);
   obj->set_charset_id(42);
+}
+
+inline void set_attributes(dd::Column_statistics *obj,
+                           const dd::String_type &name)
+{
+  obj->set_name(name);
+  obj->set_schema_name("schema");
+  obj->set_table_name("table");
+  obj->set_column_name("column");
+
+  histograms::Value_map<longlong> value_map(&my_charset_numeric,
+                                            histograms::Value_map_type::INT);
+  value_map.add_values(100, 10);
+  value_map.add_values(-1, 10);
+  value_map.add_values(1, 10);
+
+  MEM_ROOT mem_root;
+  init_alloc_root(PSI_NOT_INSTRUMENTED, &mem_root, 256, 0);
+
+  /*
+    The Column_statistics object will take over the histogram data and free the
+    MEM_ROOT contents.
+  */
+  histograms::Histogram *histogram=
+    histograms::build_histogram(&mem_root, value_map, 10, "schema", "table",
+                                "column");
+
+  obj->set_histogram(histogram);
 }
 
 template <typename T>

@@ -1,17 +1,24 @@
 /* Copyright (c) 2011, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 /**
   @file sql/opt_explain.cc
@@ -24,21 +31,12 @@
 #include <math.h>
 #include <string.h>
 #include <sys/types.h>
+#include <atomic>
 
-#include "auth_acls.h"
-#include "current_thd.h"
-#include "debug_sync.h"    // DEBUG_SYNC
-#include "derror.h"              // ER_THD
-#include "enum_query_type.h"
-#include "field.h"
 #include "ft_global.h"
-#include "handler.h"
-#include "item.h"
-#include "item_func.h"
-#include "item_subselect.h"
-#include "key.h"
 #include "m_ctype.h"
 #include "m_string.h"
+#include "my_alloc.h"
 #include "my_base.h"
 #include "my_bitmap.h"
 #include "my_dbug.h"
@@ -50,33 +48,46 @@
 #include "my_thread_local.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/service_my_snprintf.h"
+#include "mysql/udf_registration_types.h"
 #include "mysql_com.h"
-#include "mysqld.h"        // stage_explaining
 #include "mysqld_error.h"
-#include "mysqld_thd_manager.h"  // Global_THD_manager
-#include "opt_costmodel.h"
-#include "opt_explain_format.h"
-#include "opt_range.h"     // QUICK_SELECT_I
-#include "opt_trace.h"     // Opt_trace_*
-#include "protocol.h"
-#include "sql_base.h"      // lock_tables
-#include "sql_bitmap.h"
-#include "sql_class.h"
-#include "sql_const.h"
-#include "sql_error.h"
-#include "sql_executor.h"
-#include "sql_join_buffer.h" // JOIN_CACHE
-#include "sql_lex.h"
-#include "sql_list.h"
-#include "sql_opt_exec_shared.h"
-#include "sql_optimizer.h" // JOIN
-#include "sql_parse.h"     // is_explainable_query
-#include "sql_partition.h" // for make_used_partitions_str()
-#include "sql_plugin.h"
-#include "sql_security_ctx.h"
-#include "sql_select.h"
+#include "sql/auth/auth_acls.h"
+#include "sql/auth/sql_security_ctx.h"
+#include "sql/current_thd.h"
+#include "sql/debug_sync.h" // DEBUG_SYNC
+#include "sql/derror.h"          // ER_THD
+#include "sql/enum_query_type.h"
+#include "sql/field.h"
+#include "sql/handler.h"
+#include "sql/item.h"
+#include "sql/item_func.h"
+#include "sql/item_subselect.h"
+#include "sql/key.h"
+#include "sql/mysqld.h"    // stage_explaining
+#include "sql/mysqld_thd_manager.h" // Global_THD_manager
+#include "sql/opt_costmodel.h"
+#include "sql/opt_explain_format.h"
+#include "sql/opt_range.h" // QUICK_SELECT_I
+#include "sql/opt_trace.h" // Opt_trace_*
+#include "sql/protocol.h"
+#include "sql/sql_base.h"  // lock_tables
+#include "sql/sql_bitmap.h"
+#include "sql/sql_class.h"
+#include "sql/sql_cmd.h"
+#include "sql/sql_const.h"
+#include "sql/sql_error.h"
+#include "sql/sql_executor.h"
+#include "sql/sql_join_buffer.h" // JOIN_CACHE
+#include "sql/sql_lex.h"
+#include "sql/sql_list.h"
+#include "sql/sql_opt_exec_shared.h"
+#include "sql/sql_optimizer.h" // JOIN
+#include "sql/sql_parse.h" // is_explainable_query
+#include "sql/sql_partition.h" // for make_used_partitions_str()
+#include "sql/sql_select.h"
+#include "sql/table.h"
 #include "sql_string.h"
-#include "table.h"
+#include "sql/table_function.h"      // Table_function
 
 class Opt_trace_context;
 
@@ -199,7 +210,7 @@ protected:
   */
   bool push_extra(Extra_tag tag)
   {
-    extra *e= new extra(tag);
+    extra *e= new (*THR_MALLOC) extra(tag);
     return e == NULL || fmt->entry()->col_extra.push_back(e);
   }
 
@@ -217,7 +228,7 @@ protected:
   {
     if (arg.is_empty())
       return push_extra(tag);
-    extra *e= new extra(tag, arg.dup(thd->mem_root));
+    extra *e= new (*THR_MALLOC) extra(tag, arg.dup(thd->mem_root));
     return !e || !e->data || fmt->entry()->col_extra.push_back(e);
   }
 
@@ -235,7 +246,7 @@ protected:
   */
   bool push_extra(Extra_tag tag, const char *arg)
   {
-    extra *e= new extra(tag, arg);
+    extra *e= new (*THR_MALLOC) extra(tag, arg);
     return !e || fmt->entry()->col_extra.push_back(e);
   }
 
@@ -304,7 +315,7 @@ public:
     message(message_arg), rows(rows_arg)
   {
     if (can_walk_clauses())
-      order_list= MY_TEST(select_lex_arg->order_list.elements);
+      order_list= (select_lex_arg->order_list.elements != 0);
   }
 
 protected:
@@ -332,7 +343,7 @@ public:
     DBUG_ASSERT(select_lex_arg ==
                 select_lex_arg->master_unit()->fake_select_lex);
     // Use optimized values from fake_select_lex's join
-    order_list= MY_TEST(select_lex_arg->join->order);
+    order_list= (select_lex_arg->join->order != nullptr);
     // A plan exists so the reads above are safe:
     DBUG_ASSERT(select_lex_arg->join->get_plan_state() != JOIN::NO_PLAN);
   }
@@ -419,7 +430,7 @@ public:
     DBUG_ASSERT(join->get_plan_state() == JOIN::PLAN_READY);
     /* it is not UNION: */
     DBUG_ASSERT(join->select_lex != join->unit->fake_select_lex);
-    order_list= MY_TEST(join->order);
+    order_list= (join->order != nullptr);
   }
 
 private:
@@ -488,7 +499,7 @@ public:
     tab= tab_arg;
     usable_keys= table->possible_quick_keys;
     if (can_walk_clauses())
-      order_list= MY_TEST(select_lex_arg->order_list.elements);
+      order_list= (select_lex_arg->order_list.elements != 0);
   }
 
   virtual bool explain_modify_flags();
@@ -598,6 +609,13 @@ Explain_no_table::get_subquery_context(SELECT_LEX_UNIT *unit) const
 */
 bool Explain::explain_subqueries()
 {
+  /*
+    Subqueries in empty queries are neither optimized nor executed. They are
+    therefore not to be included in the explain output.
+  */
+  if (select_lex->is_empty_query())
+    return false;
+
   for (SELECT_LEX_UNIT *unit= select_lex->first_inner_unit();
        unit;
        unit= unit->next_unit())
@@ -997,6 +1015,9 @@ bool Explain_table_base::explain_extra_common(int quick_type,
     int pushed_id= 0;
     for (QEP_TAB* prev= select_lex->join->qep_tab; prev <= tab; prev++)
     {
+      if (prev->table() == NULL)
+        continue;
+
       const TABLE* prev_root= prev->table()->file->root_of_pushed_join();
       if (prev_root == prev->table())
       {
@@ -1057,6 +1078,15 @@ bool Explain_table_base::explain_extra_common(int quick_type,
 
   if (tab)
   {
+    if (tab->table_ref && tab->table_ref->table_function)
+    {
+      StringBuffer<64> str(cs);
+      str.append(tab->table_ref->table_function->func_name());
+
+      if (push_extra(ET_TABLE_FUNCTION, str) ||
+          push_extra(ET_USING_TEMPORARY))
+        return true;
+    }
     if (tab->dynamic_range())
     {
       StringBuffer<64> str(STRING_WITH_LEN("index map: 0x"), cs);
@@ -1083,7 +1113,7 @@ bool Explain_table_base::explain_extra_common(int quick_type,
       {
         if (fmt->is_hierarchical() && can_print_clauses())
         {
-          Lazy_condition *c= new Lazy_condition(tab->condition_optim());
+          Lazy_condition *c= new (*THR_MALLOC) Lazy_condition(tab->condition_optim());
           if (c == NULL)
             return true;
           fmt->entry()->col_attached_condition.set(c);
@@ -1183,6 +1213,14 @@ bool Explain_table_base::explain_extra_common(int quick_type,
       push_extra(ET_FT_HINTS, buff);
 
   }
+
+  /*
+    EXPLAIN FORMAT=JSON FOR CONNECTION will mention clearly that index dive has
+    been skipped.
+  */
+  if (thd->lex->sql_command == SQLCOM_EXPLAIN_OTHER &&
+      tab && fmt->is_hierarchical() && tab->skip_records_in_range())
+    push_extra(ET_SKIP_RECORDS_IN_RANGE);
 
   return false;
 }
@@ -1319,6 +1357,22 @@ bool Explain_join::shallow_explain()
     return true; /* purecov: inspected */
   if (begin_sort_context(ESC_DISTINCT, CTX_DISTINCT))
     return true; /* purecov: inspected */
+  if (join->m_windowing_steps)
+  {
+    if (begin_sort_context(ESC_WINDOWING, CTX_WINDOW))
+      return true; /* purecov: inspected */
+    fmt->entry()->m_windows= &select_lex->m_windows;
+    if (!fmt->is_hierarchical())
+    {
+      /*
+        TRADITIONAL prints nothing for window functions, except the use of a
+        temporary table and a filesort.
+      */
+      push_warning(thd, Sql_condition::SL_NOTE,
+                   ER_WINDOW_EXPLAIN_JSON,
+                   ER_THD(thd, ER_WINDOW_EXPLAIN_JSON));
+    }
+  }
   if (begin_sort_context(ESC_GROUP_BY, CTX_GROUP_BY))
     return true; /* purecov: inspected */
 
@@ -1347,6 +1401,11 @@ bool Explain_join::shallow_explain()
     return true;
   if (end_sort_context(ESC_GROUP_BY, CTX_GROUP_BY))
     return true;
+  if (join->m_windowing_steps)
+  {
+    if (end_sort_context(ESC_WINDOWING, CTX_WINDOW))
+      return true; /* purecov: inspected */
+  }
   if (end_sort_context(ESC_DISTINCT, CTX_DISTINCT))
     return true;
   if (end_sort_context(ESC_ORDER_BY, CTX_ORDER_BY))
@@ -1573,26 +1632,36 @@ bool Explain_join::explain_rows_and_filtered()
 
   POSITION *const pos= tab->position();
 
-  fmt->entry()->col_rows.set(static_cast<ulonglong>(pos->rows_fetched));
-  fmt->entry()->col_filtered.
-    set(pos->rows_fetched ?
-        static_cast<float>(100.0 * tab->position()->filter_effect) :
-        0.0f);
-  // Print cost-related info
-  double prefix_rows= pos->prefix_rowcount;
-  fmt->entry()->col_prefix_rows.set(static_cast<ulonglong>(prefix_rows));
-  double const cond_cost= join->cost_model()->row_evaluate_cost(prefix_rows);
-  fmt->entry()->col_cond_cost.set(cond_cost < 0 ? 0 : cond_cost);
+  if(thd->lex->sql_command == SQLCOM_EXPLAIN_OTHER &&
+     tab->skip_records_in_range())
+  {
+    // Skipping col_rows, col_filtered, col_prefix_rows will set them to NULL.
+    fmt->entry()->col_cond_cost.set(0);
+    fmt->entry()->col_read_cost.set(0.0);
+    fmt->entry()->col_prefix_cost.set(0);
+    fmt->entry()->col_data_size_query.set('0');
+  }
+  else
+  {
+    fmt->entry()->col_rows.set(static_cast<ulonglong>(pos->rows_fetched));
+    fmt->entry()->col_filtered.
+      set(pos->rows_fetched ?
+          static_cast<float>(100.0 * tab->position()->filter_effect) : 0.0f);
 
-  fmt->entry()->col_read_cost.set(pos->read_cost < 0.0 ?
-                                  0.0 : pos->read_cost);
-  fmt->entry()->col_prefix_cost.set(pos->prefix_cost);
-
-  // Calculate amount of data from this table per query
-  char data_size_str[32];
-  double data_size= prefix_rows * tab->table()->s->rec_buff_length;
-  human_readable_size(data_size_str, sizeof(data_size_str), data_size);
-  fmt->entry()->col_data_size_query.set(data_size_str);
+    // Print cost-related info
+    double prefix_rows= pos->prefix_rowcount;
+    fmt->entry()->col_prefix_rows.set(static_cast<ulonglong>(prefix_rows));
+    double const cond_cost= join->cost_model()->row_evaluate_cost(prefix_rows);
+    fmt->entry()->col_cond_cost.set(cond_cost < 0 ? 0 : cond_cost);
+    fmt->entry()->col_read_cost.set(pos->read_cost < 0.0 ?
+                                    0.0 : pos->read_cost);
+    fmt->entry()->col_prefix_cost.set(pos->prefix_cost);
+    // Calculate amount of data from this table per query
+    char data_size_str[32];
+    double data_size= prefix_rows * tab->table()->s->rec_buff_length;
+    human_readable_size(data_size_str, sizeof(data_size_str), data_size);
+    fmt->entry()->col_data_size_query.set(data_size_str);
+  }
 
   return false;
 }
@@ -1778,6 +1847,8 @@ bool Explain_join::explain_extra()
           !bitmap_is_set(table->write_set, (*fld)->field_index))
         continue;
       fmt->entry()->col_used_columns.push_back((*fld)->field_name);
+      if (table->is_binary_diff_enabled(*fld))
+        fmt->entry()->col_partial_update_columns.push_back((*fld)->field_name);
     }
   }
   return false;
@@ -1925,6 +1996,10 @@ bool Explain_table::explain_extra()
   if (message)
     return fmt->entry()->col_message.set(message);
 
+  for (Field **fld= table->field; *fld != nullptr; ++fld)
+    if (table->is_binary_diff_enabled(*fld))
+      fmt->entry()->col_partial_update_columns.push_back((*fld)->field_name);
+
   uint keyno;
   int quick_type;
   if (tab && tab->quick_optim())
@@ -2050,7 +2125,13 @@ bool explain_single_table_modification(THD *ethd,
 
   ethd->lex->explain_format->send_headers(&result);
 
-  if (!other)
+  /*
+    Optimize currently non-optimized subqueries when needed, but
+    - do not optimize subqueries for other connections, and
+    - there is no need to optimize subqueries that will not be explained
+      because they are attached to a query block that do not return any rows.
+  */
+  if (!other && !select->is_empty_query())
   {
     for (SELECT_LEX_UNIT *unit= select->first_inner_unit();
          unit;
@@ -2241,7 +2322,7 @@ bool explain_query(THD *ethd, SELECT_LEX_UNIT *unit)
 
   if (other)  
   {
-    if (!((explain_result= new Query_result_send(ethd))))
+    if (!((explain_result= new (*THR_MALLOC) Query_result_send(ethd))))
       DBUG_RETURN(true); /* purecov: inspected */
     List<Item> dummy;
     if (explain_result->prepare(dummy, ethd->lex->unit))
@@ -2288,7 +2369,7 @@ bool explain_query(THD *ethd, SELECT_LEX_UNIT *unit)
     explain_result->send_eof();
 
   if (other)
-    delete explain_result;
+    destroy(explain_result);
 
   DBUG_RETURN(res);
 }
@@ -2320,8 +2401,8 @@ bool mysql_explain_unit(THD *ethd, SELECT_LEX_UNIT *unit)
 }
 
 /**
-  Callback function used by mysql_explain_other() to find thd based
-  on the thread id.
+  Callback function used by Sql_cmd_explain_other_thread::execute() to find thd
+  based on the thread id.
 
   @note It acquires LOCK_thd_data mutex and LOCK_query_plan mutex,
   when it finds matching thd.
@@ -2361,7 +2442,7 @@ private:
    proper locks, explains its current statement, releases locks.
    @param  thd THD executing this function (== the explainer)
 */
-void mysql_explain_other(THD *thd)
+bool Sql_cmd_explain_other_thread::execute(THD *thd)
 {
   bool res= false;
   THD *query_thd= NULL;
@@ -2394,7 +2475,7 @@ void mysql_explain_other(THD *thd)
   }
 
   // Pick thread
-  Find_thd_query_lock find_thd_query_lock(thd->lex->query_id);
+  Find_thd_query_lock find_thd_query_lock(m_thread_id);
   if (!thd->killed)
   {
     query_thd= Global_THD_manager::
@@ -2405,7 +2486,7 @@ void mysql_explain_other(THD *thd)
 
   if (!query_thd)
   {
-    my_error(ER_NO_SUCH_THREAD, MYF(0), thd->lex->query_id);
+    my_error(ER_NO_SUCH_THREAD, MYF(0), m_thread_id);
     goto err;
   }
 
@@ -2434,7 +2515,7 @@ void mysql_explain_other(THD *thd)
     */
     if (!qp->is_ps_query() &&                                        // (1)
         is_explainable_query(qp->get_command()) &&
-        !qp->get_lex()->describe &&                                  // (2)
+        !qp->get_lex()->is_explain() &&                              // (2)
         qp->get_lex()->sphead == NULL &&                             // (3)
         (!qp->get_lex()->m_sql_cmd ||
          qp->get_lex()->m_sql_cmd->is_prepared()))                   // (4)
@@ -2485,6 +2566,8 @@ err:
   DEBUG_SYNC(thd, "after_explain_other");
   if (!res && send_ok)
     my_ok(thd, 0);
+
+  return false; // Always return "success".
 }
 
 

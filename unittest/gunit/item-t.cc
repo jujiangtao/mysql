@@ -1,17 +1,24 @@
 /* Copyright (c) 2011, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA */
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -19,20 +26,20 @@
 #include <stddef.h>
 #include <sys/types.h>
 
-#include "fake_table.h"
-#include "item.h"
-#include "item_cmpfunc.h"
-#include "item_create.h"
-#include "item_strfunc.h"
-#include "item_timefunc.h"
 #include "lex_string.h"
-#include "mock_field_timestamp.h"
 #include "my_inttypes.h"
 #include "my_macros.h"
 #include "my_table_map.h"
-#include "sql_class.h"
-#include "test_utils.h"
-#include "tztime.h"
+#include "sql/item.h"
+#include "sql/item_cmpfunc.h"
+#include "sql/item_create.h"
+#include "sql/item_strfunc.h"
+#include "sql/item_timefunc.h"
+#include "sql/sql_class.h"
+#include "sql/tztime.h"
+#include "unittest/gunit/fake_table.h"
+#include "unittest/gunit/mock_field_timestamp.h"
+#include "unittest/gunit/test_utils.h"
 
 namespace item_unittest {
 
@@ -59,9 +66,9 @@ protected:
 class Mock_field_long : public Field_long
 {
 public:
-  Mock_field_long(uint32 lenght)
+  Mock_field_long(uint32 length)
     : Field_long(0,                             // ptr_arg
-                 lenght,                        // len_arg
+                 length,                        // len_arg
                  NULL,                          // null_ptr_arg
                  0,                             // null_bit_arg
                  Field::NONE,                   // auto_flags_arg
@@ -76,7 +83,7 @@ public:
   /*
     This is the only member function we need to override.
     Note: Sun Studio needs a little help in resolving longlong.
-   */
+  */
   MOCK_METHOD2(store, type_conversion_status(::longlong nr, bool unsigned_val));
 };
 
@@ -359,24 +366,6 @@ TEST_F(ItemTest, ItemEqual)
   
   EXPECT_FALSE(item_equal->fix_fields(thd(), NULL));
   EXPECT_EQ(0, item_equal->val_int());
-}
-
-
-TEST_F(ItemTest, ItemFuncDesDecrypt)
-{
-  // Bug #59632 Assertion failed: arg_length > length
-  const uint length= 1U;
-  Item_int *item_one= new Item_int(1, length);
-  Item_int *item_two= new Item_int(2, length);
-  Item *item_decrypt=
-    new Item_func_des_decrypt(POS(), item_two, item_one);
-  Parse_context pc(thd(), thd()->lex->current_select());
-  EXPECT_FALSE(item_decrypt->itemize(&pc, &item_decrypt));
-  
-  EXPECT_FALSE(item_decrypt->fix_fields(thd(), NULL));
-  EXPECT_EQ(length, item_one->max_length);
-  EXPECT_EQ(length, item_two->max_length);
-  EXPECT_LE(item_decrypt->max_length, length);
 }
 
 
@@ -794,8 +783,8 @@ TEST_F(ItemTest, MysqlTimeCache)
 extern "C"
 {
   // Verifies that Item_func_conv::val_str does not call my_strntoll()
-  longlong fail_strntoll(const struct charset_info_st *, const char *s,
-                         size_t l, int base, char **e, int *err)
+  longlong fail_strntoll(const struct charset_info_st*, const char*,
+                         size_t, int, char**, int*)
   {
     ADD_FAILURE() << "Unexpected call";
     return 0;

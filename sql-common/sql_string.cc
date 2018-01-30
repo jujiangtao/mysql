@@ -1,13 +1,20 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -745,7 +752,7 @@ skip:
   return -1;
 }
 
-String String::substr(int offset, int count)
+String String::substr(int offset, int count) const
 {
   int original_count = this->numchars();
   if (offset > original_count)
@@ -1168,13 +1175,14 @@ void String::print(String *str)
     Target string will contain state of this object and vice versa.
 */
 
-void String::swap(String &s)
+void String::swap(String &s) noexcept
 {
-  std::swap(m_ptr, s.m_ptr);
-  std::swap(m_length, s.m_length);
-  std::swap(m_alloced_length, s.m_alloced_length);
-  std::swap(m_is_alloced, s.m_is_alloced);
-  std::swap(m_charset, s.m_charset);
+  using std::swap;
+  swap(m_ptr, s.m_ptr);
+  swap(m_length, s.m_length);
+  swap(m_alloced_length, s.m_alloced_length);
+  swap(m_is_alloced, s.m_is_alloced);
+  swap(m_charset, s.m_charset);
 }
 
 

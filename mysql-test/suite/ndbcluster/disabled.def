@@ -1,2 +1,5 @@
-gis : Bug#22588567 	SCHEMA DISTRIBUTION FAILURE FOR INPLACE ALTER TABLE
-alter_inplace : Bug#22588567 	SCHEMA DISTRIBUTION FAILURE FOR INPLACE ALTER TABLE
+# Problem with missing information in information_schema
+tablespace_datafiles: Bug #26794727 MISSING DISK DATA INFORMATION IN INFORMATION_SCHEMA
+
+# Problem with incorrect partition information in information_schema
+information_schema_partitions: Bug #26794953 INCORRECT PARTITIONS INFORMATION IN INFORMATION_SCHEMA.PARTITIONS

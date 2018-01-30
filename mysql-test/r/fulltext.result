@@ -11,16 +11,15 @@ test.t1	analyze	status	OK
 SHOW INDEX FROM t1;
 Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible
 t1	1	a	1	a	NULL	5	NULL	NULL	YES	FULLTEXT			YES
-t1	1	a	2	b	NULL	5	0	NULL	YES	FULLTEXT			YES
+t1	1	a	2	b	NULL	5	NULL	NULL	YES	FULLTEXT			YES
 select * from t1 where MATCH(a,b) AGAINST ("collections");
 a	b
 Only MyISAM tables	support collections
 Full-text indexes	are called collections
-explain extended select * from t1 where MATCH(a,b) AGAINST ("collections");
+explain select * from t1 where MATCH(a,b) AGAINST ("collections");
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	NULL	fulltext	a	a	0	const	1	100.00	Using where
 Warnings:
-Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b` from `test`.`t1` where (match `test`.`t1`.`a`,`test`.`t1`.`b` against ('collections'))
 select * from t1 where MATCH(a,b) AGAINST ("indexes");
 a	b
@@ -107,11 +106,10 @@ Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b` fr
 select * from t1 where MATCH(a,b) AGAINST("support -collections" IN BOOLEAN MODE);
 a	b
 MySQL has now support	for full-text search
-explain extended select * from t1 where MATCH(a,b) AGAINST("support -collections" IN BOOLEAN MODE);
+explain select * from t1 where MATCH(a,b) AGAINST("support -collections" IN BOOLEAN MODE);
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	NULL	fulltext	a	a	0	const	1	100.00	Using where
 Warnings:
-Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b` from `test`.`t1` where (match `test`.`t1`.`a`,`test`.`t1`.`b` against ('support -collections' in boolean mode))
 select * from t1 where MATCH(a,b) AGAINST("support  collections" IN BOOLEAN MODE);
 a	b
@@ -269,7 +267,7 @@ id
 show keys from t2;
 Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible
 t2	1	tig	1	ticket	A	NULL	NULL	NULL	YES	BTREE			YES
-t2	1	tix	1	inhalt	NULL	NULL	0	NULL	YES	FULLTEXT			YES
+t2	1	tix	1	inhalt	NULL	NULL	NULL	NULL	YES	FULLTEXT			YES
 show create table t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
@@ -740,3 +738,96 @@ explain format=json SELECT 1 FROM q
 WHERE (SELECT MATCH(b) AGAINST ('*') FROM z);
 ERROR HY000: Incorrect arguments to MATCH
 DROP TABLE z, q;
+#
+# Bug#26271244: ASSERT FAILS WHEN SHOW CREATE TABLE CALLED ON A FILE
+# CREATED FOR FULLTEXT INDEX
+#
+# Create Innodb table with full text index
+CREATE TABLE t1(id INT, c CHAR(100) , FULLTEXT KEY `msg_idx` (`c`))
+ENGINE INNODB;
+CREATE TABLE t2 (a int, b2 char(10), FULLTEXT KEY b2 (b2));
+# Find name of first FTS index "table"
+# SHOW CREATE TABLE on an FTS index table should give error
+# (not crash). Query log and error message suppressed as the name of
+# FTS index table is not stable.
+Got one of the listed errors
+# Msg_type Error ER_NO_SUCH_TABLE,ER_NO_SUCH_TABLE
+# Msg_type Error ER_NO_SUCH_TABLE,ER_NO_SUCH_TABLE
+Got one of the listed errors
+Got one of the listed errors
+Got one of the listed errors
+Got one of the listed errors
+Got one of the listed errors
+DROP TABLE t1, t2;
+#
+# BUG#21625016: INNODB FULL TEXT CASE SENSITIVE NOT WORKING
+#
+CREATE TABLE t1(fld1 VARCHAR(10) COLLATE 'latin1_bin', FULLTEXT INDEX (fld1))
+ENGINE=InnoDB;
+INSERT INTO t1 VALUES ('abCD'),('ABCD');
+# With the patch, case sensitive comparison is performed since
+# binary collation is used.
+SELECT * FROM t1 WHERE MATCH(fld1) AGAINST ('abCD' IN BOOLEAN MODE);
+fld1
+abCD
+SELECT * FROM t1 WHERE MATCH(fld1) AGAINST ('ABCD' IN BOOLEAN MODE);
+fld1
+ABCD
+SELECT * FROM t1 WHERE MATCH(fld1) AGAINST ('abCD' IN NATURAL LANGUAGE MODE);
+fld1
+abCD
+SELECT * FROM t1 WHERE MATCH(fld1) AGAINST ('ABCD' IN NATURAL LANGUAGE MODE);
+fld1
+ABCD
+# Since binary collation is not used, case insensitive comparison is
+# performed.
+ALTER TABLE t1 MODIFY fld1 VARCHAR(10) COLLATE 'latin1_general_cs';
+SELECT * FROM t1 WHERE MATCH(fld1) AGAINST ('abCD' IN BOOLEAN MODE);
+fld1
+abCD
+ABCD
+SELECT * FROM t1 WHERE MATCH(fld1) AGAINST ('ABCD' IN BOOLEAN MODE);
+fld1
+abCD
+ABCD
+SELECT * FROM t1 WHERE MATCH(fld1) AGAINST ('abCD' IN NATURAL LANGUAGE MODE);
+fld1
+abCD
+ABCD
+SELECT * FROM t1 WHERE MATCH(fld1) AGAINST ('ABCD' IN NATURAL LANGUAGE MODE);
+fld1
+abCD
+ABCD
+# With the patch, case sensitive comparison is performed.
+ALTER TABLE t1 MODIFY fld1 VARCHAR(10) COLLATE 'utf8mb4_bin';
+SELECT * FROM t1 WHERE MATCH(fld1) AGAINST ('abCD' IN BOOLEAN MODE);
+fld1
+abCD
+SELECT * FROM t1 WHERE MATCH(fld1) AGAINST ('ABCD' IN BOOLEAN MODE);
+fld1
+ABCD
+SELECT * FROM t1 WHERE MATCH(fld1) AGAINST ('abCD' IN NATURAL LANGUAGE MODE);
+fld1
+abCD
+SELECT * FROM t1 WHERE MATCH(fld1) AGAINST ('ABCD' IN NATURAL LANGUAGE MODE);
+fld1
+ABCD
+# Test(using case insensitive collation) added for coverage
+ALTER TABLE t1 MODIFY fld1 VARCHAR(10) COLLATE 'utf8mb4_general_ci';
+SELECT * FROM t1 WHERE MATCH(fld1) AGAINST ('abCD' IN BOOLEAN MODE);
+fld1
+abCD
+ABCD
+SELECT * FROM t1 WHERE MATCH(fld1) AGAINST ('ABCD' IN BOOLEAN MODE);
+fld1
+abCD
+ABCD
+SELECT * FROM t1 WHERE MATCH(fld1) AGAINST ('abCD' IN NATURAL LANGUAGE MODE);
+fld1
+abCD
+ABCD
+SELECT * FROM t1 WHERE MATCH(fld1) AGAINST ('ABCD' IN NATURAL LANGUAGE MODE);
+fld1
+abCD
+ABCD
+DROP TABLE t1;

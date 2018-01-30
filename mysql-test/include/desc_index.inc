@@ -249,6 +249,7 @@ DROP TABLE t1;
 create table t1 (a int not null, b int, c varchar(10),
   key (a desc, b desc, c desc));
 insert into t1 values (1, NULL, NULL), (1, NULL, 'b'), (1, 1, NULL), (1, 1, 'b'), (1, 1, 'b'), (2, 1, 'a'), (2, 1, 'b'), (2, 2, 'a'), (2, 2, 'b'), (2, 3, 'c'),(1,3,'b');
+insert into t1 values (0, NULL, NULL), (0, NULL, 'b'), (0, 0, NULL), (0, 0, 'b'), (0, 0, 'b'), (0, 0, 'a'), (0, 0, 'b'), (0, 0, 'a'), (0, 0, 'b'), (0, 0, 'c'),(0,0,'b');
 
 explain select * from t1 where a >= 1 and a < 3 and b >0 order by a desc,b desc;
 flush status;
@@ -687,17 +688,15 @@ DROP TABLE b,bb;
 CREATE TABLE t1 (
   col_varchar_255_latin1_key varchar(255) DEFAULT NULL,
   pk int(11) NOT NULL AUTO_INCREMENT,
-  PRIMARY KEY (pk DESC),
+  KEY (pk DESC),
   KEY k3 (col_varchar_255_latin1_key DESC)
 );
 INSERT INTO t1(col_varchar_255_latin1_key, pk) VALUES
-('some',23), ('gbpmqht',22), ('the',21), ('good',20), ('zbycehdfocd',19),
-('k',18), ('f',17), ('g',16), ('w',15), ('u',14), ('one',13), ('ohdbyix',12),
-('n',11), ('his',10), ('c',9), ('how',8), ('e',7), ('look',6), ('of',5),
-('l',4), ('something',3), ('ycyoybhug',2), ('my',1);
-
-INSERT INTO t1(col_varchar_255_latin1_key, pk)
-  SELECT col_varchar_255_latin1_key, pk+23 FROM t1;
+('l',4), ('something',3), ('ycyoybhug',2), ('l',5), ('my',1),
+('l',4),('l',4),('l',4),('l',4),('l',4),('l',4),
+('l',4),('l',4),('l',4),('l',4),('l',4),('l',4),
+('l',4),('l',4),('l',4),('l',4),('l',4),('l',4),
+('l',4),('l',4),('l',4),('l',4),('l',4),('l',4);
 
 SELECT
 t1 . pk AS field1,
@@ -912,3 +911,14 @@ SELECT * FROM t1 WHERE (
 
 DROP TABLE t1;
 
+--echo #
+--echo # Bug #25899921: INCORRECT BEHAVIOR WITH DESC INDEX AND
+--echo #                IMPOSSIBLE CONDITION
+--echo #
+
+CREATE TABLE t1 (a INT, b DATE, KEY(b,a DESC));
+SET @g:='1';
+DELETE FROM t1 WHERE b=@g ORDER BY b, a LIMIT 1;
+DROP TABLE t1;
+
+--echo # End of test for Bug#25899921

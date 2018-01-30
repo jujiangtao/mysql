@@ -1,45 +1,50 @@
 /* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef DD__VIEW_IMPL_INCLUDED
 #define DD__VIEW_IMPL_INCLUDED
 
 #include <sys/types.h>
+#include <memory>
 #include <new>
-#include <string>
 
-#include "dd/impl/raw/raw_record.h"
-#include "dd/impl/types/abstract_table_impl.h" // dd::Abstract_table_impl
-#include "dd/impl/types/entity_object_impl.h"
-#include "dd/impl/types/weak_object_impl.h"
-#include "dd/object_id.h"
-#include "dd/types/abstract_table.h"
-#include "dd/types/dictionary_object_table.h"  // dd::Dictionary_object_table
-#include "dd/types/object_type.h"
-#include "dd/types/view.h"                     // dd::View
-#include "dd/types/view_routine.h"             // dd::View_routine
-#include "dd/types/view_table.h"               // dd::View_table
 #include "my_inttypes.h"
+#include "sql/dd/impl/raw/raw_record.h"
+#include "sql/dd/impl/types/abstract_table_impl.h" // dd::Abstract_table_impl
+#include "sql/dd/impl/types/entity_object_impl.h"
+#include "sql/dd/impl/types/weak_object_impl.h"
+#include "sql/dd/object_id.h"
+#include "sql/dd/properties.h"
+#include "sql/dd/string_type.h"
+#include "sql/dd/types/abstract_table.h"
+#include "sql/dd/types/view.h"                 // dd::View
+#include "sql/dd/types/view_routine.h"         // IWYU pragma: keep
+#include "sql/dd/types/view_table.h"           // IWYU pragma: keep
 
 namespace dd {
 class Column;
 class Open_dictionary_tables_ctx;
-class Properties;
-class View_routine;
-class View_table;
 class Weak_object;
+class Object_table;
 }  // namespace dd
 
 typedef struct charset_info_st CHARSET_INFO;
@@ -58,8 +63,7 @@ public:
   { }
 
 public:
-  virtual const Dictionary_object_table &object_table() const
-  { return View::OBJECT_TABLE(); }
+  static void register_tables(Open_dictionary_tables_ctx *otx);
 
   virtual bool validate() const;
 
@@ -214,10 +218,10 @@ public:
   { return m_routines; }
 
   // Fix "inherits ... via dominance" warnings
-  virtual Weak_object_impl *impl()
-  { return Weak_object_impl::impl(); }
-  virtual const Weak_object_impl *impl() const
-  { return Weak_object_impl::impl(); }
+  virtual Entity_object_impl *impl()
+  { return Entity_object_impl::impl(); }
+  virtual const Entity_object_impl *impl() const
+  { return Entity_object_impl::impl(); }
   virtual Object_id id() const
   { return Entity_object_impl::id(); }
   virtual bool is_persistent() const
@@ -239,12 +243,12 @@ public:
   virtual bool set_options_raw(const String_type &options_raw)
   { return Abstract_table_impl::set_options_raw(options_raw); }
   virtual bool set_column_names_raw(const String_type &column_names_raw);
-  virtual ulonglong created() const
-  { return Abstract_table_impl::created(); }
+  virtual ulonglong created(bool convert_time) const
+  { return Abstract_table_impl::created(convert_time); }
   virtual void set_created(ulonglong created)
   { Abstract_table_impl::set_created(created); }
-  virtual ulonglong last_altered() const
-  { return Abstract_table_impl::last_altered(); }
+  virtual ulonglong last_altered(bool convert_time) const
+  { return Abstract_table_impl::last_altered(convert_time); }
   virtual void set_last_altered(ulonglong last_altered)
   { Abstract_table_impl::set_last_altered(last_altered); }
   virtual Column *add_column()
@@ -257,9 +261,9 @@ public:
   { return Abstract_table_impl::get_column(name); }
   Column *get_column(const String_type name)
   { return Abstract_table_impl::get_column(name); }
-  virtual bool hidden() const
+  virtual enum_hidden_type hidden() const
   { return Abstract_table_impl::hidden(); }
-  virtual void set_hidden(bool hidden)
+  virtual void set_hidden(enum_hidden_type hidden)
   { Abstract_table_impl::set_hidden(hidden); }
 
 private:
@@ -291,17 +295,6 @@ private:
   {
     return new View_impl(*this);
   }
-};
-
-///////////////////////////////////////////////////////////////////////////
-
-class View_type : public Object_type
-{
-public:
-  virtual void register_tables(Open_dictionary_tables_ctx *otx) const;
-
-  virtual Weak_object *create_object() const
-  { return new (std::nothrow) View_impl(); }
 };
 
 ///////////////////////////////////////////////////////////////////////////

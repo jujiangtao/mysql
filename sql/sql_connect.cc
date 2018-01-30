@@ -2,13 +2,20 @@
    Copyright (c) 2007, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -19,9 +26,16 @@
   Functions to authenticate and handle requests for a connection
 */
 
-#include "sql_connect.h"
+#include "sql/sql_connect.h"
 
 #include "my_config.h"
+
+#include "my_loglevel.h"
+#include "my_psi_config.h"
+#include "mysql/components/services/log_shared.h"
+#include "mysql/udf_registration_types.h"
+#include "pfs_thread_provider.h"
+#include "sql/session_tracker.h"
 
 #ifndef _WIN32
 #include <netdb.h>
@@ -34,48 +48,46 @@
 #ifdef HAVE_SYS_SOCKET_H
 #include <sys/socket.h>
 #endif
-#ifdef HAVE_UNISTD_H
-#include <unistd.h>
-#endif
 #include <algorithm>
+#include <atomic>
+#include <memory>
+#include <string>
+#include <unordered_map>
+#include <utility>
 
-#include "auth_acls.h"
-#include "auth_common.h"                // SUPER_ACL
-#include "derror.h"                     // ER_THD
-#include "handler.h"
-#include "hash.h"                       // HASH
-#include "hostname.h"                   // Host_errors
-#include "item_func.h"                  // mqh_used
-#include "key.h"
 #include "lex_string.h"
-#include "log.h"                        // sql_print_information
 #include "m_ctype.h"
 #include "m_string.h"                   // my_stpcpy
+#include "map_helpers.h"
 #include "my_command.h"
 #include "my_dbug.h"
 #include "my_sqlcommand.h"
 #include "my_sys.h"
 #include "mysql/plugin_audit.h"
 #include "mysql/psi/mysql_mutex.h"
-#include "mysql/psi/mysql_statement.h"
 #include "mysql/service_mysql_alloc.h"
 #include "mysql_com.h"
-#include "mysqld.h"                     // LOCK_user_conn
 #include "mysqld_error.h"
-#include "protocol.h"
-#include "protocol_classic.h"
-#include "psi_memory_key.h"
-#include "session_tracker.h"
-#include "sql_audit.h"                  // MYSQL_AUDIT_NOTIFY_CONNECTION_CONNECT
-#include "sql_class.h"                  // THD
-#include "sql_error.h"
-#include "sql_lex.h"
-#include "sql_parse.h"                  // sql_command_flags
-#include "sql_plugin.h"                 // plugin_thdvar_cleanup
-#include "sql_security_ctx.h"
+#include "sql/auth/auth_acls.h"
+#include "sql/auth/auth_common.h"       // SUPER_ACL
+#include "sql/auth/sql_security_ctx.h"
+#include "sql/derror.h"                 // ER_THD
+#include "sql/hostname.h"               // Host_errors
+#include "sql/item_func.h"              // mqh_used
+#include "sql/key.h"
+#include "sql/log.h"
+#include "sql/mysqld.h"                 // LOCK_user_conn
+#include "sql/protocol.h"
+#include "sql/protocol_classic.h"
+#include "sql/psi_memory_key.h"
+#include "sql/sql_audit.h"              // MYSQL_AUDIT_NOTIFY_CONNECTION_CONNECT
+#include "sql/sql_class.h"              // THD
+#include "sql/sql_error.h"
+#include "sql/sql_lex.h"
+#include "sql/sql_parse.h"              // sql_command_flags
+#include "sql/sql_plugin.h"             // plugin_thdvar_cleanup
+#include "sql/system_variables.h"
 #include "sql_string.h"
-#include "system_variables.h"
-#include "template_utils.h"
 #include "violite.h"
 
 #ifdef HAVE_ARPA_INET_H
@@ -107,7 +119,8 @@ using std::max;
   Get structure for logging connection data for the current user
 */
 
-static HASH hash_user_connections;
+static collation_unordered_map<std::string, unique_ptr_my_free<user_conn>>
+  *hash_user_connections;
 
 int get_or_create_user_conn(THD *thd, const char *user,
                             const char *host,
@@ -116,7 +129,7 @@ int get_or_create_user_conn(THD *thd, const char *user,
   int return_val= 0;
   size_t temp_len, user_len;
   char temp_user[USER_HOST_BUFF_SIZE];
-  struct  user_conn *uc;
+  struct  user_conn *uc= nullptr;
 
   DBUG_ASSERT(user != 0);
   DBUG_ASSERT(host != 0);
@@ -124,8 +137,8 @@ int get_or_create_user_conn(THD *thd, const char *user,
   user_len= strlen(user);
   temp_len= (my_stpcpy(my_stpcpy(temp_user, user)+1, host) - temp_user)+1;
   mysql_mutex_lock(&LOCK_user_conn);
-  if (!(uc = (struct  user_conn *) my_hash_search(&hash_user_connections,
-                 (uchar*) temp_user, temp_len)))
+  const auto it= hash_user_connections->find(std::string(temp_user, temp_len));
+  if (it == hash_user_connections->end())
   {
     /* First connection for user; Create a user connection object */
     if (!(uc= ((struct user_conn*)
@@ -144,13 +157,13 @@ int get_or_create_user_conn(THD *thd, const char *user,
     uc->connections= uc->questions= uc->updates= uc->conn_per_hour= 0;
     uc->user_resources= *mqh;
     uc->reset_utime= thd->start_utime;
-    if (my_hash_insert(&hash_user_connections, (uchar*) uc))
-    {
-      /* The only possible error is out of memory, MY_WME sets an error. */
-      my_free(uc);
-      return_val= 1;
-      goto end;
-    }
+    hash_user_connections->emplace(
+      std::string(temp_user, temp_len),
+      unique_ptr_my_free<user_conn>(uc));
+  }
+  else
+  {
+   uc= it->second.get();
   }
   thd->set_user_connect(uc);
   thd->increment_user_connections_counter();
@@ -263,7 +276,7 @@ void decrease_user_connections(USER_CONN *uc)
   if (!--uc->connections && !mqh_used)
   {
     /* Last connection for user; Delete it */
-    (void) my_hash_delete(&hash_user_connections,(uchar*) uc);
+    hash_user_connections->erase(std::string(uc->user, uc->len));
   }
   mysql_mutex_unlock(&LOCK_user_conn);
   DBUG_VOID_RETURN;
@@ -290,7 +303,7 @@ void release_user_connection(THD *thd)
     if (!uc->connections && !mqh_used)
     {
       /* Last connection for user; Delete it */
-      (void) my_hash_delete(&hash_user_connections,(uchar*) uc);
+      hash_user_connections->erase(std::string(uc->user, uc->len));
     }
     mysql_mutex_unlock(&LOCK_user_conn);
     thd->set_user_connect(NULL);
@@ -351,39 +364,18 @@ end:
 }
 
 
-/*
-  Check for maximum allowable user connections, if the mysqld server is
-  started with corresponding variable that is greater then 0.
-*/
-
-static const uchar *get_key_conn(const uchar *arg, size_t *length)
-{
-  const user_conn *buff= pointer_cast<const user_conn*>(arg);
-  *length= buff->len;
-  return (uchar*) buff->user;
-}
-
-
-static void free_user(void *arg)
-{
-  struct user_conn *uc= pointer_cast<user_conn*>(arg);
-  my_free(uc);
-}
-
-
 void init_max_user_conn(void)
 {
-  (void)
-    my_hash_init(&hash_user_connections,system_charset_info,max_connections,
-                 0, get_key_conn,
-                 free_user, 0,
-                 key_memory_user_conn);
+  hash_user_connections=
+    new collation_unordered_map<std::string, unique_ptr_my_free<user_conn>>(
+      system_charset_info, key_memory_user_conn);
 }
 
 
 void free_max_user_conn(void)
 {
-  my_hash_free(&hash_user_connections);
+  delete hash_user_connections;
+  hash_user_connections= nullptr;
 }
 
 
@@ -392,17 +384,17 @@ void reset_mqh(THD *thd, LEX_USER *lu, bool get_them= 0)
   mysql_mutex_lock(&LOCK_user_conn);
   if (lu)  // for GRANT
   {
-    USER_CONN *uc;
     size_t temp_len=lu->user.length+lu->host.length+2;
     char temp_user[USER_HOST_BUFF_SIZE];
 
     memcpy(temp_user,lu->user.str,lu->user.length);
     memcpy(temp_user+lu->user.length+1,lu->host.str,lu->host.length);
     temp_user[lu->user.length]='\0'; temp_user[temp_len-1]=0;
-    if ((uc = (struct  user_conn *) my_hash_search(&hash_user_connections,
-                                                   (uchar*) temp_user,
-                                                   temp_len)))
+    const auto it= hash_user_connections->find(
+      std::string(temp_user, temp_len));
+    if (it != hash_user_connections->end())
     {
+      USER_CONN *uc= it->second.get();
       uc->questions=0;
       get_mqh(thd, temp_user,&temp_user[lu->user.length+1],uc);
       uc->updates=0;
@@ -412,10 +404,9 @@ void reset_mqh(THD *thd, LEX_USER *lu, bool get_them= 0)
   else
   {
     /* for FLUSH PRIVILEGES and FLUSH USER_RESOURCES */
-    for (uint idx=0;idx < hash_user_connections.records; idx++)
+    for (const auto &key_and_value : *hash_user_connections)
     {
-      USER_CONN *uc=(struct user_conn *)
-        my_hash_element(&hash_user_connections, idx);
+      USER_CONN *uc= key_and_value.second.get();
       if (get_them)
   get_mqh(thd, uc->user,uc->host,uc);
       uc->questions=0;
@@ -697,6 +688,10 @@ static int check_connection(THD *thd)
     return 1;
   }
 
+#ifdef HAVE_PSI_THREAD_INTERFACE
+  PSI_THREAD_CALL(notify_session_connect)(thd->get_psi());
+#endif /* HAVE_PSI_THREAD_INTERFACE */
+
   if (auth_rc == 0 && connect_errors != 0)
   {
     /*
@@ -772,6 +767,10 @@ void end_connection(THD *thd)
 
   mysql_audit_notify(thd, AUDIT_EVENT(MYSQL_AUDIT_CONNECTION_DISCONNECT), 0);
 
+#ifdef HAVE_PSI_THREAD_INTERFACE
+  PSI_THREAD_CALL(notify_session_disconnect)(thd->get_psi());
+#endif /* HAVE_PSI_THREAD_INTERFACE */
+
   plugin_thdvar_cleanup(thd, thd->m_enable_plugins);
 
   /*
@@ -792,14 +791,14 @@ void end_connection(THD *thd)
     {
       Security_context *sctx= thd->security_context();
       LEX_CSTRING sctx_user= sctx->user();
-      sql_print_information(ER_DEFAULT(ER_NEW_ABORTING_CONNECTION),
-                            thd->thread_id(),
-                            (thd->db().str ? thd->db().str : "unconnected"),
-                            sctx_user.str ? sctx_user.str : "unauthenticated",
-                            sctx->host_or_ip().str,
-                            (thd->get_stmt_da()->is_error() ?
-                             thd->get_stmt_da()->message_text() :
-                             ER_DEFAULT(ER_UNKNOWN_ERROR)));
+      LogErr(INFORMATION_LEVEL, ER_ABORTING_USER_CONNECTION,
+             thd->thread_id(),
+             (thd->db().str ? thd->db().str : "unconnected"),
+             sctx_user.str ? sctx_user.str : "unauthenticated",
+             sctx->host_or_ip().str,
+             (thd->get_stmt_da()->is_error() ?
+              thd->get_stmt_da()->message_text() :
+              ER_DEFAULT(ER_UNKNOWN_ERROR)));
     }
   }
 }
@@ -831,16 +830,30 @@ static void prepare_new_connection_state(THD* thd)
     execute_init_command(thd, &opt_init_connect, &LOCK_sys_init_connect);
     if (thd->is_error())
     {
-      Host_errors errors;
-      ulong packet_length;
-      LEX_CSTRING sctx_user= sctx->user();
+      Host_errors       errors;
+      ulong             packet_length;
+      LEX_CSTRING       sctx_user=     sctx->user();
+      Diagnostics_area *da=            thd->get_stmt_da();
+      const char       *user=          sctx_user.str
+                                       ? sctx_user.str
+                                       : "unauthenticated";
+      const char        *what=         "init_connect command failed";
 
-      sql_print_warning(ER_DEFAULT(ER_NEW_ABORTING_CONNECTION),
+      LogEvent().prio(WARNING_LEVEL)
+                .thread_id(thd->thread_id())
+                .user(sctx_user)
+                .host(sctx->host_or_ip())
+                .source_file(MY_BASENAME)
+                .errcode(da->mysql_errno())
+                .sqlstate(da->returned_sqlstate())
+                .string_value(LOG_TAG_DIAG, da->message_text())
+                .string_value(LOG_TAG_AUX,  what)
+                .lookup(ER_NEW_ABORTING_CONNECTION,
                         thd->thread_id(),
                         thd->db().str ? thd->db().str : "unconnected",
-                        sctx_user.str ? sctx_user.str : "unauthenticated",
-                        sctx->host_or_ip().str, "init_connect command failed");
-      sql_print_warning("%s", thd->get_stmt_da()->message_text());
+                        user,
+                        sctx->host_or_ip().str,
+                        what);
 
       thd->lex->set_current_select(0);
       my_net_set_read_timeout(net, thd->variables.net_wait_timeout);
@@ -908,9 +921,14 @@ void close_connection(THD *thd, uint sql_errno,
   thd->disconnect(server_shutdown);
 
   if (generate_event)
+  {
     mysql_audit_notify(thd,
                        AUDIT_EVENT(MYSQL_AUDIT_CONNECTION_DISCONNECT),
                        sql_errno);
+#ifdef HAVE_PSI_THREAD_INTERFACE
+    PSI_THREAD_CALL(notify_session_disconnect)(thd->get_psi());
+#endif /* HAVE_PSI_THREAD_INTERFACE */
+  }
 
   thd->security_context()->logout();
   DBUG_VOID_RETURN;

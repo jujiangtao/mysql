@@ -1,17 +1,24 @@
 /* Copyright (c) 2011, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 
 #ifndef OPT_EXPLAIN_FORMAT_INCLUDED
@@ -29,14 +36,16 @@
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_sys.h"
-#include "parse_tree_node_base.h"
-#include "sql_alloc.h"
-#include "sql_list.h"
+#include "sql/parse_tree_node_base.h"
+#include "sql/sql_alloc.h"
+#include "sql/sql_list.h"
+#include "sql/thr_malloc.h"
 #include "sql_string.h"
 
+class Opt_trace_object;
 class Query_result;
 class SELECT_LEX_UNIT;
-class Opt_trace_object;
+class Window;
 
 enum class enum_explain_type;
 
@@ -82,6 +91,8 @@ enum Extra_tag
   ET_FT_HINTS,
   ET_BACKWARD_SCAN,
   ET_RECURSIVE,
+  ET_TABLE_FUNCTION,
+  ET_SKIP_RECORDS_IN_RANGE,
   //------------------------------------
   ET_total
 };
@@ -323,6 +334,9 @@ public:
   /// List of used columns
   List<const char> col_used_columns;
 
+  /// List of columns that can be updated using partial update.
+  List<const char> col_partial_update_columns;
+
   /* For structured EXPLAIN in CTX_QEP_TAB context: */
   uint query_block_id; ///< query block id for materialized subqueries
 
@@ -345,6 +359,8 @@ public:
   */
   uint derived_clone_id;
 
+  List<Window> *m_windows; ///< Windows to describe in this node
+
   qep_row() :
     query_block_id(0),
     is_dependent(false),
@@ -352,7 +368,8 @@ public:
     using_temporary(false),
     mod_type(MT_NONE),
     is_materialized_from_subquery(false),
-    derived_clone_id(0)
+    derived_clone_id(0),
+    m_windows(nullptr)
   {}
 
   virtual ~qep_row() {}
@@ -429,6 +446,7 @@ enum Explain_sort_clause
   ESC_GROUP_BY      = 2,
   ESC_DISTINCT      = 3,
   ESC_BUFFER_RESULT = 4,
+  ESC_WINDOWING     = 5,
 //-----------------
   ESC_MAX
 };

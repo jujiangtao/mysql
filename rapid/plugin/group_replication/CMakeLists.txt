@@ -1,25 +1,26 @@
-# Copyright (c) 2014, 2016, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; version 2 of the License.
+# it under the terms of the GNU General Public License, version 2.0,
+# as published by the Free Software Foundation.
+#
+# This program is also distributed with certain software (including
+# but not limited to OpenSSL) that is licensed under separate terms,
+# as designated in a particular file or component or in included license
+# documentation.  The authors of MySQL hereby grant you an additional
+# permission to link the program and your derivative works with the
+# separately licensed software that they have included with MySQL.
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU General Public License, version 2.0, for more details.
 #
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
-# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 ADD_SUBDIRECTORY(libmysqlgcs)
-
-INCLUDE_DIRECTORIES(
-  ${CMAKE_CURRENT_SOURCE_DIR}/libmysqlgcs/include/
-  ${CMAKE_CURRENT_SOURCE_DIR}/include/
-  ${CMAKE_CURRENT_SOURCE_DIR}/include/sql_service/)
-
 
 SET(GROUP_REPLICATION_SOURCES
   src/applier.cc
@@ -32,6 +33,7 @@ SET(GROUP_REPLICATION_SOURCES
   src/gcs_operations.cc
   src/gcs_plugin_messages.cc
   src/gcs_view_modification_notifier.cc
+  src/group_partition_handling.cc
   src/member_info.cc
   src/observer_server_actions.cc
   src/observer_server_channels.cc
@@ -47,6 +49,7 @@ SET(GROUP_REPLICATION_SOURCES
   src/recovery.cc
   src/recovery_channel_state_observer.cc
   src/applier_channel_state_observer.cc
+  src/asynchronous_channels_state_observer.cc
   src/recovery_message.cc
   src/recovery_state_transfer.cc
   src/replication_threads_api.cc
@@ -59,11 +62,15 @@ SET(GROUP_REPLICATION_SOURCES
   src/sql_service/sql_resultset.cc
   src/sql_service/sql_service_context.cc
   src/sql_service/sql_service_context_base.cc
-  src/sql_service/sql_service_gr_user.cc
   src/sql_service/sql_service_interface.cc
   src/sql_service/sql_command_test.cc
   src/sql_service/sql_service_command.cc
+  src/services/notification/notification.cc
+  src/services/registry.cc
 )
+
+SET(GMS_LISTENER_SERVICE_TEST_SOURCES
+    src/services/notification/impl/gms_listener_test.cc)
 
 ADD_DEFINITIONS(-DMYSQL_SERVER)
 
@@ -84,6 +91,7 @@ ENDIF()
 # declare the plugin itself
 MYSQL_ADD_PLUGIN(group_replication
                  ${GROUP_REPLICATION_SOURCES}
+                 ${GMS_LISTENER_SERVICE_TEST_SOURCES}
                  LINK_LIBRARIES
                  ${LZ4_LIBRARY}
                  ${SSL_LIBRARIES}
@@ -100,7 +108,7 @@ IF(INSTALL_MYSQLTESTDIR)
     COMPONENT Test
   )
   INSTALL(
-    DIRECTORY tests/mtr/t tests/mtr/r tests/mtr/inc
+    DIRECTORY tests/mtr/t tests/mtr/r tests/mtr/inc tests/mtr/extra
     DESTINATION "${INSTALL_MYSQLTESTDIR}/suite/group_replication"
     USE_SOURCE_PERMISSIONS
     COMPONENT Test

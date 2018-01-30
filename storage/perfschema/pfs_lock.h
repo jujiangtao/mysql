@@ -1,17 +1,24 @@
 /* Copyright (c) 2009, 2017, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
-  along with this program; if not, write to the Free Software Foundation,
-  51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+  along with this program; if not, write to the Free Software
+  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef PFS_LOCK_H
 #define PFS_LOCK_H
@@ -21,8 +28,9 @@
   Performance schema internal locks (declarations).
 */
 
+#include <atomic>
+
 #include "my_dbug.h"
-#include "pfs_atomic.h"
 
 /* to cause bugs, testing */
 // #define MEM(X) std::memory_order_relaxed
@@ -161,7 +169,7 @@ struct pfs_lock
     The version number is stored in the high 30 bits.
     The state is stored in the low 2 bits.
   */
-  uint32 m_version_state;
+  std::atomic<uint32> m_version_state;
 
   uint32
   copy_version_state()
@@ -177,9 +185,7 @@ struct pfs_lock
   bool
   is_free(void)
   {
-    uint32 copy;
-
-    copy = PFS_atomic::load_u32(&m_version_state);
+    uint32 copy = m_version_state.load();
 
     return ((copy & STATE_MASK) == PFS_LOCK_FREE);
   }
@@ -188,9 +194,7 @@ struct pfs_lock
   bool
   is_populated(void)
   {
-    uint32 copy;
-
-    copy = PFS_atomic::load_u32(&m_version_state);
+    uint32 copy = m_version_state.load();
 
     return ((copy & STATE_MASK) == PFS_LOCK_ALLOCATED);
   }
@@ -204,9 +208,7 @@ struct pfs_lock
   bool
   free_to_dirty(pfs_dirty_state *copy_ptr)
   {
-    uint32 old_val;
-
-    old_val = PFS_atomic::load_u32(&m_version_state);
+    uint32 old_val = m_version_state.load();
 
     if ((old_val & STATE_MASK) != PFS_LOCK_FREE)
     {
@@ -214,9 +216,9 @@ struct pfs_lock
     }
 
     uint32 new_val = (old_val & VERSION_MASK) + PFS_LOCK_DIRTY;
-    bool pass;
 
-    pass = PFS_atomic::cas_u32(&m_version_state, &old_val, new_val);
+    bool pass =
+      atomic_compare_exchange_strong(&m_version_state, &old_val, new_val);
 
     if (pass)
     {
@@ -241,7 +243,7 @@ struct pfs_lock
     uint32 new_val = (copy & VERSION_MASK) + PFS_LOCK_DIRTY;
     /* We own the record, no need to use compare and swap. */
 
-    PFS_atomic::store_u32(&m_version_state, new_val);
+    m_version_state.store(new_val);
 
     copy_ptr->m_version_state = new_val;
   }
@@ -260,7 +262,7 @@ struct pfs_lock
     uint32 new_val =
       (copy->m_version_state & VERSION_MASK) + VERSION_INC + PFS_LOCK_ALLOCATED;
 
-    PFS_atomic::store_u32(&m_version_state, new_val);
+    m_version_state.store(new_val);
   }
 
   /**
@@ -277,7 +279,7 @@ struct pfs_lock
     /* Increment the version, set the ALLOCATED state */
     uint32 new_val = (copy & VERSION_MASK) + VERSION_INC + PFS_LOCK_ALLOCATED;
 
-    PFS_atomic::store_u32(&m_version_state, new_val);
+    m_version_state.store(new_val);
   }
 
   /**
@@ -287,10 +289,10 @@ struct pfs_lock
   set_dirty(pfs_dirty_state *copy_ptr)
   {
     /* Do not set the version to 0, read the previous value. */
-    uint32 copy = PFS_atomic::load_u32(&m_version_state);
+    uint32 copy = m_version_state.load();
     /* Increment the version, set the DIRTY state */
     uint32 new_val = (copy & VERSION_MASK) + VERSION_INC + PFS_LOCK_DIRTY;
-    PFS_atomic::store_u32(&m_version_state, new_val);
+    m_version_state.store(new_val);
 
     copy_ptr->m_version_state = new_val;
   }
@@ -307,7 +309,7 @@ struct pfs_lock
     /* Keep the same version, set the FREE state */
     uint32 new_val = (copy->m_version_state & VERSION_MASK) + PFS_LOCK_FREE;
 
-    PFS_atomic::store_u32(&m_version_state, new_val);
+    m_version_state.store(new_val);
   }
 
   /**
@@ -328,7 +330,7 @@ struct pfs_lock
     /* Keep the same version, set the FREE state */
     uint32 new_val = (copy & VERSION_MASK) + PFS_LOCK_FREE;
 
-    PFS_atomic::store_u32(&m_version_state, new_val);
+    m_version_state.store(new_val);
   }
 
   /**
@@ -339,7 +341,7 @@ struct pfs_lock
   void
   begin_optimistic_lock(pfs_optimistic_state *copy)
   {
-    copy->m_version_state = PFS_atomic::load_u32(&m_version_state);
+    copy->m_version_state = m_version_state.load();
   }
 
   /**
@@ -359,7 +361,7 @@ struct pfs_lock
       return false;
     }
 
-    version_state = PFS_atomic::load_u32(&m_version_state);
+    version_state = m_version_state.load();
 
     /* Check the version + state has not changed. */
     if (copy->m_version_state != version_state)
@@ -373,9 +375,7 @@ struct pfs_lock
   uint32
   get_version()
   {
-    uint32 version_state;
-
-    version_state = PFS_atomic::load_u32(&m_version_state);
+    uint32 version_state = m_version_state.load();
 
     return (version_state & VERSION_MASK);
   }

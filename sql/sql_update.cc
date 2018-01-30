@@ -1,17 +1,24 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 
 /*
@@ -22,19 +29,10 @@
 #include "sql/sql_update.h"
 
 #include <string.h>
+#include <atomic>
 
-#include "auth_acls.h"
-#include "auth_common.h"              // check_grant, check_access
-#include "binlog.h"                   // mysql_bin_log
-#include "debug_sync.h"               // DEBUG_SYNC
-#include "derror.h"                   // ER_THD
-#include "field.h"                    // Field
-#include "filesort.h"                 // Filesort
-#include "handler.h"
-#include "item.h"                     // Item
-#include "key.h"                      // is_key_used
+#include "binary_log_types.h"
 #include "m_ctype.h"
-#include "mem_root_array.h"
 #include "my_bit.h"                   // my_count_bits
 #include "my_bitmap.h"
 #include "my_dbug.h"
@@ -42,50 +40,65 @@
 #include "my_macros.h"
 #include "my_sys.h"
 #include "my_table_map.h"
+#include "mysql/psi/psi_base.h"
 #include "mysql/service_my_snprintf.h"
 #include "mysql/service_mysql_alloc.h"
+#include "mysql/udf_registration_types.h"
 #include "mysql_com.h"
-#include "mysqld.h"                   // stage_... mysql_tmpdir
 #include "mysqld_error.h"
-#include "opt_explain.h"              // Modification_plan
-#include "opt_explain_format.h"
-#include "opt_range.h"                // QUICK_SELECT_I
-#include "opt_trace.h"                // Opt_trace_object
-#include "parse_tree_node_base.h"
-#include "protocol.h"
-#include "psi_memory_key.h"
-#include "query_options.h"
-#include "records.h"                  // READ_RECORD
-#include "session_tracker.h"
-#include "sql_array.h"
-#include "sql_base.h"                 // check_record, fill_record
-#include "sql_bitmap.h"
-#include "sql_cache.h"                // query_cache
-#include "sql_class.h"
-#include "sql_const.h"
-#include "sql_data_change.h"
-#include "sql_error.h"
-#include "sql_executor.h"
-#include "sql_opt_exec_shared.h"
-#include "sql_optimizer.h"            // build_equal_items, substitute_gc
-#include "sql_partition.h"            // partition_key_modified
-#include "sql_resolver.h"             // setup_order
-#include "sql_select.h"
-#include "sql_sort.h"
+#include "prealloced_array.h"         // Prealloced_array
+#include "sql/auth/auth_acls.h"
+#include "sql/auth/auth_common.h"     // check_grant, check_access
+#include "sql/binlog.h"               // mysql_bin_log
+#include "sql/debug_sync.h"           // DEBUG_SYNC
+#include "sql/derror.h"               // ER_THD
+#include "sql/field.h"                // Field
+#include "sql/filesort.h"             // Filesort
+#include "sql/handler.h"
+#include "sql/item.h"                 // Item
+#include "sql/item_json_func.h"       // Item_json_func
+#include "sql/key.h"                  // is_key_used
+#include "sql/key_spec.h"
+#include "sql/mem_root_array.h"
+#include "sql/mysqld.h"               // stage_... mysql_tmpdir
+#include "sql/opt_explain.h"          // Modification_plan
+#include "sql/opt_explain_format.h"
+#include "sql/opt_range.h"            // QUICK_SELECT_I
+#include "sql/opt_trace.h"            // Opt_trace_object
+#include "sql/opt_trace_context.h"
+#include "sql/parse_tree_node_base.h"
+#include "sql/protocol.h"
+#include "sql/psi_memory_key.h"
+#include "sql/query_options.h"
+#include "sql/records.h"              // READ_RECORD
+#include "sql/sql_array.h"
+#include "sql/sql_base.h"             // check_record, fill_record
+#include "sql/sql_bitmap.h"
+#include "sql/sql_class.h"
+#include "sql/sql_const.h"
+#include "sql/sql_data_change.h"
+#include "sql/sql_error.h"
+#include "sql/sql_executor.h"
+#include "sql/sql_opt_exec_shared.h"
+#include "sql/sql_optimizer.h"        // build_equal_items, substitute_gc
+#include "sql/sql_partition.h"        // partition_key_modified
+#include "sql/sql_resolver.h"         // setup_order
+#include "sql/sql_select.h"
+#include "sql/sql_sort.h"
+#include "sql/sql_tmp_table.h"        // create_tmp_table
+#include "sql/sql_view.h"             // check_key_in_view
+#include "sql/system_variables.h"
+#include "sql/table.h"                // TABLE
+#include "sql/table_trigger_dispatcher.h" // Table_trigger_dispatcher
+#include "sql/temp_table_param.h"
+#include "sql/transaction_info.h"
+#include "sql/trigger_def.h"
 #include "sql_string.h"
-#include "sql_tmp_table.h"            // create_tmp_table
-#include "sql_view.h"                 // check_key_in_view
-#include "system_variables.h"
-#include "table.h"                    // TABLE
-#include "table_trigger_dispatcher.h" // Table_trigger_dispatcher
-#include "temp_table_param.h"
 #include "template_utils.h"
-#include "transaction_info.h"
-#include "trigger_def.h"
+#include "thr_lock.h"
 
 class COND_EQUAL;
 class Item_exists_subselect;
-class Opt_trace_context;
 
 bool Sql_cmd_update::precheck(THD *thd)
 {
@@ -402,7 +415,7 @@ bool Sql_cmd_update::update_single_table(THD *thd)
     if (result == Item::COND_FALSE)
     {
       no_rows= true;                               // Impossible WHERE
-      if (thd->lex->describe)
+      if (thd->lex->is_explain())
       {
         Modification_plan plan(thd, MT_UPDATE, table,
                                "Impossible WHERE", true, 0);
@@ -432,7 +445,7 @@ bool Sql_cmd_update::update_single_table(THD *thd)
     {
       no_rows= true;
 
-      if (thd->lex->describe)
+      if (thd->lex->is_explain())
       {
         Modification_plan plan(thd, MT_UPDATE, table,
                                "No matching rows after partition pruning",
@@ -451,9 +464,6 @@ bool Sql_cmd_update::update_single_table(THD *thd)
   table->file->info(HA_STATUS_VARIABLE | HA_STATUS_NO_LOCK);
 
   table->mark_columns_needed_for_update(thd, false/*mark_binlog_columns=false*/);
-  if (table->vfield &&
-      validate_gc_assignment(update_field_list, update_value_list, table))
-    DBUG_RETURN(true);
 
   qep_tab.set_table(table);
   qep_tab.set_condition(conds);
@@ -475,7 +485,7 @@ bool Sql_cmd_update::update_single_table(THD *thd)
     }
     if (no_rows)
     {
-      if (thd->lex->describe)
+      if (thd->lex->is_explain())
       {
         Modification_plan plan(thd, MT_UPDATE, table,
                                "Impossible WHERE", true, 0);
@@ -506,7 +516,9 @@ bool Sql_cmd_update::update_single_table(THD *thd)
   if (select_lex->has_ft_funcs() && init_ftfuncs(thd, select_lex))
     DBUG_RETURN(true);                      /* purecov: inspected */
 
-  table->update_const_key_parts(conds);
+  if (table->update_const_key_parts(conds))
+    DBUG_RETURN(true);
+
   order= simple_remove_const(order, conds);
   bool need_sort;
   bool reverse= false;
@@ -542,6 +554,9 @@ bool Sql_cmd_update::update_single_table(THD *thd)
 
   table->mark_columns_per_binlog_row_image(thd);
 
+  if (table->setup_partial_update())
+    DBUG_RETURN(true);                          /* purecov: inspected */
+
   ha_rows updated_rows= 0;
   ha_rows found_rows= 0;
 
@@ -566,7 +581,7 @@ bool Sql_cmd_update::update_single_table(THD *thd)
                            (!using_filesort && (used_key_is_modified || order)),
                            using_filesort, used_key_is_modified, rows);
     DEBUG_SYNC(thd, "planned_single_update");
-    if (thd->lex->describe)
+    if (thd->lex->is_explain())
     {
       bool err= explain_single_table_modification(thd, &plan, select_lex);
       DBUG_RETURN(err);
@@ -768,7 +783,7 @@ bool Sql_cmd_update::update_single_table(THD *thd)
     }
     else
     {
-      // No after update triggers, attempt to start bulk delete
+      // No after update triggers, attempt to start bulk update
       will_batch= !table->file->start_bulk_update();
     }
     if ((table->file->ha_table_flags() & HA_READ_BEFORE_WRITE_REMOVAL) &&
@@ -778,6 +793,10 @@ bool Sql_cmd_update::update_single_table(THD *thd)
         qep_tab.quick() && qep_tab.quick()->index != MAX_KEY &&
         check_constant_expressions(update_value_list))
       read_removal= table->check_read_removal(qep_tab.quick()->index);
+
+    // If the update is batched, we cannot do partial update, so turn it off.
+    if (will_batch)
+      table->cleanup_partial_update();          /* purecov: inspected */
 
     uint dup_key_found;
 
@@ -804,8 +823,11 @@ bool Sql_cmd_update::update_single_table(THD *thd)
       if (table->file->was_semi_consistent_read())
         continue;  /* repeat the read of the same row if it still exists */
 
+      table->clear_partial_update_diffs();
+
       store_record(table,record[1]);
-      if (fill_record_n_invoke_before_triggers(thd, *update_field_list,
+      if (fill_record_n_invoke_before_triggers(thd, &update,
+                                               *update_field_list,
                                                *update_value_list, table,
                                                TRG_EVENT_UPDATE, 0))
       {
@@ -1020,13 +1042,6 @@ bool Sql_cmd_update::update_single_table(THD *thd)
   end_read_record(&info);
 
   /*
-    Invalidate the table in the query cache if something changed.
-    This must be before binlog writing and ha_autocommit_...
-  */
-  if (updated_rows > 0)
-    query_cache.invalidate_single(thd, update_table_ref, true);
-  
-  /*
     error < 0 means really no error at all: we processed all rows until the
     last one without error. error > 0 means an error (e.g. unique key
     violation and no IGNORE or REPLACE). error == 0 is also an error (if
@@ -1203,6 +1218,130 @@ bool unsafe_key_update(TABLE_LIST *leaves, table_map tables_for_update)
 }
 
 
+/// Check if a list of Items contains an Item whose type is JSON.
+static bool has_json_columns(List<Item> *items)
+{
+  List_iterator_fast<Item> it(*items);
+  for (Item *item= it++; item != nullptr; item= it++)
+    if (item->data_type() == MYSQL_TYPE_JSON)
+      return true;
+  return false;
+}
+
+
+/**
+  Mark the columns that can possibly be updated in-place using partial update.
+
+  Only JSON columns can be updated in-place, and only if all the updates of the
+  column are on the form
+
+      json_col = JSON_SET(json_col, ...)
+
+      json_col = JSON_REPLACE(json_col, ...)
+
+      json_col = JSON_REMOVE(json_col, ...)
+
+  Even though a column is marked for partial update, it is not necessarily
+  updated as a partial update during execution. It depends on the actual data
+  in the column if it is possible to do it as a partial update. Also, for
+  multi-table updates, it is only possible to perform partial updates in the
+  first table of the join operation, and it is not determined until later (in
+  Query_result_update::optimize()) which table it is.
+
+  @param trace   the optimizer trace context
+  @param fields  the fields that are updated by the update statement
+  @param values  the values they are updated to
+  @return false on success, true on error
+*/
+static bool prepare_partial_update(Opt_trace_context *trace,
+                                   List<Item> *fields, List<Item> *values)
+{
+  /*
+    First check if we have any JSON columns. The only reason we do this, is to
+    prevent writing an empty optimizer trace about partial update if there are
+    no JSON columns.
+  */
+  if (!has_json_columns(fields))
+    return false;
+
+  Opt_trace_object trace_partial_update(trace, "json_partial_update");
+  Opt_trace_array trace_rejected(trace, "rejected_columns");
+
+  using Field_array= Prealloced_array<const Field *, 8>;
+  Field_array partial_update_fields(PSI_NOT_INSTRUMENTED);
+  Field_array rejected_fields(PSI_NOT_INSTRUMENTED);
+  List_iterator_fast<Item> field_it(*fields);
+  List_iterator_fast<Item> value_it(*values);
+  for (Item *field_item= field_it++, *value_item= value_it++;
+       field_item != nullptr && value_item != nullptr;
+       field_item= field_it++, value_item= value_it++)
+  {
+    // Only consider JSON fields for partial update for now.
+    if (field_item->data_type() != MYSQL_TYPE_JSON)
+      continue;
+
+    const Field_json *field=
+      down_cast<Field_json*>(down_cast<Item_field*>(field_item)->field);
+
+    if (rejected_fields.count_unique(field) != 0)
+      continue;
+
+    /*
+      Function object that adds the current column to the list of rejected
+      columns, and possibly traces the rejection if optimizer tracing is
+      enabled.
+    */
+    const auto reject_column= [&](const char *cause)
+    {
+      Opt_trace_object trace_obj(trace);
+      trace_obj.add_utf8_table(field->table->pos_in_table_list);
+      trace_obj.add_utf8("column", field->field_name);
+      trace_obj.add_utf8("cause", cause);
+      rejected_fields.insert_unique(field);
+    };
+
+    if ((field->table->file->ha_table_flags() & HA_BLOB_PARTIAL_UPDATE) == 0)
+    {
+      reject_column("Storage engine does not support partial update");
+      continue;
+    }
+
+    if (!value_item->supports_partial_update(field))
+    {
+      reject_column("Updated using a function that does not support partial "
+                    "update, or source and target column differ");
+      partial_update_fields.erase_unique(field);
+      continue;
+    }
+
+    partial_update_fields.insert_unique(field);
+  }
+
+  if (partial_update_fields.empty())
+    return false;
+
+  for (const Field *fld : partial_update_fields)
+    if (fld->table->mark_column_for_partial_update(fld))
+      return true;                              /* purecov: inspected */
+
+  field_it.rewind();
+  value_it.rewind();
+  for (Item *field_item= field_it++, *value_item= value_it++;
+       field_item != nullptr && value_item != nullptr;
+       field_item= field_it++, value_item= value_it++)
+  {
+    const Field *field= down_cast<Item_field*>(field_item)->field;
+    if (field->table->is_marked_for_partial_update(field))
+    {
+      auto json_field= down_cast<const Field_json*>(field);
+      auto json_func= down_cast<Item_json_func*>(value_item);
+      json_func->mark_for_partial_update(json_field);
+    }
+  }
+
+  return false;
+}
+
 bool Sql_cmd_update::prepare_inner(THD *thd)
 {
   DBUG_ENTER("Sql_cmd_update::prepare_inner");
@@ -1228,7 +1367,6 @@ bool Sql_cmd_update::prepare_inner(THD *thd)
   Opt_trace_object trace_wrapper(trace);
   Opt_trace_object trace_prepare(trace, "update_preparation");
   trace_prepare.add_select_number(select->select_number);
-  Opt_trace_array trace_steps(trace, "steps");
 
   if (multitable)
   {
@@ -1257,9 +1395,12 @@ bool Sql_cmd_update::prepare_inner(THD *thd)
   if (select->setup_tables(thd, table_list, false))
     DBUG_RETURN(true);            /* purecov: inspected */
 
-  if (select->derived_table_count)
+  thd->want_privilege= SELECT_ACL;
+  enum enum_mark_columns mark_used_columns_saved= thd->mark_used_columns;
+  thd->mark_used_columns= MARK_COLUMNS_READ;
+  if (select->derived_table_count || select->table_func_count)
   {
-    if (select->resolve_derived(thd, apply_semijoin))
+    if (select->resolve_placeholder_tables(thd, apply_semijoin))
       DBUG_RETURN(true);
     /*
       @todo - This check is a bit primitive and ad-hoc. We have not yet analyzed
@@ -1316,7 +1457,8 @@ bool Sql_cmd_update::prepare_inner(THD *thd)
                                 OPTION_BUFFER_RESULT);
 
     Prepared_stmt_arena_holder ps_holder(thd);
-    result= new Query_result_update(thd, update_fields, update_value_list);
+    result= new (*THR_MALLOC) Query_result_update(thd, update_fields,
+                                                  update_value_list);
     if (result == NULL)
       DBUG_RETURN(true);            /* purecov: inspected */
 
@@ -1325,20 +1467,11 @@ bool Sql_cmd_update::prepare_inner(THD *thd)
 
   lex->allow_sum_func= 0;          // Query block cannot be aggregated
 
-  thd->want_privilege= SELECT_ACL;
-  enum enum_mark_columns mark_used_columns_saved= thd->mark_used_columns;
-  thd->mark_used_columns= MARK_COLUMNS_READ;
-  for (TABLE_LIST *tr= table_list; tr; tr= tr->next_local)
-    tr->set_want_privilege(SELECT_ACL);
   if (select->setup_conds(thd))
     DBUG_RETURN(true);
 
   if (select->setup_base_ref_items(thd))
     DBUG_RETURN(true);                          /* purecov: inspected */
-
-  // Check the fields to be updated (assume that all tables may be updated)
-  for (TABLE_LIST *tr= table_list; tr; tr= tr->next_local)
-    tr->set_want_privilege(UPDATE_ACL);
 
   if (setup_fields(thd, Ref_item_array(), *update_fields,
                    UPDATE_ACL, NULL, false, true))
@@ -1357,8 +1490,6 @@ bool Sql_cmd_update::prepare_inner(THD *thd)
 
   DBUG_ASSERT(update_table_count_local > 0);
 
-  for (TABLE_LIST *tr= table_list; tr; tr= tr->next_local)
-    tr->set_want_privilege(SELECT_ACL);
   if (setup_fields(thd, Ref_item_array(), *update_value_list, SELECT_ACL, NULL,
                    false, false))
     DBUG_RETURN(true);                          /* purecov: inspected */
@@ -1367,6 +1498,9 @@ bool Sql_cmd_update::prepare_inner(THD *thd)
 
   if (select->master_unit()->prepare_limit(thd, select))
     DBUG_RETURN(true);
+
+  if (prepare_partial_update(trace, update_fields, update_value_list))
+    DBUG_RETURN(true);                          /* purecov: inspected */
 
   if (!multitable)
   {
@@ -1407,6 +1541,10 @@ bool Sql_cmd_update::prepare_inner(THD *thd)
     tl->updating= tl->map() & tables_for_update;
     if (tl->updating)
     {
+      if (tl->table->vfield &&
+          validate_gc_assignment(update_fields, update_value_list, tl->table))
+        DBUG_RETURN(true);                      /* purecov: inspected */
+
       // Mark all containing view references as updating
       for (TABLE_LIST *ref= tl; ref != NULL; ref= ref->referencing_view)
         ref->updating= true;
@@ -1489,13 +1627,6 @@ bool Sql_cmd_update::prepare_inner(THD *thd)
     }
   }
 
-  // Downgrade desired privileges for updated tables to SELECT
-  for (TABLE_LIST *tl= table_list; tl; tl= tl->next_local)
-  {
-    if (tl->updating)
-      tl->set_want_privilege(SELECT_ACL);
-  }
-
   /* @todo: downgrade the metadata locks here. */
 
   /*
@@ -1524,7 +1655,7 @@ bool Sql_cmd_update::prepare_inner(THD *thd)
   DBUG_ASSERT(select->having_cond() == NULL &&
               select->group_list.elements == 0);
 
-  if (select->has_ft_funcs() && setup_ftfuncs(select))
+  if (select->has_ft_funcs() && setup_ftfuncs(thd, select))
     DBUG_RETURN(true);                          /* purecov: inspected */
 
   if (select->inner_refs_list.elements && select->fix_inner_refs(thd))
@@ -1534,6 +1665,7 @@ bool Sql_cmd_update::prepare_inner(THD *thd)
       select->query_result()->prepare(select->fields_list, lex->unit))
     DBUG_RETURN(true);  /* purecov: inspected */
 
+  Opt_trace_array trace_steps(trace, "steps");
   opt_trace_print_expanded_query(thd, select, &trace_wrapper);
 
   if (select->has_sj_candidates() && select->flatten_subqueries())
@@ -1677,8 +1809,8 @@ bool Query_result_update::prepare(List<Item>&,
     DBUG_RETURN(true);
   for (uint i= 0; i < update_table_count; i++)
   {
-    fields_for_table[i]= new List_item;
-    values_for_table[i]= new List_item;
+    fields_for_table[i]= new (*THR_MALLOC) List_item;
+    values_for_table[i]= new (*THR_MALLOC) List_item;
   }
   if (thd->is_error())
     DBUG_RETURN(true);
@@ -1702,7 +1834,7 @@ bool Query_result_update::prepare(List<Item>&,
   for (uint i= 0; i < update_table_count; i++)
     set_if_bigger(max_fields,
                   fields_for_table[i]->elements + select->leaf_table_count);
-  copy_field= new Copy_field[max_fields];
+  copy_field= new (*THR_MALLOC) Copy_field[max_fields];
 
 
   for (TABLE_LIST *ref= leaves; ref != NULL; ref= ref->next_leaf)
@@ -1920,15 +2052,28 @@ bool Query_result_update::optimize()
                              select->get_table_list()))
       {
         table->mark_columns_needed_for_update(thd, true/*mark_binlog_columns=true*/);
+        if (table->setup_partial_update())
+          DBUG_RETURN(true);                    /* purecov: inspected */
 	table_to_update= table;			// Update table on the fly
 	continue;
       }
     }
     table->mark_columns_needed_for_update(thd, true/*mark_binlog_columns=true*/);
 
-    if (table->vfield &&
-        validate_gc_assignment(fields, values, table))
-      DBUG_RETURN(false);                      /* purecov: inspected */
+    if (table != table_to_update &&
+        table->has_columns_marked_for_partial_update())
+    {
+      Opt_trace_context *trace= &thd->opt_trace;
+      if (trace->is_started())
+      {
+        Opt_trace_object trace_wrapper(trace);
+        Opt_trace_object trace_partial_update(trace, "json_partial_update");
+        Opt_trace_object trace_rejected(trace, "rejected_table");
+        trace_rejected.add_utf8_table(table->pos_in_table_list);
+        trace_rejected.add_utf8("cause", "Table cannot be updated on the fly");
+      }
+    }
+
     /*
       enable uncacheable flag if we update a view with check option
       and check option has a subselect, otherwise, the check option
@@ -1994,12 +2139,13 @@ loop_end:
       */
       tbl->prepare_for_position();
 
-      Field_string *field= new Field_string(tbl->file->ref_length, 0,
-                                            tbl->alias, &my_charset_bin);
+      Field_string *field= new (*THR_MALLOC) Field_string(tbl->file->ref_length,
+                                                          0, tbl->alias,
+                                                          &my_charset_bin);
       if (!field)
         DBUG_RETURN(1);
       field->init(tbl);
-      Item_field *ifield= new Item_field((Field *) field);
+      Item_field *ifield= new (*THR_MALLOC) Item_field((Field *) field);
       if (!ifield)
          DBUG_RETURN(1);
       ifield->maybe_null= 0;
@@ -2018,13 +2164,10 @@ loop_end:
     tmp_param->field_count=temp_fields.elements;
     tmp_param->group_parts=1;
     tmp_param->group_length= table->file->ref_length;
-    /* small table, ignore SQL_BIG_TABLES */
-    bool save_big_tables= thd->variables.big_tables; 
-    thd->variables.big_tables= FALSE;
     tmp_tables[cnt]=create_tmp_table(thd, tmp_param, temp_fields,
                                      &group, 0, 0,
-                                     TMP_TABLE_ALL_COLUMNS, HA_POS_ERROR, "");
-    thd->variables.big_tables= save_big_tables;
+                                     TMP_TABLE_ALL_COLUMNS, HA_POS_ERROR, "",
+                                     TMP_WIN_NONE);
     if (!tmp_tables[cnt])
       DBUG_RETURN(1);
 
@@ -2101,9 +2244,10 @@ bool Query_result_update::send_data(List<Item>&)
 
     if (table == table_to_update)
     {
+      table->clear_partial_update_diffs();
       table->set_updated_row();
       store_record(table,record[1]);
-      if (fill_record_n_invoke_before_triggers(thd,
+      if (fill_record_n_invoke_before_triggers(thd, update_operations[offset],
                                                *fields_for_table[offset],
                                                *values_for_table[offset],
                                                table,
@@ -2252,15 +2396,6 @@ void Query_result_update::send_error(uint errcode,const char *err)
 
 
 
-static void invalidate_update_tables(THD *thd, TABLE_LIST *update_tables)
-{
-  for (TABLE_LIST *tl= update_tables; tl != NULL; tl= tl->next_local)
-  {
-    query_cache.invalidate_single(thd, tl->updatable_base_table(), 1);
-  }
-}
-
-
 void Query_result_update::abort_result_set()
 {
   /* the error was handled or nothing deleted and no side effects return */
@@ -2268,10 +2403,6 @@ void Query_result_update::abort_result_set()
       (!thd->get_transaction()->cannot_safely_rollback(
         Transaction_ctx::STMT) && updated_rows == 0))
     return;
-
-  /* Something already updated so we have to invalidate cache */
-  if (updated_rows > 0)
-    invalidate_update_tables(thd, update_tables);
 
   /*
     If all tables that has been updated are trans safe then just do rollback.
@@ -2586,13 +2717,7 @@ bool Query_result_update::send_eof()
     if local_error is not set ON until after do_updates() then
     later carried out killing should not affect binlogging.
   */
-  killed_status= (local_error == 0)? THD::NOT_KILLED : thd->killed;
-
-  /* We must invalidate the query cache before binlog writing and
-  ha_autocommit_... */
-
-  if (updated_rows > 0)
-    invalidate_update_tables(thd, update_tables);
+  killed_status= (local_error == 0)? THD::NOT_KILLED : thd->killed.load();
 
   /*
     Write the SQL statement to the binlog if we updated

@@ -2,29 +2,36 @@
   Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
   along with this program; if not, write to the Free Software
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 */
 
-#include "abstract_progress_watcher.h"
+#include "client/dump/abstract_progress_watcher.h"
 
 #include <stddef.h>
 #include <algorithm>
 #include <chrono>
 #include <functional>
 
-#include "row_group_dump_task.h"
-#include "table_definition_dump_task.h"
-#include "table_rows_dump_task.h"
+#include "client/dump/row_group_dump_task.h"
+#include "client/dump/table_definition_dump_task.h"
+#include "client/dump/table_rows_dump_task.h"
 
 using namespace Mysql::Tools::Dump;
 
@@ -71,7 +78,7 @@ Abstract_progress_watcher::Abstract_progress_watcher(
   m_last_step_countdown(1)
 {}
 
-void Abstract_progress_watcher::crawler_completed(I_crawler* crawler)
+void Abstract_progress_watcher::crawler_completed(I_crawler*)
 {}
 
 void Abstract_progress_watcher::object_processing_ended(
@@ -87,7 +94,7 @@ void Abstract_progress_watcher::object_processing_ended(
   Table_rows_dump_task* processed_table_task=
     dynamic_cast<Table_rows_dump_task*>(
     finished_process_data->get_process_task_object());
-  if (processed_table_task != NULL && processed_table_task->is_completed()
+  if (processed_table_task != NULL
     && finished_process_data->had_chain_created())
   {
     m_progress.m_table_count++;
@@ -107,7 +114,7 @@ void Abstract_progress_watcher::object_processing_ended(
 }
 
 void Abstract_progress_watcher::object_processing_started(
-  Item_processing_data* process_data)
+  Item_processing_data*)
 {}
 
 void Abstract_progress_watcher::new_chain_created(

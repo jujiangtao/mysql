@@ -2,13 +2,20 @@
    Copyright (c) 2001, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -20,11 +27,12 @@
 
 /* Common defines for all clients */
 
-#include <errmsg.h>
-#include <m_string.h>
-#include <my_getopt.h>
-#include <my_sys.h>
 #include <mysql.h>
+
+#include "errmsg.h"
+#include "m_string.h"
+#include "my_getopt.h"
+#include "my_sys.h"
 
 #ifndef WEXITSTATUS
 # ifdef _WIN32
@@ -50,7 +58,7 @@ enum options_client
   OPT_DELETE_MASTER_LOGS, OPT_COMPACT,
   OPT_PROMPT, OPT_IGN_LINES, OPT_TRANSACTION, OPT_MYSQL_PROTOCOL,
   OPT_SHARED_MEMORY_BASE_NAME, OPT_FRM, OPT_SKIP_OPTIMIZATION,
-  OPT_COMPATIBLE, OPT_RECONNECT, OPT_DELIMITER, OPT_SECURE_AUTH,
+  OPT_COMPATIBLE, OPT_RECONNECT, OPT_DELIMITER,
   OPT_OPEN_FILES_LIMIT, OPT_SET_CHARSET, OPT_SET_GTID_PURGED,
   OPT_STOP_POSITION, OPT_START_DATETIME, OPT_STOP_DATETIME,
   OPT_SIGINT_IGNORE, OPT_HEXBLOB, OPT_ORDER_BY_PRIMARY, OPT_COUNT,
@@ -144,13 +152,16 @@ enum options_client
 /**
   Client deprecation warnings
 */
+#define CLIENT_WARN_DEPRECATED_NO_REPLACEMENT_MSG(opt) \
+  opt " is deprecated and will be removed in a future version\n"
+
+#define CLIENT_WARN_DEPRECATED_MSG(opt, new_opt) \
+  opt " is deprecated and will be removed in a future version. " \
+  "Use " new_opt " instead.\n"
+
 #define CLIENT_WARN_DEPRECATED_NO_REPLACEMENT(opt) \
-  printf("WARNING: " opt \
-         " is deprecated and will be removed in a future version\n")
+  printf("WARNING: " CLIENT_WARN_DEPRECATED_NO_REPLACEMENT_MSG(opt))
 
 #define CLIENT_WARN_DEPRECATED(opt, new_opt) \
-  printf("WARNING: " opt \
-         " is deprecated and will be removed in a future version. " \
-         "Use " new_opt " instead.\n")
-
+  printf("WARNING: " CLIENT_WARN_DEPRECATED_MSG(opt,new_opt))
 #endif

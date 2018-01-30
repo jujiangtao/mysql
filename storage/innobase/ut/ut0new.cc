@@ -3,16 +3,24 @@
 Copyright (c) 2014, 2017, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+the terms of the GNU General Public License, version 2.0, as published by the
+Free Software Foundation.
+
+This program is also distributed with certain software (including but not
+limited to OpenSSL) that is licensed under separate terms, as designated in a
+particular file or component or in included license documentation. The authors
+of MySQL hereby grant you an additional permission to link the program and
+your derivative works with the separately licensed software that they have
+included with MySQL.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+FOR A PARTICULAR PURPOSE. See the GNU General Public License, version 2.0,
+for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 *****************************************************************************/
 
@@ -33,8 +41,11 @@ const size_t	alloc_max_retries = 60;
 /** Keys for registering allocations with performance schema.
 Keep this list alphabetically sorted. */
 PSI_memory_key	mem_key_ahi;
+PSI_memory_key	mem_key_archive;
 PSI_memory_key	mem_key_buf_buf_pool;
 PSI_memory_key	mem_key_buf_stat_per_index_t;
+/** Memory key for clone */
+PSI_memory_key	mem_key_clone;
 PSI_memory_key	mem_key_dict_stats_bg_recalc_pool_t;
 PSI_memory_key	mem_key_dict_stats_index_map_t;
 PSI_memory_key	mem_key_dict_stats_n_diff_on_level;
@@ -44,7 +55,7 @@ PSI_memory_key	mem_key_row_log_buf;
 PSI_memory_key	mem_key_row_merge_sort;
 PSI_memory_key	mem_key_std;
 PSI_memory_key	mem_key_trx_sys_t_rw_trx_ids;
-PSI_memory_key	mem_key_trx_sys_t_rsegs;
+PSI_memory_key	mem_key_undo_spaces;
 PSI_memory_key	mem_key_ut_lock_free_hash_t;
 /* Please obey alphabetical order in the definitions above. */
 
@@ -63,20 +74,22 @@ the list below:
    (in ut_new_boot()) then mem_key_other is used.
 Keep this list alphabetically sorted. */
 static PSI_memory_info	pfs_info[] = {
-	{&mem_key_ahi, "adaptive hash index", 0},
-	{&mem_key_buf_buf_pool, "buf_buf_pool", 0},
-	{&mem_key_buf_stat_per_index_t, "buf_stat_per_index_t", 0},
-	{&mem_key_dict_stats_bg_recalc_pool_t, "dict_stats_bg_recalc_pool_t", 0},
-	{&mem_key_dict_stats_index_map_t, "dict_stats_index_map_t", 0},
-	{&mem_key_dict_stats_n_diff_on_level, "dict_stats_n_diff_on_level", 0},
-	{&mem_key_other, "other", 0},
-	{&mem_key_partitioning, "partitioning", 0},
-	{&mem_key_row_log_buf, "row_log_buf", 0},
-	{&mem_key_row_merge_sort, "row_merge_sort", 0},
-	{&mem_key_std, "std", 0},
-	{&mem_key_trx_sys_t_rw_trx_ids, "trx_sys_t::rw_trx_ids", 0},
-	{&mem_key_trx_sys_t_rsegs, "trx_sys_t::rsegs", 0},
-	{&mem_key_ut_lock_free_hash_t, "ut_lock_free_hash_t", 0},
+	{&mem_key_ahi, "adaptive hash index", 0, 0, PSI_DOCUMENT_ME},
+	{&mem_key_archive, "log and page archiver", 0, 0, PSI_DOCUMENT_ME},
+	{&mem_key_buf_buf_pool, "buf_buf_pool", 0, 0, PSI_DOCUMENT_ME},
+	{&mem_key_buf_stat_per_index_t, "buf_stat_per_index_t", 0, 0, PSI_DOCUMENT_ME},
+	{&mem_key_clone, "clone data", 0, 0, PSI_DOCUMENT_ME},
+	{&mem_key_dict_stats_bg_recalc_pool_t, "dict_stats_bg_recalc_pool_t", 0, 0, PSI_DOCUMENT_ME},
+	{&mem_key_dict_stats_index_map_t, "dict_stats_index_map_t", 0, 0, PSI_DOCUMENT_ME},
+	{&mem_key_dict_stats_n_diff_on_level, "dict_stats_n_diff_on_level", 0, 0, PSI_DOCUMENT_ME},
+	{&mem_key_other, "other", 0, 0, PSI_DOCUMENT_ME},
+	{&mem_key_partitioning, "partitioning", 0, 0, PSI_DOCUMENT_ME},
+	{&mem_key_row_log_buf, "row_log_buf", 0, 0, PSI_DOCUMENT_ME},
+	{&mem_key_row_merge_sort, "row_merge_sort", 0, 0, PSI_DOCUMENT_ME},
+	{&mem_key_std, "std", 0, 0, PSI_DOCUMENT_ME},
+	{&mem_key_trx_sys_t_rw_trx_ids, "trx_sys_t::rw_trx_ids", 0, 0, PSI_DOCUMENT_ME},
+	{&mem_key_undo_spaces, "undo::Tablespaces", 0, 0, PSI_DOCUMENT_ME},
+	{&mem_key_ut_lock_free_hash_t, "ut_lock_free_hash_t", 0, 0, PSI_DOCUMENT_ME},
 	/* Please obey alphabetical order in the definitions above. */
 };
 
@@ -138,6 +151,7 @@ ut_new_boot()
 		"dict0load",
 		"dict0mem",
 		"dict0priv",
+		"dict0sdi",
 		"dict0stats",
 		"dict0stats_bg",
 		"dict0types",
@@ -312,6 +326,8 @@ ut_new_boot()
 		pfs_info_auto[i].m_key = &auto_event_keys[i];
 
 		pfs_info_auto[i].m_flags = 0;
+		pfs_info_auto[i].m_volatility = PSI_VOLATILITY_UNKNOWN;
+		pfs_info_auto[i].m_documentation = PSI_DOCUMENT_ME;
 	}
 
 	PSI_MEMORY_CALL(register_memory)("innodb",

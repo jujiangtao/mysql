@@ -1,17 +1,24 @@
 /* Copyright (c) 2008, 2017, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
-  along with this program; if not, write to the Free Software Foundation,
-  51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+  along with this program; if not, write to the Free Software
+  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 /**
   @file storage/perfschema/pfs_instr.cc
@@ -21,21 +28,22 @@
 #include "storage/perfschema/pfs_instr.h"
 
 #include <string.h>
+#include <atomic>
 
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_psi_config.h"
 #include "my_sys.h"
-#include "mysqld.h"  // get_thd_status_var
-#include "pfs.h"
-#include "pfs_account.h"
-#include "pfs_buffer_container.h"
-#include "pfs_builtin_memory.h"
-#include "pfs_global.h"
-#include "pfs_host.h"
-#include "pfs_instr_class.h"
-#include "pfs_stat.h"
-#include "pfs_user.h"
+#include "sql/mysqld.h"  // get_thd_status_var
+#include "storage/perfschema/pfs.h"
+#include "storage/perfschema/pfs_account.h"
+#include "storage/perfschema/pfs_buffer_container.h"
+#include "storage/perfschema/pfs_builtin_memory.h"
+#include "storage/perfschema/pfs_global.h"
+#include "storage/perfschema/pfs_host.h"
+#include "storage/perfschema/pfs_instr_class.h"
+#include "storage/perfschema/pfs_stat.h"
+#include "storage/perfschema/pfs_user.h"
 
 ulong nested_statement_lost = 0;
 
@@ -86,9 +94,9 @@ PFS_file **file_handle_array = NULL;
 PFS_stage_stat *global_instr_class_stages_array = NULL;
 PFS_statement_stat *global_instr_class_statements_array = NULL;
 PFS_histogram global_statements_histogram;
-PFS_memory_stat *global_instr_class_memory_array = NULL;
+std::atomic<PFS_memory_stat *> global_instr_class_memory_array{nullptr};
 
-static PFS_ALIGNED PFS_cacheline_uint64 thread_internal_id_counter;
+static PFS_ALIGNED PFS_cacheline_atomic_uint64 thread_internal_id_counter;
 
 /** Hash table for instrumented files. */
 LF_HASH filename_hash;
@@ -132,7 +140,7 @@ init_instruments(const PFS_global_param *param)
 
   file_handle_array = NULL;
 
-  thread_internal_id_counter.m_u64 = 0;
+  thread_internal_id_counter.m_u64.store(0);
 
   if (global_mutex_container.init(param->m_mutex_sizing))
   {
@@ -233,7 +241,7 @@ init_instruments(const PFS_global_param *param)
                        sizeof(PFS_memory_stat),
                        PFS_memory_stat,
                        MYF(MY_ZEROFILL));
-    if (unlikely(global_instr_class_memory_array == NULL))
+    if (unlikely(global_instr_class_memory_array.load() == nullptr))
     {
       return 1;
     }
@@ -284,7 +292,7 @@ cleanup_instruments(void)
                  memory_class_max,
                  sizeof(PFS_memory_stat),
                  global_instr_class_memory_array);
-  global_instr_class_memory_array = NULL;
+  global_instr_class_memory_array = nullptr;
 }
 
 /** Get hash table key for instrumented files. */
@@ -346,8 +354,23 @@ create_mutex(PFS_mutex_class *klass, const void *identity)
 {
   PFS_mutex *pfs;
   pfs_dirty_state dirty_state;
+  unsigned int partition;
 
-  pfs = global_mutex_container.allocate(&dirty_state, klass->m_volatility);
+  /*
+    There are 9 volatility defined in psi.h,
+    but since most are still unused,
+    mapping this to only 2 PFS_MUTEX_PARTITIONS.
+  */
+  if (klass->m_volatility >= PSI_VOLATILITY_SESSION)
+  {
+    partition = 1;
+  }
+  else
+  {
+    partition = 0;
+  }
+
+  pfs = global_mutex_container.allocate(&dirty_state, partition);
   if (pfs != NULL)
   {
     pfs->m_identity = identity;
@@ -494,7 +517,7 @@ destroy_cond(PFS_cond *pfs)
 PFS_thread *
 PFS_thread::get_current_thread()
 {
-  return static_cast<PFS_thread *>(my_get_thread_local(THR_PFS));
+  return THR_PFS;
 }
 
 void
@@ -593,16 +616,16 @@ create_thread(PFS_thread_class *klass,
   pfs = global_thread_container.allocate(&dirty_state);
   if (pfs != NULL)
   {
-    pfs->m_thread_internal_id =
-      PFS_atomic::add_u64(&thread_internal_id_counter.m_u64, 1);
+    pfs->m_thread_internal_id = thread_internal_id_counter.m_u64++;
     pfs->m_parent_thread_internal_id = 0;
     pfs->m_processlist_id = static_cast<ulong>(processlist_id);
     pfs->m_thread_os_id = 0;
+    pfs->m_system_thread = !(klass->m_flags & PSI_FLAG_USER);
     pfs->m_event_id = 1;
     pfs->m_stmt_lock.set_allocated();
     pfs->m_session_lock.set_allocated();
-    pfs->set_enabled(true);
-    pfs->set_history(true);
+    pfs->set_enabled(klass->m_enabled);
+    pfs->set_history(klass->m_history);
     pfs->m_class = klass;
     pfs->m_events_waits_current = &pfs->m_events_waits_stack[WAIT_STACK_BOTTOM];
     pfs->m_waits_history_full = false;
@@ -630,6 +653,8 @@ create_thread(PFS_thread_class *klass,
     pfs->m_username_length = 0;
     pfs->m_hostname_length = 0;
     pfs->m_dbname_length = 0;
+    pfs->m_groupname_length = 0;
+    pfs->m_user_data = NULL;
     pfs->m_command = 0;
     pfs->m_start_time = 0;
     pfs->m_stage = 0;
@@ -667,6 +692,32 @@ create_thread(PFS_thread_class *klass,
   }
 
   return pfs;
+}
+
+/**
+  Find a PFS thread given an internal thread id or a processlist id.
+  @param thread_id internal thread id
+  @return pfs pointer if found, else NULL
+*/
+PFS_thread *
+find_thread(ulonglong thread_id)
+{
+  PFS_thread *pfs = NULL;
+  uint index = 0;
+
+  PFS_thread_iterator it = global_thread_container.iterate(index);
+
+  do
+  {
+    pfs = it.scan_next(&index);
+    if (pfs != NULL)
+    {
+      if (pfs->m_thread_internal_id == thread_id)
+        return pfs;
+    }
+  } while (pfs != NULL);
+
+  return NULL;
 }
 
 PFS_mutex *
@@ -1000,6 +1051,156 @@ search:
   }
 
   return NULL;
+}
+
+/**
+  Find a file instrumentation instance by name, and rename it
+  @param thread                       the executing instrumented thread
+  @param old_filename                 the file to be renamed
+  @param old_len                      the length in bytes of the old filename
+  @param new_filename                 the new file name
+  @param new_len                      the length in bytes of the new filename
+*/
+void find_and_rename_file(PFS_thread *thread, const char *old_filename,
+                          uint old_len, const char *new_filename, uint new_len)
+{
+  PFS_file *pfs;
+
+  DBUG_ASSERT(thread != NULL);
+
+  LF_PINS *pins= get_filename_hash_pins(thread);
+  if (unlikely(pins == NULL))
+  {
+    global_file_container.m_lost++;
+    return;
+  }
+
+  /*
+    Normalize the old file name.
+  */
+  char safe_buffer[FN_REFLEN];
+  const char *safe_filename;
+
+  if (old_len >= FN_REFLEN)
+  {
+    memcpy(safe_buffer, old_filename, FN_REFLEN - 1);
+    safe_buffer[FN_REFLEN - 1]= 0;
+    safe_filename= safe_buffer;
+  }
+  else
+    safe_filename= old_filename;
+
+  char buffer[FN_REFLEN];
+  char dirbuffer[FN_REFLEN];
+  size_t dirlen;
+  const char *normalized_filename;
+  uint normalized_length;
+
+  dirlen= dirname_length(safe_filename);
+  if (dirlen == 0)
+  {
+    dirbuffer[0]= FN_CURLIB;
+    dirbuffer[1]= FN_LIBCHAR;
+    dirbuffer[2]= '\0';
+  }
+  else
+  {
+    memcpy(dirbuffer, safe_filename, dirlen);
+    dirbuffer[dirlen]= '\0';
+  }
+
+  if (my_realpath(buffer, dirbuffer, MYF(0)) != 0)
+  {
+    global_file_container.m_lost++;
+    return;
+  }
+
+  /* Append the unresolved file name to the resolved path */
+  char *ptr= buffer + strlen(buffer);
+  char *buf_end= &buffer[sizeof(buffer)-1];
+  if ((buf_end > ptr) && (*(ptr-1) != FN_LIBCHAR))
+    *ptr++= FN_LIBCHAR;
+  if (buf_end > ptr)
+    strncpy(ptr, safe_filename + dirlen, buf_end - ptr);
+  *buf_end= '\0';
+
+  normalized_filename= buffer;
+  normalized_length= (uint)strlen(normalized_filename);
+
+  PFS_file **entry;
+  entry= reinterpret_cast<PFS_file**>
+    (lf_hash_search(&filename_hash, pins,
+                    normalized_filename, normalized_length));
+
+  if (entry && (entry != MY_LF_ERRPTR))
+    pfs= *entry;
+  else
+  {
+    lf_hash_search_unpin(pins);
+    return;
+  }
+
+  lf_hash_delete(&filename_hash, pins,
+                 pfs->m_filename, pfs->m_filename_length);
+
+  /*
+    Normalize the new file name.
+  */
+  if (new_len >= FN_REFLEN)
+  {
+    memcpy(safe_buffer, new_filename, FN_REFLEN - 1);
+    safe_buffer[FN_REFLEN - 1]= 0;
+    safe_filename= safe_buffer;
+  }
+  else
+    safe_filename= new_filename;
+
+  dirlen= dirname_length(safe_filename);
+  if (dirlen == 0)
+  {
+    dirbuffer[0]= FN_CURLIB;
+    dirbuffer[1]= FN_LIBCHAR;
+    dirbuffer[2]= '\0';
+  }
+  else
+  {
+    memcpy(dirbuffer, safe_filename, dirlen);
+    dirbuffer[dirlen]= '\0';
+  }
+
+  if (my_realpath(buffer, dirbuffer, MYF(0)) != 0)
+  {
+    global_file_container.m_lost++;
+    return;
+  }
+
+  /* Append the unresolved file name to the resolved path */
+  ptr= buffer + strlen(buffer);
+  buf_end= &buffer[sizeof(buffer)-1];
+  if ((buf_end > ptr) && (*(ptr-1) != FN_LIBCHAR))
+    *ptr++= FN_LIBCHAR;
+  if (buf_end > ptr)
+    strncpy(ptr, safe_filename + dirlen, buf_end - ptr);
+  *buf_end= '\0';
+
+  normalized_filename= buffer;
+  normalized_length= (uint)strlen(normalized_filename);
+
+  strncpy(pfs->m_filename, normalized_filename, normalized_length);
+  pfs->m_filename[normalized_length]= '\0';
+  pfs->m_filename_length= normalized_length;
+
+  int res;
+  res= lf_hash_insert(&filename_hash, pins, &pfs);
+
+  if (likely(res == 0))
+    return;
+  else
+  {
+    global_file_container.deallocate(pfs);
+    global_file_container.m_lost++;
+    return;
+  }
 }
 
 /**

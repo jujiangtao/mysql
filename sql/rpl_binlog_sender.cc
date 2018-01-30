@@ -1,53 +1,66 @@
 /* Copyright (c) 2013, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "sql/rpl_binlog_sender.h"
 
 #include <assert.h>
 #include <stdio.h>
 #include <algorithm>
+#include <atomic>
+#include <memory>
+#include <unordered_map>
+#include <utility>
 
-#include "debug_sync.h"              // debug_sync_set_action
-#include "derror.h"                  // ER_THD
-#include "hash.h"
-#include "item_func.h"               // user_var_entry
 #include "lex_string.h"
-#include "log.h"                     // sql_print_information
-#include "log_event.h"               // MAX_MAX_ALLOWED_PACKET
 #include "m_string.h"
-#include "mdl.h"
+#include "map_helpers.h"
 #include "my_byteorder.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
+#include "my_loglevel.h"
 #include "my_pointer_arithmetic.h"
 #include "my_sys.h"
 #include "my_systime.h"
 #include "my_thread.h"
+#include "mysql/components/services/psi_stage_bits.h"
 #include "mysql/psi/mysql_file.h"
 #include "mysql/psi/mysql_mutex.h"
-#include "mysql/psi/psi_stage.h"
 #include "mysql/service_my_snprintf.h"
-#include "mysqld.h"                  // global_system_variables ...
-#include "protocol_classic.h"
-#include "rpl_constants.h"           // BINLOG_DUMP_NON_BLOCK
-#include "rpl_gtid.h"
-#include "rpl_handler.h"             // RUN_HOOK
-#include "rpl_master.h"              // opt_sporadic_binlog_dump_fail
-#include "rpl_reporting.h"           // MAX_SLAVE_ERRMSG
-#include "sql_class.h"               // THD
-#include "system_variables.h"
+#include "sql/debug_sync.h"          // debug_sync_set_action
+#include "sql/derror.h"              // ER_THD
+#include "sql/item_func.h"           // user_var_entry
+#include "sql/log.h"
+#include "sql/log_event.h"           // MAX_MAX_ALLOWED_PACKET
+#include "sql/mdl.h"
+#include "sql/mysqld.h"              // global_system_variables ...
+#include "sql/protocol.h"
+#include "sql/protocol_classic.h"
+#include "sql/rpl_constants.h"       // BINLOG_DUMP_NON_BLOCK
+#include "sql/rpl_gtid.h"
+#include "sql/rpl_handler.h"         // RUN_HOOK
+#include "sql/rpl_master.h"          // opt_sporadic_binlog_dump_fail
+#include "sql/rpl_reporting.h"       // MAX_SLAVE_ERRMSG
+#include "sql/sql_class.h"           // THD
+#include "sql/system_variables.h"
 #include "typelib.h"
 
 #ifndef DBUG_OFF
@@ -125,16 +138,15 @@ void Binlog_sender::init()
   if (check_start_file())
     DBUG_VOID_RETURN;
 
-  sql_print_information("Start binlog_dump to master_thread_id(%u) "
-                        "slave_server(%u), pos(%s, %llu)",
-                        thd->thread_id(), thd->server_id,
-                        m_start_file, m_start_pos);
+  LogErr(INFORMATION_LEVEL, ER_RPL_BINLOG_STARTING_DUMP,
+         thd->thread_id(), thd->server_id,
+         m_start_file, m_start_pos);
 
   if (RUN_HOOK(binlog_transmit, transmit_start,
                (thd, m_flag, m_start_file, m_start_pos,
                 &m_observe_transmission)))
   {
-    set_unknow_error("Failed to run hook 'transmit_start'");
+    set_unknown_error("Failed to run hook 'transmit_start'");
     DBUG_VOID_RETURN;
   }
   m_transmit_started=true;
@@ -180,7 +192,7 @@ void Binlog_sender::init()
 
 #ifndef DBUG_OFF
   if (opt_sporadic_binlog_dump_fail && (binlog_dump_count++ % 2))
-    set_unknow_error("Master fails in COM_BINLOG_DUMP because of "
+    set_unknown_error("Master fails in COM_BINLOG_DUMP because of "
                      "--sporadic-binlog-dump-fail");
   m_event_count= 0;
 #endif
@@ -371,8 +383,9 @@ my_off_t Binlog_sender::send_binlog(IO_CACHE *log_cache, my_off_t start_pos)
     if (send_events(log_cache, end_pos))
       return 1;
 
-    m_thd->killed= DBUG_EVALUATE_IF("simulate_kill_dump", THD::KILL_CONNECTION,
-                                    m_thd->killed);
+    m_thd->killed.store(DBUG_EVALUATE_IF("simulate_kill_dump",
+                                         THD::KILL_CONNECTION,
+                                         m_thd->killed.load()));
 
     DBUG_EXECUTE_IF("wait_after_binlog_EOF",
                     {
@@ -439,8 +452,8 @@ int Binlog_sender::send_events(IO_CACHE *log_cache, my_off_t end_pos)
 
   while (likely(log_pos < end_pos))
   {
-    uchar* event_ptr;
-    uint32 event_len;
+    uchar* event_ptr= nullptr;
+    uint32 event_len= 0;
 
     if (unlikely(thd->killed))
         DBUG_RETURN(1);
@@ -626,7 +639,7 @@ inline bool Binlog_sender::skip_event(const uchar *event_ptr, uint32 event_len,
   {
   case binary_log::GTID_LOG_EVENT:
     {
-      Format_description_log_event fd_ev(BINLOG_VERSION);
+      Format_description_log_event fd_ev;
       fd_ev.common_footer->checksum_alg= m_event_checksum_alg;
       Gtid_log_event gtid_ev((const char *)event_ptr, event_checksum_on() ?
                              event_len - BINLOG_CHECKSUM_LEN : event_len,
@@ -692,10 +705,11 @@ inline int Binlog_sender::wait_with_heartbeat(my_off_t log_pos)
 #ifndef DBUG_OFF
       if (hb_info_counter < 3)
       {
-        sql_print_information("master sends heartbeat message");
+        LogErr(INFORMATION_LEVEL, ER_RPL_BINLOG_MASTER_SENDS_HEARTBEAT);
         hb_info_counter++;
         if (hb_info_counter == 3)
-          sql_print_information("the rest of heartbeat info skipped ...");
+          LogErr(INFORMATION_LEVEL,
+                 ER_RPL_BINLOG_SKIPPING_REMAINING_HEARTBEAT_INFO);
       }
 #endif
       if (send_heartbeat_event(log_pos))
@@ -718,10 +732,11 @@ void Binlog_sender::init_heartbeat_period()
   /* Protects m_thd->user_vars. */
   mysql_mutex_lock(&m_thd->LOCK_thd_data);
 
-  user_var_entry *entry=
-    (user_var_entry*) my_hash_search(&m_thd->user_vars, (uchar*) name.str,
-                                     name.length);
-  m_heartbeat_period= entry ? entry->val_int(&null_value) : 0;
+  const auto it= m_thd->user_vars.find(to_string(name));
+  if (it == m_thd->user_vars.end())
+     m_heartbeat_period= 0;
+  else
+     m_heartbeat_period= it->second->val_int(&null_value);
 
   mysql_mutex_unlock(&m_thd->LOCK_thd_data);
 }
@@ -886,20 +901,17 @@ void Binlog_sender::init_checksum_alg()
 {
   DBUG_ENTER("init_binlog_checksum");
 
-  LEX_STRING name= {C_STRING_WITH_LEN("master_binlog_checksum")};
-  user_var_entry *entry;
-
   m_slave_checksum_alg= binary_log::BINLOG_CHECKSUM_ALG_UNDEF;
 
   /* Protects m_thd->user_vars. */
   mysql_mutex_lock(&m_thd->LOCK_thd_data);
 
-  entry= (user_var_entry*) my_hash_search(&m_thd->user_vars,
-                                          (uchar*) name.str, name.length);
-  if (entry)
+  const auto it= m_thd->user_vars.find("master_binlog_checksum");
+  if (it != m_thd->user_vars.end())
   {
     m_slave_checksum_alg=
-      static_cast<enum_binlog_checksum_alg>(find_type((char*) entry->ptr(), &binlog_checksum_typelib, 1) - 1);
+      static_cast<enum_binlog_checksum_alg>(
+        find_type((char*) it->second->ptr(), &binlog_checksum_typelib, 1) - 1);
     DBUG_ASSERT(m_slave_checksum_alg < binary_log::BINLOG_CHECKSUM_ALG_ENUM_END);
   }
 
@@ -973,7 +985,7 @@ inline int Binlog_sender::reset_transmit_packet(ushort flags, size_t event_len)
   if (m_observe_transmission &&
       RUN_HOOK(binlog_transmit, reserve_header, (m_thd, flags, &m_packet)))
   {
-    set_unknow_error("Failed to run hook 'reserve_header'");
+    set_unknown_error("Failed to run hook 'reserve_header'");
     DBUG_RETURN(1);
   }
 
@@ -991,8 +1003,8 @@ int Binlog_sender::send_format_description_event(IO_CACHE *log_cache,
                                                  my_off_t start_pos)
 {
   DBUG_ENTER("Binlog_sender::send_format_description_event");
-  uchar* event_ptr;
-  uint32 event_len;
+  uchar* event_ptr= nullptr;
+  uint32 event_len= 0;
 
   if (read_event(log_cache, binary_log::BINLOG_CHECKSUM_ALG_OFF, &event_ptr,
                  &event_len))
@@ -1022,9 +1034,7 @@ int Binlog_sender::send_format_description_event(IO_CACHE *log_cache,
     set_fatal_error("Slave can not handle replication events with the "
                     "checksum that master is configured to log");
 
-    sql_print_warning("Master is configured to log replication events "
-                      "with checksum, but will not send such events to "
-                      "slaves that cannot process them");
+    LogErr(WARNING_LEVEL, ER_RPL_BINLOG_MASTER_USES_CHECKSUM_AND_SLAVE_CANT);
     DBUG_RETURN(1);
   }
 
@@ -1216,7 +1226,7 @@ inline int Binlog_sender::flush_net()
   if (DBUG_EVALUATE_IF("simulate_flush_error", 1,
       m_thd->get_protocol()->flush()))
   {
-    set_unknow_error("failed on flush_net()");
+    set_unknown_error("failed on flush_net()");
     return 1;
   }
   return 0;
@@ -1235,7 +1245,7 @@ inline int Binlog_sender::send_packet()
                          m_thd->get_protocol_classic()->get_net(),
                          (uchar*) m_packet.ptr(), m_packet.length())))
   {
-    set_unknow_error("Failed on my_net_write()");
+    set_unknown_error("Failed on my_net_write()");
     DBUG_RETURN(1);
   }
 
@@ -1257,7 +1267,7 @@ inline int Binlog_sender::before_send_hook(const char *log_file,
       RUN_HOOK(binlog_transmit, before_send_event,
                (m_thd, m_flag, &m_packet, log_file, log_pos)))
   {
-    set_unknow_error("run 'before_send_event' hook failed");
+    set_unknown_error("run 'before_send_event' hook failed");
     return 1;
   }
   return 0;
@@ -1270,7 +1280,7 @@ inline int Binlog_sender::after_send_hook(const char *log_file,
       RUN_HOOK(binlog_transmit, after_send_event,
                (m_thd, m_flag, &m_packet, log_file, log_pos)))
   {
-    set_unknow_error("Failed to run hook 'after_send_event'");
+    set_unknown_error("Failed to run hook 'after_send_event'");
     return 1;
   }
 
@@ -1280,7 +1290,7 @@ inline int Binlog_sender::after_send_hook(const char *log_file,
   */
   if (m_thd->get_protocol_classic()->get_net()->last_errno != 0)
   {
-    set_unknow_error("Found net error");
+    set_unknown_error("Found net error");
     return 1;
   }
   return 0;
@@ -1294,7 +1304,7 @@ inline int Binlog_sender::check_event_count()
   if (max_binlog_dump_events != 0 &&
       (++m_event_count > max_binlog_dump_events))
   {
-    set_unknow_error("Debugging binlog dump abort");
+    set_unknown_error("Debugging binlog dump abort");
     return 1;
   }
   return 0;

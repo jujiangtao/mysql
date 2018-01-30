@@ -1,49 +1,51 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef AUTH_COMMON_INCLUDED
 #define AUTH_COMMON_INCLUDED
 
-#include "my_config.h"
-
+#include <mysql/components/my_service.h>
+#include <mysql/components/service.h>
+#include <mysql/components/services/dynamic_privilege.h>
 #include <stddef.h>
 #include <sys/types.h>
+#include <functional>
 #include <set>
 #include <utility>
 #include <vector>
 
-#include "auth_acls.h"                          /* ACL information */
 #include "lex_string.h"
-#include "m_string.h"
 #include "my_command.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
-#include "sql_string.h"                         /* String */
+#include "sql/auth/dynamic_privileges_impl.h"
+#include "sql/thr_malloc.h"
 #include "template_utils.h"
-#include "thr_malloc.h"
-#include <mysql/components/service.h>
-#include <mysql/components/my_service.h>
-#include <mysql/components/services/dynamic_privilege.h>
-#include "dynamic_privileges_impl.h"
-
-#include <functional>
 
 /* Forward Declarations */
 class Alter_info;
 class Field_iterator_table_ref;
 class LEX_COLUMN;
+class String;
 class THD;
 template <class T> class List;
 
@@ -57,14 +59,13 @@ typedef struct user_conn USER_CONN;
 class Security_context;
 struct TABLE;
 struct TABLE_LIST;
+enum class role_enum;
 
 /** user, host tuple which reference either acl_cache or g_default_roles */
 typedef std::pair< LEX_CSTRING, LEX_CSTRING > Auth_id_ref;
 typedef std::vector< Auth_id_ref >  List_of_auth_id_refs;
 
 bool operator<(const Auth_id_ref &a, const Auth_id_ref &b);
-
-/* Classes */
 
 enum ACL_internal_access_result
 {
@@ -80,6 +81,8 @@ enum ACL_internal_access_result
   /** No decision yet, use the grant tables. */
   ACL_INTERNAL_ACCESS_CHECK_GRANT
 };
+
+/* Classes */
 
 /**
   Per internal table ACL access rules.
@@ -272,6 +275,8 @@ enum mysql_user_table_field
   MYSQL_USER_FIELD_ACCOUNT_LOCKED,
   MYSQL_USER_FIELD_CREATE_ROLE_PRIV,
   MYSQL_USER_FIELD_DROP_ROLE_PRIV,
+  MYSQL_USER_FIELD_PASSWORD_REUSE_HISTORY,
+  MYSQL_USER_FIELD_PASSWORD_REUSE_TIME,
   MYSQL_USER_FIELD_COUNT
 };
 
@@ -344,6 +349,25 @@ enum mysql_default_roles_table_field
   MYSQL_DEFAULT_ROLES_FIELD_COUNT
 };
 
+
+enum mysql_password_history_table_field
+{
+  MYSQL_PASSWORD_HISTORY_FIELD_HOST = 0,
+  MYSQL_PASSWORD_HISTORY_FIELD_USER,
+  MYSQL_PASSWORD_HISTORY_FIELD_PASSWORD_TIMESTAMP,
+  MYSQL_PASSWORD_HISTORY_FIELD_PASSWORD,
+  MYSQL_PASSWORD_HISTORY_FIELD_COUNT
+};
+
+enum mysql_dynamic_priv_table_field
+{
+  MYSQL_DYNAMIC_PRIV_FIELD_USER= 0,
+  MYSQL_DYNAMIC_PRIV_FIELD_HOST,
+  MYSQL_DYNAMIC_PRIV_FIELD_PRIV,
+  MYSQL_DYNAMIC_PRIV_FIELD_WITH_GRANT_OPTION,
+  MYSQL_DYNAMIC_PRIV_FIELD_COUNT
+};
+
 /* When we run mysql_upgrade we must make sure that the server can be run
    using previous mysql.user table schema during acl_load.
 
@@ -401,6 +425,9 @@ public:
   virtual uint password_last_changed_idx()= 0;
   virtual uint password_lifetime_idx()= 0;
   virtual uint account_locked_idx()= 0;
+  virtual uint password_reuse_history_idx()= 0;
+  virtual uint password_reuse_time_idx()= 0;
+
 
   virtual ~Acl_load_user_table_schema() {}
 };
@@ -478,6 +505,14 @@ public:
   }
   uint password_lifetime_idx() { return MYSQL_USER_FIELD_PASSWORD_LIFETIME; }
   uint account_locked_idx() { return MYSQL_USER_FIELD_ACCOUNT_LOCKED; }
+  uint password_reuse_history_idx()
+  {
+    return MYSQL_USER_FIELD_PASSWORD_REUSE_HISTORY;
+  }
+  uint password_reuse_time_idx()
+  {
+    return MYSQL_USER_FIELD_PASSWORD_REUSE_TIME;
+  }
 };
 
 /*
@@ -602,6 +637,14 @@ public:
   uint account_locked_idx() { return MYSQL_USER_FIELD_COUNT_56; }
   uint create_role_priv_idx() { return MYSQL_USER_FIELD_COUNT_56; }
   uint drop_role_priv_idx() { return MYSQL_USER_FIELD_COUNT_56; }
+  uint password_reuse_history_idx()
+  {
+    return MYSQL_USER_FIELD_COUNT_56;
+  }
+  uint password_reuse_time_idx()
+  {
+    return MYSQL_USER_FIELD_COUNT_56;
+  }
 };
 
 
@@ -653,6 +696,7 @@ bool acl_check_host(THD *thd, const char *host, const char *ip);
 #define PASSWORD_EXPIRE_ATTR    (1L << 4)    /* update password expire col */
 #define ACCESS_RIGHTS_ATTR      (1L << 5)    /* update privileges */
 #define ACCOUNT_LOCK_ATTR       (1L << 6)    /* update account lock status */
+#define DIFFERENT_PLUGIN_ATTR   (1L << 7)    /* updated plugin with a different value */
 
 /* rewrite CREATE/ALTER/GRANT user */
 void mysql_rewrite_create_alter_user(THD *thd, String *rlb,
@@ -696,6 +740,7 @@ bool is_acl_user(THD *thd, const char *host, const char *user);
 bool acl_getroot(THD *thd, Security_context *sctx, char *user,
                  char *host, char *ip, const char *db);
 bool check_acl_tables_intact(THD *thd);
+void notify_flush_event(THD *thd);
 
 /* sql_authorization */
 bool has_grant_role_privilege(THD *thd);
@@ -737,7 +782,7 @@ ulong get_column_grant(THD *thd, GRANT_INFO *grant,
                        const char *db_name, const char *table_name,
                        const char *field_name);
 bool mysql_show_grants(THD *, LEX_USER *,
-                       const List_of_auth_id_refs &);
+                       const List_of_auth_id_refs &, bool);
 bool mysql_show_create_user(THD *thd, LEX_USER *user);
 bool mysql_revoke_all(THD *thd, List <LEX_USER> &list);
 bool sp_revoke_privileges(THD *thd, const char *sp_db, const char *sp_name,
@@ -785,12 +830,13 @@ bool mysql_grant_role(THD *thd, const List <LEX_USER > *users,
 bool mysql_revoke_role(THD *thd, const List <LEX_USER > *users,
                        const List <LEX_USER > *roles);
 void get_default_roles(const Auth_id_ref &user, List_of_auth_id_refs *list);
-bool mysql_alter_user_set_default_roles(THD *thd, LEX_USER *user,
-                       const List_of_auth_id_refs &authids);
-bool mysql_alter_user_set_default_roles_all(THD *thd, LEX_USER *user);
+
 bool is_granted_table_access(THD *thd, ulong required_acl,
                              TABLE_LIST *table);
-bool mysql_clear_default_roles(THD *thd, LEX_USER *user);
+
+bool mysql_alter_or_clear_roles(THD *thd, role_enum role_type,
+                                const List<LEX_USER> *users,
+                                const List<LEX_USER> *roles);
 void roles_graphml(THD *thd, String *);
 bool has_grant_role_privilege(THD *thd, const LEX_CSTRING &role_name,
                               const LEX_CSTRING &role_host);
@@ -817,7 +863,6 @@ typedef enum ssl_artifacts_status
 } ssl_artifacts_status;
 
 ulong get_global_acl_cache_size();
-
 #if defined(HAVE_OPENSSL) && !defined(HAVE_YASSL)
 extern bool opt_auto_generate_certs;
 bool do_auto_cert_generation(ssl_artifacts_status auto_detection_status);
@@ -828,5 +873,12 @@ bool do_auto_cert_generation(ssl_artifacts_status auto_detection_status);
 #define DEFAULT_SSL_SERVER_CERT "server-cert.pem"
 #define DEFAULT_SSL_SERVER_KEY  "server-key.pem"
 
+void update_mandatory_roles(void);
+bool check_authorization_id_string(const char *buffer, size_t length);
+String *func_current_role(THD *thd, String *str, String *active_role);
+
+extern volatile uint32 global_password_history, global_password_reuse_interval;
+
+bool operator==(const LEX_CSTRING &a, const LEX_CSTRING &b);
 #endif /* AUTH_COMMON_INCLUDED */
 

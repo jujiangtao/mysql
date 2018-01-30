@@ -1,17 +1,26 @@
 /* Copyright (c) 2006, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
+
+#include "sql/rpl_rli.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,40 +29,45 @@
 #include <algorithm>
 
 #include "binlog_event.h"
-#include "debug_sync.h"
-#include "derror.h"
-#include "log.h"                   // sql_print_error
-#include "log_event.h"             // Log_event
 #include "m_ctype.h"
-#include "mdl.h"
 #include "my_dbug.h"
 #include "my_dir.h"                // MY_STAT
 #include "my_sqlcommand.h"
 #include "my_systime.h"
 #include "my_thread.h"
+#include "mysql/components/services/psi_stage_bits.h"
+#include "mysql/plugin.h"
+#include "mysql/psi/mysql_cond.h"
 #include "mysql/psi/mysql_file.h"
-#include "mysql/psi/psi_stage.h"
+#include "mysql/psi/psi_base.h"
 #include "mysql/service_mysql_alloc.h"
 #include "mysql/service_thd_wait.h"
 #include "mysql_com.h"
-#include "mysqld.h"                // sync_relaylog_period ...
 #include "mysqld_error.h"
-#include "protocol.h"
-#include "rpl_info_factory.h"      // Rpl_info_factory
-#include "rpl_info_handler.h"
-#include "rpl_mi.h"                // Master_info
-#include "rpl_msr.h"               // channel_map
-#include "rpl_reporting.h"
-#include "rpl_rli.h"
-#include "rpl_rli_pdb.h"           // Slave_worker
-#include "rpl_slave.h"
-#include "rpl_trx_boundary_parser.h"
-#include "sql_base.h"              // close_thread_tables
-#include "sql_error.h"
-#include "sql_list.h"
-#include "strfunc.h"               // strconvert
+#include "sql/debug_sync.h"
+#include "sql/derror.h"
+#include "sql/log.h"
+#include "sql/log_event.h"         // Log_event
+#include "sql/mdl.h"
+#include "sql/mysqld.h"            // sync_relaylog_period ...
+#include "sql/protocol.h"
+#include "sql/rpl_info_factory.h"  // Rpl_info_factory
+#include "sql/rpl_info_handler.h"
+#include "sql/rpl_mi.h"            // Master_info
+#include "sql/rpl_msr.h"           // channel_map
+#include "sql/rpl_reporting.h"
+#include "sql/rpl_rli_pdb.h"       // Slave_worker
+#include "sql/rpl_slave.h"
+#include "sql/rpl_trx_boundary_parser.h"
+#include "sql/sql_base.h"          // close_thread_tables
+#include "sql/sql_error.h"
+#include "sql/sql_list.h"
+#include "sql/sql_plugin.h"
+#include "sql/strfunc.h"           // strconvert
+#include "sql/transaction.h"       // trans_commit_stmt
+#include "sql/transaction_info.h"
+#include "sql/xa.h"
 #include "thr_mutex.h"
-#include "transaction.h"           // trans_commit_stmt
 
 class Item;
 
@@ -176,10 +190,6 @@ Relay_log_info::Relay_log_info(bool is_slave_recovery
   cached_charset_invalidate();
   inited_hash_workers= FALSE;
   commit_timestamps_status= COMMIT_TS_UNKNOWN;
-  last_processed_trx= new trx_monitoring_info;
-  processing_trx= new trx_monitoring_info;
-  processing_trx->clear();
-  last_processed_trx->clear();
 
   if (!rli_fake)
   {
@@ -208,6 +218,7 @@ Relay_log_info::Relay_log_info(bool is_slave_recovery
     Sid_map *sid_map= new Sid_map(sid_lock);
     gtid_set= new Gtid_set(sid_map, sid_lock);
   }
+  gtid_monitoring_info= new Gtid_monitoring_info();
   do_server_version_split(::server_version, slave_version_split);
   until_option= NULL;
   rpl_filter= NULL;
@@ -254,8 +265,8 @@ Relay_log_info::~Relay_log_info()
 
     if (rpl_filter != NULL)
     {
-      /* Remove the channel's replication filter from rpl_filter_map. */
-      rpl_filter_map.delete_filter(rpl_filter);
+      /* Remove the channel's replication filter from rpl_channel_filters. */
+      rpl_channel_filters.delete_filter(rpl_filter);
       rpl_filter= NULL;
     }
 
@@ -290,8 +301,7 @@ Relay_log_info::~Relay_log_info()
 
   set_rli_description_event(NULL);
   delete until_option;
-  delete last_processed_trx;
-  delete processing_trx;
+  delete gtid_monitoring_info;
   DBUG_VOID_RETURN;
 }
 
@@ -454,8 +464,8 @@ static inline int add_relay_log(Relay_log_info* rli,LOG_INFO* linfo)
   if (!mysql_file_stat(key_file_relaylog,
                        linfo->log_file_name, &s, MYF(0)))
   {
-    sql_print_error("log %s listed in the index, but failed to stat.",
-                    linfo->log_file_name);
+    LogErr(ERROR_LEVEL, ER_RPL_FAILED_TO_STAT_LOG_IN_INDEX,
+           linfo->log_file_name);
     DBUG_RETURN(1);
   }
   rli->log_space_total += s.st_size;
@@ -473,7 +483,7 @@ int Relay_log_info::count_relay_log_space()
   log_space_total= 0;
   if (relay_log.find_log_pos(&flinfo, NullS, 1))
   {
-    sql_print_error("Could not find first log while counting relay log space.");
+    LogErr(ERROR_LEVEL, ER_RPL_LOG_NOT_FOUND_WHILE_COUNTING_RELAY_LOG_SPACE);
     DBUG_RETURN(1);
   }
   do
@@ -488,6 +498,86 @@ int Relay_log_info::count_relay_log_space()
   */
   relay_log.reset_bytes_written();
   DBUG_RETURN(0);
+}
+
+/**
+  Re-init the SQL thread IO_CACHE for a given file.
+
+  If the file specified as parameter is not the one the SQL thread is
+  reading from, this function does nothing.
+
+  @param [in] log Name of relay log file to re-init the IO_CACHE.
+  @param [in] need_data_lock If true, this function will acquire the
+                             rli->data_lock; otherwise the caller should already
+                             have acquired it.
+
+  @retval false On successful operation.
+  @retval true  On error.
+*/
+
+bool Relay_log_info::reinit_sql_thread_io_cache(const char* log,
+                                                bool need_data_lock)
+{
+  DBUG_ENTER("Relay_log_info::reinit_sql_thread_io_cache");
+  bool error= false;
+  my_off_t current_relay_log_pos;
+
+  if (need_data_lock)
+    mysql_mutex_lock(&data_lock);
+  else
+    mysql_mutex_assert_owner(&data_lock);
+
+  // The SQL thread was not reading from the requested file
+  if (strcmp(log, get_event_relay_log_name()))
+    goto end;
+
+  // Save current relay log pos
+  current_relay_log_pos= my_b_tell(&cache_buf);
+
+  /*
+    The SQL thread was reading from the "hot" relay log file but that file
+    was truncated by the I/O thread. We will re-init the IO_CACHE of the
+    SQL thread in order to avoid reading content that was in the IO_CACHE
+    but no longer exists on the relay log file because of the truncation.
+
+    Suppose:
+    a) the relay log file have a full transaction (many events) with a
+       total of finishing at position 8190;
+    b) the I/O thread is receiving and queuing a 32K event;
+    c) the disk had only space to write 30K of the event;
+
+    In this situation, the I/O thread will be waiting for disk space, and the
+    SQL thread would be allowed to read up to the end of the last fully queued
+    event (that would be the 8190 position of the file).
+
+    Starting the SQL thread, it would read until the relay_log.binlog_end_pos
+    (the 8190), but, because of some optimizations, the IO_CACHE will read a
+    full "buffer" (8192 bytes) from the file. The additional 2 bytes belong
+    to the not yet completely queued event, and should not be read by the
+    SQL thread.
+
+    If the I/O thread is killed, it will truncate the relay log file at position
+    8190. This means that the SQL thread IO_CACHE have 2 bytes that doesn't
+    belong to the relay log file anymore and should re-initialize its IO_CACHE
+    to remove such data from it.
+  */
+  DBUG_ASSERT(cur_log_fd >= 0);
+  error= reinit_io_cache(&cache_buf, READ_CACHE,
+                         current_relay_log_pos, 0, true);
+#ifndef DBUG_OFF
+  {
+    char llbuf1[22], llbuf2[22];
+    DBUG_PRINT("info",("my_b_tell(cur_log)=%s, event_relay_log_pos=%s",
+                       llstr(my_b_tell(&cache_buf),llbuf1),
+                       llstr(get_event_relay_log_pos(),llbuf2)));
+  }
+#endif
+
+end:
+  if (need_data_lock)
+    mysql_mutex_unlock(&data_lock);
+
+  DBUG_RETURN(error);
 }
 
 /**
@@ -536,13 +626,7 @@ int Relay_log_info::init_relay_log_pos(const char* log,
   else
     mysql_mutex_assert_owner(&data_lock);
 
-  /*
-    By default the relay log is in binlog format 3 (4.0).
-    Even if format is 4, this will work enough to read the first event
-    (Format_desc) (remember that format 4 is just lenghtened compared to format
-    3; format 3 is a prefix of format 4).
-  */
-  set_rli_description_event(new Format_description_log_event(3));
+  set_rli_description_event(new Format_description_log_event());
 
   /* Close log file and free buffers if it's already open */
   if (cur_log_fd >= 0)
@@ -912,9 +996,9 @@ int Relay_log_info::wait_for_pos(THD* thd, String* log_name,
 err:
   mysql_mutex_unlock(&data_lock);
   thd->EXIT_COND(&old_stage);
-  DBUG_PRINT("exit",("killed: %d  abort: %d  slave_running: %d \
-improper_arguments: %d  timed_out: %d",
-                     thd->killed,
+  DBUG_PRINT("exit",("killed: %d  abort: %d  slave_running: %d "
+                     "improper_arguments: %d  timed_out: %d",
+                     thd->killed.load(),
                      (int) (init_abort_pos_wait != abort_pos_wait),
                      (int) slave_running,
                      (int) (error == -2),
@@ -1087,9 +1171,9 @@ int Relay_log_info::wait_for_gtid_set(THD* thd, const Gtid_set* wait_gtid_set,
 
   mysql_mutex_unlock(&data_lock);
   thd->EXIT_COND(&old_stage);
-  DBUG_PRINT("exit",("killed: %d  abort: %d  slave_running: %d \
-improper_arguments: %d  timed_out: %d",
-                     thd->killed,
+  DBUG_PRINT("exit",("killed: %d  abort: %d  slave_running: %d "
+                     "improper_arguments: %d  timed_out: %d",
+                     thd->killed.load(),
                      (int) (init_abort_pos_wait != abort_pos_wait),
                      (int) slave_running,
                      (int) (error == -2),
@@ -1103,7 +1187,8 @@ improper_arguments: %d  timed_out: %d",
 }
 
 int Relay_log_info::inc_group_relay_log_pos(ulonglong log_pos,
-                                            bool need_data_lock)
+                                            bool need_data_lock,
+                                            bool force)
 {
   int error= 0;
   DBUG_ENTER("Relay_log_info::inc_group_relay_log_pos");
@@ -1161,16 +1246,16 @@ int Relay_log_info::inc_group_relay_log_pos(ulonglong log_pos,
   DBUG_ASSERT(!is_parallel_exec() ||
               mts_group_status != Relay_log_info::MTS_IN_GROUP);
   /*
-    We do not force synchronization at this point, note the
-    parameter false, because a non-transactional change is
-    being committed.
+    We do not force synchronization at this point, except for Rotate event
+    (see Rotate_log_event::do_update_pos), note @c force is false by default,
+    because a non-transactional change is being committed.
 
     For that reason, the synchronization here is subjected to
     the option sync_relay_log_info.
 
     See sql/rpl_rli.h for further information on this behavior.
   */
-  error= flush_info(FALSE);
+  error= flush_info(force);
 
   mysql_cond_broadcast(&data_cond);
   if (need_data_lock)
@@ -1246,7 +1331,7 @@ int Relay_log_info::purge_relay_logs(THD *thd, bool just_reset,
     inited==0 does not imply that they already are empty.
 
     It could be that slave's info initialization partly succeeded: for example
-    if relay-log.info existed but *relay-bin*.* have been manually removed,
+    if relay-log.info existed but all relay logs have been manually removed,
     init_info reads the old relay-log.info and fills rli->master_log_*, then
     init_info checks for the existence of the relay log, this fails and 
     init_info leaves inited to 0.
@@ -1272,12 +1357,13 @@ int Relay_log_info::purge_relay_logs(THD *thd, bool just_reset,
     DBUG_PRINT("info", ("inited == 0"));
     if (error_on_rli_init_info)
     {
+      DBUG_ASSERT(relay_log.is_relay_log);
       ln_without_channel_name= relay_log.generate_name(opt_relay_logname,
                                                        "-relay-bin", buffer);
 
       ln= add_channel_to_relay_log_name(relay_bin_channel, FN_REFLEN,
                                         ln_without_channel_name);
-      if (opt_relaylog_index_name)
+      if (opt_relaylog_index_name_supplied)
       {
         char index_file_withoutext[FN_REFLEN];
         relay_log.generate_name(opt_relaylog_index_name,"",
@@ -1292,8 +1378,9 @@ int Relay_log_info::purge_relay_logs(THD *thd, bool just_reset,
 
       if (relay_log.open_index_file(log_index_name, ln, TRUE))
       {
-        sql_print_error("Unable to purge relay log files. Failed to open relay "
-                        "log index file:%s.", relay_log.get_index_fname());
+        LogErr(ERROR_LEVEL, ER_SLAVE_RELAY_LOG_PURGE_FAILED,
+               "Failed to open relay log index file:",
+               relay_log.get_index_fname());
         DBUG_RETURN(1);
       }
       mysql_mutex_lock(&mi->data_lock);
@@ -1307,8 +1394,8 @@ int Relay_log_info::purge_relay_logs(THD *thd, bool just_reset,
       {
         mysql_mutex_unlock(log_lock);
         mysql_mutex_unlock(&mi->data_lock);
-        sql_print_error("Unable to purge relay log files. Failed to open relay "
-                        "log file:%s.", relay_log.get_log_fname());
+        LogErr(ERROR_LEVEL, ER_SLAVE_RELAY_LOG_PURGE_FAILED,
+               "Failed to open relay log file:", relay_log.get_log_fname());
         DBUG_RETURN(1);
       }
       mysql_mutex_unlock(log_lock);
@@ -1325,8 +1412,7 @@ int Relay_log_info::purge_relay_logs(THD *thd, bool just_reset,
   /* Reset the transaction boundary parser and clear the last GTID queued */
   mi->transaction_parser.reset();
   mysql_mutex_lock(&mi->data_lock);
-  mi->clear_queueing_trx(false /*need_lock*/);
-  mi->clear_last_queued_trx();
+  mi->clear_gtid_monitoring_info();
   mysql_mutex_unlock(&mi->data_lock);
 
   slave_skip_counter= 0;
@@ -1386,19 +1472,6 @@ err:
   DBUG_RETURN(error);
 }
 
-/*
-   When --relay-bin option is not provided, the names of the
-   relay log files are host-relay-bin.0000x or
-   host-relay-bin-CHANNEL.00000x in the case of MSR.
-   However, if that option is provided, then the names of the
-   relay log files are <relay-bin-option>.0000x or
-   <relay-bin-option>-CHANNEL.00000x in the case of MSR.
-
-   The function adds a channel suffix (according to the channel to file name
-   conventions and conversions) to the relay log file.
-
-   @todo: truncate the log file if length exceeds.
-*/
 
 const char*
 Relay_log_info::add_channel_to_relay_log_name(char *buff, uint buff_size,
@@ -1555,9 +1628,19 @@ void Relay_log_info::cleanup_context(THD *thd, bool error)
   }
   if (rows_query_ev)
   {
+    /*
+      In order to avoid invalid memory access, THD::reset_query() should be
+      called before deleting the rows_query event.
+    */
+    info_thd->reset_query();
     delete rows_query_ev;
     rows_query_ev= NULL;
-    info_thd->reset_query();
+    DBUG_EXECUTE_IF("after_deleting_the_rows_query_ev",
+                    {
+                      const char action[]="now SIGNAL deleted_rows_query_ev WAIT_FOR go_ahead";
+                      DBUG_ASSERT(!debug_sync_set_action(info_thd,
+                                                       STRING_WITH_LEN(action)));
+                    };);
   }
   m_table_map.clear_tables();
   slave_close_thread_tables(thd);
@@ -1594,6 +1677,22 @@ void Relay_log_info::cleanup_context(THD *thd, bool error)
   */
   reset_row_stmt_start_timestamp();
   unset_long_find_row_note_printed();
+
+  /*
+    If the slave applier changed the current transaction isolation level,
+    it need to be restored to the session default value once having the
+    current transaction cleared.
+
+    We should call "trans_reset_one_shot_chistics()" only if the "error"
+    flag is "true", because "cleanup_context()" is called at the end of each
+    set of Table_maps/Rows representing a statement (when the rows event
+    is tagged with the STMT_END_F) with the "error" flag as "false".
+
+    So, without the "if (error)" below, the isolation level might be reset
+    in the middle of a pure row based transaction.
+  */
+  if (error)
+    trans_reset_one_shot_chistics(thd);
 
   DBUG_VOID_RETURN;
 }
@@ -1749,12 +1848,7 @@ int Relay_log_info::rli_init_info()
   int error= 0;
   enum_return_check check_return= ERROR_CHECKING_REPOSITORY;
   const char *msg= NULL;
-  /* Store the GTID of a transaction spanned in multiple relay log files */
-  trx_monitoring_info partial_trx;
-
   DBUG_ENTER("Relay_log_info::rli_init_info");
-
-  partial_trx.clear();
 
   mysql_mutex_assert_owner(&data_lock);
 
@@ -1797,8 +1891,7 @@ int Relay_log_info::rli_init_info()
   if (fn_format(pattern, PREFIX_SQL_LOAD, pattern, "",
                 MY_SAFE_PATH | MY_RETURN_REAL_PATH) == NullS)
   {
-    sql_print_error("Unable to use slave's temporary directory '%s'.",
-                    slave_load_tmpdir);
+    LogErr(ERROR_LEVEL, ER_SLAVE_CANT_USE_TEMPDIR, slave_load_tmpdir);
     DBUG_RETURN(1);
   }
   unpack_filename(slave_patternload_file, pattern);
@@ -1824,8 +1917,8 @@ int Relay_log_info::rli_init_info()
     if (opt_relay_logname &&
         opt_relay_logname[strlen(opt_relay_logname) - 1] == FN_LIBCHAR)
     {
-      sql_print_error("Path '%s' is a directory name, please specify \
-a file name for --relay-log option.", opt_relay_logname);
+      LogErr(ERROR_LEVEL, ER_RPL_RELAY_LOG_NEEDS_FILE_NOT_DIRECTORY,
+             opt_relay_logname);
       DBUG_RETURN(1);
     }
 
@@ -1835,8 +1928,8 @@ a file name for --relay-log option.", opt_relay_logname);
         opt_relaylog_index_name[strlen(opt_relaylog_index_name) - 1]
         == FN_LIBCHAR)
     {
-      sql_print_error("Path '%s' is a directory name, please specify \
-a file name for --relay-log-index option.", opt_relaylog_index_name);
+      LogErr(ERROR_LEVEL, ER_RPL_RELAY_LOG_INDEX_NEEDS_FILE_NOT_DIRECTORY,
+             opt_relaylog_index_name);
       DBUG_RETURN(1);
     }
 
@@ -1863,14 +1956,16 @@ a file name for --relay-log-index option.", opt_relaylog_index_name);
     const char* log_index_name;
 
 
+    relay_log.is_relay_log= true;
     ln_without_channel_name= relay_log.generate_name(opt_relay_logname,
-                                "-relay-bin", buf);
+                                                     "-relay-bin", buf);
 
     ln= add_channel_to_relay_log_name(relay_bin_channel, FN_REFLEN,
                                       ln_without_channel_name);
 
     /* We send the warning only at startup, not after every RESET SLAVE */
-    if (!opt_relay_logname && !opt_relaylog_index_name && !name_warning_sent)
+    if (!opt_relay_logname_supplied && !opt_relaylog_index_name_supplied &&
+        !name_warning_sent)
     {
       /*
         User didn't give us info to name the relay log index file.
@@ -1879,23 +1974,17 @@ a file name for --relay-log-index option.", opt_relaylog_index_name);
         instead require a name. But as we don't want to break many existing
         setups, we only give warning, not error.
       */
-      sql_print_warning("Neither --relay-log nor --relay-log-index were used;"
-                        " so replication "
-                        "may break when this MySQL server acts as a "
-                        "slave and has his hostname changed!! Please "
-                        "use '--relay-log=%s' to avoid this problem.",
-                        ln_without_channel_name);
+      LogErr(WARNING_LEVEL, ER_RPL_PLEASE_USE_OPTION_RELAY_LOG,
+             ln_without_channel_name);
       name_warning_sent= 1;
     }
-
-    relay_log.is_relay_log= TRUE;
 
     /*
        If relay log index option is set, convert into channel specific
        index file. If the opt_relaylog_index has an extension, we strip
        it too. This is inconsistent to relay log names.
     */
-    if (opt_relaylog_index_name)
+    if (opt_relaylog_index_name_supplied)
     {
       char index_file_withoutext[FN_REFLEN];
       relay_log.generate_name(opt_relaylog_index_name,"",
@@ -1912,60 +2001,54 @@ a file name for --relay-log-index option.", opt_relaylog_index_name);
 
     if (relay_log.open_index_file(log_index_name, ln, TRUE))
     {
-      sql_print_error("Failed in open_index_file() called from Relay_log_info::rli_init_info().");
+      LogErr(ERROR_LEVEL, ER_RPL_OPEN_INDEX_FILE_FAILED);
       DBUG_RETURN(1);
     }
-#ifndef DBUG_OFF
-    get_sid_lock()->wrlock();
-    gtid_set->dbug_print("set of GTIDs in relay log before initialization");
-    get_sid_lock()->unlock();
-#endif
-    /*
-      In the init_gtid_set below we pass the mi->transaction_parser.
-      This will be useful to ensure that we only add a GTID to
-      the Retrieved_Gtid_Set for fully retrieved transactions. Also, it will
-      be useful to ensure the Retrieved_Gtid_Set behavior when auto
-      positioning is disabled (we could have transactions spanning multiple
-      relay log files in this case).
-      We will skip this initialization if relay_log_recovery is set in order
-      to save time, as neither the GTIDs nor the transaction_parser state
-      would be useful when the relay log will be cleaned up later when calling
-      init_recovery.
-    */
-    if (!is_relay_log_recovery &&
-        !gtid_retrieved_initialized &&
-        relay_log.init_gtid_sets(gtid_set, NULL,
-                                 opt_slave_sql_verify_checksum,
-                                 true/*true=need lock*/,
-                                 &mi->transaction_parser, &partial_trx))
+
+    if (!gtid_retrieved_initialized)
     {
-      sql_print_error("Failed in init_gtid_sets() called from Relay_log_info::rli_init_info().");
-      DBUG_RETURN(1);
-    }
-    gtid_retrieved_initialized= true;
+      /* Store the GTID of a transaction spanned in multiple relay log files */
+      Gtid_monitoring_info *partial_trx= mi->get_gtid_monitoring_info();
+      partial_trx->clear();
 #ifndef DBUG_OFF
-    get_sid_lock()->wrlock();
-    gtid_set->dbug_print("set of GTIDs in relay log after initialization");
-    get_sid_lock()->unlock();
+      get_sid_lock()->wrlock();
+      gtid_set->dbug_print("set of GTIDs in relay log before initialization");
+      get_sid_lock()->unlock();
 #endif
-    if (partial_trx.is_set())
-    {
       /*
-        The init_gtid_set has found an incomplete transaction in the relay log.
-        We add this transaction's GTID information to the queueing_trx structure
-        so the IO thread knows which GTID to add to the Retrieved_Gtid_Set when
-        reaching the end of the incomplete transaction.
+        In the init_gtid_set below we pass the mi->transaction_parser.
+        This will be useful to ensure that we only add a GTID to
+        the Retrieved_Gtid_Set for fully retrieved transactions. Also, it will
+        be useful to ensure the Retrieved_Gtid_Set behavior when auto
+        positioning is disabled (we could have transactions spanning multiple
+        relay log files in this case).
+        We will skip this initialization if relay_log_recovery is set in order
+        to save time, as neither the GTIDs nor the transaction_parser state
+        would be useful when the relay log will be cleaned up later when calling
+        init_recovery.
       */
-      mi->get_queueing_trx()->copy(&partial_trx);
-    }
-    else
-    {
-      mi->clear_queueing_trx(false /* need_lock */);
+      if (!is_relay_log_recovery &&
+          !gtid_retrieved_initialized &&
+          relay_log.init_gtid_sets(gtid_set, NULL,
+                                   opt_slave_sql_verify_checksum,
+                                   true/*true=need lock*/,
+                                   &mi->transaction_parser,
+                                   partial_trx))
+      {
+        LogErr(ERROR_LEVEL, ER_RPL_CANT_INITIALIZE_GTID_SETS_IN_RLI_INIT_INFO);
+        DBUG_RETURN(1);
+      }
+      gtid_retrieved_initialized= true;
+#ifndef DBUG_OFF
+      get_sid_lock()->wrlock();
+      gtid_set->dbug_print("set of GTIDs in relay log after initialization");
+      get_sid_lock()->unlock();
+#endif
     }
     /*
       Configures what object is used by the current log to store processed
       gtid(s). This is necessary in the MYSQL_BIN_LOG::MYSQL_BIN_LOG to
-      corretly compute the set of previous gtids.
+      correctly compute the set of previous gtids.
     */
     relay_log.set_previous_gtid_set_relaylog(gtid_set);
     /*
@@ -1984,7 +2067,7 @@ a file name for --relay-log-index option.", opt_relaylog_index_name);
                               mi->get_mi_description_event()))
     {
       mysql_mutex_unlock(log_lock);
-      sql_print_error("Failed in open_log() called from Relay_log_info::rli_init_info().");
+      LogErr(ERROR_LEVEL, ER_RPL_CANT_OPEN_LOG_IN_RLI_INIT_INFO);
       DBUG_RETURN(1);
     }
 
@@ -2047,9 +2130,8 @@ a file name for --relay-log-index option.", opt_relaylog_index_name);
                            &msg, 0))
     {
       char llbuf[22];
-      sql_print_error("Failed to open the relay log '%s' (relay_log_pos %s).",
-                      group_relay_log_name,
-                      llstr(group_relay_log_pos, llbuf));
+      LogErr(ERROR_LEVEL, ER_RPL_MTS_RECOVERY_CANT_OPEN_RELAY_LOG,
+             group_relay_log_name, llstr(group_relay_log_pos, llbuf));
       error= 1;
       goto err;
     }
@@ -2096,7 +2178,7 @@ err:
   inited= 0;
   error_on_rli_init_info= true;
   if (msg)
-    sql_print_error("%s.", msg);
+    LogErr(ERROR_LEVEL, ER_RPL_RLI_INIT_INFO_MSG, msg);
   relay_log.close(LOG_CLOSE_INDEX | LOG_CLOSE_STOP_EVENT,
                   true/*need_lock_log=true*/,
                   true/*need_lock_index=true*/);
@@ -2231,7 +2313,7 @@ int Relay_log_info::flush_info(const bool force)
   DBUG_RETURN(0);
 
 err:
-  sql_print_error("Error writing relay log configuration.");
+  LogErr(ERROR_LEVEL, ER_RPL_ERROR_WRITING_RELAY_LOG_CONFIGURATION);
   mysql_mutex_unlock(&mts_temp_table_LOCK);
   DBUG_RETURN(1);
 }

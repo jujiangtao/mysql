@@ -2,17 +2,24 @@
    Copyright (c) 2004, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 /*
    Most of the following code and structures were derived from
@@ -31,58 +38,66 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
 #include <sys/types.h>
 #include <time.h>
 
-#include "field.h"
-#include "handler.h"
 #include "lex_string.h"
 #include "m_ctype.h"
 #include "m_string.h"          // strmake
+#include "map_helpers.h"
 #include "my_base.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
-#include "my_decimal.h"
 #include "my_dir.h"
 #include "my_inttypes.h"
 #include "my_io.h"
+#include "my_loglevel.h"
 #include "my_macros.h"
 #include "my_pointer_arithmetic.h"
 #include "my_psi_config.h"
 #include "my_sys.h"
 #include "my_time.h"           // MY_TIME_T_MIN
+#include "mysql/components/services/log_shared.h"
+#include "mysql/components/services/mysql_mutex_bits.h"
+#include "mysql/components/services/psi_memory_bits.h"
+#include "mysql/components/services/psi_mutex_bits.h"
 #include "mysql/psi/mysql_file.h"
 #include "mysql/psi/mysql_memory.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/psi/psi_base.h"
-#include "mysql/psi/psi_memory.h"
-#include "mysql/psi/psi_mutex.h"
 #include "mysql/service_my_snprintf.h"
-#include "sql_const.h"
-#include "sql_error.h"
-#include "sql_plugin.h"
-#include "sql_servers.h"
-#include "system_variables.h"
+#include "mysql/udf_registration_types.h"
+#include "mysqld_error.h"
+#include "sql/dd/types/event.h"
+#include "sql/field.h"
+#include "sql/handler.h"
+#include "sql/histograms/value_map.h"
+#include "sql/psi_memory_key.h"
+#include "sql/sql_const.h"
+#include "sql/sql_error.h"
+#include "sql/sql_servers.h"
+#include "sql/system_variables.h"
+#include "sql/thr_malloc.h"
+#include "sql/tzfile.h"        // TZ_MAX_REV_RANGES
 #include "template_utils.h"
 #include "thr_lock.h"
-#include "thr_malloc.h"
 #include "thr_mutex.h"
-#include "tzfile.h"            // TZ_MAX_REV_RANGES
 
 #if !defined(TZINFO2SQL)
-#include "debug_sync.h"        // DEBUG_SYNC
-#include "hash.h"              // HASH
-#include "log.h"               // sql_print_error
-#include "mysqld.h"            // global_system_variables
-#include "sql_base.h"          // close_trans_system_tables
-#include "sql_class.h"         // THD
+#include "sql/debug_sync.h"    // DEBUG_SYNC
+#include "sql/log.h"
+#include "sql/mysqld.h"        // global_system_variables
+#include "sql/sql_base.h"      // close_trans_system_tables
+#include "sql/sql_class.h"     // THD
+#include "sql/sql_time.h"      // localtime_to_TIME
+#include "sql/table.h"         // TABLE_LIST
 #include "sql_string.h"        // String
-#include "sql_time.h"          // localtime_to_TIME
-#include "table.h"             // TABLE_LIST
 #endif
 
 #include <algorithm>
+#include <string>
+#include <unordered_map>
+#include <utility>
 
 #include "print_version.h"
 #include "welcome_copyright_notice.h" /* ORACLE_WELCOME_COPYRIGHT_NOTICE */
@@ -953,7 +968,7 @@ static my_time_t
 TIME_to_gmt_sec(const MYSQL_TIME *t, const TIME_ZONE_INFO *sp,
                 bool *in_dst_time_gap)
 {
-  my_time_t local_t;
+  longlong local_t;
   uint saved_seconds;
   uint i;
   int shift= 0;
@@ -1036,16 +1051,16 @@ TIME_to_gmt_sec(const MYSQL_TIME *t, const TIME_ZONE_INFO *sp,
       beginning of the gap.
     */
     *in_dst_time_gap= 1;
-    local_t= sp->revts[i] - sp->revtis[i].rt_offset + saved_seconds;
+    local_t= sp->revts[i] + saved_seconds - sp->revtis[i].rt_offset;
   }
   else
-    local_t= local_t - sp->revtis[i].rt_offset + saved_seconds;
+    local_t= local_t + saved_seconds - sp->revtis[i].rt_offset;
 
   /* check for TIMESTAMP_MAX_VALUE was already done above */
   if (local_t < TIMESTAMP_MIN_VALUE)
     local_t= 0;
 
-  DBUG_RETURN(local_t);
+  DBUG_RETURN(static_cast<my_time_t>(local_t));
 }
 
 
@@ -1365,15 +1380,11 @@ public:
                                     bool *in_dst_time_gap) const;
   virtual void   gmt_sec_to_TIME(MYSQL_TIME *tmp, my_time_t t) const;
   virtual const String * get_name() const;
-  /*
-    This have to be public because we want to be able to access it from
-    my_offset_tzs_get_key() function
-  */
-  long offset;
 private:
   /* Extra reserve because of snprintf */
   char name_buff[7+16];
   String name;
+  long offset;
 };
 
 
@@ -1418,7 +1429,7 @@ Time_zone_offset::TIME_to_gmt_sec(
   const MYSQL_TIME *t,
   bool *in_dst_time_gap MY_ATTRIBUTE((unused))) const
 {
-  my_time_t local_t;
+  longlong local_t;
   int shift= 0;
 
   /*
@@ -1447,7 +1458,7 @@ Time_zone_offset::TIME_to_gmt_sec(
   }
 
   if (local_t >= TIMESTAMP_MIN_VALUE && local_t <= TIMESTAMP_MAX_VALUE)
-    return local_t;
+    return static_cast<my_time_t>(local_t);
 
   /* range error*/
   return 0;
@@ -1495,8 +1506,6 @@ Time_zone *my_tz_OFFSET0= &tz_OFFSET0;
 Time_zone *my_tz_UTC= &tz_UTC;
 Time_zone *my_tz_SYSTEM= &tz_SYSTEM;
 
-static HASH tz_names;
-static HASH offset_tzs;
 static MEM_ROOT tz_storage;
 
 /*
@@ -1541,32 +1550,12 @@ static const LEX_STRING tz_tables_names[MY_TZ_TABLES_COUNT]=
 
 static const LEX_STRING tz_tables_db_name= { C_STRING_WITH_LEN("mysql")};
 
-
 class Tz_names_entry: public Sql_alloc
 {
 public:
   String name;
   Time_zone *tz;
 };
-
-
-static const uchar *
-my_tz_names_get_key(const uchar *arg, size_t *length)
-{
-  const Tz_names_entry *entry= pointer_cast<const Tz_names_entry*>(arg);
-  *length= entry->name.length();
-  return (uchar*) entry->name.ptr();
-}
-
-static const uchar *
-my_offset_tzs_get_key(const uchar *arg,
-                      size_t *length)
-{
-  const Time_zone_offset *entry= pointer_cast<const Time_zone_offset*>(arg);
-  *length= sizeof(long);
-  return (uchar*) &entry->offset;
-}
-
 
 /*
   Prepare table list with time zone related tables from preallocated array.
@@ -1608,14 +1597,20 @@ static PSI_mutex_key key_tz_LOCK;
 
 static PSI_mutex_info all_tz_mutexes[]=
 {
-  { & key_tz_LOCK, "tz_LOCK", PSI_FLAG_GLOBAL, 0}
+  { & key_tz_LOCK, "tz_LOCK", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME}
 };
 
 static PSI_memory_info all_tz_memory[]=
 {
-  { &key_memory_tz_storage, "tz_storage", PSI_FLAG_GLOBAL}
+  { &key_memory_tz_storage, "tz_storage", PSI_FLAG_ONLY_GLOBAL_STAT, 0, PSI_DOCUMENT_ME}
 };
 
+class Tz_names_entry;
+
+static collation_unordered_map<std::string, Tz_names_entry*> tz_names
+  {&my_charset_latin1, key_memory_tz_storage};
+static malloc_unordered_map<long, Time_zone_offset *> offset_tzs
+  {key_memory_tz_storage};
 
 static void init_tz_psi_keys(void)
 {
@@ -1681,21 +1676,6 @@ my_tz_init(THD *org_thd, const char *default_tzname, bool bootstrap)
   thd->store_globals();
 
   /* Init all memory structures that require explicit destruction */
-  if (my_hash_init(&tz_names, &my_charset_latin1, 20,
-                   0, my_tz_names_get_key, nullptr, 0,
-                   key_memory_tz_storage))
-  {
-    sql_print_error("Fatal error: OOM while initializing time zones");
-    goto end;
-  }
-  if (my_hash_init(&offset_tzs, &my_charset_latin1, 26, 0,
-                   my_offset_tzs_get_key, nullptr, 0,
-                   key_memory_tz_storage))
-  {
-    sql_print_error("Fatal error: OOM while initializing time zones");
-    my_hash_free(&tz_names);
-    goto end;
-  }
   init_sql_alloc(key_memory_tz_storage, &tz_storage, 32 * 1024, 0);
   mysql_mutex_init(key_tz_LOCK, &tz_LOCK, MY_MUTEX_INIT_FAST);
   tz_inited= 1;
@@ -1703,16 +1683,12 @@ my_tz_init(THD *org_thd, const char *default_tzname, bool bootstrap)
   /* Add 'SYSTEM' time zone to tz_names hash */
   if (!(tmp_tzname= new (&tz_storage) Tz_names_entry()))
   {
-    sql_print_error("Fatal error: OOM while initializing time zones");
+    LogErr(ERROR_LEVEL, ER_TZ_OOM_INITIALIZING_TIME_ZONES);
     goto end_with_cleanup;
   }
   tmp_tzname->name.set(STRING_WITH_LEN("SYSTEM"), &my_charset_latin1);
   tmp_tzname->tz= my_tz_SYSTEM;
-  if (my_hash_insert(&tz_names, (const uchar *)tmp_tzname))
-  {
-    sql_print_error("Fatal error: OOM while initializing time zones");
-    goto end_with_cleanup;
-  }
+  tz_names.emplace("SYSTEM", tmp_tzname);
 
   if (bootstrap)
   {
@@ -1747,9 +1723,8 @@ my_tz_init(THD *org_thd, const char *default_tzname, bool bootstrap)
   */
   if (open_trans_system_tables_for_read(thd, tz_tables))
   {
-    sql_print_warning("Can't open and lock time zone table: %s "
-                      "trying to live without them",
-                      thd->get_stmt_da()->message_text());
+    LogErr(WARNING_LEVEL, ER_TZ_CANT_OPEN_AND_LOCK_TIME_ZONE_TABLE,
+           thd->get_stmt_da()->message_text());
     /* We will try emulate that everything is ok */
     return_val= time_zone_tables_exist= 0;
     goto end_with_setting_default_tz;
@@ -1770,8 +1745,7 @@ my_tz_init(THD *org_thd, const char *default_tzname, bool bootstrap)
   if (!(tz_lsis= (LS_INFO*) alloc_root(&tz_storage,
                                        sizeof(LS_INFO) * TZ_MAX_LEAPS)))
   {
-    sql_print_error("Fatal error: Out of memory while loading "
-                    "mysql.time_zone_leap_second table");
+    LogErr(ERROR_LEVEL, ER_TZ_OOM_LOADING_LEAP_SECOND_TABLE);
     goto end_with_close;
   }
 
@@ -1789,8 +1763,7 @@ my_tz_init(THD *org_thd, const char *default_tzname, bool bootstrap)
   {
     if (tz_leapcnt + 1 > TZ_MAX_LEAPS)
     {
-      sql_print_error("Fatal error: While loading mysql.time_zone_leap_second"
-                      " table: too much leaps");
+      LogErr(ERROR_LEVEL, ER_TZ_TOO_MANY_LEAPS_IN_LEAP_SECOND_TABLE);
       table->file->ha_index_end();
       goto end_with_close;
     }
@@ -1812,8 +1785,7 @@ my_tz_init(THD *org_thd, const char *default_tzname, bool bootstrap)
 
   if (res != HA_ERR_END_OF_FILE)
   {
-    sql_print_error("Fatal error: Error while loading "
-                    "mysql.time_zone_leap_second table");
+    LogErr(ERROR_LEVEL, ER_TZ_ERROR_LOADING_LEAP_SECOND_TABLE);
     goto end_with_close;
   }
 
@@ -1838,8 +1810,8 @@ end_with_setting_default_tz:
     */
     if (!(global_system_variables.time_zone= my_tz_find(thd, &tmp_tzname2)))
     {
-      sql_print_error("Fatal error: Illegal or unknown default time zone '%s'",
-                      default_tzname);
+      LogErr(ERROR_LEVEL, ER_TZ_UNKNOWN_OR_ILLEGAL_DEFAULT_TIME_ZONE,
+             default_tzname);
       return_val= 1;
     }
   }
@@ -1849,7 +1821,6 @@ end_with_cleanup:
   if (return_val)
     my_tz_free();
 
-end:
   delete thd;
   if (org_thd)
     org_thd->store_globals();			/* purecov: inspected */
@@ -1874,8 +1845,8 @@ void my_tz_free()
   {
     tz_inited= 0;
     mysql_mutex_destroy(&tz_LOCK);
-    my_hash_free(&offset_tzs);
-    my_hash_free(&tz_names);
+    offset_tzs.clear();
+    tz_names.clear();
     free_root(&tz_storage, MYF(0));
   }
 }
@@ -1964,8 +1935,8 @@ tz_load_from_open_tables(const String *tz_name, TABLE_LIST *tz_tables)
       Most probably user has mistyped time zone name, so no need to bark here
       unless we need it for debugging.
     */
-     sql_print_error("Can't find description of time zone '%.*s'", 
-                     tz_name->length(), tz_name->ptr());
+    LogErr(ERROR_LEVEL, ER_TZ_CANT_FIND_DESCRIPTION_FOR_TIME_ZONE,
+           tz_name->length(), tz_name->ptr());
 #endif
     goto end;
   }
@@ -1992,7 +1963,7 @@ tz_load_from_open_tables(const String *tz_name, TABLE_LIST *tz_tables)
     DBUG_ASSERT(res != HA_ERR_LOCK_WAIT_TIMEOUT &&
                 res != HA_ERR_LOCK_DEADLOCK);
 
-    sql_print_error("Can't find description of time zone '%u'", tzid);
+    LogErr(ERROR_LEVEL, ER_TZ_CANT_FIND_DESCRIPTION_FOR_TIME_ZONE_ID, tzid);
     goto end;
   }
 
@@ -2025,9 +1996,7 @@ tz_load_from_open_tables(const String *tz_name, TABLE_LIST *tz_tables)
 
     if (ttid >= TZ_MAX_TYPES)
     {
-      sql_print_error("Error while loading time zone description from "
-                      "mysql.time_zone_transition_type table: too big "
-                      "transition type id");
+      LogErr(ERROR_LEVEL, ER_TZ_TRANSITION_TYPE_TABLE_TYPE_TOO_LARGE);
       goto end;
     }
 
@@ -2039,9 +2008,8 @@ tz_load_from_open_tables(const String *tz_name, TABLE_LIST *tz_tables)
     table->field[4]->val_str(&abbr, &abbr);
     if (tmp_tz_info.charcnt + abbr.length() + 1 > sizeof(chars))
     {
-      sql_print_error("Error while loading time zone description from "
-                      "mysql.time_zone_transition_type table: not enough "
-                      "room for abbreviations");
+      LogErr(ERROR_LEVEL,
+             ER_TZ_TRANSITION_TYPE_TABLE_ABBREVIATIONS_EXCEED_SPACE);
       goto end;
     }
     ttis[ttid].tt_abbrind= tmp_tz_info.charcnt;
@@ -2073,8 +2041,7 @@ tz_load_from_open_tables(const String *tz_name, TABLE_LIST *tz_tables)
   {
     DBUG_ASSERT(res != HA_ERR_LOCK_WAIT_TIMEOUT &&
                 res != HA_ERR_LOCK_DEADLOCK);
-    sql_print_error("Error while loading time zone description from "
-                    "mysql.time_zone_transition_type table");
+    LogErr(ERROR_LEVEL, ER_TZ_TRANSITION_TYPE_TABLE_LOAD_ERROR);
     goto end;
   }
 
@@ -2100,16 +2067,12 @@ tz_load_from_open_tables(const String *tz_name, TABLE_LIST *tz_tables)
 
     if (tmp_tz_info.timecnt + 1 > TZ_MAX_TIMES)
     {
-      sql_print_error("Error while loading time zone description from "
-                      "mysql.time_zone_transition table: "
-                      "too much transitions");
+      LogErr(ERROR_LEVEL, ER_TZ_TRANSITION_TABLE_TOO_MANY_TRANSITIONS);
       goto end;
     }
     if (ttid + 1 > tmp_tz_info.typecnt)
     {
-      sql_print_error("Error while loading time zone description from "
-                      "mysql.time_zone_transition table: "
-                      "bad transition type id");
+      LogErr(ERROR_LEVEL, ER_TZ_TRANSITION_TABLE_BAD_TRANSITION_TYPE);
       goto end;
     }
 
@@ -2133,8 +2096,7 @@ tz_load_from_open_tables(const String *tz_name, TABLE_LIST *tz_tables)
   {
     DBUG_ASSERT(res != HA_ERR_LOCK_WAIT_TIMEOUT &&
                 res != HA_ERR_LOCK_DEADLOCK);
-    sql_print_error("Error while loading time zone description from "
-                    "mysql.time_zone_transition table");
+    LogErr(ERROR_LEVEL, ER_TZ_TRANSITION_TABLE_LOAD_ERROR);
     goto end;
   }
 
@@ -2147,7 +2109,7 @@ tz_load_from_open_tables(const String *tz_name, TABLE_LIST *tz_tables)
   */
   if (tmp_tz_info.typecnt < 1)
   {
-    sql_print_error("loading time zone without transition types");
+    LogErr(ERROR_LEVEL, ER_TZ_NO_TRANSITION_TYPES_IN_TIME_ZONE);
     goto end;
   }
 
@@ -2155,7 +2117,7 @@ tz_load_from_open_tables(const String *tz_name, TABLE_LIST *tz_tables)
   if (!(alloc_buff= (char*) alloc_root(&tz_storage, sizeof(TIME_ZONE_INFO) +
                                        tz_name->length() + 1)))
   {
-    sql_print_error("Out of memory while loading time zone description");
+    LogErr(ERROR_LEVEL, ER_TZ_OOM_LOADING_TIME_ZONE_DESCRIPTION);
     DBUG_RETURN(0);
   }
 
@@ -2182,7 +2144,7 @@ tz_load_from_open_tables(const String *tz_name, TABLE_LIST *tz_tables)
                                        sizeof(TRAN_TYPE_INFO) *
                                        tz_info->typecnt)))
   {
-    sql_print_error("Out of memory while loading time zone description");
+    LogErr(ERROR_LEVEL, ER_TZ_OOM_LOADING_TIME_ZONE_DESCRIPTION);
     goto end;
   }
 
@@ -2203,7 +2165,7 @@ tz_load_from_open_tables(const String *tz_name, TABLE_LIST *tz_tables)
   /* Build reversed map. */
   if (prepare_tz_info(tz_info, &tz_storage))
   {
-    sql_print_error("Unable to build mktime map for time zone");
+    LogErr(ERROR_LEVEL, ER_TZ_CANT_BUILD_MKTIME_MAP);
     goto end;
   }
 
@@ -2213,9 +2175,9 @@ tz_load_from_open_tables(const String *tz_name, TABLE_LIST *tz_tables)
                                             &(tmp_tzname->name))) ||
       (tmp_tzname->name.set(tz_name_buff, tz_name->length(),
                             &my_charset_latin1),
-       my_hash_insert(&tz_names, (const uchar *)tmp_tzname)))
+       !tz_names.emplace(to_string(tmp_tzname->name), tmp_tzname).second))
   {
-    sql_print_error("Out of memory while loading time zone");
+    LogErr(ERROR_LEVEL, ER_TZ_OOM_WHILE_LOADING_TIME_ZONE);
     goto end;
   }
 
@@ -2354,7 +2316,6 @@ str_to_offset(const char *str, size_t length, long *offset)
 Time_zone *
 my_tz_find(THD *thd, const String *name)
 {
-  Tz_names_entry *tmp_tzname;
   Time_zone *result_tz= 0;
   long offset;
   DBUG_ENTER("my_tz_find");
@@ -2368,30 +2329,31 @@ my_tz_find(THD *thd, const String *name)
 
   if (!str_to_offset(name->ptr(), name->length(), &offset))
   {
-
-    if (!(result_tz= (Time_zone_offset *)my_hash_search(&offset_tzs,
-                                                        (const uchar *)&offset,
-                                                        sizeof(long))))
+    const auto it= offset_tzs.find(offset);
+    if (it != offset_tzs.end())
+    {
+      result_tz= it->second;
+    }
+    else
     {
       DBUG_PRINT("info", ("Creating new Time_zone_offset object"));
 
-      if (!(result_tz= new (&tz_storage) Time_zone_offset(offset)) ||
-          my_hash_insert(&offset_tzs, (const uchar *) result_tz))
+      if ((result_tz= new (&tz_storage) Time_zone_offset(offset)))
       {
-        result_tz= 0;
-        sql_print_error("Fatal error: Out of memory "
-                        "while setting new time zone");
+        offset_tzs.emplace(offset, down_cast<Time_zone_offset *>(result_tz));
+      }
+      else
+      {
+        LogErr(ERROR_LEVEL, ER_TZ_OOM_WHILE_SETTING_TIME_ZONE);
       }
     }
   }
   else
   {
     result_tz= 0;
-    if ((tmp_tzname= (Tz_names_entry *)my_hash_search(&tz_names,
-                                                      (const uchar *)
-                                                      name->ptr(),
-                                                      name->length())))
-      result_tz= tmp_tzname->tz;
+    const auto it= tz_names.find(to_string(*name));
+    if (it != tz_names.end())
+      result_tz= it->second->tz;
     else if (time_zone_tables_exist)
     {
       TABLE_LIST tz_tables[MY_TZ_TABLES_COUNT];

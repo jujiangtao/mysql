@@ -2,13 +2,20 @@
    Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -16,73 +23,75 @@
 */
 
 
-#include "sql_class.h"
+#include "sql/sql_class.h"
 
 #include <assert.h>
 #include <errno.h>
 #include <stdarg.h>
 #include <algorithm>
+#include <utility>
 
 #include "binary_log_types.h"
-#include "binlog.h"
-#include "connection_handler_manager.h"      // Connection_handler_manager
-#include "current_thd.h"
-#include "debug_sync.h"                      // DEBUG_SYNC
-#include "derror.h"                          // ER_THD
-#include "error_handler.h"                   // Internal_error_handler
-#include "hash.h"
-#include "item_func.h"                       // user_var_entry
-#include "key.h"
-#include "lock.h"                            // mysql_lock_abort_for_thread
-#include "locking_service.h"                 // release_all_locking_service_locks
-#include "log_event.h"
 #include "m_ctype.h"
 #include "m_string.h"
-#include "my_atomic.h"
+#include "my_compiler.h"
 #include "my_dbug.h"
-#include "mysql/psi/mysql_stage.h"
-#include "mysql/psi/mysql_statement.h"
-#include "mysql/psi/psi_error.h"
-#include "mysql/service_my_snprintf.h"
-#include "mysql/service_mysql_alloc.h"
-#include "mysqld.h"                          // global_system_variables ...
-#include "mysqld_thd_manager.h"              // Global_THD_manager
-#include "mysys_err.h"                       // EE_OUTOFMEMORY
-#include "psi_memory_key.h"
-#include "query_result.h"
-#include "rpl_rli.h"                         // Relay_log_info
-#include "sp_cache.h"                        // sp_cache_clear
-#include "sql_audit.h"                       // mysql_audit_free_thd
-#include "sql_base.h"                        // close_temporary_tables
-#include "sql_cache.h"                       // query_cache
-#include "sql_callback.h"                    // MYSQL_CALLBACK
-#include "sql_handler.h"                     // mysql_ha_cleanup
-#include "sql_parse.h"                       // is_update_query
-#include "sql_plugin.h"                      // plugin_thdvar_init
-#include "sql_prepare.h"                     // Prepared_statement
-#include "sql_security_ctx.h"
-#include "sql_time.h"                        // my_timeval_trunc
-#include "sql_timer.h"                       // thd_timer_destroy
-#include "tc_log.h"
-#include "template_utils.h"
-#include "thr_malloc.h"
-#include "thr_mutex.h"
-#include "transaction.h"                     // trans_rollback
-#include "xa.h"
-#include "rpl_slave.h"                       // rpl_master_erroneous_autoinc
-#include "dd/cache/dictionary_client.h"      // Dictionary_client
-#include "dd/dd_kill_immunizer.h"            // dd:DD_kill_immunizer
+#include "mysql/components/services/psi_error_bits.h"
+#include "mysql/psi/mysql_cond.h"
 #include "mysql/psi/mysql_error.h"
 #include "mysql/psi/mysql_ps.h"
+#include "mysql/psi/mysql_stage.h"
+#include "mysql/psi/mysql_statement.h"
+#include "mysql/service_my_snprintf.h"
+#include "mysql/service_mysql_alloc.h"
+#include "mysys_err.h"                       // EE_OUTOFMEMORY
+#include "pfs_statement_provider.h"
+#include "sql/auth/sql_security_ctx.h"
+#include "sql/binlog.h"
+#include "sql/check_stack.h"
+#include "sql/conn_handler/connection_handler_manager.h" // Connection_handler_manager
+#include "sql/current_thd.h"
+#include "sql/dd/cache/dictionary_client.h"  // Dictionary_client
+#include "sql/dd/dd_kill_immunizer.h"        // dd:DD_kill_immunizer
+#include "sql/debug_sync.h"                  // DEBUG_SYNC
+#include "sql/derror.h"                      // ER_THD
+#include "sql/error_handler.h"               // Internal_error_handler
+#include "sql/item_func.h"                   // user_var_entry
+#include "sql/key.h"
+#include "sql/lock.h"                        // mysql_lock_abort_for_thread
+#include "sql/locking_service.h"             // release_all_locking_service_locks
+#include "sql/mysqld.h"                      // global_system_variables ...
+#include "sql/mysqld_thd_manager.h"          // Global_THD_manager
+#include "sql/psi_memory_key.h"
+#include "sql/query_result.h"
+#include "sql/rpl_rli.h"                     // Relay_log_info
+#include "sql/rpl_slave.h"                   // rpl_master_erroneous_autoinc
+#include "sql/rpl_transaction_write_set_ctx.h"
+#include "sql/sp_cache.h"                    // sp_cache_clear
+#include "sql/sql_audit.h"                   // mysql_audit_free_thd
+#include "sql/sql_backup_lock.h"             // release_backup_lock
+#include "sql/sql_base.h"                    // close_temporary_tables
+#include "sql/sql_callback.h"                // MYSQL_CALLBACK
+#include "sql/sql_handler.h"                 // mysql_ha_cleanup
+#include "sql/sql_parse.h"                   // is_update_query
+#include "sql/sql_plugin.h"                  // plugin_thdvar_init
+#include "sql/sql_prepare.h"                 // Prepared_statement
+#include "sql/sql_time.h"                    // my_timeval_trunc
+#include "sql/sql_timer.h"                   // thd_timer_destroy
+#include "sql/tc_log.h"
+#include "sql/thr_malloc.h"
+#include "sql/transaction.h"                 // trans_rollback
+#include "sql/xa.h"
+#include "thr_mutex.h"
 
 using std::min;
 using std::max;
+using std::unique_ptr;
 
 /*
   The following is used to initialise Table_ident with a internal
   table name
 */
-char internal_table_name[2]= "";
 char empty_c_string[1]= {0};    /* used for not defined db */
 
 LEX_STRING EMPTY_STR= { (char *) "", 0 };
@@ -91,6 +100,7 @@ LEX_CSTRING EMPTY_CSTR= { "", 0 };
 LEX_CSTRING NULL_CSTR=  { NULL, 0 };
 
 const char * const THD::DEFAULT_WHERE= "field list";
+extern PSI_stage_info stage_waiting_for_disk_space;
 
 
 void THD::Transaction_state::backup(THD *thd)
@@ -271,40 +281,9 @@ THD::Attachable_trx::~Attachable_trx()
   }
 }
 
-
-static const uchar *get_var_key(const uchar *arg, size_t *length)
-{
-  const user_var_entry *entry= pointer_cast<const user_var_entry*>(arg);
-  *length= entry->entry_name.length();
-  return (uchar*) entry->entry_name.ptr();
-}
-
-static void free_user_var(void *arg)
-{
-  user_var_entry *entry= pointer_cast<user_var_entry*>(arg);
-  entry->destroy();
-}
-
-
-PSI_thread* THD::get_psi()
-{
-  void *addr= & m_psi;
-  void * volatile * typed_addr= static_cast<void * volatile *>(addr);
-  void *ptr;
-  ptr= my_atomic_loadptr(typed_addr);
-  return static_cast<PSI_thread*>(ptr);
-}
-
-void THD::set_psi(PSI_thread *psi)
-{
-  void *addr= & m_psi;
-  void * volatile * typed_addr= static_cast<void * volatile *>(addr);
-  my_atomic_storeptr(typed_addr, psi);
-}
-
 void THD::enter_stage(const PSI_stage_info *new_stage,
                       PSI_stage_info *old_stage,
-                      const char *calling_func,
+                      const char *calling_func MY_ATTRIBUTE((unused)),
                       const char *calling_file,
                       const unsigned int calling_line)
 {
@@ -378,7 +357,6 @@ THD::THD(bool enable_plugins)
    m_query_string(NULL_CSTR),
    m_db(NULL_CSTR),
    rli_fake(0), rli_slave(NULL),
-   first_query_cache_block(NULL),
    initial_status_var(NULL),
    status_var_aggregated(false),
    m_current_query_cost(0),
@@ -392,6 +370,7 @@ THD::THD(bool enable_plugins)
    fill_variables_recursion_level(0),
    ha_data(PSI_NOT_INSTRUMENTED, ha_data.initial_capacity),
    binlog_row_event_extra_data(NULL),
+   skip_readonly_check(false),
    binlog_unsafe_warning_flags(0),
    binlog_table_maps(0),
    binlog_accessed_db_names(NULL),
@@ -443,7 +422,8 @@ THD::THD(bool enable_plugins)
    m_query_rewrite_plugin_da_ptr(&m_query_rewrite_plugin_da),
    m_stmt_da(&main_da),
    duplicate_slave_id(false),
-   is_a_srv_session_thd(false)
+   is_a_srv_session_thd(false),
+   m_is_plugin_fake_ddl(false)
 {
   main_lex.reset();
   set_psi(NULL);
@@ -500,6 +480,9 @@ THD::THD(bool enable_plugins)
   m_release_resources_done= false;
   peer_port= 0;					// For SHOW PROCESSLIST
   get_transaction()->m_flags.enabled= true;
+  m_resource_group_ctx.m_cur_resource_group= nullptr;
+  m_resource_group_ctx.m_switch_resource_group_str[0]= '\0';
+  m_resource_group_ctx.m_warn= 0;
 
   mysql_mutex_init(key_LOCK_thd_data, &LOCK_thd_data, MY_MUTEX_INIT_FAST);
   mysql_mutex_init(key_LOCK_thd_query, &LOCK_thd_query, MY_MUTEX_INIT_FAST);
@@ -525,10 +508,7 @@ THD::THD(bool enable_plugins)
   profiling.set_thd(this);
 #endif
   m_user_connect= NULL;
-  my_hash_init(&user_vars, system_charset_info, USER_VARS_HASH_SIZE, 0,
-               get_var_key,
-               free_user_var, 0,
-               key_memory_user_var_entry);
+  user_vars.clear();
 
   sp_proc_cache= NULL;
   sp_func_cache= NULL;
@@ -786,8 +766,6 @@ Sql_condition* THD::raise_condition(uint sql_errno,
   if (level == Sql_condition::SL_NOTE || level == Sql_condition::SL_WARNING)
     got_warning= true;
 
-  query_cache.abort(this);
-
   Diagnostics_area *da= get_stmt_da();
   if (level == Sql_condition::SL_ERROR)
   {
@@ -859,8 +837,8 @@ void THD::init(void)
   insert_lock_default= (variables.low_priority_updates ?
                         TL_WRITE_LOW_PRIORITY :
                         TL_WRITE_CONCURRENT_INSERT);
-  tx_isolation= (enum_tx_isolation) variables.tx_isolation;
-  tx_read_only= variables.tx_read_only;
+  tx_isolation= (enum_tx_isolation) variables.transaction_isolation;
+  tx_read_only= variables.transaction_read_only;
   tx_priority= 0;
   thd_tx_priority= 0;
   update_charset();
@@ -886,6 +864,9 @@ void THD::init(void)
   owned_gtid.clear();
   owned_sid.clear();
   owned_gtid.dbug_print(NULL, "set owned_gtid (clear) in THD::init");
+
+  // This will clear the writeset session history.
+  rpl_thd_ctx.dependency_tracker_ctx().set_last_session_sequence_number(0);
 }
 
 
@@ -932,10 +913,7 @@ void THD::cleanup_connection(void)
   cleanup_done= 0;
   init();
   stmt_map.reset();
-  my_hash_init(&user_vars, system_charset_info, USER_VARS_HASH_SIZE, 0,
-               get_var_key,
-               free_user_var, 0,
-               key_memory_user_var_entry);
+  user_vars.clear();
   sp_cache_clear(&sp_proc_cache);
   sp_cache_clear(&sp_func_cache);
 
@@ -954,7 +932,7 @@ void THD::cleanup_connection(void)
     if(check_cleanup)
     {
       /* isolation level should be default */
-      DBUG_ASSERT(variables.tx_isolation == ISO_REPEATABLE_READ);
+      DBUG_ASSERT(variables.transaction_isolation == ISO_REPEATABLE_READ);
       /* check autocommit is ON by default */
       DBUG_ASSERT(server_status == SERVER_STATUS_AUTOCOMMIT);
       /* check prepared stmts are cleaned up */
@@ -1019,12 +997,17 @@ void THD::cleanup(void)
   */
   release_all_locking_service_locks(this);
 
+  /*
+    If Backup Lock was acquired it must be released on disconnect.
+  */
+  release_backup_lock(this);
+
   /* All metadata locks must have been released by now. */
   DBUG_ASSERT(!mdl_context.has_locks());
 
   /* Protects user_vars. */
   mysql_mutex_lock(&LOCK_thd_data);
-  my_hash_free(&user_vars);
+  user_vars.clear();
   mysql_mutex_unlock(&LOCK_thd_data);
 
   /*
@@ -1218,7 +1201,7 @@ void THD::awake(THD::killed_state state_to_set)
     While exiting kill immune mode, awake() is called again with the killed
     state saved in THD::kill_immunizer object.
   */
-  if (kill_immunizer)
+  if (kill_immunizer && kill_immunizer->is_active())
   {
     kill_immunizer->save_killed_state(state_to_set);
     DBUG_VOID_RETURN;
@@ -1241,8 +1224,10 @@ void THD::awake(THD::killed_state state_to_set)
 
   if (state_to_set != THD::KILL_QUERY && state_to_set != THD::KILL_TIMEOUT)
   {
-    if (this != current_thd)
+    if (this != current_thd || kill_immunizer)
     {
+      DBUG_ASSERT(!kill_immunizer || !kill_immunizer->is_active());
+
       /*
         Before sending a signal, let's close the socket of the thread
         that is being killed ("this", which is not the current thread).
@@ -1314,7 +1299,7 @@ void THD::awake(THD::killed_state state_to_set)
       However, there is still a small chance of failure on platforms with
       instruction or memory write reordering.
     */
-    if (current_cond && current_mutex)
+    if (current_cond.load() && current_mutex.load())
     {
       DBUG_EXECUTE_IF("before_dump_thread_acquires_current_mutex",
                       {
@@ -1346,22 +1331,38 @@ void THD::disconnect(bool server_shutdown)
 
   mysql_mutex_lock(&LOCK_thd_data);
 
-  killed= THD::KILL_CONNECTION;
-
   /*
-    Since a active vio might might have not been set yet, in
-    any case save a reference to avoid closing a inexistent
-    one or closing the vio twice if there is a active one.
-  */
-  vio= active_vio;
-  shutdown_active_vio();
+    If thread is in kill immune mode (i.e. operation on new DD tables
+    is in progress) then just save state_to_set with THD::kill_immunizer
+    object.
 
-  /* Disconnect even if a active vio is not associated. */
-  if (is_classic_protocol() &&
-      get_protocol_classic()->get_vio() != vio &&
-      get_protocol_classic()->connection_alive())
+    While exiting kill immune mode, awake() is called again with the killed
+    state saved in THD::kill_immunizer object.
+
+    active_vio is aleady associated to the thread when it is in the kill
+    immune mode. THD::awake() closes the active_vio.
+ */
+  if (kill_immunizer != nullptr)
+    kill_immunizer->save_killed_state(THD::KILL_CONNECTION);
+  else
   {
-    m_protocol->shutdown(server_shutdown);
+    killed= THD::KILL_CONNECTION;
+
+    /*
+      Since a active vio might might have not been set yet, in
+      any case save a reference to avoid closing a inexistent
+      one or closing the vio twice if there is a active one.
+    */
+    vio= active_vio;
+    shutdown_active_vio();
+
+    /* Disconnect even if a active vio is not associated. */
+    if (is_classic_protocol() &&
+        get_protocol_classic()->get_vio() != vio &&
+        get_protocol_classic()->connection_alive())
+    {
+      m_protocol->shutdown(server_shutdown);
+    }
   }
 
   mysql_mutex_unlock(&LOCK_thd_data);
@@ -1408,9 +1409,8 @@ bool THD::store_globals()
   */
   DBUG_ASSERT(thread_stack);
 
-  if (my_thread_set_THR_THD(this) ||
-      my_thread_set_THR_MALLOC(&mem_root))
-    return true;
+  current_thd= this;
+  THR_MALLOC= &mem_root;
   /*
     is_killable is concurrently readable by a killer thread.
     It is protected by LOCK_thd_data, it is not needed to lock while the
@@ -1444,8 +1444,8 @@ void THD::restore_globals()
   DBUG_ASSERT(thread_stack);
 
   /* Undocking the thread specific data. */
-  my_thread_set_THR_THD(NULL);
-  my_thread_set_THR_MALLOC(NULL);
+  current_thd= nullptr;
+  THR_MALLOC= nullptr;
 }
 
 
@@ -1849,7 +1849,7 @@ void Query_arena::free_items()
 }
 
 
-void Query_arena::set_query_arena(Query_arena *set)
+void Query_arena::set_query_arena(const Query_arena *set)
 {
   mem_root=  set->mem_root;
   free_list= set->free_list;
@@ -1908,62 +1908,20 @@ void THD::restore_active_arena(Query_arena *set, Query_arena *backup)
 }
 
 
-static const uchar *
-get_statement_id_as_hash_key(const uchar *record, size_t *key_length)
-{
-  const Prepared_statement *statement= (const Prepared_statement *) record;
-  *key_length= sizeof(statement->id);
-  return (uchar *) &(statement)->id;
-}
-
-static void delete_statement_as_hash_key(void *key)
-{
-  delete (Prepared_statement *) key;
-}
-
-static const uchar *get_stmt_name_hash_key(const uchar *arg, size_t *length)
-{
-  Prepared_statement *entry= (Prepared_statement*) arg;
-  *length= entry->name().length;
-  return reinterpret_cast<uchar *>(const_cast<char *>(entry->name().str));
-}
-
-
 Prepared_statement_map::Prepared_statement_map()
- :m_last_found_statement(NULL)
+ :st_hash(key_memory_prepared_statement_map),
+  names_hash(system_charset_info, key_memory_prepared_statement_map),
+  m_last_found_statement(NULL)
 {
-  enum
-  {
-    START_STMT_HASH_SIZE = 16,
-    START_NAME_HASH_SIZE = 16
-  };
-  my_hash_init(&st_hash, &my_charset_bin, START_STMT_HASH_SIZE, 0,
-               get_statement_id_as_hash_key,
-               delete_statement_as_hash_key, 0,
-               key_memory_prepared_statement_map);
-  my_hash_init(&names_hash, system_charset_info, START_NAME_HASH_SIZE, 0,
-               get_stmt_name_hash_key,
-               nullptr, 0,
-               key_memory_prepared_statement_map);
 }
 
 
 int Prepared_statement_map::insert(Prepared_statement *statement)
 {
-  if (my_hash_insert(&st_hash, (uchar*) statement))
+  st_hash.emplace(statement->id, unique_ptr<Prepared_statement>(statement));
+  if (statement->name().str)
   {
-    /*
-      Delete is needed only in case of an insert failure. In all other
-      cases hash_delete will also delete the statement.
-    */
-    delete statement;
-    my_error(ER_OUT_OF_RESOURCES, MYF(0));
-    goto err_st_hash;
-  }
-  if (statement->name().str && my_hash_insert(&names_hash, (uchar*) statement))
-  {
-    my_error(ER_OUT_OF_RESOURCES, MYF(0));
-    goto err_names_hash;
+    names_hash.emplace(to_string(statement->name()), statement);
   }
   mysql_mutex_lock(&LOCK_prepared_stmt_count);
   /*
@@ -1988,10 +1946,8 @@ int Prepared_statement_map::insert(Prepared_statement *statement)
 
 err_max:
   if (statement->name().str)
-    my_hash_delete(&names_hash, (uchar*) statement);
-err_names_hash:
-  my_hash_delete(&st_hash, (uchar*) statement);
-err_st_hash:
+    names_hash.erase(to_string(statement->name()));
+  st_hash.erase(statement->id);
   return 1;
 }
 
@@ -1999,8 +1955,7 @@ err_st_hash:
 Prepared_statement
 *Prepared_statement_map::find_by_name(const LEX_CSTRING &name)
 {
-  return reinterpret_cast<Prepared_statement*>
-    (my_hash_search(&names_hash, (uchar*)name.str, name.length));
+  return find_or_nullptr(names_hash, to_string(name));
 }
 
 
@@ -2008,9 +1963,7 @@ Prepared_statement *Prepared_statement_map::find(ulong id)
 {
   if (m_last_found_statement == NULL || id != m_last_found_statement->id)
   {
-    Prepared_statement *stmt=
-      reinterpret_cast<Prepared_statement*>
-      (my_hash_search(&st_hash, (uchar *) &id, sizeof(id)));
+    Prepared_statement *stmt= find_or_nullptr(st_hash, id);
     if (stmt && stmt->name().str)
       return NULL;
     m_last_found_statement= stmt;
@@ -2024,9 +1977,9 @@ void Prepared_statement_map::erase(Prepared_statement *statement)
   if (statement == m_last_found_statement)
     m_last_found_statement= NULL;
   if (statement->name().str)
-    my_hash_delete(&names_hash, (uchar *) statement);
+    names_hash.erase(to_string(statement->name()));
 
-  my_hash_delete(&st_hash, (uchar *) statement);
+  st_hash.erase(statement->id);
   mysql_mutex_lock(&LOCK_prepared_stmt_count);
   DBUG_ASSERT(prepared_stmt_count > 0);
   prepared_stmt_count--;
@@ -2035,30 +1988,30 @@ void Prepared_statement_map::erase(Prepared_statement *statement)
 
 void Prepared_statement_map::claim_memory_ownership()
 {
-  my_hash_claim(&names_hash);
-  my_hash_claim(&st_hash);
+  for (const auto &key_and_value : st_hash)
+  {
+    my_claim(key_and_value.second.get());
+  }
 }
 
 void Prepared_statement_map::reset()
 {
-  /* Must be first, hash_free will reset st_hash.records */
-  if (st_hash.records > 0)
+  if (!st_hash.empty())
   {
 #ifdef HAVE_PSI_PS_INTERFACE
-    for (uint i=0 ; i < st_hash.records ; i++)
+    for (auto &key_and_value : st_hash)
     {
-      Prepared_statement *stmt=
-        reinterpret_cast<Prepared_statement *>(my_hash_element(&st_hash, i));
+      Prepared_statement *stmt= key_and_value.second.get();
       MYSQL_DESTROY_PS(stmt->get_PS_prepared_stmt());
     }
 #endif
     mysql_mutex_lock(&LOCK_prepared_stmt_count);
-    DBUG_ASSERT(prepared_stmt_count >= st_hash.records);
-    prepared_stmt_count-= st_hash.records;
+    DBUG_ASSERT(prepared_stmt_count >= st_hash.size());
+    prepared_stmt_count-= st_hash.size();
     mysql_mutex_unlock(&LOCK_prepared_stmt_count);
   }
-  my_hash_reset(&names_hash);
-  my_hash_reset(&st_hash);
+  names_hash.clear();
+  st_hash.clear();
   m_last_found_statement= NULL;
 }
 
@@ -2069,10 +2022,7 @@ Prepared_statement_map::~Prepared_statement_map()
     We do not want to grab the global LOCK_prepared_stmt_count mutex here.
     reset() should already have been called to maintain prepared_stmt_count.
    */
-  DBUG_ASSERT(st_hash.records == 0);
-
-  my_hash_free(&names_hash);
-  my_hash_free(&st_hash);
+  DBUG_ASSERT(st_hash.empty());
 }
 
 
@@ -2152,6 +2102,20 @@ void THD::end_attachable_transaction()
   // Restore attachable transaction which was active before we started
   // the one which just has ended. NULL in most cases.
   m_attachable_trx= prev_trx;
+}
+
+
+bool THD::is_attachable_rw_transaction_active() const
+{
+  return m_attachable_trx != NULL && !m_attachable_trx->is_read_only();
+}
+
+
+void THD::begin_attachable_rw_transaction()
+{
+  DBUG_ASSERT(!m_attachable_trx);
+
+  m_attachable_trx= new Attachable_trx_rw(this);
 }
 
 
@@ -2301,6 +2265,15 @@ void THD::restore_sub_statement_state(Sub_statement_state *backup)
   if ((variables.option_bits & OPTION_BIN_LOG) && is_update_query(lex->sql_command) &&
        !is_current_stmt_binlog_format_row())
     mysql_bin_log.stop_union_events(this);
+
+  /*
+    The below assert mostly serves as reminder that optimization in
+    DML_prelocking_strategy::handle_table() relies on the fact
+    that stored function/trigger can't change FOREIGN_KEY_CHECKS
+    value for the top-level statement which invokes them.
+  */
+  DBUG_ASSERT((variables.option_bits & OPTION_NO_FOREIGN_KEY_CHECKS) ==
+              (backup->option_bits & OPTION_NO_FOREIGN_KEY_CHECKS));
 
   /*
     The following is added to the old values as we are interested in the
@@ -2495,9 +2468,9 @@ void THD::leave_locked_tables_mode()
       Also ensure that we don't release metadata locks for open HANDLERs
       and user-level locks.
     */
-    if (handler_tables_hash.records)
+    if (!handler_tables_hash.empty())
       mysql_ha_set_explicit_lock_duration(this);
-    if (ull_hash.records)
+    if (!ull_hash.empty())
       mysql_ull_set_explicit_lock_duration(this);
   }
   locked_tables_mode= LTM_NONE;
@@ -2718,8 +2691,81 @@ void THD::Query_plan::set_modification_plan(Modification_plan *plan_arg)
   modification_plan= plan_arg;
 }
 
+
 /**
-  Push an error message into MySQL diagnostic area with line
+  Push an error message into MySQL diagnostic area with line number and position
+
+  This function provides semantic action implementers with a way
+  to push the famous "You have a syntax error near..." error
+  message into the diagnostic area, which is normally produced only if
+  a syntax error is discovered according to the Bison grammar.
+  Unlike the syntax_error_at() function, the error position points to the last
+  parsed token.
+
+  @note Parse-time only function!
+
+  @param format         Error format message. NULL means ER(ER_SYNTAX_ERROR).
+*/
+void THD::syntax_error(const char *format, ...)
+{
+  va_list args;
+  va_start(args, format);
+  vsyntax_error_at(m_parser_state->m_lip.get_tok_start(), format, args);
+  va_end(args);
+}
+
+
+/**
+  Push an error message into MySQL diagnostic area with line number and position
+
+  This function provides semantic action implementers with a way
+  to push the famous "You have a syntax error near..." error
+  message into the diagnostic area, which is normally produced only if
+  a syntax error is discovered according to the Bison grammar.
+  Unlike the syntax_error_at() function, the error position points to the last
+  parsed token.
+
+  @note Parse-time only function!
+
+  @param mysql_errno    Error number to get a format string with ER_THD().
+*/
+void THD::syntax_error(int mysql_errno, ...)
+{
+  va_list args;
+  va_start(args, mysql_errno);
+  vsyntax_error_at(m_parser_state->m_lip.get_tok_start(),
+                   ER_THD(this, mysql_errno), args);
+  va_end(args);
+}
+
+
+/**
+  Push a syntax error message into MySQL diagnostic area with line
+  and position information.
+
+  This function provides semantic action implementers with a way
+  to push the famous "You have a syntax error near..." error
+  message into the diagnostic area, which is normally produced only if
+  a parse error is discovered internally by the Bison generated
+  parser.
+
+  @note Parse-time only function!
+
+  @param location       YYSTYPE object: error position.
+  @param format         Error format message. NULL means ER(ER_SYNTAX_ERROR).
+*/
+
+void THD::syntax_error_at(const YYLTYPE &location, const char *format, ...)
+{
+  va_list args;
+  va_start(args, format);
+  vsyntax_error_at(location, format, args);
+  va_end(args);
+}
+
+
+/**
+  Push a syntax error message into MySQL diagnostic area with line
   and position information.
 
   This function provides semantic action implementers with a way
@@ -2731,18 +2777,53 @@ void THD::Query_plan::set_modification_plan(Modification_plan *plan_arg)
   @note Parse-time only function!
 
   @param location       YYSTYPE object: error position
-  @param s              error message: NULL default means ER(ER_SYNTAX_ERROR)
+  @param mysql_errno    Error number to get a format string with ER_THD()
+*/
+void THD::syntax_error_at(const YYLTYPE &location, int mysql_errno, ...)
+{
+  va_list args;
+  va_start(args, mysql_errno);
+  vsyntax_error_at(location, ER_THD(this, mysql_errno), args);
+  va_end(args);
+}
+
+
+/**
+  Push a syntax error message into MySQL diagnostic area with line number and
+  position
+
+  This function provides semantic action implementers with a way
+  to push the famous "You have a syntax error near..." error
+  message into the error stack, which is normally produced only if
+  a parse error is discovered internally by the Bison generated
+  parser.
+
+  @param pos_in_lexer_raw_buffer        Pointer into LEX::m_buf or NULL.
+  @param format                         An error message format string.
+  @param args                           Arguments to the format string.
 */
 
-void THD::syntax_error_at(const YYLTYPE &location, const char *s)
+void THD::vsyntax_error_at(const char *pos_in_lexer_raw_buffer,
+                           const char *format, va_list args)
 {
-  uint lineno= location.raw.start ?
-    m_parser_state->m_lip.get_lineno(location.raw.start) : 1;
-  const char *pos= location.raw.start ? location.raw.start : "";
+  DBUG_ASSERT(pos_in_lexer_raw_buffer == NULL ||
+              (pos_in_lexer_raw_buffer >= m_parser_state->m_lip.get_buf() &&
+               pos_in_lexer_raw_buffer <=
+               m_parser_state->m_lip.get_end_of_query()));
+
+  char buff[MYSQL_ERRMSG_SIZE];
+  if (check_stack_overrun(this, STACK_MIN_SIZE, (uchar *)buff))
+    return;
+
+  const uint lineno= pos_in_lexer_raw_buffer ?
+    m_parser_state->m_lip.get_lineno(pos_in_lexer_raw_buffer) : 1;
+  const char *pos= pos_in_lexer_raw_buffer ? pos_in_lexer_raw_buffer : "";
   ErrConvString err(pos, variables.character_set_client);
-  my_printf_error(ER_PARSE_ERROR,  ER_THD(this, ER_PARSE_ERROR), MYF(0),
-                  s ? s : ER_THD(this, ER_SYNTAX_ERROR), err.ptr(), lineno);
+  (void) my_vsnprintf(buff, sizeof(buff), format, args);
+  my_printf_error(ER_PARSE_ERROR, ER_THD(this, ER_PARSE_ERROR), MYF(0), buff,
+                  err.ptr(), lineno);
 }
+
 
 bool THD::send_result_metadata(List<Item> *list, uint flags)
 {
@@ -2755,19 +2836,31 @@ bool THD::send_result_metadata(List<Item> *list, uint flags)
   if (m_protocol->start_result_metadata(list->elements, flags,
           variables.character_set_results))
     goto err;
-
-  while ((item= it++))
+  switch (variables.resultset_metadata)
   {
-    Send_field field;
-    item->make_field(&field);
-    m_protocol->start_row();
-    if (m_protocol->send_field_metadata(&field,
-            item->charset_for_protocol()))
-      goto err;
-    if (flags & Protocol::SEND_DEFAULTS)
-      item->send(m_protocol, &tmp);
-    if (m_protocol->end_row())
-      DBUG_RETURN(true);
+    case RESULTSET_METADATA_FULL:
+      /* Sent metadata. */
+      while ((item= it++))
+      {
+        Send_field field;
+        item->make_field(&field);
+        m_protocol->start_row();
+        if (m_protocol->send_field_metadata(&field, item->charset_for_protocol()))
+          goto err;
+        if (flags & Protocol::SEND_DEFAULTS)
+          item->send(m_protocol, &tmp);
+        if (m_protocol->end_row())
+          DBUG_RETURN(true);
+      }
+      break;
+
+    case RESULTSET_METADATA_NONE:
+      /* Skip metadata. */
+      break;
+
+    default:
+      /* Unknown @@resultset_metadata value. */
+      DBUG_RETURN(1);
   }
 
   DBUG_RETURN(m_protocol->end_result_metadata());
@@ -2864,7 +2957,10 @@ void THD::claim_memory_ownership()
     p->claim_memory_ownership();
   session_tracker.claim_memory_ownership();
   session_sysvar_res_mgr.claim_memory_ownership();
-  my_hash_claim(&user_vars);
+  for (const auto &key_and_value : user_vars)
+  {
+    my_claim(key_and_value.second.get());
+  }
 #if defined(ENABLED_DEBUG_SYNC)
   debug_sync_claim_memory_ownership(this);
 #endif /* defined(ENABLED_DEBUG_SYNC) */

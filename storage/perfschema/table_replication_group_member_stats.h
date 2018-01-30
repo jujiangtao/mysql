@@ -2,13 +2,20 @@
    Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -27,11 +34,11 @@
 
 #include "my_inttypes.h"
 #include "mysql_com.h"
-#include "pfs_column_types.h"
-#include "pfs_engine_table.h"
-#include "rpl_gtid.h"
-#include "rpl_info.h"
-#include "sql_const.h"  // UUID_LENGTH
+#include "sql/rpl_gtid.h"
+#include "sql/rpl_info.h"
+#include "sql/sql_const.h"  // UUID_LENGTH
+#include "storage/perfschema/pfs_column_types.h"
+#include "storage/perfschema/pfs_engine_table.h"
 
 /**
   @addtogroup performance_schema_tables
@@ -59,18 +66,23 @@ struct st_row_group_member_stats
   size_t trx_committed_length;
   char last_cert_trx[Gtid::MAX_TEXT_LENGTH + 1];
   int last_cert_trx_length;
+  ulonglong trx_remote_applier_queue;
+  ulonglong trx_remote_applied;
+  ulonglong trx_local_proposed;
+  ulonglong trx_local_rollback;
 };
 
 /** Table PERFORMANCE_SCHEMA.REPLICATION_GROUP_MEMBER_STATS. */
 class table_replication_group_member_stats : public PFS_engine_table
 {
 private:
-  int make_row();
+  int make_row(uint index);
 
   /** Table share lock. */
   static THR_LOCK m_table_lock;
-  /** Fields definition. */
-  static TABLE_FIELD_DEF m_field_def;
+  /** Table definition. */
+  static Plugin_table m_table_def;
+
   /** Current row */
   st_row_group_member_stats m_row;
   /** Current position. */
@@ -99,7 +111,7 @@ public:
 
   /** Table share. */
   static PFS_engine_table_share m_share;
-  static PFS_engine_table *create();
+  static PFS_engine_table *create(PFS_engine_table_share *);
   static ha_rows get_row_count();
   virtual int rnd_next();
   virtual int rnd_pos(const void *pos);

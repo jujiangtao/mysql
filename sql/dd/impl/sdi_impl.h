@@ -1,33 +1,38 @@
 /* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef DD_SERIALIZE_IMPL_H_INCLUDED
 #define	DD_SERIALIZE_IMPL_H_INCLUDED
 
 #include "my_rapidjson_size_t.h"    // IWYU pragma: keep
-
 #include <rapidjson/document.h>     // rapidjson::GenericValue
 #include <rapidjson/prettywriter.h> // rapidjson::PrettyWriter
 #include <memory>
 
 #include "base64.h"           // base64_encode
-#include "dd/impl/types/weak_object_impl.h" // Weak_object_impl
-#include "dd/object_id.h"                   // Object_id typedef
 #include "m_string.h"         // STRING_WITH_LEN
 #include "my_dbug.h"
 #include "prealloced_array.h" // Prealloced_array
+#include "sql/dd/object_id.h"               // Object_id typedef
 
 /**
   @file
@@ -93,12 +98,18 @@ char *buf_handle(Sdi_wcontext *wctx, size_t sz);
 const String_type &lookup_schema_name(Sdi_wcontext *wctx);
 
 /**
+  Look up the tablespace name for a tablespace id. Returns a reference
+  to the name string inside an acquired tablespace object. The
+  lifetime of these tablespace objects are managed by the
+  Auto_releaser in the scope where the dd store is initiated.
+
   @param wctx opaque context
   @param id tablespace id to look up
-  @return tablespace name
+  @return tablespace name ref
 */
 
-const String_type &lookup_tablespace_name(Sdi_wcontext *wctx, dd::Object_id id);
+const dd::String_type&
+lookup_tablespace_name(Sdi_wcontext *wctx, dd::Object_id id);
 
 class Sdi_rcontext;
 
@@ -331,6 +342,8 @@ bool read_value(dd::String_type *ap, const GV &gv)
 }
 /** @} */ // value_overloads
 
+template <typename W>
+void write_value(W *w, dd::String_type *a);
 
 /**
   @defgroup key_templates Key-related Function Templates
@@ -499,6 +512,7 @@ void serialize_tablespace_ref(dd::Sdi_wcontext *wctx, W *w,
   }
   const dd::String_type &tablespace_name=
     lookup_tablespace_name(wctx, tablespace_id);
+
   if (tablespace_name.empty())
   {
     return;

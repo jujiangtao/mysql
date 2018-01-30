@@ -3,16 +3,24 @@
 Copyright (c) 1994, 2017, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+the terms of the GNU General Public License, version 2.0, as published by the
+Free Software Foundation.
+
+This program is also distributed with certain software (including but not
+limited to OpenSSL) that is licensed under separate terms, as designated in a
+particular file or component or in included license documentation. The authors
+of MySQL hereby grant you an additional permission to link the program and
+your derivative works with the separately licensed software that they have
+included with MySQL.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+FOR A PARTICULAR PURPOSE. See the GNU General Public License, version 2.0,
+for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 *****************************************************************************/
 
@@ -43,49 +51,48 @@ Created 5/11/1994 Heikki Tuuri
 
 #ifndef UNIV_HOTBACKUP
 # include "trx0trx.h"
+# include "sql/log.h"
 #endif /* !UNIV_HOTBACKUP */
 
-#include "log.h"
 
 #ifdef _WIN32
+using time_fn = VOID(WINAPI *)(_Out_ LPFILETIME);
+static time_fn ut_get_system_time_as_file_time = GetSystemTimeAsFileTime;
+
 /*****************************************************************//**
 NOTE: The Windows epoch starts from 1601/01/01 whereas the Unix
 epoch starts from 1970/1/1. For selection of constant see:
 http://support.microsoft.com/kb/167296/ */
 #define WIN_TO_UNIX_DELTA_USEC	11644473600000000LL
 
-/** The frequency of the Windows performance counter. */
-static uintmax_t query_performance_frequency;
-/** Offset of Windows performance counter from the Unix epoch in
-microseconds */
-static uintmax_t query_performance_offset_micros;
 
-/** Initialize counter frequency and offset values used by high resolution
-timing functions on Windows. */
-void
+/**
+Initialise highest available time resolution API on Windows
+@return false if all OK else true */
+bool
 ut_win_init_time()
 {
-	FILETIME	ft;
-	LARGE_INTEGER	li;
-	LARGE_INTEGER	t_cnt;
-
-	static_assert(
-		sizeof(LARGE_INTEGER) == sizeof(query_performance_frequency),
-		"sizeof(LARGE_INTEGER) != sizeof(query_performance_frequency)");
-
-	/* QueryPerformanceFrequency and QueryPerformanceCounter always
-	succeed on Windows XP and later. */
-	QueryPerformanceFrequency((LARGE_INTEGER *)&query_performance_frequency);
-
-	GetSystemTimeAsFileTime(&ft);
-	QueryPerformanceCounter(&t_cnt);
-	li.LowPart = ft.dwLowDateTime;
-	li.HighPart = ft.dwHighDateTime;
-	query_performance_offset_micros = (li.QuadPart
-		- WIN_TO_UNIX_DELTA_USEC * 10
-		- ((t_cnt.QuadPart / query_performance_frequency) * 10000000
-		+ ((t_cnt.QuadPart % query_performance_frequency) * 10000000)
-		/ query_performance_frequency)) /10 ;
+	HMODULE h = LoadLibrary("kernel32.dll");
+	if (h != nullptr)
+	{
+		auto	pfn = reinterpret_cast<time_fn>(
+			GetProcAddress(h, "GetSystemTimePreciseAsFileTime"));
+		if (pfn != nullptr)
+		{
+			ut_get_system_time_as_file_time = pfn;
+		}
+		return false;
+	}
+	DWORD error = GetLastError();
+#ifndef UNIV_HOTBACKUP
+	log_errlog(ERROR_LEVEL, ER_WIN_LOAD_LIBRARY_FAILED, "kernel32.dll",
+		error);
+#else /* !UNIV_HOTBACKUP */
+	fprintf(stderr,
+		"LoadLibrary(\"kernel32.dll\") failed:"
+		" GetLastError returns %lu", error);
+#endif /* !UNIV_HOTBACKUP */
+	return(true);
 }
 
 /*****************************************************************//**
@@ -106,7 +113,7 @@ ut_gettimeofday(
 		return(-1);
 	}
 
-	GetSystemTimeAsFileTime(&ft);
+	ut_get_system_time_as_file_time(&ft);
 
 	tm = (int64_t) ft.dwHighDateTime << 32;
 	tm |= ft.dwLowDateTime;
@@ -142,7 +149,6 @@ ut_time(void)
 	return(time(NULL));
 }
 
-#ifndef UNIV_HOTBACKUP
 /**********************************************************//**
 Returns system time.
 Upon successful completion, the value 0 is returned; otherwise the
@@ -207,36 +213,6 @@ ut_time_us(
 	return(us);
 }
 
-#ifdef _WIN32
-/** Return the system time using a high resolution clock.
-Upon successful completion, the value 0 is returned; otherwise the
-value -1 is returned and the global variable errno is set to indicate the
-error.
-@param[out]	sec		seconds since the Epoch
-@param[out]	ms		microseconds since the Epoch+*sec
-@return 0 on success, -1 otherwise */
-int
-ut_high_res_usectime(
-	ulint*	sec,
-	ulint*	ms)
-{
-	LARGE_INTEGER	t_cnt;
-	/* QueryPerformanceCounter always succeeds on Windows XP and later. */
-	QueryPerformanceCounter(&t_cnt);
-	lint total_ms = ((t_cnt.QuadPart / query_performance_frequency
-		* 1000000)
-		+ ((t_cnt.QuadPart % query_performance_frequency)
-		* 1000000 / query_performance_frequency)
-		+ query_performance_offset_micros);
-
-	*sec = (ulint)total_ms / 1000000;
-	*ms  = (ulint)total_ms % 1000000;
-
-	return(0);
-}
-#endif /* _WIN32 */
-
-
 /**********************************************************//**
 Returns the number of milliseconds since some epoch.  The
 value may wrap around.  It should only be used for heuristic
@@ -252,7 +228,6 @@ ut_time_ms(void)
 
 	return((ulint) tv.tv_sec * 1000 + tv.tv_usec / 1000);
 }
-#endif /* !UNIV_HOTBACKUP */
 
 /**********************************************************//**
 Returns the difference of two times in seconds.
@@ -267,12 +242,11 @@ ut_difftime(
 }
 
 #ifdef UNIV_HOTBACKUP
-/**********************************************************//**
-Sprintfs a timestamp to a buffer with no spaces and with ':' characters
-replaced by '_'. */
+/** Sprintfs a timestamp to a buffer with no spaces and with ':' characters
+replaced by '_'.
+@param[in]	buf	buffer where to sprintf */
 void
-ut_sprintf_timestamp_without_extra_chars(
-/*=====================================*/
+meb_sprintf_timestamp_without_extra_chars(
 	char*	buf) /*!< in: buffer where to sprintf */
 {
 #ifdef _WIN32
@@ -302,37 +276,6 @@ ut_sprintf_timestamp_without_extra_chars(
 		cal_tm_ptr->tm_hour,
 		cal_tm_ptr->tm_min,
 		cal_tm_ptr->tm_sec);
-#endif
-}
-
-/**********************************************************//**
-Returns current year, month, day. */
-void
-ut_get_year_month_day(
-/*==================*/
-	ulint*	year,	/*!< out: current year */
-	ulint*	month,	/*!< out: month */
-	ulint*	day)	/*!< out: day */
-{
-#ifdef _WIN32
-	SYSTEMTIME cal_tm;
-
-	GetLocalTime(&cal_tm);
-
-	*year = (ulint) cal_tm.wYear;
-	*month = (ulint) cal_tm.wMonth;
-	*day = (ulint) cal_tm.wDay;
-#else
-	struct tm* cal_tm_ptr;
-	time_t	   tm;
-
-	struct tm  cal_tm;
-	time(&tm);
-	localtime_r(&tm, &cal_tm);
-	cal_tm_ptr = &cal_tm;
-	*year = (ulint) cal_tm_ptr->tm_year + 1900;
-	*month = (ulint) cal_tm_ptr->tm_mon + 1;
-	*day = (ulint) cal_tm_ptr->tm_mday;
 #endif
 }
 
@@ -556,6 +499,7 @@ ut_strerr(
 	case DB_OUT_OF_MEMORY:
 		return("Cannot allocate memory");
 	case DB_OUT_OF_FILE_SPACE:
+	case DB_OUT_OF_DISK_SPACE:
 		return("Out of disk space");
 	case DB_LOCK_WAIT:
 		return("Lock wait");
@@ -752,42 +696,49 @@ ut_basename_noext(
 
 #endif /* UNIV_PFS_MEMORY */
 
+#ifndef UNIV_HOTBACKUP
 namespace ib {
 
 info::~info()
 {
-	sql_print_information("InnoDB: %s", m_oss.str().c_str());
+	log_errlog(INFORMATION_LEVEL, ER_INNODB_ERROR_LOGGER_MSG,
+		m_oss.str().c_str());
 }
 
 warn::~warn()
 {
-	sql_print_warning("InnoDB: %s", m_oss.str().c_str());
+	log_errlog(WARNING_LEVEL, ER_INNODB_ERROR_LOGGER_MSG, m_oss.str().c_str());
 }
 
 error::~error()
 {
-	sql_print_error("InnoDB: %s", m_oss.str().c_str());
+	log_errlog(ERROR_LEVEL, ER_INNODB_ERROR_LOGGER_MSG, m_oss.str().c_str());
 }
 
 fatal::~fatal()
 {
-	sql_print_error("[FATAL] InnoDB: %s", m_oss.str().c_str());
+	log_errlog(ERROR_LEVEL, ER_INNODB_ERROR_LOGGER_FATAL_MSG,
+		m_oss.str().c_str());
 	ut_error;
 }
 
 error_or_warn::~error_or_warn()
 {
 	if (m_error) {
-		sql_print_error("InnoDB: %s", m_oss.str().c_str());
+		log_errlog(ERROR_LEVEL, ER_INNODB_ERROR_LOGGER_MSG,
+			m_oss.str().c_str());
 	} else {
-		sql_print_warning("InnoDB: %s", m_oss.str().c_str());
+		log_errlog(WARNING_LEVEL, ER_INNODB_ERROR_LOGGER_MSG,
+			m_oss.str().c_str());
 	}
 }
 
 fatal_or_error::~fatal_or_error()
 {
-	sql_print_error("InnoDB: %s", m_oss.str().c_str());
+	log_errlog(ERROR_LEVEL, ER_INNODB_ERROR_LOGGER_MSG, m_oss.str().c_str());
 	ut_a(!m_fatal);
 }
 
 } // namespace ib
+
+#endif /* !UNIV_HOTBACKUP */

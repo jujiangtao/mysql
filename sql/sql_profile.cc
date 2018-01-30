@@ -1,17 +1,24 @@
 /* Copyright (c) 2007, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 
 /**
@@ -28,37 +35,36 @@
   - "profiling_history_size", integer, session + global, "Num queries stored?"
 */
 
-#include <string.h>
+#include "sql/sql_profile.h"
 
 #include "my_config.h"
-#ifdef HAVE_SYS_TIME_H
-#include <sys/time.h>
-#endif
+
+#include <string.h>
 #include <algorithm>
 
 #include "binary_log_types.h"
 #include "decimal.h"
-#include "field.h"
-#include "item.h"
+#include "m_string.h"
 #include "my_base.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
-#include "my_decimal.h"
 #include "my_sqlcommand.h"
 #include "my_sys.h"
 #include "my_systime.h"
-#include "protocol.h"
-#include "psi_memory_key.h"
-#include "query_options.h"
-#include "sql_class.h"                    // THD
-#include "sql_error.h"
-#include "sql_lex.h"
-#include "sql_list.h"
-#include "sql_profile.h"
-#include "sql_security_ctx.h"
-#include "sql_show.h"                     // schema_table_store_record
+#include "sql/auth/sql_security_ctx.h"
+#include "sql/field.h"
+#include "sql/item.h"
+#include "sql/my_decimal.h"
+#include "sql/protocol.h"
+#include "sql/psi_memory_key.h"
+#include "sql/query_options.h"
+#include "sql/sql_class.h"                // THD
+#include "sql/sql_error.h"
+#include "sql/sql_lex.h"
+#include "sql/sql_list.h"
+#include "sql/sql_show.h"                 // schema_table_store_record
+#include "sql/system_variables.h"
 #include "sql_string.h"
-#include "system_variables.h"
 
 using std::min;
 using std::max;
@@ -73,7 +79,9 @@ static const size_t MAX_QUERY_LENGTH= 300;
 /**
   Connects Information_Schema and Profiling.
 */
-int fill_query_profile_statistics_info(THD *thd, TABLE_LIST *tables, Item*)
+int fill_query_profile_statistics_info(THD *thd MY_ATTRIBUTE((unused)),
+                                       TABLE_LIST *tables MY_ATTRIBUTE((unused)),
+                                       Item*)
 {
 #if defined(ENABLED_PROFILING)
   const char *old= thd->lex->sql_command == SQLCOM_SHOW_PROFILE ?
@@ -602,14 +610,14 @@ int PROFILING::fill_statistics_info(THD *thd_arg, TABLE_LIST *tables)
           struct where and having conditions at the SQL layer, then this
           condition should be ripped out.
         */
-        if (thd_arg->lex->query_id == 0) /* 0 == show final query */
+        if (thd_arg->lex->show_profile_query_id == 0) /* 0 == show final query */
         {
           if (query != last)
             continue;
         }
         else
         {
-          if (thd_arg->lex->query_id != query->profiling_query_id)
+          if (thd_arg->lex->show_profile_query_id != query->profiling_query_id)
             continue;
         }
       }

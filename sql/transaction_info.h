@@ -1,13 +1,20 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -19,14 +26,15 @@
 #include <stddef.h>
 #include <sys/types.h>
 
-#include "mdl.h"                       // MDL_savepoint
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_sys.h"                    // strmake_root
-#include "rpl_transaction_ctx.h"       // Rpl_transaction_ctx
-#include "rpl_transaction_write_set_ctx.h" // Transaction_write_set_ctx
-#include "thr_malloc.h"
-#include "xa.h"                        // XID_STATE
+#include "mysql/udf_registration_types.h"
+#include "sql/mdl.h"                   // MDL_savepoint
+#include "sql/rpl_transaction_ctx.h"   // Rpl_transaction_ctx
+#include "sql/rpl_transaction_write_set_ctx.h" // Transaction_write_set_ctx
+#include "sql/thr_malloc.h"
+#include "sql/xa.h"                    // XID_STATE
 
 class Ha_trx_info;
 class THD;
@@ -186,12 +194,6 @@ private:
 
   XID_STATE m_xid_state;
 
-  /*
-    Tables changed in transaction (that must be invalidated in query cache).
-    List contain only transactional tables, that not invalidated in query
-    cache (instead of full list of changed in transaction tables).
-  */
-  CHANGED_TABLE_LIST* m_changed_tables;
   MEM_ROOT m_mem_root; // Transaction-life memory allocation pool
 
 public:
@@ -254,7 +256,6 @@ public:
   void cleanup()
   {
     DBUG_ENTER("Transaction_ctx::cleanup");
-    m_changed_tables= NULL;
     m_savepoints= NULL;
     m_xid_state.cleanup();
     m_rpl_transaction_ctx.cleanup();

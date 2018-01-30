@@ -22,8 +22,7 @@
 # 10. Check that the group configuration has changed on both servers.
 # 11. Check that the contents of the replicated table are in sync.
 ################################################################################
-# This test does crashes servers, thence we skip it on asan and valgrind.
---source include/not_asan.inc
+# This test does crashes servers, thence we skip it on valgrind.
 --source include/not_valgrind.inc
 --source include/big_test.inc
 --source include/force_restart.inc
@@ -257,5 +256,12 @@ INSERT INTO t1 VALUES (2);
 # validate that the table content is in sync
 --let diff_tables=server1:test.t1,server2:test.t1
 --source include/diff_tables.inc
+
+### Cleanup
+
+--let $rpl_connection_name= server1
+--source include/rpl_connection.inc
+
+DROP table t1;
 
 --source ../inc/group_replication_end.inc

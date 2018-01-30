@@ -2,17 +2,24 @@
    Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "sql/sql_component.h"
 
@@ -27,7 +34,10 @@
 #include "mysql/components/services/persistent_dynamic_loader.h"
 #include "mysql/mysql_lex_string.h"
 #include "mysqld_error.h"
-#include "sql_class.h"         // THD
+#include "sql/dd/cache/dictionary_client.h" // dd::cache::Dictionary_client
+#include "sql/resourcegroups/resource_group_mgr.h" // Resource_group_mgr
+#include "sql/sql_class.h"     // THD
+#include "sql/sql_plugin.h"    // end_transaction
 
 bool Sql_cmd_install_component::execute(THD *thd)
 {
@@ -40,6 +50,17 @@ bool Sql_cmd_install_component::execute(THD *thd)
     return true;
   }
 
+  Disable_autocommit_guard autocommit_guard(thd);
+  dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
+
+  DBUG_EXECUTE_IF("disable_rg_pfs_notifications",
+                  {
+                    auto name= "file://component_test_pfs_notification";
+                    if (m_urns.size() == 1 && strcmp(name, m_urns[0].str) == 0)
+                      resourcegroups::Resource_group_mgr::instance()->
+                        disable_pfs_notification();
+                  });
+
   std::vector<const char*> urns(m_urns.size());
   for (size_t i= 0; i < m_urns.size();  ++i)
   {
@@ -47,10 +68,11 @@ bool Sql_cmd_install_component::execute(THD *thd)
   }
   if (service_dynamic_loader->load(thd, urns.data(), m_urns.size()))
   {
-    return true;
+    return(end_transaction(thd, true));
   }
+
   my_ok(thd);
-  return false;
+  return(end_transaction(thd, false));
 }
 
 bool Sql_cmd_uninstall_component::execute(THD *thd)
@@ -64,6 +86,9 @@ bool Sql_cmd_uninstall_component::execute(THD *thd)
     return true;
   }
 
+  Disable_autocommit_guard autocommit_guard(thd);
+  dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
+
   std::vector<const char*> urns(m_urns.size());
   for (size_t i= 0; i < m_urns.size(); ++i)
   {
@@ -71,8 +96,8 @@ bool Sql_cmd_uninstall_component::execute(THD *thd)
   }
   if (service_dynamic_loader->unload(thd, urns.data(), m_urns.size()))
   {
-    return true;
+    return(end_transaction(thd, true));
   }
   my_ok(thd);
-  return false;
+  return(end_transaction(thd, false));
 }

@@ -3,13 +3,20 @@
 /* Copyright (c) 2002, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -23,22 +30,25 @@
 #include "my_config.h"
 
 #include <stddef.h>
+#include <string.h>
 #include <sys/types.h>
+#include <string>
 #include <vector>
 
 #include "lex_string.h"
+#include "map_helpers.h"
 #include "my_getopt.h"        // get_opt_arg_type
 #include "my_inttypes.h"
+#include "my_systime.h"
 #include "mysql/plugin.h"     // enum_mysql_show_type
+#include "mysql/udf_registration_types.h"
 #include "mysql_com.h"        // Item_result
 #include "prealloced_array.h" // Prealloced_array
-#include "sql_alloc.h"        // Sql_alloc
-#include "sql_const.h"        // SHOW_COMP_OPTION
-#include "sql_plugin.h"
-#include "sql_plugin_ref.h"   // plugin_ref
-#include "thr_malloc.h"
+#include "sql/sql_alloc.h"    // Sql_alloc
+#include "sql/sql_const.h"    // SHOW_COMP_OPTION
+#include "sql/sql_plugin_ref.h" // plugin_ref
+#include "sql/thr_malloc.h"
 #include "typelib.h"          // TYPELIB
-#include "my_systime.h"
 
 class Item;
 class Item_func_set_user_var;
@@ -50,6 +60,7 @@ class set_var;
 class sys_var;
 class sys_var_pluginvar;
 struct st_lex_user;
+template <class Key, class Value> class collation_unordered_map;
 
 typedef ulonglong sql_mode_t;
 typedef enum enum_mysql_show_type SHOW_TYPE;
@@ -74,7 +85,7 @@ int mysql_del_sys_var_chain(sys_var *chain);
 
 enum enum_var_type
 {
-  OPT_DEFAULT= 0, OPT_SESSION, OPT_GLOBAL, OPT_PERSIST
+  OPT_DEFAULT= 0, OPT_SESSION, OPT_GLOBAL, OPT_PERSIST, OPT_PERSIST_ONLY
 };
 
 /**
@@ -98,7 +109,9 @@ public:
     READONLY=     0x0400, // 1024
     ALLOCATED=    0x0800, // 2048
     INVISIBLE=    0x1000, // 4096
-    TRI_LEVEL=    0x2000  // 8192 - default is neither GLOBAL nor SESSION
+    TRI_LEVEL=    0x2000, // 8192 - default is neither GLOBAL nor SESSION
+    NOTPERSIST=   0x4000,
+    HINT_UPDATEABLE= 0x8000 // Variable is updateable using SET_VAR hint
   };
   static const int PARSE_EARLY= 1;
   static const int PARSE_NORMAL= 2;
@@ -157,21 +170,42 @@ public:
   virtual bool is_default(THD *thd, set_var *var);
   virtual longlong get_min_value() { return option.min_value; }
   virtual ulonglong get_max_value() { return option.max_value; }
+  /**
+    Returns variable type.
+
+    @return variable type
+  */
+  virtual ulong get_var_type() { return (option.var_type & GET_TYPE_MASK); }
   virtual void set_arg_source(get_opt_arg_source*) {}
+  virtual void set_is_plugin(bool) {}
   enum_variable_source get_source() { return source.m_source; }
   const char* get_source_name() { return source.m_path_name; }
   void set_source(enum_variable_source src) { option.arg_source->m_source= src; }
-  void set_source_name(const char* path) { option.arg_source->m_path_name= path; }
+  void set_source_name(const char* path)
+  {
+    strcpy(option.arg_source->m_path_name, path);
+  }
   const char* get_user() { return user; }
   const char* get_host() { return host; }
-  ulonglong get_timestamp();
+  ulonglong get_timestamp() const { return timestamp; }
   void set_user_host(THD* thd);
+  my_option* get_option() { return &option; }
+  void set_timestamp()
+  {
+    timestamp= my_micro_time();
+  }
+  void clear_user_host_timestamp()
+  {
+    user[0] = '\0';
+    host[0] = '\0';
+    timestamp = 0;
+  }
+  virtual bool is_non_persistent() {return flags & NOTPERSIST; }
   /**
-    THD::query_start_timeval_trunc() is used to measure query execution time
-    We dont need this as this is not about elapsed time for query, we only
-    need current  timestamp, thus using this function.
+    Check if plugin variable is persisted as a read only variable. For
+    server variables always return false.
   */
-  void set_timestamp() { timestamp= my_getsystime() / 10.0; }
+  virtual bool is_plugin_var_read_only() { return 0; }
 
   /**
      Update the system variable with the default value from either
@@ -187,6 +221,13 @@ public:
   bool is_readonly() const { return flags & READONLY; }
   bool not_visible() const { return flags & INVISIBLE; }
   bool is_trilevel() const { return flags & TRI_LEVEL; }
+  /**
+    Check if the variable can be set using SET_VAR hint.
+
+    @return true if the variable can be set using SET_VAR hint,
+            false otherwise.
+  */
+  bool is_hint_updateable() const { return flags & HINT_UPDATEABLE; }
   /**
     the following is only true for keycache variables,
     that support the syntax @@keycache_name.variable_name
@@ -206,11 +247,17 @@ public:
     switch (query_type)
     {
       case OPT_PERSIST:
+      case OPT_PERSIST_ONLY:
       case OPT_GLOBAL:  return scope() & (GLOBAL | SESSION);
       case OPT_SESSION: return scope() & (SESSION | ONLY_SESSION);
       case OPT_DEFAULT: return scope() & (SESSION | ONLY_SESSION);
     }
     return false;
+  }
+  bool is_global_persist(enum_var_type type)
+  {
+    return (type == OPT_GLOBAL || type == OPT_PERSIST ||
+            type == OPT_PERSIST_ONLY);
   }
 
   bool register_option(std::vector<my_option> *array, int parse_flags)
@@ -219,7 +266,15 @@ public:
       (array->push_back(option), false);
   }
   void do_deprecated_warning(THD *thd);
+  /**
+    Create item from system variable value.
 
+    @param  thd  pointer to THD object
+
+    @return pointer to Item object or NULL if it's
+            impossible to obtain the value.
+  */
+  Item *copy_value(THD *thd);
 private:
   virtual bool do_check(THD *thd, set_var *var) = 0;
   /**
@@ -268,7 +323,7 @@ public:
   virtual int resolve(THD *thd)=0;         ///< Check privileges & fix_fields
   virtual int check(THD *thd)=0;           ///< Evaluate the expression
   virtual int update(THD *thd)=0;          ///< Set the value
-  virtual void print(THD *thd, String *str)=0;	///< To self-print
+  virtual void print(THD *thd, String *str)=0;   ///< To self-print
 
   /**
     @returns whether this variable is @@@@optimizer_trace.
@@ -309,10 +364,20 @@ public:
   int resolve(THD *thd);
   int check(THD *thd);
   int update(THD *thd);
-  void update_source();
-  void update_user_host_timestamp(THD *thd);
+  void update_source_user_host_timestamp(THD *thd);
   int light_check(THD *thd);
-  void print(THD*, String *str);	/* To self-print */
+  /**
+    Print variable in short form.
+
+    @param str String buffer to append the partial assignment to.
+  */
+  void print_short(String *str);
+  void print(THD*, String *str);   /* To self-print */
+  bool is_global_persist()
+  {
+    return (type == OPT_GLOBAL || type == OPT_PERSIST ||
+            type == OPT_PERSIST_ONLY);
+  }
 #ifdef OPTIMIZER_TRACE
   virtual bool is_var_optimizer_trace() const
   {
@@ -387,7 +452,6 @@ extern SHOW_COMP_OPTION have_profiling;
 extern SHOW_COMP_OPTION have_ssl, have_symlink, have_dlopen;
 extern SHOW_COMP_OPTION have_query_cache;
 extern SHOW_COMP_OPTION have_geometry, have_rtree_keys;
-extern SHOW_COMP_OPTION have_crypt;
 extern SHOW_COMP_OPTION have_compress;
 extern SHOW_COMP_OPTION have_statement_timeout;
 
@@ -396,6 +460,11 @@ extern SHOW_COMP_OPTION have_statement_timeout;
 */
 ulong get_system_variable_hash_records(void);
 ulonglong get_system_variable_hash_version(void);
+collation_unordered_map<std::string, sys_var *>
+  *get_system_variable_hash(void);
+
+extern bool get_sysvar_source(const char *name, uint length,
+                              enum enum_variable_source* source);
 
 bool enumerate_sys_vars(Show_var_array *show_var_array,
                         bool sort, enum enum_var_type type, bool strict);
@@ -405,7 +474,7 @@ sys_var *find_sys_var(THD *thd, const char *str, size_t length=0);
 sys_var *find_sys_var_ex(THD *thd, const char *str, size_t length=0,
                          bool throw_error= false, bool locked= false);
 int sql_set_variables(THD *thd, List<set_var_base> *var_list, bool opened);
-
+bool keyring_access_test();
 bool fix_delay_key_write(sys_var *self, THD *thd, enum_var_type type);
 
 sql_mode_t expand_sql_mode(sql_mode_t sql_mode, THD *thd);
@@ -416,6 +485,8 @@ extern sys_var *Sys_autocommit_ptr;
 extern sys_var *Sys_gtid_next_ptr;
 extern sys_var *Sys_gtid_next_list_ptr;
 extern sys_var *Sys_gtid_purged_ptr;
+
+extern ulonglong system_variable_hash_version;
 
 const CHARSET_INFO *get_old_charset_by_name(const char *old_name);
 

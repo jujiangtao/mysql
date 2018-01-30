@@ -80,7 +80,7 @@ t1	CREATE TABLE `t1` (
   `NOW(4)` datetime(4) NOT NULL DEFAULT '0000-00-00 00:00:00.0000',
   `NOW(5)` datetime(5) NOT NULL DEFAULT '0000-00-00 00:00:00.00000',
   `NOW(6)` datetime(6) NOT NULL DEFAULT '0000-00-00 00:00:00.000000'
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t1;
 CREATE TABLE t1 AS SELECT
 SYSDATE(0),
@@ -96,7 +96,7 @@ t1	CREATE TABLE `t1` (
   `SYSDATE(4)` datetime(4) NOT NULL DEFAULT '0000-00-00 00:00:00.0000',
   `SYSDATE(5)` datetime(5) NOT NULL DEFAULT '0000-00-00 00:00:00.00000',
   `SYSDATE(6)` datetime(6) NOT NULL DEFAULT '0000-00-00 00:00:00.000000'
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t1;
 CREATE TABLE t1 AS SELECT
 FROM_UNIXTIME(1),
@@ -114,7 +114,7 @@ t1	CREATE TABLE `t1` (
   `FROM_UNIXTIME(1.12345)` datetime(5) DEFAULT NULL,
   `FROM_UNIXTIME(1.123456)` datetime(6) DEFAULT NULL,
   `FROM_UNIXTIME(1.1234567)` datetime(6) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t1;
 #
 # Testing rounding from VARCHAR and TIME(6) to TIME(N)
@@ -2527,7 +2527,7 @@ SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` time NOT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t1;
 #
 # Testing bad FSPs
@@ -2910,11 +2910,10 @@ a
 analyze table t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
-EXPLAIN EXTENDED SELECT * FROM t1 WHERE a IN (990000,0);
+EXPLAIN SELECT * FROM t1 WHERE a IN (990000,0);
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	14	20.00	Using where
 Warnings:
-Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` where (`test`.`t1`.`a` in ('99:00:00.000000','00:00:00.000000'))
 #
 # Testing IN with index: field->store_packed
@@ -2945,7 +2944,7 @@ SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
   `a` time(6) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2, t1;
 #
 # Testing CREATE TABLE .. SELECT
@@ -2956,7 +2955,7 @@ SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
   `a` time(6) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2, t1;
 #
 # Testing JOIN between TIME(6) and TIME(6)
@@ -3208,7 +3207,7 @@ Table	Create Table
 t1	CREATE TABLE `t1` (
   `LEAST(TIME'00:00:00.1', TIME'00:00:00.12')` time(2) NOT NULL DEFAULT '00:00:00.00',
   `GREATEST(TIME'00:00:00.1', TIME'00:00:00.12')` time(2) NOT NULL DEFAULT '00:00:00.00'
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t1;
 #
 # Testing INSERT with near-maximum and near-minimum supported values.
@@ -3621,7 +3620,7 @@ t2	CREATE TABLE `t2` (
   `i` decimal(14,6) DEFAULT NULL,
   `d` decimal(14,6) DEFAULT NULL,
   `f` double DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t1, t2;
 #
 # Testing that TIME behaves as INT/DECIMAL for numeric arithmetic
@@ -3672,7 +3671,7 @@ t2	CREATE TABLE `t2` (
   `TIME'10:10:10' / 1` decimal(11,4) DEFAULT NULL,
   `TIME'10:10:10.123' / 1` decimal(14,7) DEFAULT NULL,
   `TIME'10:10:10.123456' / 1` decimal(17,10) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 DROP TABLE t1;
 #
@@ -3733,7 +3732,7 @@ t2	CREATE TABLE `t2` (
   `MAX(t6)` time(6) DEFAULT NULL,
   `AVG(t6)` decimal(17,10) DEFAULT NULL,
   `SUM(t6)` decimal(35,6) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 DROP TABLE t1;
 #
@@ -3856,14 +3855,14 @@ t2	CREATE TABLE `t2` (
   `TIMEDIFF(a,'00:00:00.000001')` time(6) DEFAULT NULL,
   `TIMEDIFF(a,a)` time(6) DEFAULT NULL,
   `TIMEDIFF(CAST(a AS TIME(0)), CAST('10:10:10' AS TIME(0)))` time DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 CREATE TABLE t2 AS SELECT MAX(ADDTIME(a, '00:00:00.1')) FROM t1;
 SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
   `MAX(ADDTIME(a, '00:00:00.1'))` time(6) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 SELECT * FROM t2;
 MAX(ADDTIME(a, '00:00:00.1'))
 01:00:00.100001
@@ -3938,7 +3937,7 @@ t1	CREATE TABLE `t1` (
   `TIMEDIFF(TIME'00:00:00.0000', TIME'00:00:00')` time(4) DEFAULT NULL,
   `TIMEDIFF(TIME'00:00:00.00000', TIME'00:00:00')` time(5) DEFAULT NULL,
   `TIMEDIFF(TIME'00:00:00.000000', TIME'00:00:00')` time(6) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t1;
 SELECT ADDTIME(TIME'00:00:00', TIME'00:00:00');
 ADDTIME(TIME'00:00:00', TIME'00:00:00')
@@ -4128,8 +4127,8 @@ SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `SEC_TO_TIME(3661)` time DEFAULT NULL,
-  `CAST(SEC_TO_TIME(3661) AS CHAR)` varchar(10) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+  `CAST(SEC_TO_TIME(3661) AS CHAR)` varchar(10) CHARACTER SET latin1 DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 SELECT * FROM t1;
 SEC_TO_TIME(3661)	CAST(SEC_TO_TIME(3661) AS CHAR)
 01:01:01	01:01:01
@@ -4152,7 +4151,7 @@ t1	CREATE TABLE `t1` (
   `SEC_TO_TIME(3661.11111)` time(5) DEFAULT NULL,
   `SEC_TO_TIME(3661.111111)` time(6) DEFAULT NULL,
   `SEC_TO_TIME(3661.1111111)` time(6) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 SELECT * FROM t1;
 SEC_TO_TIME(3661.1)	SEC_TO_TIME(3661.11)	SEC_TO_TIME(3661.111)	SEC_TO_TIME(3661.1111)	SEC_TO_TIME(3661.11111)	SEC_TO_TIME(3661.111111)	SEC_TO_TIME(3661.1111111)
 01:01:01.1	01:01:01.11	01:01:01.111	01:01:01.1111	01:01:01.11111	01:01:01.111111	01:01:01.111111
@@ -4269,55 +4268,47 @@ t6	d	ts6	dt6
 DROP TABLE t1;
 SET @@timestamp=default;
 #
-# Testing EXPLAIN EXTENDED SELECT for CAST(TIME(N))
+# Testing EXPLAIN SELECT for CAST(TIME(N))
 #
-EXPLAIN EXTENDED SELECT CAST('10:10:10' AS TIME);
+EXPLAIN SELECT CAST('10:10:10' AS TIME);
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
 Warnings:
-Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select cast('10:10:10' as time) AS `CAST('10:10:10' AS TIME)`
-EXPLAIN EXTENDED SELECT CAST('10:10:10' AS TIME(0));
+EXPLAIN SELECT CAST('10:10:10' AS TIME(0));
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
 Warnings:
-Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select cast('10:10:10' as time) AS `CAST('10:10:10' AS TIME(0))`
-EXPLAIN EXTENDED SELECT CAST('10:10:10' AS TIME(1));
+EXPLAIN SELECT CAST('10:10:10' AS TIME(1));
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
 Warnings:
-Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select cast('10:10:10' as time(1)) AS `CAST('10:10:10' AS TIME(1))`
-EXPLAIN EXTENDED SELECT CAST('10:10:10' AS TIME(2));
+EXPLAIN SELECT CAST('10:10:10' AS TIME(2));
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
 Warnings:
-Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select cast('10:10:10' as time(2)) AS `CAST('10:10:10' AS TIME(2))`
-EXPLAIN EXTENDED SELECT CAST('10:10:10' AS TIME(3));
+EXPLAIN SELECT CAST('10:10:10' AS TIME(3));
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
 Warnings:
-Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select cast('10:10:10' as time(3)) AS `CAST('10:10:10' AS TIME(3))`
-EXPLAIN EXTENDED SELECT CAST('10:10:10' AS TIME(4));
+EXPLAIN SELECT CAST('10:10:10' AS TIME(4));
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
 Warnings:
-Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select cast('10:10:10' as time(4)) AS `CAST('10:10:10' AS TIME(4))`
-EXPLAIN EXTENDED SELECT CAST('10:10:10' AS TIME(5));
+EXPLAIN SELECT CAST('10:10:10' AS TIME(5));
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
 Warnings:
-Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select cast('10:10:10' as time(5)) AS `CAST('10:10:10' AS TIME(5))`
-EXPLAIN EXTENDED SELECT CAST('10:10:10' AS TIME(6));
+EXPLAIN SELECT CAST('10:10:10' AS TIME(6));
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
 Warnings:
-Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select cast('10:10:10' as time(6)) AS `CAST('10:10:10' AS TIME(6))`
 #
 # Testing CAST with bad FSPs
@@ -4422,8 +4413,8 @@ CREATE TABLE t2 AS SELECT CAST(a AS CHAR) AS a FROM t1;
 SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
-  `a` varchar(17) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+  `a` varchar(17) CHARACTER SET latin1 DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 SELECT a, LENGTH(a) FROM t2;
 a	LENGTH(a)
 11:22:33.123000	15
@@ -4441,7 +4432,7 @@ SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` time(6) NOT NULL DEFAULT '11:22:33.123456'
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t1;
 #
 # Mixing TIME(6) with another TIME(6) in IF
@@ -4452,7 +4443,7 @@ SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
   `a` time(6) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 DROP TABLE t1;
 #
@@ -4464,7 +4455,7 @@ SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
   `a` time(2) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 DROP TABLE t1;
 #
@@ -4516,7 +4507,7 @@ t2	CREATE TABLE `t2` (
   `CASE WHEN 1 THEN t6 ELSE t1 END` time(6) DEFAULT NULL,
   `CASE WHEN 1 THEN t6 ELSE t3 END` time(6) DEFAULT NULL,
   `CASE WHEN 1 THEN t6 ELSE t4 END` time(6) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 DROP TABLE t1;
 #
@@ -4537,7 +4528,7 @@ t2	CREATE TABLE `t2` (
   `COALESCE(e,f)` time(4) DEFAULT NULL,
   `COALESCE(c,e)` time(3) DEFAULT NULL,
   `COALESCE(c,f)` time(4) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 CREATE TABLE t2 AS SELECT
 CONCAT(COALESCE(a, b)), CONCAT(COALESCE(c, b)),
@@ -4547,13 +4538,13 @@ FROM t1;
 SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
-  `CONCAT(COALESCE(a, b))` varchar(17) DEFAULT NULL,
-  `CONCAT(COALESCE(c, b))` varchar(17) DEFAULT NULL,
-  `CONCAT(COALESCE(c, d))` varchar(10) DEFAULT NULL,
-  `CONCAT(COALESCE(e, f))` varchar(15) DEFAULT NULL,
-  `CONCAT(COALESCE(c, e))` varchar(14) DEFAULT NULL,
-  `CONCAT(COALESCE(c, f))` varchar(15) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+  `CONCAT(COALESCE(a, b))` varchar(17) CHARACTER SET latin1 DEFAULT NULL,
+  `CONCAT(COALESCE(c, b))` varchar(17) CHARACTER SET latin1 DEFAULT NULL,
+  `CONCAT(COALESCE(c, d))` varchar(10) CHARACTER SET latin1 DEFAULT NULL,
+  `CONCAT(COALESCE(e, f))` varchar(15) CHARACTER SET latin1 DEFAULT NULL,
+  `CONCAT(COALESCE(c, e))` varchar(14) CHARACTER SET latin1 DEFAULT NULL,
+  `CONCAT(COALESCE(c, f))` varchar(15) CHARACTER SET latin1 DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 DROP TABLE t1;
 #
@@ -4565,7 +4556,7 @@ SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
   `a` time(6) NOT NULL DEFAULT '00:00:00.000000'
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 DROP TABLE t1;
 #
@@ -4578,7 +4569,7 @@ SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
   `a` time(6) NOT NULL DEFAULT '00:00:00.000000'
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 SELECT * FROM t2 ORDER BY a;
 a
 00:11:22.123456
@@ -4596,7 +4587,7 @@ SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
   `t0` time(6) NOT NULL DEFAULT '00:00:00.000000'
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 SELECT * FROM t2 ORDER BY t0;
 t0
 00:11:22.123456
@@ -4607,7 +4598,7 @@ SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
   `t6` time(6) NOT NULL DEFAULT '00:00:00.000000'
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 SELECT * FROM t2 ORDER BY t6;
 t6
 00:11:22.123456
@@ -4618,7 +4609,7 @@ SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
   `t3` time(4) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 SELECT * FROM t2 ORDER BY t3;
 t3
 00:11:23.1230
@@ -4633,29 +4624,29 @@ CREATE TABLE t2 AS SELECT a FROM t1 UNION SELECT b FROM t1;
 SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
-  `a` varchar(17) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+  `a` varchar(17) CHARACTER SET latin1 DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 CREATE TABLE t2 AS SELECT a FROM t1 UNION SELECT c FROM t1;
 SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
-  `a` varchar(22) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+  `a` varchar(22) CHARACTER SET latin1 DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 CREATE TABLE t2 AS SELECT a FROM t1 UNION SELECT d FROM t1;
 SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
-  `a` varchar(22) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+  `a` varchar(22) CHARACTER SET latin1 DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 CREATE TABLE t2 AS SELECT a FROM t1 UNION SELECT e FROM t1;
 SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
   `a` varchar(20) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 DROP TABLE t1;
 #
@@ -4906,7 +4897,7 @@ SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `s1` time(6) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 /*!50500 PARTITION BY RANGE  COLUMNS(s1)
 (PARTITION p1 VALUES LESS THAN ('01:01:01.000001') ENGINE = InnoDB) */
 DROP TABLE t1;
@@ -4945,8 +4936,8 @@ SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` time DEFAULT NULL,
-  `b` varchar(10) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+  `b` varchar(10) CHARACTER SET latin1 DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t1;
 CREATE TABLE t1 AS SELECT
 MAKETIME(1, 1, 1),
@@ -4966,7 +4957,7 @@ t1	CREATE TABLE `t1` (
   `MAKETIME(1, 1, 1.0000)` time(4) DEFAULT NULL,
   `MAKETIME(1, 1, 1.00000)` time(5) DEFAULT NULL,
   `MAKETIME(1, 1, 1.000000)` time(6) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t1;
 #
 # Testing rounding with MAKETIME()
@@ -5101,7 +5092,7 @@ t1	CREATE TABLE `t1` (
   `CAST(1.1 AS TIME(6))` time(6) DEFAULT NULL,
   `CAST('1' AS TIME(6))` time(6) DEFAULT NULL,
   `CAST(1e0 AS TIME(6))` time(6) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t1;
 SET sql_mode = default;
 CREATE TABLE t1 (a TIME, b TIME(6));
@@ -5112,7 +5103,7 @@ Table	Create Table
 t2	CREATE TABLE `t2` (
   `CAST(a AS TIME)` time DEFAULT NULL,
   `CAST(b AS TIME)` time DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 CREATE TABLE t2 AS SELECT CAST(a AS TIME(0)), CAST(b AS TIME(0)) FROM t1;
 SHOW CREATE TABLE t2;
@@ -5120,7 +5111,7 @@ Table	Create Table
 t2	CREATE TABLE `t2` (
   `CAST(a AS TIME(0))` time DEFAULT NULL,
   `CAST(b AS TIME(0))` time DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 CREATE TABLE t2 AS SELECT CAST(a AS TIME(6)), CAST(b AS TIME(6)) FROM t1;
 SHOW CREATE TABLE t2;
@@ -5128,7 +5119,7 @@ Table	Create Table
 t2	CREATE TABLE `t2` (
   `CAST(a AS TIME(6))` time(6) DEFAULT NULL,
   `CAST(b AS TIME(6))` time(6) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 #
 # Testing Item_time_typecast::val_str
@@ -5244,7 +5235,7 @@ t1	CREATE TABLE `t1` (
   `TIME(TIMESTAMP('2001-01-01 00:00:00.1234'))` time(4) DEFAULT NULL,
   `TIME(TIMESTAMP('2001-01-01 00:00:00.12345'))` time(5) DEFAULT NULL,
   `TIME(TIMESTAMP('2001-01-01 00:00:00.123456'))` time(6) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t1;
 #
 # Testing comparison between a TIME(6) field and a TIME(N) type cast
@@ -5370,8 +5361,8 @@ CREATE TABLE t1 AS SELECT @a AS a;
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `a` longtext
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+  `a` longtext CHARACTER SET latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 SELECT * FROM t1;
 a
 11:22:33.123456
@@ -5392,7 +5383,7 @@ BEGIN
 DECLARE a TIME(6);
 SET a='11:22:33.123';
 SELECT a;
-END	latin1	latin1_swedish_ci	latin1_swedish_ci
+END	latin1	latin1_swedish_ci	utf8mb4_0900_ai_ci
 CALL p1//
 a
 11:22:33.123000
@@ -5406,7 +5397,7 @@ Procedure	sql_mode	Create Procedure	character_set_client	collation_connection	Da
 p1	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` PROCEDURE `p1`(a TIME(6))
 BEGIN
 SELECT a;
-END	latin1	latin1_swedish_ci	latin1_swedish_ci
+END	latin1	latin1_swedish_ci	utf8mb4_0900_ai_ci
 CALL p1(112233)//
 a
 11:22:33.000000
@@ -5435,12 +5426,12 @@ DECLARE a TIME(6);
 CREATE TABLE t1 AS SELECT a;
 SHOW CREATE TABLE t1;
 DROP TABLE t1;
-END	latin1	latin1_swedish_ci	latin1_swedish_ci
+END	latin1	latin1_swedish_ci	utf8mb4_0900_ai_ci
 CALL p1//
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` time(6) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP PROCEDURE p1//
 CREATE FUNCTION p1 (a TIME(6)) RETURNS TIME(6)
 BEGIN
@@ -5451,7 +5442,7 @@ Function	sql_mode	Create Function	character_set_client	collation_connection	Data
 p1	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `p1`(a TIME(6)) RETURNS time(6)
 BEGIN
 RETURN a;
-END	latin1	latin1_swedish_ci	latin1_swedish_ci
+END	latin1	latin1_swedish_ci	utf8mb4_0900_ai_ci
 SELECT p1(112233.123)//
 p1(112233.123)
 11:22:33.123000
@@ -5482,6 +5473,7 @@ EXTRA
 PRIVILEGES	#
 COLUMN_COMMENT	
 GENERATION_EXPRESSION	
+SRS_ID	NULL
 DROP TABLE t1;
 #
 # SELECT from a subquery
@@ -5560,7 +5552,7 @@ Warnings:
 Warning	1441	Datetime function: time field overflow
 SELECT DATE_ADD(TIME'00:00:00.0', INTERVAL 1000000000000000000000.1 SECOND);
 DATE_ADD(TIME'00:00:00.0', INTERVAL 1000000000000000000000.1 SECOND)
-00:00:00.0
+NULL
 Warnings:
 Warning	1292	Truncated incorrect DECIMAL value: '1000000000000000000000.1'
 CREATE TABLE t1 AS SELECT
@@ -5595,7 +5587,7 @@ t1	CREATE TABLE `t1` (
   `t5s0` time(5) DEFAULT NULL,
   `t6s0` time(6) DEFAULT NULL,
   `t0ms` time(6) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t1;
 CREATE TABLE t1 AS SELECT
 ADDTIME(TIME'00:00:00', TIME'00:00:01') AS t0s0,
@@ -5627,7 +5619,7 @@ t1	CREATE TABLE `t1` (
   `t4s0` time(4) DEFAULT NULL,
   `t5s0` time(5) DEFAULT NULL,
   `t6s0` time(6) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t1;
 #
 # Testing that CAST from various fields to TIME rounds.
@@ -5730,7 +5722,7 @@ SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` datetime NOT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t1;
 #
 # Testing internal representation format for DATETIME(N)
@@ -7892,11 +7884,10 @@ a
 analyze table t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
-EXPLAIN EXTENDED SELECT * FROM t1 WHERE a IN (0.000001,0);
+EXPLAIN SELECT * FROM t1 WHERE a IN (0.000001,0);
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	11	20.00	Using where
 Warnings:
-Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` where (`test`.`t1`.`a` in ('0000-00-00 00:00:00.000001','0000-00-00 00:00:00.000000'))
 #
 # Testing IN with index: involves field->store_packed()
@@ -7931,7 +7922,7 @@ SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
   `a` datetime(6) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2, t1;
 #
 # Testing CREATE TABLE .. SELECT
@@ -7942,7 +7933,7 @@ SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
   `a` datetime(6) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2, t1;
 #
 # Testing JOIN between DATETIME(6) and DATETIME(6)
@@ -8188,7 +8179,7 @@ a
 20010101000000.100000
 SELECT GREATEST(CAST('2001-01-01 00:00:00.1' as DATETIME(6)), '2001-01-02 00:00:00.1') AS a;
 a
-2001-01-02 00:00:00.1
+2001-01-02 00:00:00.100000
 SELECT GREATEST(CAST('2001-01-01 00:00:00.1' as DATETIME(6)), '2001-01-02 00:00:00.1') + 0 AS a;
 a
 20010102000000.100000
@@ -8208,7 +8199,7 @@ Table	Create Table
 t1	CREATE TABLE `t1` (
   `l` datetime(2) DEFAULT NULL,
   `g` datetime(2) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t1;
 #
 # Testing INSERT, MAX and MIN values
@@ -8530,7 +8521,7 @@ t2	CREATE TABLE `t2` (
   `i` decimal(21,6) DEFAULT NULL,
   `d` decimal(21,6) DEFAULT NULL,
   `f` double DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t1, t2;
 #
 # Testing that DATETIME behaves as INT/DECIMAL for numeric arithmetic
@@ -8581,7 +8572,7 @@ t2	CREATE TABLE `t2` (
   `TIMESTAMP'2001-01-01 10:10:10' / 1` decimal(18,4) DEFAULT NULL,
   `TIMESTAMP'2001-01-01 10:10:10.123' / 1` decimal(21,7) DEFAULT NULL,
   `TIMESTAMP'2001-01-01 10:10:10.123456' / 1` decimal(24,10) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 DROP TABLE t1;
 #
@@ -8642,7 +8633,7 @@ t2	CREATE TABLE `t2` (
   `MAX(t6)` datetime(6) DEFAULT NULL,
   `AVG(t6)` decimal(24,10) DEFAULT NULL,
   `SUM(t6)` decimal(42,6) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 DROP TABLE t1;
 SET sql_mode = default;
@@ -8739,7 +8730,7 @@ t2	CREATE TABLE `t2` (
   `ADDTIME(CAST(a AS DATETIME(0)), CAST('10:00:00' AS TIME(0)))` datetime DEFAULT NULL,
   `ADDTIME(CAST(a AS DATETIME(6)), CAST('10:00:00' AS TIME(0)))` datetime(6) DEFAULT NULL,
   `ADDTIME(CAST(a AS DATETIME(0)), CAST('10:00:00' AS TIME(6)))` datetime(6) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 SELECT TIMESTAMP(a, '10:00:00') FROM t1;
 TIMESTAMP(a, '10:00:00')
@@ -8786,7 +8777,7 @@ t2	CREATE TABLE `t2` (
   `TIMESTAMP(CAST(a AS DATETIME(0)), CAST('00:00:00' AS TIME(0)))` datetime DEFAULT NULL,
   `TIMESTAMP(CAST(a AS DATETIME(6)), CAST('00:00:00' AS TIME(0)))` datetime(6) DEFAULT NULL,
   `TIMESTAMP(CAST(a AS DATETIME(0)), CAST('00:00:00' AS TIME(6)))` datetime(6) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 SELECT SUBTIME(a, '00:00:00.000001') FROM t1 ORDER BY a;
 SUBTIME(a, '00:00:00.000001')
@@ -8925,14 +8916,14 @@ t2	CREATE TABLE `t2` (
   `DATE_SUB(CAST(a AS DATETIME), INTERVAL 1 SECOND)` datetime DEFAULT NULL,
   `DATE_ADD(CAST(a AS DATETIME), INTERVAL 1 MICROSECOND)` datetime(6) DEFAULT NULL,
   `DATE_SUB(CAST(a AS DATETIME), INTERVAL 1 MICROSECOND)` datetime(6) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 CREATE TABLE t2 AS SELECT MAX(ADDTIME(a, '00:00:00.1')) FROM t1;
 SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
   `MAX(ADDTIME(a, '00:00:00.1'))` datetime(6) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 SELECT * FROM t2;
 MAX(ADDTIME(a, '00:00:00.1'))
 2001-01-01 01:00:00.100001
@@ -8970,7 +8961,7 @@ t1	CREATE TABLE `t1` (
   `t5s0` datetime(5) DEFAULT NULL,
   `t6s0` datetime(6) DEFAULT NULL,
   `t0ms` datetime(6) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t1;
 CREATE TABLE t1 AS SELECT
 CONVERT_TZ(TIMESTAMP'2001-01-01 00:00:00', '+00:00', '+01:00') AS d0,
@@ -8990,7 +8981,7 @@ t1	CREATE TABLE `t1` (
   `d4` datetime(4) DEFAULT NULL,
   `d5` datetime(5) DEFAULT NULL,
   `d6` datetime(6) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t1;
 #
 # Testing copy from DATETIME to DATETIME(6) and vice versa
@@ -9087,55 +9078,47 @@ a	b	c
 10:10:10.100000	2001-01-01 10:10:10.100000	2001-01-01
 DROP TABLE t1;
 #
-# Testing EXPLAIN EXTENDED SELECT for CAST(DATETIME(N))
+# Testing EXPLAIN SELECT for CAST(DATETIME(N))
 #
-EXPLAIN EXTENDED SELECT CAST('10:10:10' AS DATETIME);
+EXPLAIN SELECT CAST('10:10:10' AS DATETIME);
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
 Warnings:
-Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select cast('10:10:10' as datetime) AS `CAST('10:10:10' AS DATETIME)`
-EXPLAIN EXTENDED SELECT CAST('10:10:10' AS DATETIME(0));
+EXPLAIN SELECT CAST('10:10:10' AS DATETIME(0));
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
 Warnings:
-Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select cast('10:10:10' as datetime) AS `CAST('10:10:10' AS DATETIME(0))`
-EXPLAIN EXTENDED SELECT CAST('10:10:10' AS DATETIME(1));
+EXPLAIN SELECT CAST('10:10:10' AS DATETIME(1));
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
 Warnings:
-Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select cast('10:10:10' as datetime(1)) AS `CAST('10:10:10' AS DATETIME(1))`
-EXPLAIN EXTENDED SELECT CAST('10:10:10' AS DATETIME(2));
+EXPLAIN SELECT CAST('10:10:10' AS DATETIME(2));
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
 Warnings:
-Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select cast('10:10:10' as datetime(2)) AS `CAST('10:10:10' AS DATETIME(2))`
-EXPLAIN EXTENDED SELECT CAST('10:10:10' AS DATETIME(3));
+EXPLAIN SELECT CAST('10:10:10' AS DATETIME(3));
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
 Warnings:
-Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select cast('10:10:10' as datetime(3)) AS `CAST('10:10:10' AS DATETIME(3))`
-EXPLAIN EXTENDED SELECT CAST('10:10:10' AS DATETIME(4));
+EXPLAIN SELECT CAST('10:10:10' AS DATETIME(4));
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
 Warnings:
-Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select cast('10:10:10' as datetime(4)) AS `CAST('10:10:10' AS DATETIME(4))`
-EXPLAIN EXTENDED SELECT CAST('10:10:10' AS DATETIME(5));
+EXPLAIN SELECT CAST('10:10:10' AS DATETIME(5));
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
 Warnings:
-Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select cast('10:10:10' as datetime(5)) AS `CAST('10:10:10' AS DATETIME(5))`
-EXPLAIN EXTENDED SELECT CAST('10:10:10' AS DATETIME(6));
+EXPLAIN SELECT CAST('10:10:10' AS DATETIME(6));
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
 Warnings:
-Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select cast('10:10:10' as datetime(6)) AS `CAST('10:10:10' AS DATETIME(6))`
 #
 # Testing CAST with bad FSPs
@@ -9249,8 +9232,8 @@ CREATE TABLE t2 AS SELECT CAST(a AS CHAR) AS a FROM t1;
 SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
-  `a` varchar(26) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+  `a` varchar(26) CHARACTER SET latin1 DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 SELECT a, LENGTH(a) FROM t2;
 a	LENGTH(a)
 2001-01-01 11:22:33.123000	26
@@ -9381,7 +9364,7 @@ CONCAT(LEAST(a,b))	CONCAT(LEAST(b,a))
 # So the result format depends on which value wins, with the first value having higher precedence:
 SELECT LEAST(a,b,'2001-01-02'), LEAST(b,a,'2001-01-02'), LEAST(a,b,'2000-01-01') FROM t1;
 LEAST(a,b,'2001-01-02')	LEAST(b,a,'2001-01-02')	LEAST(a,b,'2000-01-01')
-10:20:30	2001-01-01 10:20:30	2000-01-01
+2001-01-01 10:20:30	2001-01-01 10:20:30	2000-01-01 00:00:00
 # More tests with LEAST:
 SELECT a, b FROM t1 WHERE a=LEAST(a,a);
 a	b
@@ -9557,7 +9540,7 @@ t1	CREATE TABLE `t1` (
   `TIMESTAMP(TIMESTAMP('2001-01-01 00:00:00.1234'))` datetime(4) DEFAULT NULL,
   `TIMESTAMP(TIMESTAMP('2001-01-01 00:00:00.12345'))` datetime(5) DEFAULT NULL,
   `TIMESTAMP(TIMESTAMP('2001-01-01 00:00:00.123456'))` datetime(6) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t1;
 #
 # Testing DEFAULT value
@@ -9567,7 +9550,7 @@ SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` datetime(6) NOT NULL DEFAULT '2000-01-01 11:22:33.123456'
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t1;
 #
 # Mixing varios DATETIME(N) in CASE
@@ -9619,7 +9602,7 @@ t2	CREATE TABLE `t2` (
   `CASE WHEN 1 THEN t6 ELSE t1 END` datetime(6) DEFAULT NULL,
   `CASE WHEN 1 THEN t6 ELSE t3 END` datetime(6) DEFAULT NULL,
   `CASE WHEN 1 THEN t6 ELSE t4 END` datetime(6) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 DROP TABLE t1;
 #
@@ -9646,7 +9629,7 @@ t2	CREATE TABLE `t2` (
   `COALESCE(e, f)` datetime(4) DEFAULT NULL,
   `COALESCE(c, e)` datetime(3) DEFAULT NULL,
   `COALESCE(c, f)` datetime(4) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 CREATE TABLE t2 AS SELECT
 CONCAT(COALESCE(a, b)), CONCAT(COALESCE(c, b)),
@@ -9656,13 +9639,13 @@ FROM t1;
 SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
-  `CONCAT(COALESCE(a, b))` varchar(26) DEFAULT NULL,
-  `CONCAT(COALESCE(c, b))` varchar(26) DEFAULT NULL,
-  `CONCAT(COALESCE(c, d))` varchar(19) DEFAULT NULL,
-  `CONCAT(COALESCE(e, f))` varchar(24) DEFAULT NULL,
-  `CONCAT(COALESCE(c, e))` varchar(23) DEFAULT NULL,
-  `CONCAT(COALESCE(c, f))` varchar(24) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+  `CONCAT(COALESCE(a, b))` varchar(26) CHARACTER SET latin1 DEFAULT NULL,
+  `CONCAT(COALESCE(c, b))` varchar(26) CHARACTER SET latin1 DEFAULT NULL,
+  `CONCAT(COALESCE(c, d))` varchar(19) CHARACTER SET latin1 DEFAULT NULL,
+  `CONCAT(COALESCE(e, f))` varchar(24) CHARACTER SET latin1 DEFAULT NULL,
+  `CONCAT(COALESCE(c, e))` varchar(23) CHARACTER SET latin1 DEFAULT NULL,
+  `CONCAT(COALESCE(c, f))` varchar(24) CHARACTER SET latin1 DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 DROP TABLE t1;
 #
@@ -9674,7 +9657,7 @@ SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
   `a` datetime(6) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 DROP TABLE t1;
 #
@@ -9687,7 +9670,7 @@ Table	Create Table
 t2	CREATE TABLE `t2` (
   `IF(1, a, b)` datetime(2) DEFAULT NULL,
   `IF(1, b, a)` datetime(2) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 DROP TABLE t1;
 #
@@ -9699,7 +9682,7 @@ SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
   `a` datetime(6) NOT NULL DEFAULT '0000-00-00 00:00:00.000000'
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 DROP TABLE t1;
 #
@@ -9712,7 +9695,7 @@ SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
   `a` datetime(6) NOT NULL DEFAULT '0000-00-00 00:00:00.000000'
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 SELECT * FROM t2 ORDER BY a;
 a
 2001-01-01 00:11:22.123456
@@ -9728,21 +9711,21 @@ SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
   `t0` datetime(1) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 CREATE TABLE t2 AS SELECT t1 FROM t1 UNION SELECT t3 FROM t1;
 SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
   `t1` datetime(3) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 CREATE TABLE t2 AS SELECT t3 FROM t1 UNION SELECT t4 FROM t1;
 SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
   `t3` datetime(4) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 DROP TABLE t1;
 #
@@ -9755,7 +9738,7 @@ SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
   `a` datetime(6) NOT NULL DEFAULT '0000-00-00 00:00:00.000000'
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 SELECT * FROM t2 ORDER BY a;
 a
 2001-01-01 00:11:22.123456
@@ -9766,7 +9749,7 @@ SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
   `b` datetime(6) NOT NULL DEFAULT '0000-00-00 00:00:00.000000'
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 SELECT * FROM t2 ORDER BY b;
 b
 2001-01-01 00:11:22.123456
@@ -9795,29 +9778,29 @@ CREATE TABLE t2 AS SELECT a FROM t1 UNION SELECT b FROM t1;
 SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
-  `a` varchar(26) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+  `a` varchar(26) CHARACTER SET latin1 DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 CREATE TABLE t2 AS SELECT a FROM t1 UNION SELECT c FROM t1;
 SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
-  `a` varchar(26) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+  `a` varchar(26) CHARACTER SET latin1 DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 CREATE TABLE t2 AS SELECT a FROM t1 UNION SELECT d FROM t1;
 SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
-  `a` varchar(26) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+  `a` varchar(26) CHARACTER SET latin1 DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 CREATE TABLE t2 AS SELECT a FROM t1 UNION SELECT e FROM t1;
 SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
   `a` varchar(26) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 DROP TABLE t1;
 #
@@ -10043,7 +10026,7 @@ SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `s1` datetime(6) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 /*!50500 PARTITION BY RANGE  COLUMNS(s1)
 (PARTITION p1 VALUES LESS THAN ('2001-01-01 01:01:01.000001') ENGINE = InnoDB,
  PARTITION p2 VALUES LESS THAN ('2002-01-01') ENGINE = InnoDB) */
@@ -10089,7 +10072,7 @@ t1	CREATE TABLE `t1` (
   `CAST(111.1 AS DATETIME(6))` datetime(6) DEFAULT NULL,
   `CAST('20001111' AS DATETIME(6))` datetime(6) DEFAULT NULL,
   `CAST(111e0 AS DATETIME(6))` datetime(6) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t1;
 CREATE TABLE t1 (a DATETIME, b DATETIME(6));
 INSERT INTO t1 VALUES ('2001-01-01 11:22:33', '2001-01-01 11:22:33.123456');
@@ -10099,7 +10082,7 @@ Table	Create Table
 t2	CREATE TABLE `t2` (
   `CAST(a AS DATETIME)` datetime DEFAULT NULL,
   `CAST(b AS DATETIME)` datetime DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 CREATE TABLE t2 AS SELECT CAST(a AS DATETIME(0)), CAST(b AS DATETIME(0)) FROM t1;
 SHOW CREATE TABLE t2;
@@ -10107,7 +10090,7 @@ Table	Create Table
 t2	CREATE TABLE `t2` (
   `CAST(a AS DATETIME(0))` datetime DEFAULT NULL,
   `CAST(b AS DATETIME(0))` datetime DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 CREATE TABLE t2 AS SELECT CAST(a AS DATETIME(6)), CAST(b AS DATETIME(6)) FROM t1;
 SHOW CREATE TABLE t2;
@@ -10115,7 +10098,7 @@ Table	Create Table
 t2	CREATE TABLE `t2` (
   `CAST(a AS DATETIME(6))` datetime(6) DEFAULT NULL,
   `CAST(b AS DATETIME(6))` datetime(6) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 #
 # Testing Item_datetime_typecast::val_str
@@ -10323,8 +10306,8 @@ CREATE TABLE t1 AS SELECT @a AS a;
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `a` longtext
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+  `a` longtext CHARACTER SET latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 SELECT * FROM t1;
 a
 2001-01-01 11:22:33.123456
@@ -10345,7 +10328,7 @@ BEGIN
 DECLARE a DATETIME(6);
 SET a='2001-01-01 11:22:33.123';
 SELECT a;
-END	latin1	latin1_swedish_ci	latin1_swedish_ci
+END	latin1	latin1_swedish_ci	utf8mb4_0900_ai_ci
 CALL p1//
 a
 2001-01-01 11:22:33.123000
@@ -10359,7 +10342,7 @@ Procedure	sql_mode	Create Procedure	character_set_client	collation_connection	Da
 p1	NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` PROCEDURE `p1`(a DATETIME(6))
 BEGIN
 SELECT a;
-END	latin1	latin1_swedish_ci	latin1_swedish_ci
+END	latin1	latin1_swedish_ci	utf8mb4_0900_ai_ci
 CALL p1(20010101112233)//
 a
 2001-01-01 11:22:33.000000
@@ -10388,12 +10371,12 @@ DECLARE a DATETIME(6);
 CREATE TABLE t1 AS SELECT a;
 SHOW CREATE TABLE t1;
 DROP TABLE t1;
-END	latin1	latin1_swedish_ci	latin1_swedish_ci
+END	latin1	latin1_swedish_ci	utf8mb4_0900_ai_ci
 CALL p1//
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` datetime(6) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP PROCEDURE p1//
 CREATE FUNCTION p1 (a DATETIME(6)) RETURNS DATETIME(6)
 BEGIN
@@ -10404,7 +10387,7 @@ Function	sql_mode	Create Function	character_set_client	collation_connection	Data
 p1	NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `p1`(a DATETIME(6)) RETURNS datetime(6)
 BEGIN
 RETURN a;
-END	latin1	latin1_swedish_ci	latin1_swedish_ci
+END	latin1	latin1_swedish_ci	utf8mb4_0900_ai_ci
 SELECT p1(20010101112233)//
 p1(20010101112233)
 2001-01-01 11:22:33.000000
@@ -10438,6 +10421,7 @@ EXTRA
 PRIVILEGES	#
 COLUMN_COMMENT	
 GENERATION_EXPRESSION	
+SRS_ID	NULL
 DROP TABLE t1;
 #
 # SELECT from a subquery
@@ -10728,7 +10712,7 @@ SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t1;
 #
 # Testing internal representation format for DATETIME(N)
@@ -12658,7 +12642,7 @@ SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
   `a` timestamp(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2, t1;
 #
 # Testing CREATE TABLE .. SELECT
@@ -12669,7 +12653,7 @@ SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
   `a` timestamp(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2, t1;
 #
 # Testing JOIN between TIMESTAMP(6) and TIMESTAMP(6)
@@ -12824,7 +12808,7 @@ a
 20010101000000.100000
 SELECT GREATEST(a, '2001-01-02 00:00:00.1') AS a FROM t1;
 a
-2001-01-02 00:00:00.1
+2001-01-02 00:00:00.100000
 SELECT GREATEST(a, '2001-01-02 00:00:00.1') + 0 AS a FROM t1;
 a
 20010102000000.100000
@@ -12842,7 +12826,7 @@ Table	Create Table
 t2	CREATE TABLE `t2` (
   `LEAST(a, b)` timestamp(2) NOT NULL DEFAULT '0000-00-00 00:00:00.00',
   `GREATEST(a, b)` timestamp(2) NOT NULL DEFAULT '0000-00-00 00:00:00.00'
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 DROP TABLE t1;
 #
@@ -13239,7 +13223,7 @@ t2	CREATE TABLE `t2` (
   `i` decimal(21,6) NOT NULL DEFAULT '0.000000',
   `d` decimal(21,6) NOT NULL DEFAULT '0.000000',
   `f` double NOT NULL DEFAULT '0'
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t1, t2;
 #
 # Testing that TIMESTAMP behaves as INT/DECIMAL for numeric arithmetic
@@ -13290,7 +13274,7 @@ t2	CREATE TABLE `t2` (
   `TIMESTAMP'2001-01-01 10:10:10' / 1` decimal(18,4) DEFAULT NULL,
   `TIMESTAMP'2001-01-01 10:10:10.123' / 1` decimal(21,7) DEFAULT NULL,
   `TIMESTAMP'2001-01-01 10:10:10.123456' / 1` decimal(24,10) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 DROP TABLE t1;
 #
@@ -13351,7 +13335,7 @@ t2	CREATE TABLE `t2` (
   `MAX(t6)` datetime(6) DEFAULT NULL,
   `AVG(t6)` decimal(24,10) DEFAULT NULL,
   `SUM(t6)` decimal(42,6) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 DROP TABLE t1;
 #
@@ -13461,7 +13445,7 @@ t2	CREATE TABLE `t2` (
   `ADDTIME(CAST(a AS DATETIME(0)), 100000)` datetime DEFAULT NULL,
   `ADDTIME(CAST(a AS DATETIME(0)), 100000.1)` datetime(1) DEFAULT NULL,
   `ADDTIME(a,a)` datetime(6) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 SELECT TIMESTAMP(a, '10:00:00') FROM t1;
 TIMESTAMP(a, '10:00:00')
@@ -13516,7 +13500,7 @@ t2	CREATE TABLE `t2` (
   `TIMESTAMP(CAST(a AS DATETIME(0)), CAST('00:00:00' AS TIME(0)))` datetime DEFAULT NULL,
   `TIMESTAMP(CAST(a AS DATETIME(6)), CAST('00:00:00' AS TIME(0)))` datetime(6) DEFAULT NULL,
   `TIMESTAMP(CAST(a AS DATETIME(0)), CAST('00:00:00' AS TIME(6)))` datetime(6) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 SELECT SUBTIME(a, '00:00:00.000001') FROM t1 ORDER BY a;
 SUBTIME(a, '00:00:00.000001')
@@ -13563,7 +13547,7 @@ t2	CREATE TABLE `t2` (
   `SUBTIME(CAST(a AS DATETIME(0)), 100000)` datetime DEFAULT NULL,
   `SUBTIME(CAST(a AS DATETIME(0)), 100000.1)` datetime(1) DEFAULT NULL,
   `SUBTIME(a,a)` datetime(6) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 SELECT DATE_ADD(a, INTERVAL 1 MINUTE) FROM t1 ORDER BY a;
 DATE_ADD(a, INTERVAL 1 MINUTE)
@@ -13662,14 +13646,14 @@ t2	CREATE TABLE `t2` (
   `DATE_SUB(CAST(a AS DATETIME), INTERVAL 1 SECOND)` datetime DEFAULT NULL,
   `DATE_ADD(CAST(a AS DATETIME), INTERVAL 1 MICROSECOND)` datetime(6) DEFAULT NULL,
   `DATE_SUB(CAST(a AS DATETIME), INTERVAL 1 MICROSECOND)` datetime(6) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 CREATE TABLE t2 AS SELECT MAX(DATE_ADD(a, INTERVAL 1 MINUTE)) FROM t1;
 SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
   `MAX(DATE_ADD(a, INTERVAL 1 MINUTE))` datetime(6) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 SELECT * FROM t2;
 MAX(DATE_ADD(a, INTERVAL 1 MINUTE))
 2001-01-01 01:01:00.000001
@@ -13839,8 +13823,8 @@ CREATE TABLE t2 AS SELECT CAST(a AS CHAR) AS a FROM t1;
 SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
-  `a` varchar(26) NOT NULL DEFAULT ''
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+  `a` varchar(26) CHARACTER SET latin1 NOT NULL DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 SELECT a, LENGTH(a) FROM t2;
 a	LENGTH(a)
 2001-01-01 11:22:33.123000	26
@@ -13856,42 +13840,42 @@ SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` timestamp(1) NOT NULL DEFAULT CURRENT_TIMESTAMP(1) ON UPDATE CURRENT_TIMESTAMP(1)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t1;
 CREATE TABLE t1 (a TIMESTAMP(2) NOT NULL DEFAULT CURRENT_TIMESTAMP(2) ON UPDATE CURRENT_TIMESTAMP(2));
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` timestamp(2) NOT NULL DEFAULT CURRENT_TIMESTAMP(2) ON UPDATE CURRENT_TIMESTAMP(2)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t1;
 CREATE TABLE t1 (a TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3));
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` timestamp(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t1;
 CREATE TABLE t1 (a TIMESTAMP(4) NOT NULL DEFAULT CURRENT_TIMESTAMP(4) ON UPDATE CURRENT_TIMESTAMP(4));
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` timestamp(4) NOT NULL DEFAULT CURRENT_TIMESTAMP(4) ON UPDATE CURRENT_TIMESTAMP(4)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t1;
 CREATE TABLE t1 (a TIMESTAMP(5) NOT NULL DEFAULT CURRENT_TIMESTAMP(5) ON UPDATE CURRENT_TIMESTAMP(5));
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` timestamp(5) NOT NULL DEFAULT CURRENT_TIMESTAMP(5) ON UPDATE CURRENT_TIMESTAMP(5)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t1;
 CREATE TABLE t1 (a TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6));
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` timestamp(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t1;
 #
 # Testing DEFAULT value
@@ -13901,7 +13885,7 @@ SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` timestamp(6) NOT NULL DEFAULT '2000-01-01 11:22:33.123456'
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t1;
 #
 # Testing DEFAULT CURRENT_TIMESTAMP
@@ -14048,7 +14032,7 @@ SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` timestamp(6) NOT NULL DEFAULT '0000-00-00 00:00:00.000000' ON UPDATE CURRENT_TIMESTAMP(6)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t1;
 CREATE TABLE t1 (a DATETIME(6) ON UPDATE CURRENT_TIMESTAMP);
 ERROR HY000: Invalid ON UPDATE clause for 'a' column
@@ -14070,7 +14054,7 @@ SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` datetime(6) DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP(6)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t1;
 #
 # Testing that ON UPDATE CURRENT_TIMESTAMP(n) truncates rather than rounds
@@ -14147,7 +14131,7 @@ t2	CREATE TABLE `t2` (
   `CASE WHEN 1 THEN t6 ELSE t1 END` timestamp(6) NOT NULL DEFAULT '0000-00-00 00:00:00.000000',
   `CASE WHEN 1 THEN t6 ELSE t3 END` timestamp(6) NOT NULL DEFAULT '0000-00-00 00:00:00.000000',
   `CASE WHEN 1 THEN t6 ELSE t4 END` timestamp(6) NOT NULL DEFAULT '0000-00-00 00:00:00.000000'
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 DROP TABLE t1;
 #
@@ -14174,7 +14158,7 @@ t2	CREATE TABLE `t2` (
   `COALESCE(e, f)` timestamp(4) NOT NULL DEFAULT '0000-00-00 00:00:00.0000',
   `COALESCE(c, e)` timestamp(3) NOT NULL DEFAULT '0000-00-00 00:00:00.000',
   `COALESCE(c, f)` timestamp(4) NOT NULL DEFAULT '0000-00-00 00:00:00.0000'
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 CREATE TABLE t2 AS SELECT
 CONCAT(COALESCE(a, b)), CONCAT(COALESCE(c, b)),
@@ -14184,13 +14168,13 @@ FROM t1;
 SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
-  `CONCAT(COALESCE(a, b))` varchar(26) NOT NULL DEFAULT '',
-  `CONCAT(COALESCE(c, b))` varchar(26) NOT NULL DEFAULT '',
-  `CONCAT(COALESCE(c, d))` varchar(19) NOT NULL DEFAULT '',
-  `CONCAT(COALESCE(e, f))` varchar(24) NOT NULL DEFAULT '',
-  `CONCAT(COALESCE(c, e))` varchar(23) NOT NULL DEFAULT '',
-  `CONCAT(COALESCE(c, f))` varchar(24) NOT NULL DEFAULT ''
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+  `CONCAT(COALESCE(a, b))` varchar(26) CHARACTER SET latin1 NOT NULL DEFAULT '',
+  `CONCAT(COALESCE(c, b))` varchar(26) CHARACTER SET latin1 NOT NULL DEFAULT '',
+  `CONCAT(COALESCE(c, d))` varchar(19) CHARACTER SET latin1 NOT NULL DEFAULT '',
+  `CONCAT(COALESCE(e, f))` varchar(24) CHARACTER SET latin1 NOT NULL DEFAULT '',
+  `CONCAT(COALESCE(c, e))` varchar(23) CHARACTER SET latin1 NOT NULL DEFAULT '',
+  `CONCAT(COALESCE(c, f))` varchar(24) CHARACTER SET latin1 NOT NULL DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 DROP TABLE t1;
 #
@@ -14202,7 +14186,7 @@ SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
   `a` timestamp(6) NOT NULL DEFAULT '0000-00-00 00:00:00.000000'
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 DROP TABLE t1;
 #
@@ -14215,7 +14199,7 @@ Table	Create Table
 t2	CREATE TABLE `t2` (
   `IF(1, a, b)` timestamp(2) NOT NULL DEFAULT '0000-00-00 00:00:00.00',
   `IF(1, b, a)` timestamp(2) NOT NULL DEFAULT '0000-00-00 00:00:00.00'
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 DROP TABLE t1;
 #
@@ -14227,7 +14211,7 @@ SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
   `a` timestamp(6) NOT NULL DEFAULT '0000-00-00 00:00:00.000000'
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 DROP TABLE t1;
 #
@@ -14240,7 +14224,7 @@ SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
   `a` timestamp(6) NOT NULL DEFAULT '0000-00-00 00:00:00.000000'
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 SELECT * FROM t2 ORDER BY a;
 a
 2001-01-01 00:11:22.123456
@@ -14256,21 +14240,21 @@ SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
   `t0` timestamp(1) NOT NULL DEFAULT '0000-00-00 00:00:00.0'
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 CREATE TABLE t2 AS SELECT t1 FROM t1 UNION SELECT t3 FROM t1;
 SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
   `t1` timestamp(3) NOT NULL DEFAULT '0000-00-00 00:00:00.000'
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 CREATE TABLE t2 AS SELECT t3 FROM t1 UNION SELECT t4 FROM t1;
 SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
   `t3` timestamp(4) NOT NULL DEFAULT '0000-00-00 00:00:00.0000'
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 DROP TABLE t1;
 #
@@ -14341,29 +14325,29 @@ CREATE TABLE t2 AS SELECT a FROM t1 UNION SELECT b FROM t1;
 SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
-  `a` varchar(26) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+  `a` varchar(26) CHARACTER SET latin1 DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 CREATE TABLE t2 AS SELECT a FROM t1 UNION SELECT c FROM t1;
 SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
-  `a` varchar(26) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+  `a` varchar(26) CHARACTER SET latin1 DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 CREATE TABLE t2 AS SELECT a FROM t1 UNION SELECT d FROM t1;
 SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
-  `a` varchar(26) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+  `a` varchar(26) CHARACTER SET latin1 DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 CREATE TABLE t2 AS SELECT a FROM t1 UNION SELECT e FROM t1;
 SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
   `a` varchar(26) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t2;
 DROP TABLE t1;
 #
@@ -14557,7 +14541,7 @@ Table	Create Table
 t2	CREATE TABLE `t2` (
   `CAST(a AS DATETIME)` datetime DEFAULT NULL,
   `CAST(b AS DATETIME)` datetime DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 SELECT * FROM t2;
 CAST(a AS DATETIME)	CAST(b AS DATETIME)
 2001-01-01 11:22:33	2001-01-01 11:22:33
@@ -14568,7 +14552,7 @@ Table	Create Table
 t2	CREATE TABLE `t2` (
   `CAST(a AS DATETIME(0))` datetime DEFAULT NULL,
   `CAST(b AS DATETIME(0))` datetime DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 SELECT * FROM t2;
 CAST(a AS DATETIME(0))	CAST(b AS DATETIME(0))
 2001-01-01 11:22:33	2001-01-01 11:22:33
@@ -14579,7 +14563,7 @@ Table	Create Table
 t2	CREATE TABLE `t2` (
   `CAST(a AS DATETIME(6))` datetime(6) DEFAULT NULL,
   `CAST(b AS DATETIME(6))` datetime(6) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 SELECT * FROM t2;
 CAST(a AS DATETIME(6))	CAST(b AS DATETIME(6))
 2001-01-01 11:22:33.000000	2001-01-01 11:22:33.123456
@@ -14700,8 +14684,8 @@ CREATE TABLE t1 AS SELECT @a AS a;
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `a` longtext
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+  `a` longtext CHARACTER SET latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 SELECT * FROM t1;
 a
 2001-01-01 11:22:33.123456
@@ -14722,7 +14706,7 @@ BEGIN
 DECLARE a TIMESTAMP(6);
 SET a='2001-01-01 11:22:33.123';
 SELECT a;
-END	latin1	latin1_swedish_ci	latin1_swedish_ci
+END	latin1	latin1_swedish_ci	utf8mb4_0900_ai_ci
 CALL p1//
 a
 2001-01-01 11:22:33.123000
@@ -14736,7 +14720,7 @@ Procedure	sql_mode	Create Procedure	character_set_client	collation_connection	Da
 p1	NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` PROCEDURE `p1`(a TIMESTAMP(6))
 BEGIN
 SELECT a;
-END	latin1	latin1_swedish_ci	latin1_swedish_ci
+END	latin1	latin1_swedish_ci	utf8mb4_0900_ai_ci
 CALL p1(20010101112233)//
 a
 2001-01-01 11:22:33.000000
@@ -14767,12 +14751,12 @@ DECLARE a TIMESTAMP(6);
 CREATE TABLE t1 AS SELECT a;
 SHOW CREATE TABLE t1;
 DROP TABLE t1;
-END	latin1	latin1_swedish_ci	latin1_swedish_ci
+END	latin1	latin1_swedish_ci	utf8mb4_0900_ai_ci
 CALL p1//
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` timestamp(6) NULL DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP PROCEDURE p1//
 CREATE FUNCTION p1 (a TIMESTAMP(6)) RETURNS TIMESTAMP(6)
 BEGIN
@@ -14783,7 +14767,7 @@ Function	sql_mode	Create Function	character_set_client	collation_connection	Data
 p1	NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `p1`(a TIMESTAMP(6)) RETURNS timestamp(6)
 BEGIN
 RETURN a;
-END	latin1	latin1_swedish_ci	latin1_swedish_ci
+END	latin1	latin1_swedish_ci	utf8mb4_0900_ai_ci
 SELECT p1(20010101112233)//
 p1(20010101112233)
 2001-01-01 11:22:33.000000
@@ -14817,6 +14801,7 @@ EXTRA	on update CURRENT_TIMESTAMP(6)
 PRIVILEGES	#
 COLUMN_COMMENT	
 GENERATION_EXPRESSION	
+SRS_ID	NULL
 DROP TABLE t1;
 #
 # SELECT from a subquery
@@ -15534,7 +15519,7 @@ SELECT @@timestamp;
 CREATE TABLE t1 AS SELECT @@timestamp;
 SHOW COLUMNS FROM t1;
 Field	Type	Null	Key	Default	Extra
-@@timestamp	double(21,6)	YES		NULL	
+@@timestamp	double(22,6)	YES		NULL	
 DROP TABLE t1;
 SET timestamp=DEFAULT;
 #
@@ -15554,7 +15539,7 @@ SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` time(3) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t1;
 #
 # Bug#12546965 - 60990: INCORRECT DATE COMPARISON 
@@ -15723,7 +15708,7 @@ SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `UNIX_TIMESTAMP(CURRENT_TIMESTAMP(6))` decimal(17,6) NOT NULL DEFAULT '0.000000'
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 SELECT * FROM t1;
 UNIX_TIMESTAMP(CURRENT_TIMESTAMP(6))
 1316637605.123456
@@ -16497,6 +16482,10 @@ WHERE col_time_not_null_key <= col_timestamp_6_key
 AND col_time_2_key > SUBTIME('2006-07-16', '05:05:02.040778')
 ORDER BY col_datetime_5_not_null_key, col_time_1;
 c1
+Warnings:
+Warning	1292	Truncated incorrect time value: '2006-07-16'
+Warning	1292	Truncated incorrect time value: '2006-07-16'
+Warning	1292	Truncated incorrect time value: '2006-07-16'
 DROP TABLE t1;
 CREATE TABLE t1 (
 col_timestamp_3_not_null_key timestamp(3) NULL DEFAULT '0000-00-00 00:00:00.000',
@@ -16618,13 +16607,13 @@ CREATE TABLE t1 (
 col_date_not_null_key date NOT NULL,
 KEY col_date_not_null_key (col_date_not_null_key));
 INSERT INTO t1 VALUES ('0000-00-00'), ('2000-11-20');
-SELECT ADDTIME(GREATEST(col_date_not_null_key, '2007-03-11 08:51:19.009408'),
+SELECT ADDTIME(GREATEST(col_date_not_null_key, TIMESTAMP '2007-03-11 08:51:19.009408'),
 '12:20:40.029940')
 FROM t1;
-ADDTIME(GREATEST(col_date_not_null_key, '2007-03-11 08:51:19.009408'),
+ADDTIME(GREATEST(col_date_not_null_key, TIMESTAMP '2007-03-11 08:51:19.009408'),
 '12:20:40.029940')
-21:11:59.039348
-21:11:59.039348
+2007-03-11 21:11:59.039348
+2007-03-11 21:11:59.039348
 DROP TABLE t1;
 #
 # BUG#13386657 ASSERT FAILURE IN ITEM::GET_DATE_FROM_NON_TEMPORAL
@@ -16902,7 +16891,7 @@ col_timestamp_2_not_null_key
 Warnings:
 Warning	1292	Truncated incorrect date value: '17:28:30'
 Warning	1292	Truncated incorrect date value: '17:28:30'
-Warning	1292	Truncated incorrect date value: '17:28:30'
+Warning	1292	Incorrect datetime value: '2017-00-00'
 DROP TABLE t1;
 SET timestamp=DEFAULT;
 #
@@ -16924,8 +16913,6 @@ OR col_datetime_6_not_null_key < TIMEDIFF('0000-00-00','2002-11-24' )
 AND col_timestamp_6_not_null_key IS NULL;
 c1
 Warnings:
-Warning	1292	Truncated incorrect time value: '0000-00-00'
-Warning	1292	Truncated incorrect time value: '2002-11-24'
 Warning	1292	Truncated incorrect time value: '0000-00-00'
 Warning	1292	Truncated incorrect time value: '2002-11-24'
 Warning	1292	Truncated incorrect time value: '0000-00-00'
@@ -17263,75 +17250,75 @@ INSERT INTO t1 VALUES ('2000-07-16 05:58:04.035');
 INSERT INTO t1 VALUES ('2008-08-21 00:00:00.000');
 INSERT INTO t1 VALUES ('0000-00-00 00:00:00.000');
 # Testing INT number
-SELECT GREATEST(a, 1323) FROM t1;
-GREATEST(a, 1323)
-20000716055804.035
-20080821000000.000
-1323.000
-(SELECT GREATEST(a, 1323) FROM t1) UNION ALL (SELECT GREATEST(a, 1323) FROM t1 LIMIT 0);
-GREATEST(a, 1323)
-20000716055804.035
-20080821000000.000
-1323.000
-SELECT LEAST(a, 1323) FROM t1;
-LEAST(a, 1323)
-1323.000
-1323.000
-0.000
-(SELECT LEAST(a, 1323) FROM t1) UNION ALL (SELECT LEAST(a, 1323) FROM t1 LIMIT 0);
-LEAST(a, 1323)
-1323.000
-1323.000
-0.000
+SELECT GREATEST(a, 20010101120000) FROM t1;
+GREATEST(a, 20010101120000)
+2001-01-01 12:00:00.000
+2008-08-21 00:00:00.000
+2001-01-01 12:00:00.000
+(SELECT GREATEST(a, 20010101120000) FROM t1) UNION ALL (SELECT GREATEST(a, 20010101120000) FROM t1 LIMIT 0);
+GREATEST(a, 20010101120000)
+2001-01-01 12:00:00.000
+2008-08-21 00:00:00.000
+2001-01-01 12:00:00.000
+SELECT LEAST(a, 20010101120000) FROM t1;
+LEAST(a, 20010101120000)
+2000-07-16 05:58:04.035
+2001-01-01 12:00:00.000
+0000-00-00 00:00:00.000
+(SELECT LEAST(a, 20010101120000) FROM t1) UNION ALL (SELECT LEAST(a, 20010101120000) FROM t1 LIMIT 0);
+LEAST(a, 20010101120000)
+2000-07-16 05:58:04.035
+2001-01-01 12:00:00.000
+0000-00-00 00:00:00.000
 # Testing DECIMAL number 
-SELECT GREATEST(a, 1323.123456) FROM t1;
-GREATEST(a, 1323.123456)
-20000716055804.035000
-20080821000000.000000
-1323.123456
-(SELECT GREATEST(a, 1323.123456) FROM t1) UNION ALL (SELECT GREATEST(a, 1323.123456) FROM t1 LIMIT 0);
-GREATEST(a, 1323.123456)
-20000716055804.035000
-20080821000000.000000
-1323.123456
-SELECT LEAST(a, 1323.123456) FROM t1;
-LEAST(a, 1323.123456)
-1323.123456
-1323.123456
-0.000000
-(SELECT LEAST(a, 1323.123456) FROM t1) UNION ALL (SELECT LEAST(a, 1323.123456) FROM t1 LIMIT 0);
-LEAST(a, 1323.123456)
-1323.123456
-1323.123456
-0.000000
+SELECT GREATEST(a, 20010101120000.123456) FROM t1;
+GREATEST(a, 20010101120000.123456)
+2001-01-01 12:00:00.123456
+2008-08-21 00:00:00.000000
+2001-01-01 12:00:00.123456
+(SELECT GREATEST(a, 20010101120000.123456) FROM t1) UNION ALL (SELECT GREATEST(a, 20010101120000.123456) FROM t1 LIMIT 0);
+GREATEST(a, 20010101120000.123456)
+2001-01-01 12:00:00.123456
+2008-08-21 00:00:00.000000
+2001-01-01 12:00:00.123456
+SELECT LEAST(a, 20010101120000.123456) FROM t1;
+LEAST(a, 20010101120000.123456)
+2000-07-16 05:58:04.035000
+2001-01-01 12:00:00.123456
+0000-00-00 00:00:00.000
+(SELECT LEAST(a, 20010101120000.123456) FROM t1) UNION ALL (SELECT LEAST(a, 20010101120000.123456) FROM t1 LIMIT 0);
+LEAST(a, 20010101120000.123456)
+2000-07-16 05:58:04.035000
+2001-01-01 12:00:00.123456
+0000-00-00 00:00:00.000
 # Testing REAL number
-SELECT GREATEST(a, 1323e0) FROM t1;
-GREATEST(a, 1323e0)
-20000716055804.035
-20080821000000
-1323
-(SELECT GREATEST(a, 1323e0) FROM t1) UNION ALL (SELECT GREATEST(a, 1323e0) FROM t1 LIMIT 0);
-GREATEST(a, 1323e0)
-20000716055804.035
-20080821000000
-1323
-SELECT LEAST(a, 1323e0) FROM t1;
-LEAST(a, 1323e0)
-1323
-1323
-0
-(SELECT LEAST(a, 1323e0) FROM t1) UNION ALL (SELECT LEAST(a, 1323e0) FROM t1 LIMIT 0);
-LEAST(a, 1323e0)
-1323
-1323
-0
+SELECT GREATEST(a, 20010101120000e0) FROM t1;
+GREATEST(a, 20010101120000e0)
+2001-01-01 12:00:00.000000
+2008-08-21 00:00:00.000000
+2001-01-01 12:00:00.000000
+(SELECT GREATEST(a, 20010101120000e0) FROM t1) UNION ALL (SELECT GREATEST(a, 20010101120000e0) FROM t1 LIMIT 0);
+GREATEST(a, 20010101120000e0)
+2001-01-01 12:00:00.000000
+2008-08-21 00:00:00.000000
+2001-01-01 12:00:00.000000
+SELECT LEAST(a, 20010101120000e0) FROM t1;
+LEAST(a, 20010101120000e0)
+2000-07-16 05:58:04.035000
+2001-01-01 12:00:00.000000
+0000-00-00 00:00:00.000
+(SELECT LEAST(a, 20010101120000e0) FROM t1) UNION ALL (SELECT LEAST(a, 20010101120000e0) FROM t1 LIMIT 0);
+LEAST(a, 20010101120000e0)
+2000-07-16 05:58:04.035000
+2001-01-01 12:00:00.000000
+0000-00-00 00:00:00.000
 DROP TABLE t1;
 # Make sure precision of 6 fractional digits does not get lost
 CREATE TABLE t1 (a DATETIME(6));
 INSERT INTO t1 VALUES ('2001-01-01 01:01:01.123456');
-SELECT GREATEST(a,10), LEAST(a,10) FROM t1;
-GREATEST(a,10)	LEAST(a,10)
-20010101010101.123456	10.000000
+SELECT GREATEST(a,20010101120000), LEAST(a,20010101120000) FROM t1;
+GREATEST(a,20010101120000)	LEAST(a,20010101120000)
+2001-01-01 12:00:00.000000	2001-01-01 01:01:01.123456
 DROP TABLE t1;
 #
 # Bug#13976233 ASSERTION FAILED: !CHECK_TIME_MMSSFF_RANGE(LTIME), FILE SQL_TIME.CC, LINE 304

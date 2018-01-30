@@ -3,16 +3,24 @@
 Copyright (c) 1995, 2017, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+the terms of the GNU General Public License, version 2.0, as published by the
+Free Software Foundation.
+
+This program is also distributed with certain software (including but not
+limited to OpenSSL) that is licensed under separate terms, as designated in a
+particular file or component or in included license documentation. The authors
+of MySQL hereby grant you an additional permission to link the program and
+your derivative works with the separately licensed software that they have
+included with MySQL.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+FOR A PARTICULAR PURPOSE. See the GNU General Public License, version 2.0,
+for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 *****************************************************************************/
 
@@ -216,7 +224,11 @@ enum latch_level_t {
 
 	SYNC_ANY_LATCH,
 
+	SYNC_FIL_SHARD,
+
 	SYNC_DOUBLEWRITE,
+
+	SYNC_PAGE_ARCH_OPER,
 
 	SYNC_BUF_FLUSH_LIST,
 	SYNC_BUF_FLUSH_STATE,
@@ -242,6 +254,8 @@ enum latch_level_t {
 	SYNC_LOG_FLUSH_ORDER,
 	SYNC_LOG,
 	SYNC_LOG_WRITE,
+	SYNC_PAGE_ARCH,
+	SYNC_LOG_ARCH,
 
 	SYNC_PAGE_CLEANER,
 	SYNC_PURGE_QUEUE,
@@ -266,10 +280,12 @@ enum latch_level_t {
 	SYNC_FSP_PAGE,
 	SYNC_FSP,
 	SYNC_EXTERN_STORAGE,
+	SYNC_RSEG_ARRAY_HEADER,
 	SYNC_TRX_UNDO_PAGE,
 	SYNC_RSEG_HEADER,
 	SYNC_RSEG_HEADER_NEW,
 	SYNC_TEMP_SPACE_RSEG,
+	SYNC_UNDO_SPACE_RSEG,
 	SYNC_TRX_SYS_RSEG,
 	SYNC_TRX_UNDO,
 	SYNC_PURGE_LATCH,
@@ -277,8 +293,9 @@ enum latch_level_t {
 	SYNC_TREE_NODE_FROM_HASH,
 	SYNC_TREE_NODE_NEW,
 	SYNC_INDEX_TREE,
+	SYNC_RSEGS,
+	SYNC_UNDO_SPACES,
 
-	SYNC_PERSIST_METADATA_BUFFER,
 	SYNC_PERSIST_DIRTY_TABLES,
 	SYNC_PERSIST_AUTOINC,
 	SYNC_PERSIST_CHECKPOINT,
@@ -289,6 +306,7 @@ enum latch_level_t {
 	SYNC_STATS_AUTO_RECALC,
 	SYNC_DICT_AUTOINC_MUTEX,
 	SYNC_DICT,
+	SYNC_PARSER,
 	SYNC_FTS_CACHE,
 
 	SYNC_DICT_OPERATION,
@@ -327,7 +345,7 @@ enum latch_id_t {
 	LATCH_ID_CACHE_LAST_READ,
 	LATCH_ID_DICT_FOREIGN_ERR,
 	LATCH_ID_DICT_SYS,
-	LATCH_ID_FIL_SYSTEM,
+	LATCH_ID_FIL_SHARD,
 	LATCH_ID_FLUSH_LIST,
 	LATCH_ID_FTS_BG_THREADS,
 	LATCH_ID_FTS_DELETE,
@@ -342,6 +360,10 @@ enum latch_id_t {
 	LATCH_ID_LOG_SYS,
 	LATCH_ID_LOG_WRITE,
 	LATCH_ID_LOG_FLUSH_ORDER,
+	LATCH_ID_PARSER,
+	LATCH_ID_LOG_ARCH,
+	LATCH_ID_PAGE_ARCH,
+	LATCH_ID_PAGE_ARCH_OPER,
 	LATCH_ID_PERSIST_METADATA_BUFFER,
 	LATCH_ID_DICT_PERSIST_DIRTY_TABLES,
 	LATCH_ID_PERSIST_AUTOINC,
@@ -352,6 +374,7 @@ enum latch_id_t {
 	LATCH_ID_RECV_SYS,
 	LATCH_ID_RECV_WRITER,
 	LATCH_ID_TEMP_SPACE_RSEG,
+	LATCH_ID_UNDO_SPACE_RSEG,
 	LATCH_ID_TRX_SYS_RSEG,
 	LATCH_ID_RW_LOCK_DEBUG,
 	LATCH_ID_RTR_SSN_MUTEX,
@@ -394,6 +417,8 @@ enum latch_id_t {
 	LATCH_ID_BUF_BLOCK_DEBUG,
 	LATCH_ID_DICT_OPERATION,
 	LATCH_ID_CHECKPOINT,
+	LATCH_ID_RSEGS,
+	LATCH_ID_UNDO_SPACES,
 	LATCH_ID_FIL_SPACE,
 	LATCH_ID_FTS_CACHE,
 	LATCH_ID_FTS_CACHE_INIT,
@@ -406,6 +431,10 @@ enum latch_id_t {
 	LATCH_ID_BUF_CHUNK_MAP_LATCH,
 	LATCH_ID_SYNC_DEBUG_MUTEX,
 	LATCH_ID_MASTER_KEY_ID_MUTEX,
+	LATCH_ID_FILE_OPEN,
+	LATCH_ID_CLONE_SYS,
+	LATCH_ID_CLONE_TASK,
+	LATCH_ID_CLONE_SNAPSHOT,
 	LATCH_ID_TEST_MUTEX,
 	LATCH_ID_MAX = LATCH_ID_TEST_MUTEX
 };
@@ -980,6 +1009,7 @@ sync_latch_get_pfs_key(latch_id_t id)
 }
 #endif /* UNIV_PFS_MUTEX */
 
+#ifndef UNIV_HOTBACKUP
 /** String representation of the filename and line number where the
 latch was created
 @param[in]	id		Latch ID
@@ -1000,6 +1030,7 @@ sync_latch_get_name(latch_level_t level);
 @return the basename */
 const char*
 sync_basename(const char* filename);
+#endif /* !UNIV_HOTBACKUP */
 
 /** Register a latch, called when it is created
 @param[in]	ptr		Latch instance that was created
@@ -1148,7 +1179,7 @@ struct btrsea_sync_check : public sync_check_functor_t {
 
 	/** Called for every latch owned by the calling thread.
 	@param[in]	level		Level of the existing latch
-	@return true if the predicate check is successful */
+	@return true if the predicate check fails */
 	virtual bool operator()(const latch_level_t level)
 	{
 		/* If calling thread doesn't hold search latch then
@@ -1170,6 +1201,8 @@ struct btrsea_sync_check : public sync_check_functor_t {
 		if (!m_has_search_latch
 		    && (level != SYNC_SEARCH_SYS
 			&& level != SYNC_FTS_CACHE
+			&& level != SYNC_DICT
+			&& level != SYNC_DICT_OPERATION
 			&& level != SYNC_TRX_I_S_RWLOCK
 			&& level != SYNC_TRX_I_S_LAST_READ)) {
 
@@ -1195,7 +1228,7 @@ private:
 	const bool	m_has_search_latch;
 };
 
-/** Functor to check for dictionay latching constraints. */
+/** Functor to check for dictionary latching constraints. */
 struct dict_sync_check : public sync_check_functor_t {
 
 	/** Constructor

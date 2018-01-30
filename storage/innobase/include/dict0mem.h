@@ -4,16 +4,24 @@ Copyright (c) 1996, 2017, Oracle and/or its affiliates. All Rights Reserved.
 Copyright (c) 2012, Facebook Inc.
 
 This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+the terms of the GNU General Public License, version 2.0, as published by the
+Free Software Foundation.
+
+This program is also distributed with certain software (including but not
+limited to OpenSSL) that is licensed under separate terms, as designated in a
+particular file or component or in included license documentation. The authors
+of MySQL hereby grant you an additional permission to link the program and
+your derivative works with the separately licensed software that they have
+included with MySQL.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+FOR A PARTICULAR PURPOSE. See the GNU General Public License, version 2.0,
+for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 *****************************************************************************/
 
@@ -28,6 +36,11 @@ Created 1/8/1996 Heikki Tuuri
 #define dict0mem_h
 
 #include "univ.i"
+#include "sql/dd/object_id.h"
+#include "sql/dd/types/column.h"
+#ifdef UNIV_HOTBACKUP
+# include "sql/dd/types/spatial_reference_system.h"
+#endif /* UNIV_HOTBACKUP */
 #include "dict0types.h"
 #include "data0type.h"
 #include "mem0mem.h"
@@ -37,26 +50,31 @@ Created 1/8/1996 Heikki Tuuri
 #ifndef UNIV_HOTBACKUP
 # include "lock0types.h"
 # include "que0types.h"
-# include "sync0rw.h"
 #endif /* !UNIV_HOTBACKUP */
+#include "sync0rw.h"
 #include "ut0mem.h"
 #include "ut0rnd.h"
 #include "ut0byte.h"
 #include "hash0hash.h"
 #include "trx0types.h"
-#include "fts0fts.h"
+#ifndef UNIV_HOTBACKUP
+# include "fts0fts.h"
+#endif /* !UNIV_HOTBACKUP */
 #include "buf0buf.h"
 #include "gis0type.h"
-#include "os0once.h"
+#ifndef UNIV_HOTBACKUP
+# include "os0once.h"
+#endif /* !UNIV_HOTBACKUP */
 #include "ut0new.h"
 #include "dict/mem.h"
 
-#include "sql_const.h"  /* MAX_KEY_LENGTH */
+#include "sql/sql_const.h"  /* MAX_KEY_LENGTH */
 
 #include <set>
 #include <vector>
 #include <algorithm>
 #include <iterator>
+#include <memory>  /* std::unique_ptr */
 
 /* Forward declaration. */
 struct ib_rbt_t;
@@ -232,7 +250,7 @@ ROW_FORMAT=REDUNDANT.  InnoDB engines do not check these flags
 for unknown bits in order to protect backward incompatibility. */
 /* @{ */
 /** Total number of bits in table->flags2. */
-#define DICT_TF2_BITS			9
+#define DICT_TF2_BITS			11
 #define DICT_TF2_UNUSED_BIT_MASK	(~0U << DICT_TF2_BITS)
 #define DICT_TF2_BIT_MASK		~DICT_TF2_UNUSED_BIT_MASK
 
@@ -256,10 +274,6 @@ use its own tablespace instead of the system tablespace. */
 /** Set when we discard/detach the tablespace */
 #define DICT_TF2_DISCARDED		32
 
-/** This bit is set if all aux table names (both common tables and
-index tables) of a FTS table are in HEX format. */
-#define DICT_TF2_FTS_AUX_HEX_NAME	64
-
 /** Intrinsic table bit
 Intrinsic table is table created internally by MySQL modules viz. Optimizer,
 FTS, etc.... Intrinsic table has all the properties of the normal table except
@@ -269,6 +283,11 @@ it is not created by user and so not visible to end-user. */
 /** Encryption table bit. */
 #define DICT_TF2_ENCRYPTION		256
 
+/** FTS AUX hidden table bit. */
+#define DICT_TF2_AUX			512
+
+/** Table is opened by resurrected trx during crash recovery. */
+#define DICT_TF2_RESURRECT_PREPARED	1024
 /* @} */
 
 #define DICT_TF2_FLAG_SET(table, flag)		\
@@ -294,7 +313,7 @@ result in recursive cascading calls. This defines the maximum number of
 such cascading deletes/updates allowed. When exceeded, the delete from
 parent table will fail, and user has to drop excessive foreign constraint
 before proceeds. */
-#define FK_MAX_CASCADE_DEL		255
+#define FK_MAX_CASCADE_DEL		15
 
 /** Adds a virtual column definition to a table.
 @param[in,out]	table		table
@@ -411,7 +430,7 @@ dict_mem_foreign_fill_vcol_set(
 @param[in,out]	table	innodb table object. */
 void
 dict_mem_table_fill_foreign_vcol_set(
-        dict_table_t*	table);
+	dict_table_t*	table);
 
 /** Free the vcol_set from all foreign key constraint on the table.
 @param[in,out]	table	innodb table object. */
@@ -536,7 +555,6 @@ struct dict_col_t{
 					3072 (REC_VERSION_56_MAX_INDEX_COL_LEN)
 					bytes. */
 
-#ifndef UNIV_HOTBACKUP
 	/** Returns the minimum size of the column.
 	@return minimum size */
 	ulint get_min_size() const
@@ -595,8 +613,6 @@ struct dict_col_t{
 
 		mbminmaxlen = DATA_MBMINMAXLEN(mbminlen, mbmaxlen);
 	}
-
-#endif /* !UNIV_HOTBACKUP*/
 
 	/** Returns the size of a fixed size column, 0 if not a fixed size column.
 	@param[in] comp		nonzero=ROW_FORMAT=COMPACT
@@ -821,9 +837,11 @@ struct zip_pad_info_t {
 				current round */
 	ulint		n_rounds;/*!< number of currently successful
 				rounds */
+#ifndef UNIV_HOTBACKUP
 	volatile os_once::state_t
 			mutex_created;
 				/*!< Creation state of mutex member */
+#endif /* !UNIV_HOTBACKUP */
 };
 
 /** If key is fixed length key then cache the record offsets on first
@@ -919,6 +937,10 @@ public:
 system clustered index when there is no primary key. */
 const char innobase_index_reserve_name[] = "GEN_CLUST_INDEX";
 
+namespace dd {
+class Spatial_reference_system;
+}
+
 /** Data structure for an index.  Most fields will be
 initialized to 0, NULL or FALSE in dict_mem_index_create(). */
 struct dict_index_t{
@@ -927,7 +949,6 @@ struct dict_index_t{
 	id_name_t	name;	/*!< index name */
 	const char*	table_name;/*!< table name */
 	dict_table_t*	table;	/*!< back pointer to table */
-#ifndef UNIV_HOTBACKUP
 	unsigned	space:32;
 				/*!< space where the index tree is placed */
 	unsigned	page:32;/*!< index tree root page number */
@@ -936,7 +957,6 @@ struct dict_index_t{
 				data size drops below this limit in percent,
 				merging it to a neighbor is tried */
 # define DICT_INDEX_MERGE_THRESHOLD_DEFAULT 50
-#endif /* !UNIV_HOTBACKUP */
 	unsigned	type:DICT_IT_BITS;
 				/*!< index type (DICT_CLUSTERED, DICT_UNIQUE,
 				DICT_IBUF, DICT_CORRUPT) */
@@ -987,6 +1007,13 @@ struct dict_index_t{
 				/*!< a flag that is set for secondary indexes
 				that have not been committed to the
 				data dictionary yet */
+	uint32_t	srid;	/* spatial reference id */
+	bool		srid_is_valid;
+				/* says whether SRID is valid - it cane be
+				undefined */
+	std::unique_ptr<dd::Spatial_reference_system> rtr_srs;
+				/*!< Cached spatial reference system dictionary
+				entry used by R-tree indexes. */
 
 #ifdef UNIV_DEBUG
 	uint32_t	magic_n;/*!< magic number */
@@ -994,6 +1021,7 @@ struct dict_index_t{
 # define DICT_INDEX_MAGIC_N	76789786
 #endif
 	dict_field_t*	fields;	/*!< array of field descriptions */
+#ifndef UNIV_HOTBACKUP
 	st_mysql_ftparser*
 			parser;	/*!< fulltext parser plugin */
 	bool		is_ngram;
@@ -1001,11 +1029,13 @@ struct dict_index_t{
 	bool		has_new_v_col;
 				/*!< whether it has a newly added virtual
 				column in ALTER */
-#ifndef UNIV_HOTBACKUP
+	bool		hidden; /*!< if the index is an hidden index */
+#endif /* !UNIV_HOTBACKUP */
 	UT_LIST_NODE_T(dict_index_t)
 			indexes;/*!< list of indexes of the table */
 	btr_search_t*	search_info;
 				/*!< info used in optimistic searches */
+#ifndef UNIV_HOTBACKUP
 	row_log_t*	online_log;
 				/*!< the log of modifications
 				during online index creation;
@@ -1037,6 +1067,7 @@ struct dict_index_t{
 	ulint		stat_index_size;
 				/*!< approximate index size in
 				database pages */
+#endif /* !UNIV_HOTBACKUP */
 	ulint		stat_n_leaf_pages;
 				/*!< approximate number of leaf pages in the
 				index tree */
@@ -1064,6 +1095,8 @@ struct dict_index_t{
 				compression failures and successes */
 	rw_lock_t	lock;	/*!< read-write lock protecting the
 				upper levels of the index tree */
+	bool		fill_dd;/*!< Flag whether need to fill dd tables
+				when it's a fulltext index. */
 
 	/** Determine if the index has been committed to the
 	data dictionary.
@@ -1133,8 +1166,6 @@ struct dict_index_t{
 		return(size);
 	}
 
-#endif /* !UNIV_HOTBACKUP */
-
 	/** Check whether index can be used by transaction
 	@param[in] trx		transaction*/
 	bool is_usable(const trx_t* trx) const;
@@ -1142,11 +1173,12 @@ struct dict_index_t{
 	/** Adds a field definition to an index. NOTE: does not take a copy
 	of the column name if the field is a column. The memory occupied
 	by the column name may be released only after publishing the index.
-	@param[in] name		column name
+	@param[in] name_arg	column name
 	@param[in] prefix_len	0 or the column prefix length in a MySQL index
 				like INDEX (textcol(25))
 	@param[in] is_ascending	true=ASC, false=DESC */
-	void add_field(const char* name, ulint prefix_len, bool	is_ascending)
+	void add_field(const char* name_arg,
+		       ulint prefix_len, bool	is_ascending)
 	{
 		dict_field_t*	field;
 
@@ -1156,7 +1188,7 @@ struct dict_index_t{
 
 		field =  get_field(n_def - 1);
 
-		field->name = name;
+		field->name = name_arg;
 		field->prefix_len = (unsigned int) prefix_len;
 		field->is_ascending = is_ascending;
 	}
@@ -1195,6 +1227,15 @@ struct dict_index_t{
 	ULINT_UNDEFINED if not contained */
 	ulint get_col_pos(
 		ulint n, bool inc_prefix=false, bool is_virtual=false) const;
+
+	/** Sets srid and srid_is_valid values
+	@param[in]	srid_value		value of SRID, may be garbage
+						if srid_is_valid_value = false
+	@param[in]	srid_is_valid_value	value of srid_is_valid */
+	void fill_srid_value(uint32_t srid_value, bool srid_is_valid_value) {
+		srid_is_valid = srid_is_valid_value;
+		srid = srid_value;
+	}
 };
 
 /** The status of online index creation */
@@ -1423,8 +1464,8 @@ struct dict_foreign_set_free {
 a foreign key constraint is enforced, therefore RESTRICT just means no flag */
 /* @{ */
 #define DICT_FOREIGN_ON_DELETE_CASCADE	1	/*!< ON DELETE CASCADE */
-#define DICT_FOREIGN_ON_DELETE_SET_NULL	2	/*!< ON UPDATE SET NULL */
-#define DICT_FOREIGN_ON_UPDATE_CASCADE	4	/*!< ON DELETE CASCADE */
+#define DICT_FOREIGN_ON_DELETE_SET_NULL	2	/*!< ON DELETE SET NULL */
+#define DICT_FOREIGN_ON_UPDATE_CASCADE	4	/*!< ON UPDATE CASCADE */
 #define DICT_FOREIGN_ON_UPDATE_SET_NULL	8	/*!< ON UPDATE SET NULL */
 #define DICT_FOREIGN_ON_DELETE_NO_ACTION 16	/*!< ON DELETE NO ACTION */
 #define DICT_FOREIGN_ON_UPDATE_NO_ACTION 32	/*!< ON UPDATE NO ACTION */
@@ -1448,12 +1489,14 @@ operator<<(
 	std::ostream&		s,
 	const table_name_t&	table_name);
 
+#ifndef UNIV_HOTBACKUP
 /** List of locks that different transactions have acquired on a table. This
 list has a list node that is embedded in a nested union/structure. We have to
 generate a specific template for it. */
 
 typedef ut_list_base<lock_t, ut_list_node<lock_t> lock_table_t::*>
 	table_lock_list_t;
+#endif /* !UNIV_HOTBACKUP */
 
 /** mysql template structure defined in row0mysql.cc */
 struct mysql_row_templ_t;
@@ -1510,9 +1553,11 @@ enum table_dirty_status {
 	METADATA_CLEAN
 };
 
+#ifndef UNIV_HOTBACKUP
 /** A vector to collect prebuilt from different readers working on the same
 temp table */
 typedef	std::vector<row_prebuilt_t*>		temp_prebuilt_vec;
+#endif /* !UNIV_HOTBACKUP */
 
 /** Data structure for a database table.  Most fields will be
 initialized to 0, NULL or FALSE in dict_mem_table_create(). */
@@ -1545,6 +1590,9 @@ struct dict_table_t {
 	/** Table name. */
 	table_name_t				name;
 
+	/** Truncate name. */
+	table_name_t				trunc_name;
+
 	/** NULL or the directory path specified by DATA DIRECTORY. */
 	char*					data_dir_path;
 
@@ -1553,7 +1601,10 @@ struct dict_table_t {
 	id_name_t				tablespace;
 
 	/** Space where the clustered index of the table is placed. */
-	space_id_t			space;
+	space_id_t				space;
+
+	/** dd::Tablespace::id of the table */
+	dd::Object_id				dd_space_id;
 
 	/** Stores information about:
 	1 row format (redundant or compact),
@@ -1578,9 +1629,11 @@ struct dict_table_t {
 	Use DICT_TF2_FLAG_IS_SET() to parse this flag. */
 	unsigned				flags2:DICT_TF2_BITS;
 
-	/** TRUE if the table is a intermediate table during copy alter
-	operation and skip the undo log for insertion of row in the table.
-	This variable will be set and unset during extra(). */
+	/** TRUE if the table is an intermediate table during copy alter
+	operation or a partition/subpartition which is required for copying
+	data and skip the undo log for insertion of row in the table.
+	This variable will be set and unset during extra(), or during the
+	process of altering partitions */
 	unsigned				skip_alter_undo:1;
 
 	/** TRUE if this is in a single-table tablespace and the .ibd file is
@@ -1608,17 +1661,21 @@ struct dict_table_t {
 	unsigned				n_t_cols:10;
 
 	/** Number of total columns defined so far. */
-	unsigned                                n_t_def:10;
+	unsigned				n_t_def:10;
 
 	/** Number of virtual columns defined so far. */
-	unsigned                                n_v_def:10;
+	unsigned				n_v_def:10;
 
 	/** Number of virtual columns. */
-	unsigned                                n_v_cols:10;
+	unsigned				n_v_cols:10;
 
-	/** TRUE if it's not an InnoDB system table or a table that has no FK
-	relationships. */
+	/** TRUE if this table is expected to be kept in memory. This table
+	could be a table that has FK relationships or is undergoing DDL */
 	unsigned				can_be_evicted:1;
+
+	/** TRUE if this table is not evictable(can_be_evicted) and this is
+	because of DDL operation */
+	unsigned				ddl_not_evictable:1;
 
 	/** TRUE if some indexes should be dropped after ONLINE_INDEX_ABORTED
 	or ONLINE_INDEX_ABORTED_DROPPED. */
@@ -1646,7 +1703,6 @@ struct dict_table_t {
 	/** Virtual column names */
 	const char*				v_col_names;
 
-#ifndef UNIV_HOTBACKUP
 	/** Hash chain node. */
 	hash_node_t				name_hash;
 
@@ -1669,12 +1725,17 @@ struct dict_table_t {
 	/** Node of the LRU list of tables. */
 	UT_LIST_NODE_T(dict_table_t)		table_LRU;
 
+	/** metadata version number of dd::Table::se_private_data() */
+	uint64_t				version;
+
 	/** table dirty_status, which is protected by dict_persist->mutex */
 	table_dirty_status			dirty_status;
 
+#ifndef UNIV_HOTBACKUP
 	/** Node of the dirty table list of tables, which is protected
 	by dict_persist->mutex */
 	UT_LIST_NODE_T(dict_table_t)		dirty_dict_tables;
+#endif /* !UNIV_HOTBACKUP */
 
 #ifdef UNIV_DEBUG
 	/** This field is used to mark if a table is in the
@@ -1693,12 +1754,6 @@ struct dict_table_t {
 	performed on the table. We cannot drop the table while there are
 	foreign key checks running on it. */
 	ulint					n_foreign_key_checks_running;
-
-	/** Transactions whose view low limit is greater than this number are
-	not allowed to store to the MySQL query cache or retrieve from it.
-	When a trx with undo logs commits, it sets this to the value of the
-	current time. */
-	trx_id_t				query_cache_inv_id;
 
 	/** Transaction id that last touched the table definition. Either when
 	loading the definition or CREATE TABLE, or ALTER TABLE (prepare,
@@ -1725,6 +1780,7 @@ struct dict_table_t {
 	Initialized in dict_table_add_to_cache(). */
 	unsigned				big_rows:1;
 
+#ifndef UNIV_HOTBACKUP
 	/** Statistics for query optimization. @{ */
 
 	/** Creation state of 'stats_latch'. */
@@ -1800,6 +1856,9 @@ struct dict_table_t {
 	/** Approximate size of other indexes in database pages. */
 	ulint					stat_sum_of_other_index_sizes;
 
+	/** If FTS AUX table, parent table id */
+	table_id_t				parent_id;
+
 	/** How many rows are modified since last stats recalc. When a row is
 	inserted, updated, or deleted, we add 1 to this number; we calculate
 	new estimates for the table and the indexes if the table has changed
@@ -1827,6 +1886,7 @@ struct dict_table_t {
 	byte					stats_bg_flag;
 
 	/* @} */
+#endif /* !UNIV_HOTBACKUP */
 
 	/** AUTOINC related members. @{ */
 
@@ -1844,10 +1904,12 @@ struct dict_table_t {
 	without a need to allocate space from the lock heap of the trx:
 	otherwise the lock heap would grow rapidly if we do a large insert
 	from a select. */
+#ifndef UNIV_HOTBACKUP
 	lock_t*					autoinc_lock;
 
 	/** Creation state of autoinc_mutex member */
 	volatile os_once::state_t		autoinc_mutex_created;
+#endif /* !UNIV_HOTBACKUP */
 
 	/** Mutex protecting the autoincrement counter. */
 	ib_mutex_t*				autoinc_mutex;
@@ -1895,8 +1957,10 @@ struct dict_table_t {
 
 	/* @} */
 
+#ifndef UNIV_HOTBACKUP
 	/** FTS specific state variables. */
 	fts_t*					fts;
+#endif /* !UNIV_HOTBACKUP */
 
 	/** Quiescing states, protected by the dict_index_t::lock. ie. we can
 	only change the state if we acquire all the latches (dict_index_t::lock)
@@ -1917,8 +1981,10 @@ private:
 	ulint					n_ref_count;
 
 public:
+#ifndef UNIV_HOTBACKUP
 	/** List of locks on the table. Protected by lock_sys->mutex. */
 	table_lock_list_t			locks;
+#endif /* !UNIV_HOTBACKUP */
 
 	/** Timestamp of the last modification of this table. */
 	time_t					update_time;
@@ -1934,7 +2000,6 @@ public:
 	but just need a increased counter to track consistent view while
 	proceeding SELECT as part of UPDATE. */
 	ib_uint64_t				sess_trx_id;
-#endif /* !UNIV_HOTBACKUP */
 
 #ifdef UNIV_DEBUG
 	/** Value of 'magic_n'. */
@@ -1953,8 +2018,16 @@ public:
 	/** encryption iv, it's only for export/import */
 	byte*					encryption_iv;
 
+	/** remove the dict_table_t from cache after DDL operation */
+	bool					discard_after_ddl;
+
+	/** refresh/reload FK info */
+	bool					refresh_fk;
+
+#ifndef UNIV_HOTBACKUP
 	/** multiple cursors can be active on this temporary table */
 	temp_prebuilt_vec*			temp_prebuilt;
+#endif /* !UNIV_HOTBACKUP */
 
 	/** TRUE only for dictionary tables like mysql/tables,
 	mysql/columns, mysql/tablespaces, etc. This flag is used
@@ -2080,6 +2153,13 @@ public:
 		return(flags2 & DICT_TF2_TEMPORARY);
 	}
 
+	/** Determine if this is a FTS AUX table. */
+	bool is_fts_aux() const
+	{
+		ut_ad(magic_n == DICT_TABLE_MAGIC_N);
+		return(flags2 & DICT_TF2_AUX);
+	}
+
 	/** Determine whether the table is intrinsic.
 	An intrinsic table is a special kind of temporary table that
 	is invisible to the end user. It can be created internally by InnoDB,
@@ -2099,6 +2179,10 @@ public:
 
 		return(false);
 	}
+
+	/* GAP locks are skipped for DD tables and SDI tables
+	@return true if table is DD table or SDI table, else false */
+	inline bool skip_gap_locks() const;
 };
 
 /** Persistent dynamic metadata type, there should be 1 to 1
@@ -2133,11 +2217,14 @@ corrupted_ids_t;
 class PersistentTableMetadata {
 public:
 	/** Constructor
-	@param[in]	id	table id */
-	explicit PersistentTableMetadata(
-		table_id_t	id)
+	@param[in]	id	table id
+	@param[in]	version	table dynamic metadata version */
+	PersistentTableMetadata(
+		table_id_t	id,
+		uint64		version)
 		:
 		m_id(id),
+		m_version(version),
 		m_corrupted_ids(),
 		m_autoinc(0)
 	{}
@@ -2157,11 +2244,17 @@ public:
 		m_corrupted_ids.push_back(id);
 	}
 
-	/** Reset all the metadata, after it has been written to
-	the buffer table */
-	void reset()
+	/** Set the dynamic metadata version.
+	@param[in]	version		dynamic metadata version */
+	void set_version(uint64_t version)
 	{
-		m_corrupted_ids.clear();
+		m_version = version;
+	}
+
+	/** Get the dynamic metadata version */
+	uint64_t get_version() const
+	{
+		return(m_version);
 	}
 
 	/** Get the table id of the metadata
@@ -2173,7 +2266,7 @@ public:
 	/** Set the autoinc counter of the table if it's bigger
 	@param[in]	autoinc	autoinc counter */
 	void set_autoinc_if_bigger(
-		ib_uint64_t	autoinc) {
+		uint64_t	autoinc) {
 		/* We only set the biggest autoinc counter. Callers don't
 		guarantee passing a bigger number in. */
 		if (autoinc > m_autoinc) {
@@ -2184,13 +2277,13 @@ public:
 	/** Set the autoinc counter of the table
 	@param[in]	autoinc	autoinc counter */
 	void set_autoinc(
-		ib_uint64_t	autoinc) {
+		uint64_t	autoinc) {
 		m_autoinc = autoinc;
 	}
 
 	/** Get the autoinc counter of the table
 	@return the autoinc counter */
-	ib_uint64_t get_autoinc() const {
+	uint64_t get_autoinc() const {
 		return(m_autoinc);
 	}
 
@@ -2198,11 +2291,14 @@ private:
 	/** Table ID which this metadata belongs to */
 	table_id_t		m_id;
 
+	/** Table dynamic metadata version of the change */
+	uint64_t		m_version;
+
 	/** Storing the corrupted indexes' ID if exist, or else empty */
 	corrupted_ids_t		m_corrupted_ids;
 
 	/** Autoinc counter of the table */
-	ib_uint64_t		m_autoinc;
+	uint64_t		m_autoinc;
 
 	/* TODO: We will add update_time, etc. here and APIs accordingly */
 };
@@ -2236,7 +2332,7 @@ public:
 	@param[out]	metadata	metadata where we store the read data
 	@param[in]	buffer		buffer to read
 	@param[in]	size		size of buffer
-        @param[out]	corrupt		true if we found something wrong in
+	@param[out]	corrupt		true if we found something wrong in
 					the buffer except incomplete buffer,
 					otherwise false
 	@return the bytes we read from the buffer if the buffer data
@@ -2305,9 +2401,9 @@ class AutoIncPersister : public Persister {
 public:
 	/** Write the autoinc counter of a table, we can pre-calculate
 	the size by calling get_write_size()
-        @param[in]	metadata	persistent metadata
-        @param[out]	buffer		write buffer
-        @param[in]	size		size of write buffer, should be
+	@param[in]	metadata	persistent metadata
+	@param[out]	buffer		write buffer
+	@param[in]	size		size of write buffer, should be
 					at least get_write_size()
 	@return the length of bytes written */
 	ulint write(
@@ -2379,8 +2475,7 @@ public:
 	}
 
 	/** Write redo logs for autoinc counter that is to be inserted or to
-	update the existing one, if the counter is bigger than current one
-	or the counter is 0 as the special mark.
+	update the existing one, if the counter is bigger than current one.
 	This function should be called only once at most per mtr, and work with
 	the commit() to finish the complete logging & commit
 	@param[in]	table	table
@@ -2443,11 +2538,20 @@ public:
 	void remove(
 		persistent_type_t	type);
 
+	/** Serialize the metadata to a buffer
+	@param[in]	metadata	metadata to serialize
+	@param[out]	buffer		buffer to store the serialized metadata
+	@return the length of serialized metadata */
+	size_t write(
+		PersistentTableMetadata&metadata,
+		byte*			buffer);
+
 private:
 	/** A map to store all persisters needed */
 	persisters_t	m_persisters;
 };
 
+#ifndef UNIV_HOTBACKUP
 /*******************************************************************//**
 Initialise the table lock list. */
 void
@@ -2532,6 +2636,7 @@ dict_index_zip_pad_mutex_destroy(
 		UT_DELETE(index->zip_pad.mutex);
 	}
 }
+#endif /* !UNIV_HOTBACKUP */
 
 /** Release the zip_pad_mutex of a given index.
 @param[in,out]	index	index whose zip_pad_mutex is to be released */
@@ -2540,7 +2645,9 @@ void
 dict_index_zip_pad_unlock(
 	dict_index_t*	index)
 {
+#ifndef UNIV_HOTBACKUP
 	mutex_exit(index->zip_pad.mutex);
+#endif /* !UNIV_HOTBACKUP */
 }
 
 #ifdef UNIV_DEBUG

@@ -2,23 +2,34 @@
    
    This library is free software; you can redistribute it and/or
    modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; version 2
-   of the License.
-   
+   License, version 2.0, as published by the Free Software Foundation.
+
+   This library is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the library and your derivative works with the
+   separately licensed software that they have included with MySQL.
+
+   Without limiting anything contained in the foregoing, this file,
+   which is part of C Driver for MySQL (Connector/C), is also subject to the
+   Universal FOSS Exception, version 1.0, a copy of which can be found at
+   http://oss.oracle.com/licenses/universal-foss-exception.
+
    This library is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-   
+   Library General Public License, version 2.0, for more details.
+
    You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
+   License along with this library; if not, write to the Free
+   Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston,
+   MA 02110-1301  USA */
 
 /* UCS2 support. Written by Alexander Barkov <bar@mysql.com> */
 
 #include <errno.h>
 #include <limits.h>
-#include <my_sys.h>
 #include <stdarg.h>
 #include <string.h>
 #include <sys/types.h>
@@ -30,6 +41,7 @@
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_macros.h"
+#include "my_sys.h"
 
 
 
@@ -1621,7 +1633,8 @@ my_hash_sort_utf16_bin(const CHARSET_INFO *cs,
 
 static MY_COLLATION_HANDLER my_collation_utf16_general_ci_handler =
 {
-  NULL,                /* init */
+  nullptr,                /* init */
+  nullptr,
   my_strnncoll_utf16,
   my_strnncollsp_utf16,
   my_strnxfrm_unicode,
@@ -1637,7 +1650,8 @@ static MY_COLLATION_HANDLER my_collation_utf16_general_ci_handler =
 
 static MY_COLLATION_HANDLER my_collation_utf16_bin_handler =
 {
-  NULL,                /* init */
+  nullptr,                /* init */
+  nullptr,
   my_strnncoll_utf16_bin,
   my_strnncollsp_utf16_bin,
   my_strnxfrm_unicode_full_bin,
@@ -2740,7 +2754,8 @@ my_scan_utf32(const CHARSET_INFO *cs,
 
 static MY_COLLATION_HANDLER my_collation_utf32_general_ci_handler =
 {
-  NULL, /* init */
+  nullptr, /* init */
+  nullptr,
   my_strnncoll_utf32,
   my_strnncollsp_utf32,
   my_strnxfrm_unicode,
@@ -2756,7 +2771,8 @@ static MY_COLLATION_HANDLER my_collation_utf32_general_ci_handler =
 
 static MY_COLLATION_HANDLER my_collation_utf32_bin_handler =
 {
-  NULL, /* init */
+  nullptr, /* init */
+  nullptr,
   my_strnncoll_utf32_bin,
   my_strnncollsp_utf32_bin,
   my_strnxfrm_unicode_full_bin,
@@ -2805,7 +2821,7 @@ MY_CHARSET_HANDLER my_charset_utf32_handler=
 CHARSET_INFO my_charset_utf32_general_ci=
 {
   60,0,0,              /* number       */
-  MY_CS_COMPILED|MY_CS_PRIMARY|MY_CS_STRNXFRM|MY_CS_UNICODE|MY_CS_NONASCII,
+  MY_CS_COMPILED|MY_CS_PRIMARY|MY_CS_STRNXFRM|MY_CS_UNICODE|MY_CS_UNICODE_SUPPLEMENT|MY_CS_NONASCII,
   "utf32",             /* cs name    */
   "utf32_general_ci",  /* name         */
   "UTF-32 Unicode",    /* comment      */
@@ -3366,7 +3382,8 @@ void my_hash_sort_ucs2_bin(const CHARSET_INFO *cs MY_ATTRIBUTE((unused)),
 
 static MY_COLLATION_HANDLER my_collation_ucs2_general_ci_handler =
 {
-    NULL,		/* init */
+    nullptr,		/* init */
+    nullptr,
     my_strnncoll_ucs2,
     my_strnncollsp_ucs2,
     my_strnxfrm_unicode,
@@ -3382,7 +3399,8 @@ static MY_COLLATION_HANDLER my_collation_ucs2_general_ci_handler =
 
 static MY_COLLATION_HANDLER my_collation_ucs2_bin_handler =
 {
-    NULL,		/* init */
+    nullptr,		/* init */
+    nullptr,
     my_strnncoll_ucs2_bin,
     my_strnncollsp_ucs2_bin,
     my_strnxfrm_unicode,

@@ -1,7 +1,7 @@
 # Set the environmental variables
-call mtr.add_suppression("\\[ERROR\\] \\[FATAL\\] InnoDB: Unable to read page \\[page id: space=.*, page number=.*\\] into the buffer pool after 100 attempts");
-call mtr.add_suppression("\\[ERROR\\] InnoDB: Database page corruption on disk or a failed");
-call mtr.add_suppression("\\[ERROR\\] InnoDB: Assertion failure: ut0ut\.cc:");
+call mtr.add_suppression("\\[ERROR\\] \\[[^]]*\\] \\[FATAL\\] InnoDB: Unable to read page \\[page id: space=.*, page number=.*\\] into the buffer pool after 100 attempts");
+call mtr.add_suppression("\\[ERROR\\] \\[[^]]*\\] InnoDB: Database page corruption on disk or a failed");
+call mtr.add_suppression("\\[ERROR\\] \\[[^]]*\\] InnoDB: Assertion failure: ut0ut\.cc:");
 SET GLOBAL innodb_file_per_table=on;
 [1]: Test is to corrupt the ibd file, & do repair for (innodb|crc32|none) checksum through innochecksum tool
 # Create and populate the table to be corrupted
@@ -83,7 +83,6 @@ page-type-dump                    (No default value)
 log                               (No default value)
 [4]: Test for --allow-mismatches =99
 # Expect the fails for checksum mismatches. Print the error message.
-[WARNING] innochecksum: innodb_checksum_algorithm is set to "strict_none" but the page [page id: space=X, page number=Y] contains a valid checksum "crc32".  Accepting the page as valid. Change innodb_checksum_algorithm to "none" to silently accept such pages or rewrite all pages so that they contain "none" checksum.
 [WARNING] innochecksum: innodb_checksum_algorithm is set to "strict_none" but the page [page id: space=X, page number=Y] contains a valid checksum "crc32".  Accepting the page as valid. Change innodb_checksum_algorithm to "none" to silently accept such pages or rewrite all pages so that they contain "none" checksum.
 [WARNING] innochecksum: innodb_checksum_algorithm is set to "strict_none" but the page [page id: space=X, page number=Y] contains a valid checksum "crc32".  Accepting the page as valid. Change innodb_checksum_algorithm to "none" to silently accept such pages or rewrite all pages so that they contain "none" checksum.
 [WARNING] innochecksum: innodb_checksum_algorithm is set to "strict_none" but the page [page id: space=X, page number=Y] contains a valid checksum "crc32".  Accepting the page as valid. Change innodb_checksum_algorithm to "none" to silently accept such pages or rewrite all pages so that they contain "none" checksum.

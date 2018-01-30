@@ -1,19 +1,26 @@
 /* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA */
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "query_result.h"
+#include "sql/query_result.h"
 
 #include "my_config.h"
 
@@ -26,26 +33,26 @@
 #endif
 #include <algorithm>
 
-#include "derror.h"            // ER_THD
-#include "item.h"
-#include "item_func.h"
-#include "lex_string.h"
 #include "m_ctype.h"
 #include "m_string.h"
 #include "my_dbug.h"
 #include "my_macros.h"
 #include "my_thread_local.h"
 #include "mysql/psi/mysql_file.h"
+#include "mysql/psi/mysql_statement.h"
 #include "mysql_com.h"
-#include "mysqld.h"            // key_select_to_file
-#include "parse_tree_nodes.h"  // PT_select_var
-#include "protocol.h"
-#include "session_tracker.h"
-#include "sp_rcontext.h"       // sp_rcontext
-#include "sql_class.h"         // THD
-#include "sql_const.h"
-#include "sql_error.h"
-#include "system_variables.h"
+#include "sql/derror.h"        // ER_THD
+#include "sql/item.h"
+#include "sql/item_func.h"
+#include "sql/key.h"
+#include "sql/mysqld.h"        // key_select_to_file
+#include "sql/parse_tree_nodes.h" // PT_select_var
+#include "sql/protocol.h"
+#include "sql/sp_rcontext.h"   // sp_rcontext
+#include "sql/sql_class.h"     // THD
+#include "sql/sql_const.h"
+#include "sql/sql_error.h"
+#include "sql/system_variables.h"
 
 using std::min;
 
@@ -328,8 +335,8 @@ bool Query_result_export::prepare(List<Item> &list, SELECT_LEX_UNIT *u)
     escape_char= (int) (uchar) (*exchange->field.escaped)[0];
   else
     escape_char= -1;
-  is_ambiguous_field_sep= MY_TEST(strchr(ESCAPE_CHARS, field_sep_char));
-  is_unsafe_field_sep= MY_TEST(strchr(NUMERIC_CHARS, field_sep_char));
+  is_ambiguous_field_sep= (strchr(ESCAPE_CHARS, field_sep_char) != nullptr);
+  is_unsafe_field_sep= (strchr(NUMERIC_CHARS, field_sep_char) != nullptr);
   line_sep_char= (exchange->line.line_term->length() ?
                  (int) (uchar) (*exchange->line.line_term)[0] : INT_MAX);
   if (!field_term_length)
@@ -398,7 +405,7 @@ bool Query_result_export::send_data(List<Item> &items)
     bool enclosed = (exchange->field.enclosed->length() &&
                      (!exchange->field.opt_enclosed ||
                       result_type == STRING_RESULT));
-    res=item->str_result(&tmp);
+    res=item->val_str(&tmp);
     if (res && !my_charset_same(write_cs, res->charset()) &&
         !my_charset_same(write_cs, &my_charset_bin))
     {
@@ -743,7 +750,7 @@ bool Query_result_dump::send_data(List<Item> &items)
   }
   while ((item=li++))
   {
-    res=item->str_result(&tmp);
+    res=item->val_str(&tmp);
     if (!res)					// If NULL
     {
       if (my_b_write(&cache,(uchar*) "",1))

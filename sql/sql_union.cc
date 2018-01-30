@@ -1,17 +1,24 @@
 /* Copyright (c) 2001, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA */
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 /*
   Process query expressions that are composed of
@@ -27,40 +34,48 @@
   UNION's  were introduced by Monty and Sinisa <sinisa@mysql.com>
 */
 
-#include "sql_union.h"
+#include "sql/sql_union.h"
 
 #include "my_config.h"
 
 #include <string.h>
 #include <sys/types.h>
 
-#include "auth_acls.h"
-#include "current_thd.h"
-#include "debug_sync.h"                         // DEBUG_SYNC
-#include "error_handler.h"                      // Strict_error_handler
-#include "field.h"
-#include "filesort.h"                           // filesort_free_buffers
-#include "handler.h"
-#include "item.h"
-#include "item_subselect.h"
 #include "my_base.h"
 #include "my_dbug.h"
-#include "my_macros.h"
 #include "my_sys.h"
-#include "mysql_com.h"
+#include "mysql/udf_registration_types.h"
 #include "mysqld_error.h"
-#include "opt_explain.h"                        // explain_no_table
-#include "opt_explain_format.h"
-#include "parse_tree_node_base.h"
-#include "query_options.h"
-#include "sql_base.h"                           // fill_record
-#include "sql_class.h"
-#include "sql_executor.h"
-#include "sql_lex.h"
-#include "sql_list.h"
-#include "sql_optimizer.h"                      // JOIN
-#include "sql_select.h"
-#include "sql_tmp_table.h"                      // tmp tables
+#include "sql/auth/auth_acls.h"
+#include "sql/current_thd.h"
+#include "sql/debug_sync.h"                     // DEBUG_SYNC
+#include "sql/error_handler.h"                  // Strict_error_handler
+#include "sql/field.h"
+#include "sql/filesort.h"                       // filesort_free_buffers
+#include "sql/handler.h"
+#include "sql/item.h"
+#include "sql/item_subselect.h"
+#include "sql/mem_root_array.h"
+#include "sql/opt_explain.h"                    // explain_no_table
+#include "sql/opt_explain_format.h"
+#include "sql/opt_trace_context.h"
+#include "sql/parse_tree_node_base.h"
+#include "sql/query_options.h"
+#include "sql/set_var.h"
+#include "sql/sql_base.h"                       // fill_record
+#include "sql/sql_class.h"
+#include "sql/sql_const.h"
+#include "sql/sql_executor.h"
+#include "sql/sql_lex.h"
+#include "sql/sql_list.h"
+#include "sql/sql_optimizer.h"                  // JOIN
+#include "sql/sql_parse.h"
+#include "sql/sql_select.h"
+#include "sql/sql_tmp_table.h"                  // tmp tables
+#include "sql/thr_malloc.h"
+#include "sql/window.h"                         // Window
+#include "template_utils.h"
+#include "sql/table_function.h"                     // Table_function
 
 bool Query_result_union::prepare(List<Item>&, SELECT_LEX_UNIT *u)
 {
@@ -169,7 +184,6 @@ bool Query_result_union::create_result_table(THD *thd_arg,
         their columns' values, not in insertion order.
       */
       tmp_table_param.can_use_pk_for_unique= false;
-      tmp_table_param.allow_scan_from_position= true;
     }
     if (unit->mixed_union_operators())
     {
@@ -185,7 +199,8 @@ bool Query_result_union::create_result_table(THD *thd_arg,
 
   if (! (table= create_tmp_table(thd_arg, &tmp_table_param, *column_types,
                                  NULL, is_union_distinct, true,
-                                 options, HA_POS_ERROR, (char*) table_alias)))
+                                 options, HA_POS_ERROR, (char*) table_alias,
+                                 TMP_WIN_UNCONDITIONAL)))
     return true;
   if (create_table)
   {
@@ -551,11 +566,7 @@ bool SELECT_LEX_UNIT::prepare(THD *thd_arg, Query_result *sel_result,
   // global parameters.
   if (saved_fake_select_lex == NULL && // Don't overwrite on PS second prepare
       fake_select_lex != NULL)
-  {
-    thd->lock_query_plan();
     saved_fake_select_lex= fake_select_lex;
-    thd->unlock_query_plan();
-  }
 
   const bool simple_query_expression= is_simple();
 
@@ -565,19 +576,15 @@ bool SELECT_LEX_UNIT::prepare(THD *thd_arg, Query_result *sel_result,
     if (is_union() && !union_needs_tmp_table())
     {
       if (!(tmp_result= union_result=
-            new Query_result_union_direct(thd, sel_result, last_select)))
+            new (*THR_MALLOC) Query_result_union_direct(thd, sel_result, last_select)))
         goto err; /* purecov: inspected */
       if (fake_select_lex != NULL)
-      {
-        thd->lock_query_plan();
         fake_select_lex= NULL;
-        thd->unlock_query_plan();
-      }
       instantiate_tmp_table= false;
     }
     else
     {
-      if (!(tmp_result= union_result= new Query_result_union(thd)))
+      if (!(tmp_result= union_result= new (*THR_MALLOC) Query_result_union(thd)))
         goto err; /* purecov: inspected */
       instantiate_tmp_table= true;
     }
@@ -652,7 +659,7 @@ bool SELECT_LEX_UNIT::prepare(THD *thd_arg, Query_result *sel_result,
       Use items list of underlaid select for derived tables to preserve
       information about fields lengths and exact types
     */
-    if (simple_query_expression)
+    if (!is_union())
       types= first_select()->item_list;
     else if (sl == first_select())
     {
@@ -661,6 +668,19 @@ bool SELECT_LEX_UNIT::prepare(THD *thd_arg, Query_result *sel_result,
       Item *item_tmp;
       while ((item_tmp= it++))
       {
+        /*
+          If the outer query has a GROUP BY clause, an outer reference to this
+          query block may have been wrapped in a Item_outer_ref, which has not
+          been fixed yet. An Item_type_holder must be created based on a fixed
+          Item, so use the inner Item instead.
+        */
+        DBUG_ASSERT(item_tmp->fixed ||
+                    (item_tmp->type() == Item::REF_ITEM &&
+                     down_cast<Item_ref *>(item_tmp)->ref_type() ==
+                     Item_ref::OUTER_REF));
+        if (!item_tmp->fixed)
+          item_tmp= item_tmp->real_item();
+
         auto holder= new Item_type_holder(thd_arg, item_tmp);
         if (!holder)
           goto err;                             /* purecov: inspected */
@@ -710,14 +730,14 @@ bool SELECT_LEX_UNIT::prepare(THD *thd_arg, Query_result *sel_result,
       }
     }
 
-    if (sl->recursive_reference && sl->is_grouped())
+    if (sl->recursive_reference &&
+        (sl->is_grouped() || sl->m_windows.elements > 0))
     {
-      // Per SQL2011. Window functions are also forbidden.
+      // Per SQL2011.
       my_error(ER_CTE_RECURSIVE_FORBIDS_AGGREGATION, MYF(0),
                derived_table->alias);
       goto err;
     }
-
   }
 
   if (is_recursive())
@@ -766,7 +786,8 @@ bool SELECT_LEX_UNIT::prepare(THD *thd_arg, Query_result *sel_result,
     if (fake_select_lex && fake_select_lex->ftfunc_list->elements)
       create_options|= TMP_TABLE_FORCE_MYISAM;
 
-    if (union_result->create_result_table(thd, &types, MY_TEST(union_distinct),
+    if (union_result->create_result_table(thd, &types,
+                                          union_distinct != nullptr,
                                           create_options, "", false,
                                           instantiate_tmp_table))
       goto err;
@@ -1006,29 +1027,27 @@ class Recursive_executor
 private:
   SELECT_LEX_UNIT *const unit;
   THD *const thd;
-  /// Count of executions of recursive members.
-  uint iteration_counter;
   Strict_error_handler strict_handler;
   enum_check_fields save_check_for_truncated_fields;
   sql_mode_t save_sql_mode;
-  bool disabled_trace, pop_handler;
+  enum {DISABLED_TRACE= 1, POP_HANDLER= 2, EXEC_RECURSIVE= 4};
+  uint8 flags; ///< bitmap made of the above enum bits
   /**
-    If recursive, count of rows in the temporary table when the current
-    iteration started.
+    If recursive: count of rows in the temporary table when we started the
+    current iteration of the for-loop which executes query blocks.
   */
   ha_rows row_count;
   TABLE *table;                                 ///< Table for result of union
   handler *cached_file;                         ///< 'handler' of 'table'
-  /// Space to store a row position (InnoDB uses 6 bytes, MEMORY uses 8)
-  uchar row_ref[8];
+  /// Space to store a row position (InnoDB uses 6 bytes, MEMORY uses 16)
+  uchar row_ref[16];
 
 public:
 
   Recursive_executor(SELECT_LEX_UNIT *unit_arg, THD *thd_arg) :
-    unit(unit_arg), thd(thd_arg), iteration_counter(0),
+    unit(unit_arg), thd(thd_arg),
     strict_handler(Strict_error_handler::ENABLE_SET_SELECT_STRICT_ERROR_HANDLER),
-    disabled_trace(false), pop_handler(false),
-    row_count(0), table(nullptr), cached_file(nullptr)
+    flags(0), row_count(0), table(nullptr), cached_file(nullptr)
   {
     TRASH(row_ref, sizeof(row_ref));
   }
@@ -1073,7 +1092,7 @@ public:
     */
     if (thd->is_strict_mode())
     {
-      pop_handler= true;
+      flags|= POP_HANDLER;
       save_check_for_truncated_fields= thd->check_for_truncated_fields;
       thd->check_for_truncated_fields= CHECK_FIELD_WARN;
       thd->push_internal_handler(&strict_handler);
@@ -1096,14 +1115,14 @@ public:
   /// @returns Query block to execute first, in current phase
   SELECT_LEX *first_select() const
   {
-    return (iteration_counter == 0) ?
-      unit->first_select() : unit->first_recursive;
+    return (flags & EXEC_RECURSIVE) ?
+      unit->first_recursive : unit->first_select();
   }
 
   /// @returns Query block to execute last, in current phase
   SELECT_LEX *last_select() const
   {
-    return (iteration_counter == 0) ? unit->first_recursive : nullptr;
+    return (flags & EXEC_RECURSIVE) ? nullptr : unit->first_recursive;
   }
 
   /// @returns true if more iterations are needed
@@ -1112,13 +1131,6 @@ public:
     if (!unit->is_recursive())
       return false;
 
-    iteration_counter++;
-
-    if (iteration_counter == 3)
-    {
-      DEBUG_SYNC(thd, "in_WITH_RECURSIVE");
-    }
-
     ha_rows new_row_count= *unit->query_result()->row_count();
     if (row_count == new_row_count)
     {
@@ -1126,19 +1138,40 @@ public:
       if (unit->got_all_recursive_rows)
         return false; // The final iteration is done.
       unit->got_all_recursive_rows= true;
-      // Do a final iteration, just to get table free-ing/unlocking:
+      /*
+        Do a final iteration, just to get table free-ing/unlocking. But skip
+        non-recursive query blocks as they have already done that.
+      */
+      flags|= EXEC_RECURSIVE;
       return true;
     }
+
+#ifdef ENABLED_DEBUG_SYNC
+    if (unit->first_select()->next_select()->join->recursive_iteration_count
+        == 4)
+    {
+      DEBUG_SYNC(thd, "in_WITH_RECURSIVE");
+    }
+#endif
+
     row_count= new_row_count;
 #ifdef OPTIMIZER_TRACE
     Opt_trace_context &trace= thd->opt_trace;
-    if (iteration_counter == 2 &&
+    /*
+      If recursive query blocks have been executed at least once, and repeated
+      executions should not be traced, disable tracing, unless it already is
+      disabled.
+    */
+    if ((flags & (EXEC_RECURSIVE | DISABLED_TRACE)) == EXEC_RECURSIVE &&
         !trace.feature_enabled(Opt_trace_context::REPEATED_SUBSELECT))
     {
-      disabled_trace= true;
+      flags|= DISABLED_TRACE;
       trace.disable_I_S_for_this_and_children();
     }
 #endif
+
+    flags|= EXEC_RECURSIVE;
+
     return true;
   }
 
@@ -1150,7 +1183,6 @@ public:
   {
     if (cached_file == nullptr)
       return false;
-    DBUG_ASSERT(iteration_counter > 0);
     int error;
     if (cached_file == table->file)
     {
@@ -1203,10 +1235,10 @@ public:
     if (unit->is_recursive())
     {
 #ifdef OPTIMIZER_TRACE
-      if (disabled_trace)
+      if (flags & DISABLED_TRACE)
         thd->opt_trace.restore_I_S();
 #endif
-      if (pop_handler)
+      if (flags & POP_HANDLER)
       {
         thd->pop_internal_handler();
         thd->check_for_truncated_fields= save_check_for_truncated_fields;
@@ -1337,7 +1369,6 @@ bool SELECT_LEX_UNIT::execute(THD *thd)
     }
 
   } while (recursive_executor.more_iterations());
-
 
   if (fake_select_lex)
   {
@@ -1556,7 +1587,11 @@ static void destroy_materialized(THD *thd, TABLE_LIST *list)
       // Find a materialized view inside another view.
       destroy_materialized(thd, tl->merge_underlying_list);
     }
-    if (!tl->table)
+    else if (tl->is_table_function())
+    {
+      tl->table_function->cleanup();
+    }
+    if (tl->table == nullptr)
       continue;                                 // Not materialized
     if (tl->is_view_or_derived())
     {
@@ -1564,9 +1599,11 @@ static void destroy_materialized(THD *thd, TABLE_LIST *list)
       if (tl->common_table_expr())
         tl->common_table_expr()->tmp_tables.clear();
     }
-    else if (!tl->is_recursive_reference() && !tl->schema_table)
+    else if (!tl->is_recursive_reference() && !tl->schema_table &&
+             !tl->is_table_function())
       continue;
     free_tmp_table(thd, tl->table);
+    tl->table= nullptr;
   }
 }
 
@@ -1595,8 +1632,10 @@ bool SELECT_LEX::cleanup(bool full)
       join->cleanup();
   }
 
+  THD *const thd= master_unit()->thd;
+
   if (full)
-    destroy_materialized(master_unit()->thd, get_table_list());
+    destroy_materialized(thd, get_table_list());
 
   for (SELECT_LEX_UNIT *lex_unit= first_inner_unit(); lex_unit ;
        lex_unit= lex_unit->next_unit())
@@ -1604,6 +1643,15 @@ bool SELECT_LEX::cleanup(bool full)
     error|= lex_unit->cleanup(full);
   }
   inner_refs_list.empty();
+
+  if (full && m_windows.elements > 0)
+  {
+    List_iterator<Window> li(m_windows);
+    Window *w;
+    while ((w= li++))
+      w->cleanup(thd);
+  }
+
   DBUG_RETURN(error);
 }
 

@@ -1,32 +1,30 @@
 /* Copyright (c) 2010, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "sql_alter.h"
+#include "sql/sql_alter.h"
 
 #include <limits.h>
 #include <string.h>
 
-#include "auth_acls.h"
-#include "auth_common.h"                     // check_access
-#include "dd/types/trigger.h"                // dd::Trigger
-#include "derror.h"                          // ER_THD
-#include "error_handler.h"                   // Strict_error_handler
-#include "field.h"
-#include "handler.h"
-                                             // mysql_exchange_partition
-#include "log.h"
 #include "m_ctype.h"
 #include "m_string.h"
 #include "my_dbug.h"
@@ -35,24 +33,32 @@
 #include "my_sys.h"
 #include "mysql/plugin.h"
 #include "mysql/service_my_snprintf.h"
-#include "mysqld.h"                          // lower_case_table_names
 #include "mysqld_error.h"
-#include "sql_class.h"                       // THD
-#include "sql_error.h"
-#include "sql_lex.h"
-#include "sql_servers.h"
-#include "sql_table.h"                       // mysql_alter_table,
-#include "sql_udf.h"
-#include "table.h"
+#include "sql/auth/auth_acls.h"
+#include "sql/auth/auth_common.h"            // check_access
+#include "sql/dd/types/trigger.h"            // dd::Trigger
+#include "sql/derror.h"                      // ER_THD
+#include "sql/error_handler.h"               // Strict_error_handler
+#include "sql/field.h"
+                                             // mysql_exchange_partition
+#include "sql/log.h"
+#include "sql/mysqld.h"                      // lower_case_table_names
+#include "sql/parse_tree_helpers.h"          // is_identifier
+#include "sql/sql_class.h"                   // THD
+#include "sql/sql_error.h"
+#include "sql/sql_lex.h"
+#include "sql/sql_servers.h"
+#include "sql/sql_table.h"                   // mysql_alter_table,
+#include "sql/table.h"
 #include "template_utils.h"                  // delete_container_pointers
 
 Alter_info::Alter_info(const Alter_info &rhs, MEM_ROOT *mem_root)
- :drop_list(PSI_INSTRUMENT_ME, rhs.drop_list.begin(), rhs.drop_list.end()),
-  alter_list(PSI_INSTRUMENT_ME, rhs.alter_list.begin(), rhs.alter_list.end()),
-  key_list(PSI_INSTRUMENT_ME, rhs.key_list.begin(), rhs.key_list.end()),
-  alter_rename_key_list(PSI_INSTRUMENT_ME, rhs.alter_rename_key_list.begin(),
+ :drop_list(mem_root, rhs.drop_list.begin(), rhs.drop_list.end()),
+  alter_list(mem_root, rhs.alter_list.begin(), rhs.alter_list.end()),
+  key_list(mem_root, rhs.key_list.begin(), rhs.key_list.end()),
+  alter_rename_key_list(mem_root, rhs.alter_rename_key_list.begin(),
                         rhs.alter_rename_key_list.end()),
-  alter_index_visibility_list(PSI_INSTRUMENT_ME,
+  alter_index_visibility_list(mem_root,
                               rhs.alter_index_visibility_list.begin(),
                               rhs.alter_index_visibility_list.end()),
   create_list(rhs.create_list, mem_root),
@@ -62,7 +68,9 @@ Alter_info::Alter_info(const Alter_info &rhs, MEM_ROOT *mem_root)
   num_parts(rhs.num_parts),
   requested_algorithm(rhs.requested_algorithm),
   requested_lock(rhs.requested_lock),
-  with_validation(rhs.with_validation)
+  with_validation(rhs.with_validation),
+  new_db_name(rhs.new_db_name),
+  new_table_name(rhs.new_table_name)
 {
   /*
     Make deep copies of used objects.
@@ -81,44 +89,12 @@ Alter_info::Alter_info(const Alter_info &rhs, MEM_ROOT *mem_root)
 }
 
 
-bool Alter_info::set_requested_algorithm(const LEX_STRING *str)
-{
-  // To avoid adding new keywords to the grammar, we match strings here.
-  if (!my_strcasecmp(system_charset_info, str->str, "INPLACE"))
-    requested_algorithm= ALTER_TABLE_ALGORITHM_INPLACE;
-  else if (!my_strcasecmp(system_charset_info, str->str, "COPY"))
-    requested_algorithm= ALTER_TABLE_ALGORITHM_COPY;
-  else if (!my_strcasecmp(system_charset_info, str->str, "DEFAULT"))
-    requested_algorithm= ALTER_TABLE_ALGORITHM_DEFAULT;
-  else
-    return true;
-  return false;
-}
-
-
-bool Alter_info::set_requested_lock(const LEX_STRING *str)
-{
-  // To avoid adding new keywords to the grammar, we match strings here.
-  if (!my_strcasecmp(system_charset_info, str->str, "NONE"))
-    requested_lock= ALTER_TABLE_LOCK_NONE;
-  else if (!my_strcasecmp(system_charset_info, str->str, "SHARED"))
-    requested_lock= ALTER_TABLE_LOCK_SHARED;
-  else if (!my_strcasecmp(system_charset_info, str->str, "EXCLUSIVE"))
-    requested_lock= ALTER_TABLE_LOCK_EXCLUSIVE;
-  else if (!my_strcasecmp(system_charset_info, str->str, "DEFAULT"))
-    requested_lock= ALTER_TABLE_LOCK_DEFAULT;
-  else
-    return true;
-  return false;
-}
-
-
 Alter_table_ctx::Alter_table_ctx()
   : datetime_field(NULL), error_if_not_empty(false),
     tables_opened(0),
     db(NULL), table_name(NULL), alias(NULL),
     new_db(NULL), new_name(NULL), new_alias(NULL),
-    fk_info(NULL), fk_count(0), trg_info(PSI_INSTRUMENT_ME)
+    fk_info(NULL), fk_count(0)
 #ifndef DBUG_OFF
     , tmp_table(false)
 #endif
@@ -133,7 +109,7 @@ Alter_table_ctx::Alter_table_ctx(THD *thd, TABLE_LIST *table_list,
   : datetime_field(NULL), error_if_not_empty(false),
     tables_opened(tables_opened_arg),
     new_db(new_db_arg), new_name(new_name_arg),
-    fk_info(NULL), fk_count(0), trg_info(PSI_INSTRUMENT_ME)
+    fk_info(NULL), fk_count(0)
 #ifndef DBUG_OFF
     , tmp_table(false)
 #endif
@@ -218,11 +194,7 @@ Alter_table_ctx::Alter_table_ctx(THD *thd, TABLE_LIST *table_list,
 }
 
 Alter_table_ctx::~Alter_table_ctx()
-{
-  // If there was a failure after the triggers were cloned, and before they
-  // were moved into the destination table, they must be deleted.
-  delete_container_pointers(trg_info);
-}
+{ }
 
 bool Sql_cmd_alter_table::execute(THD *thd)
 {
@@ -242,7 +214,7 @@ bool Sql_cmd_alter_table::execute(THD *thd)
     @todo move these into constructor...
   */
   HA_CREATE_INFO create_info(*lex->create_info);
-  Alter_info alter_info(lex->alter_info, thd->mem_root);
+  Alter_info alter_info(*m_alter_info, thd->mem_root);
   ulong priv=0;
   ulong priv_needed= ALTER_ACL;
   bool result;
@@ -260,14 +232,14 @@ bool Sql_cmd_alter_table::execute(THD *thd)
     priv_needed|= DROP_ACL;
 
   /* Must be set in the parser */
-  DBUG_ASSERT(select_lex->db);
+  DBUG_ASSERT(alter_info.new_db_name.str);
   DBUG_ASSERT(!(alter_info.flags & Alter_info::ALTER_EXCHANGE_PARTITION));
   DBUG_ASSERT(!(alter_info.flags & Alter_info::ALTER_ADMIN_PARTITION));
   if (check_access(thd, priv_needed, first_table->db,
                    &first_table->grant.privilege,
                    &first_table->grant.m_internal,
                    0, 0) ||
-      check_access(thd, INSERT_ACL | CREATE_ACL, select_lex->db,
+      check_access(thd, INSERT_ACL | CREATE_ACL, alter_info.new_db_name.str,
                    &priv,
                    NULL, /* Don't use first_tab->grant with sel_lex->db */
                    0, 0))
@@ -294,7 +266,7 @@ bool Sql_cmd_alter_table::execute(THD *thd)
           In other words, once a merge table is created, the privileges of
           the underlying tables can be revoked, but the user will still have
           access to the merge table (provided that the user has privileges on
-          the merge table itself). 
+          the merge table itself).
 
         - Temporary tables shadow base tables.
 
@@ -319,13 +291,15 @@ bool Sql_cmd_alter_table::execute(THD *thd)
   if (check_grant(thd, priv_needed, first_table, FALSE, UINT_MAX, FALSE))
     DBUG_RETURN(TRUE);                  /* purecov: inspected */
 
-  if (lex->name.str && !test_all_bits(priv, INSERT_ACL | CREATE_ACL))
+  if (alter_info.new_table_name.str &&
+      !test_all_bits(priv, INSERT_ACL | CREATE_ACL))
   {
     // Rename of table
+    DBUG_ASSERT(alter_info.flags & Alter_info::ALTER_RENAME);
     TABLE_LIST tmp_table;
     memset(&tmp_table, 0, sizeof(tmp_table));
-    tmp_table.table_name= lex->name.str;
-    tmp_table.db= select_lex->db;
+    tmp_table.table_name= alter_info.new_table_name.str;
+    tmp_table.db= alter_info.new_db_name.str;
     tmp_table.grant.privilege= priv;
     if (check_grant(thd, INSERT_ACL | CREATE_ACL, &tmp_table, FALSE,
                     UINT_MAX, FALSE))
@@ -352,7 +326,8 @@ bool Sql_cmd_alter_table::execute(THD *thd)
   if (!thd->lex->is_ignore() && thd->is_strict_mode())
     thd->push_internal_handler(&strict_handler);
 
-  result= mysql_alter_table(thd, select_lex->db, lex->name.str,
+  result= mysql_alter_table(thd, alter_info.new_db_name.str,
+                            alter_info.new_table_name.str,
                             &create_info, first_table, &alter_info);
 
   if (!thd->lex->is_ignore() && thd->is_strict_mode())
@@ -364,9 +339,9 @@ bool Sql_cmd_alter_table::execute(THD *thd)
 bool Sql_cmd_discard_import_tablespace::execute(THD *thd)
 {
   /* Verify that exactly one of the DISCARD and IMPORT flags are set. */
-  DBUG_ASSERT((thd->lex->alter_info.flags &
+  DBUG_ASSERT((m_alter_info->flags &
                Alter_info::ALTER_DISCARD_TABLESPACE) ^
-              (thd->lex->alter_info.flags &
+              (m_alter_info->flags &
                Alter_info::ALTER_IMPORT_TABLESPACE));
 
   /*
@@ -374,7 +349,7 @@ bool Sql_cmd_discard_import_tablespace::execute(THD *thd)
     ALTER_ALL_PARTITION, which may be set or not, and is
     therefore masked away along with the DISCARD/IMPORT flags.
   */
-  DBUG_ASSERT(!(thd->lex->alter_info.flags &
+  DBUG_ASSERT(!(m_alter_info->flags &
                 ~(Alter_info::ALTER_DISCARD_TABLESPACE |
                   Alter_info::ALTER_IMPORT_TABLESPACE |
                   Alter_info::ALTER_ALL_PARTITION)));

@@ -1,17 +1,24 @@
 /* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef DD__SCHEMA_IMPL_INCLUDED
 #define DD__SCHEMA_IMPL_INCLUDED
@@ -20,14 +27,15 @@
 #include <new>
 #include <string>
 
-#include "dd/impl/types/entity_object_impl.h" // dd::Entity_object_impl
-#include "dd/impl/types/weak_object_impl.h"
-#include "dd/object_id.h"
-#include "dd/sdi_fwd.h"
-#include "dd/types/dictionary_object_table.h" // dd::Dictionary_object_table
-#include "dd/types/object_type.h"             // dd::Object_type
-#include "dd/types/schema.h"                  // dd:Schema
 #include "my_inttypes.h"
+#include "sql/dd/impl/types/entity_object_impl.h" // dd::Entity_object_impl
+#include "sql/dd/impl/types/weak_object_impl.h"
+#include "sql/dd/object_id.h"
+#include "sql/dd/sdi_fwd.h"
+#include "sql/dd/string_type.h"
+#include "sql/dd/types/entity_object_table.h" // dd::Entity_object_table
+#include "sql/dd/types/schema.h"              // dd::Schema
+#include "sql/sql_time.h"                     // gmt_time_to_local_time
 
 class THD;
 
@@ -37,6 +45,7 @@ namespace dd {
 
 class Event;
 class Function;
+class Object_table;
 class Open_dictionary_tables_ctx;
 class Procedure;
 class Raw_record;
@@ -45,6 +54,7 @@ class Sdi_wcontext;
 class Table;
 class View;
 class Weak_object;
+class Object_table;
 
 ///////////////////////////////////////////////////////////////////////////
 
@@ -62,8 +72,7 @@ public:
   { }
 
 public:
-  virtual const Dictionary_object_table &object_table() const
-  { return Schema::OBJECT_TABLE(); }
+  virtual const Object_table &object_table() const;
 
   virtual bool validate() const;
 
@@ -71,11 +80,9 @@ public:
 
   virtual bool restore_attributes(const Raw_record &r);
 
-  void serialize(Sdi_wcontext *wctx, Sdi_writer *w) const;
-
-  bool deserialize(Sdi_rcontext *rctx, const RJ_Value &val);
-
 public:
+  static void register_tables(Open_dictionary_tables_ctx *otx);
+
   /////////////////////////////////////////////////////////////////////////
   // Default collation.
   /////////////////////////////////////////////////////////////////////////
@@ -90,8 +97,8 @@ public:
   // created
   /////////////////////////////////////////////////////////////////////////
 
-  virtual ulonglong created() const
-  { return m_created; }
+  virtual ulonglong created(bool convert_time) const
+  { return convert_time ? gmt_time_to_local_time(m_created) : m_created; }
 
   virtual void set_created(ulonglong created)
   { m_created= created; }
@@ -100,17 +107,20 @@ public:
   // last_altered
   /////////////////////////////////////////////////////////////////////////
 
-  virtual ulonglong last_altered() const
-  { return m_last_altered; }
+  virtual ulonglong last_altered(bool convert_time) const
+  {
+    return convert_time ? gmt_time_to_local_time(m_last_altered) :
+                          m_last_altered;
+  }
 
   virtual void set_last_altered(ulonglong last_altered)
   { m_last_altered= last_altered; }
 
   // Fix "inherits ... via dominance" warnings
-  virtual Weak_object_impl *impl()
-  { return Weak_object_impl::impl(); }
-  virtual const Weak_object_impl *impl() const
-  { return Weak_object_impl::impl(); }
+  virtual Entity_object_impl *impl()
+  { return Entity_object_impl::impl(); }
+  virtual const Entity_object_impl *impl() const
+  { return Entity_object_impl::impl(); }
   virtual Object_id id() const
   { return Entity_object_impl::id(); }
   virtual bool is_persistent() const
@@ -159,17 +169,6 @@ private:
   {
     return new Schema_impl(*this);
   }
-};
-
-///////////////////////////////////////////////////////////////////////////
-
-class Schema_type : public Object_type
-{
-public:
-  virtual void register_tables(Open_dictionary_tables_ctx *otx) const;
-
-  virtual Weak_object *create_object() const
-  { return new (std::nothrow) Schema_impl(); }
 };
 
 ///////////////////////////////////////////////////////////////////////////

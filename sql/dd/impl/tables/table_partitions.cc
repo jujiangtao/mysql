@@ -1,34 +1,40 @@
-/* Copyright (c) 2014, 2016 Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "dd/impl/tables/table_partitions.h"
+#include "sql/dd/impl/tables/table_partitions.h"
 
 #include <memory>
 #include <new>
 
-#include "dd/impl/object_key.h"
-#include "dd/impl/raw/object_keys.h"     // dd::Parent_id_range_key
-#include "dd/impl/raw/raw_record.h"      // dd::Raw_record
-#include "dd/impl/raw/raw_table.h"       // dd::Raw_table
-#include "dd/impl/transaction_impl.h"    // dd::Transaction_ro
-#include "dd/impl/types/object_table_definition_impl.h"
-#include "dd/types/table.h"
-#include "handler.h"
 #include "my_dbug.h"
-
-class THD;
+#include "sql/dd/impl/object_key.h"
+#include "sql/dd/impl/raw/object_keys.h" // dd::Parent_id_range_key
+#include "sql/dd/impl/raw/raw_record.h"  // dd::Raw_record
+#include "sql/dd/impl/raw/raw_table.h"   // dd::Raw_table
+#include "sql/dd/impl/tables/dd_properties.h"     // TARGET_DD_VERSION
+#include "sql/dd/impl/transaction_impl.h" // dd::Transaction_ro
+#include "sql/dd/impl/types/object_table_definition_impl.h"
+#include "sql/dd/types/table.h"
+#include "sql/handler.h"
 
 namespace dd {
 namespace tables {
@@ -43,8 +49,7 @@ const Table_partitions &Table_partitions::instance()
 
 Table_partitions::Table_partitions()
 {
-  m_target_def.table_name(table_name());
-  m_target_def.dd_version(1);
+  m_target_def.set_table_name("table_partitions");
 
   m_target_def.add_field(FIELD_ID,
                          "FIELD_ID",
@@ -52,9 +57,9 @@ Table_partitions::Table_partitions()
   m_target_def.add_field(FIELD_TABLE_ID,
                          "FIELD_TABLE_ID",
                          "table_id BIGINT UNSIGNED NOT NULL");
-  m_target_def.add_field(FIELD_LEVEL,
-                         "FIELD_LEVEL",
-                         "level TINYINT UNSIGNED NOT NULL");
+  m_target_def.add_field(FIELD_PARENT_PARTITION_ID,
+                         "FIELD_PARENT_PARTITION_ID",
+                         "parent_partition_id BIGINT UNSIGNED");
   m_target_def.add_field(FIELD_NUMBER,
                          "FIELD_NUMBER",
                          "number SMALLINT UNSIGNED NOT NULL");
@@ -64,6 +69,9 @@ Table_partitions::Table_partitions()
   m_target_def.add_field(FIELD_ENGINE,
                          "FIELD_ENGINE",
                          "engine VARCHAR(64) NOT NULL");
+  m_target_def.add_field(FIELD_DESCRIPTION_UTF8,
+                         "FIELD_DESCRIPTION_UTF8",
+                         "description_utf8 TEXT");
   m_target_def.add_field(FIELD_COMMENT,
                          "FIELD_COMMENT",
                          "comment VARCHAR(2048) NOT NULL");
@@ -80,15 +88,32 @@ Table_partitions::Table_partitions()
                          "FIELD_TABLESPACE_ID",
                          "tablespace_id BIGINT UNSIGNED");
 
-  m_target_def.add_index("PRIMARY KEY(id)");
-  m_target_def.add_index("UNIQUE KEY(table_id, name)");
-  m_target_def.add_index("UNIQUE KEY(table_id, level, number)");
-  m_target_def.add_index("UNIQUE KEY(engine, se_private_id)");
-  m_target_def.add_index("KEY(engine)");
+  m_target_def.add_index(INDEX_PK_ID,
+                         "INDEX_PK_ID",
+                         "PRIMARY KEY(id)");
+  m_target_def.add_index(INDEX_UK_TABLE_ID_NAME,
+                         "INDEX_UK_TABLE_ID_NAME",
+                         "UNIQUE KEY(table_id, name)");
+  m_target_def.add_index(INDEX_UK_TABLE_ID_PARENT_PARTITION_ID_NUMBER,
+                         "INDEX_UK_TABLE_ID_PARENT_PARTITION_ID_NUMBER",
+                         "UNIQUE KEY(table_id, parent_partition_id, number)");
+  m_target_def.add_index(INDEX_UK_ENGINE_SE_PRIVATE_ID,
+                         "INDEX_UK_ENGINE_SE_PRIVATE_ID",
+                         "UNIQUE KEY(engine, se_private_id)");
+  m_target_def.add_index(INDEX_K_ENGINE,
+                         "INDEX_K_ENGINE",
+                         "KEY(engine)");
+  m_target_def.add_index(INDEX_K_TABLESPACE_ID,
+                         "INDEX_K_TABLESPACE_ID",
+                         "KEY(tablespace_id)");
 
-  m_target_def.add_foreign_key("FOREIGN KEY (table_id) REFERENCES "
+  m_target_def.add_foreign_key(FK_TABLE_ID,
+                               "FK_TABLE_ID",
+                               "FOREIGN KEY (table_id) REFERENCES "
                                "tables(id)");
-  m_target_def.add_foreign_key("FOREIGN KEY (tablespace_id) REFERENCES "
+  m_target_def.add_foreign_key(FK_TABLESPACE_ID,
+                               "FK_TABLESPACE_ID",
+                               "FOREIGN KEY (tablespace_id) REFERENCES "
                                "tablespaces(id)");
 }
 
@@ -96,7 +121,19 @@ Table_partitions::Table_partitions()
 
 Object_key *Table_partitions::create_key_by_table_id(Object_id table_id)
 {
-  return new (std::nothrow) Parent_id_range_key(1, FIELD_TABLE_ID, table_id);
+  return new (std::nothrow) Parent_id_range_key(
+          INDEX_UK_TABLE_ID_NAME, FIELD_TABLE_ID, table_id);
+}
+
+///////////////////////////////////////////////////////////////////////////
+
+Object_key *Table_partitions::create_key_by_parent_partition_id(
+                       Object_id table_id, Object_id parent_partition_id)
+{
+  return new (std::nothrow) Sub_partition_range_key(
+                              INDEX_UK_TABLE_ID_PARENT_PARTITION_ID_NUMBER,
+                              FIELD_TABLE_ID, table_id,
+                              FIELD_PARENT_PARTITION_ID, parent_partition_id);
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -115,23 +152,18 @@ Object_key *Table_partitions::create_se_private_key(
   const String_type &engine,
   Object_id se_private_id)
 {
-  const int SE_PRIVATE_ID_INDEX_ID= 3;
-  const int ENGINE_COLUMN_NO=5;
-  const int SE_PRIVATE_ID_COLUMN_NO= 9;
-
   return
     new (std::nothrow) Se_private_id_key(
-      SE_PRIVATE_ID_INDEX_ID,
-      ENGINE_COLUMN_NO,
+      INDEX_UK_ENGINE_SE_PRIVATE_ID,
+      FIELD_ENGINE,
       engine,
-      SE_PRIVATE_ID_COLUMN_NO,
+      FIELD_SE_PRIVATE_ID,
       se_private_id);
 }
 /* purecov: end */
 
 ///////////////////////////////////////////////////////////////////////////
 
-/* purecov: begin deadcode */
 bool Table_partitions::get_partition_table_id(
   THD *thd,
   const String_type &engine,
@@ -151,7 +183,7 @@ bool Table_partitions::get_partition_table_id(
   const std::unique_ptr<Object_key> k(
     create_se_private_key(engine, se_private_id));
 
-  Raw_table *t= trx.otx.get_table(table_name());
+  Raw_table *t= trx.otx.get_table(instance().name());
   DBUG_ASSERT(t);
 
   // Find record by the object-key.
@@ -166,7 +198,6 @@ bool Table_partitions::get_partition_table_id(
 
   DBUG_RETURN(false);
 }
-/* purecov: end */
 
 ///////////////////////////////////////////////////////////////////////////
 

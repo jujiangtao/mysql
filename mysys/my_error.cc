@@ -1,13 +1,25 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
+
+   Without limiting anything contained in the foregoing, this file,
+   which is part of C Driver for MySQL (Connector/C), is also subject to the
+   Universal FOSS Exception, version 1.0, a copy of which can be found at
+   http://oss.oracle.com/licenses/universal-foss-exception.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -22,7 +34,6 @@
 #ifdef __linux__
 #include <features.h>
 #endif
-#include <stdarg.h>
 #include <string.h>
 #include <sys/types.h>
 
@@ -30,14 +41,14 @@
 #include "m_string.h"
 #include "my_base.h"
 #include "my_dbug.h"
-#include "my_handler_errors.h"
 #include "my_inttypes.h"
 #include "my_loglevel.h"
 #include "my_sys.h"
 #include "mysql/service_my_snprintf.h"
 #include "mysql/service_mysql_alloc.h"
+#include "mysys/my_handler_errors.h"
+#include "mysys/mysys_priv.h"
 #include "mysys_err.h"
-#include "mysys_priv.h"
 
 /* Max length of a error message. Should be kept in sync with MYSQL_ERRMSG_SIZE. */
 #define ERRMSGSIZE      (512)
@@ -141,7 +152,7 @@ char *my_strerror(char *buf, size_t len, int nr)
        (defined _XOPEN_SOURCE   && (_XOPEN_SOURCE >= 600)))      &&    \
       ! defined _GNU_SOURCE
     strerror_r(nr, buf, len);             /* I can build with or without GNU */
-#elif defined _GNU_SOURCE && (!defined(__SUNPRO_C) && !defined(__SUNPRO_CC))
+#elif defined(__GLIBC__) && defined (_GNU_SOURCE)
     char *r= strerror_r(nr, buf, len);
     if (r != buf)                         /* Want to help, GNU? */
       strmake(buf, r, len - 1);           /* Then don't. */
@@ -154,8 +165,8 @@ char *my_strerror(char *buf, size_t len, int nr)
     strerror() return values are implementation-dependent, so let's
     be pragmatic.
   */
-  if (!buf[0])
-    strmake(buf, "unknown error", len - 1);
+  if (!buf[0] || !strcmp(buf, "No error information"))
+    strmake(buf, "Unknown error", len - 1);
 
   return buf;
 }
@@ -211,7 +222,6 @@ const char *my_get_err_msg(int nr)
 void my_error(int nr, myf MyFlags, ...)
 {
   const char *format;
-  va_list args;
   char ebuff[ERRMSGSIZE];
   DBUG_ENTER("my_error");
   DBUG_PRINT("my", ("nr: %d  MyFlags: %d  errno: %d", nr, MyFlags, errno));
@@ -220,6 +230,7 @@ void my_error(int nr, myf MyFlags, ...)
     (void) my_snprintf(ebuff, sizeof(ebuff), "Unknown error %d", nr);
   else
   {
+    va_list args;
     va_start(args,MyFlags);
     (void) my_vsnprintf_ex(&my_charset_utf8_general_ci, ebuff,
                            sizeof(ebuff), format, args);
@@ -466,9 +477,9 @@ void my_message_local_stderr(enum loglevel ll,
 
   This goes through local_message_hook, i.e. by default, it calls
   my_message_local_stderr() which prepends an Error/Warning/Note
-  label to the string, then prints it to stderr.  More advanced
-  programs can use their own printers; mysqld for instance uses
-  its own error log facilities which prepend an ISO 8601 / RFC 3339
+  label to the string, then prints it to stderr using my_message_stderr().
+  More advanced programs can use their own printers; mysqld for instance
+  uses its own error log facilities which prepend an ISO 8601 / RFC 3339
   compliant timestamp etc.
 
   @param ll      log level: (ERROR|WARNING|INFORMATION)_LEVEL

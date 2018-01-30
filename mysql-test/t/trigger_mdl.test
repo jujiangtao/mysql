@@ -1,15 +1,5 @@
---source include/not_embedded.inc
 --source include/have_log_bin.inc
 --source include/have_debug.inc
-
-########################################
-##### WL#7554 Force schema `test` to character set latin1
-##### This test should be migrated to utf8mb4
---disable_query_log
-let $testdbcs72=`select default_character_set_name from information_schema.schemata where schema_name='test'`;
-alter schema test default character set latin1;
---enable_query_log
-########################################
 
 --enable_connect_log
 
@@ -50,10 +40,10 @@ reap;
 --echo # For a server without mdl locking for a trigger name
 --echo # the statement SHOW BINLOG EVENTS would returned
 --echo # output that look likes the following:
---echo # master-bin.000001    567    Query    1    755    use `test`; CREATE DEFINER=`root`@`localhost` TRIGGER trigger_1 BEFORE INSERT ON t1 FOR EACH ROW BEGIN END
---echo # master-bin.000001    820    Query    1    1008    use `test`; CREATE DEFINER=`root`@`localhost` TRIGGER trigger_1 BEFORE INSERT ON t2 FOR EACH ROW BEGIN END
---echo # master-bin.000001    1008    Anonymous_Gtid    1    1073    SET @@SESSION.GTID_NEXT= 'ANONYMOUS'
---echo # master-bin.000001    1073    Query    1    1169    use `test`; DROP TRIGGER trigger_1
+--echo # binlog.000001    567    Query    1    755    use `test`; CREATE DEFINER=`root`@`localhost` TRIGGER trigger_1 BEFORE INSERT ON t1 FOR EACH ROW BEGIN END
+--echo # binlog.000001    820    Query    1    1008    use `test`; CREATE DEFINER=`root`@`localhost` TRIGGER trigger_1 BEFORE INSERT ON t2 FOR EACH ROW BEGIN END
+--echo # binlog.000001    1008    Anonymous_Gtid    1    1073    SET @@SESSION.GTID_NEXT= 'ANONYMOUS'
+--echo # binlog.000001    1073    Query    1    1169    use `test`; DROP TRIGGER trigger_1
 --echo # That is, two statements CREATE TRIGGER trigger_t1 follows one
 --echo # after another then DROP TRIGGER.
 --source include/show_binlog_events.inc
@@ -148,10 +138,3 @@ DROP TABLE t1;
 
 # Restore original value for lock_wait_timeout
 SET @@session.lock_wait_timeout= @start_session_value;
-
-########################################
-##### WL#7554 set schema `test` back to what it was
---disable_query_log
---eval alter schema test default character set $testdbcs72;
---enable_query_log
-########################################

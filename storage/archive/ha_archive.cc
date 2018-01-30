@@ -1,15 +1,21 @@
 /*
    Copyright (c) 2004, 2017, Oracle and/or its affiliates. All rights reserved.
 
-   This program is free software; you can redistribute it and/or
-   modify it under the terms of the GNU General Public License
-   as published by the Free Software Foundation; version 2 of
-   the License.
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-   GNU General Public License for more details.
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -21,22 +27,22 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
-#include <my_dir.h>
-#include <myisam.h>
 #include <mysql/plugin.h>
 
-#include "derror.h"
-#include "field.h"
 #include "lex_string.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
+#include "my_dir.h"
 #include "my_psi_config.h"
+#include "myisam.h"
 #include "mysql/psi/mysql_file.h"
 #include "mysql/psi/mysql_memory.h"
-#include "sql_class.h"
-#include "sql_table.h"
-#include "system_variables.h"
-#include "table.h"
+#include "sql/derror.h"
+#include "sql/field.h"
+#include "sql/sql_class.h"
+#include "sql/sql_table.h"
+#include "sql/system_variables.h"
+#include "sql/table.h"
 
 /*
   First, if you want to understand storage engines you should look at 
@@ -158,13 +164,12 @@ static handler *archive_create_handler(handlerton *hton,
 
 PSI_memory_key az_key_memory_frm;
 PSI_memory_key az_key_memory_record_buffer;
-
-#ifdef HAVE_PSI_MUTEX_INTERFACE
 PSI_mutex_key az_key_mutex_Archive_share_mutex;
 
+#ifdef HAVE_PSI_MUTEX_INTERFACE
 static PSI_mutex_info all_archive_mutexes[]=
 {
-  { &az_key_mutex_Archive_share_mutex, "Archive_share::mutex", 0, 0}
+  { &az_key_mutex_Archive_share_mutex, "Archive_share::mutex", 0, 0, PSI_DOCUMENT_ME}
 };
 #endif /* HAVE_PSI_MUTEX_INTERFACE */
 
@@ -174,17 +179,17 @@ PSI_file_key arch_key_file_data;
 PSI_file_key arch_key_file_metadata, arch_key_file_frm;
 static PSI_file_info all_archive_files[]=
 {
-  { &arch_key_file_metadata, "metadata", 0},
-  { &arch_key_file_data, "data", 0},
-  { &arch_key_file_frm, "FRM", 0}
+  { &arch_key_file_metadata, "metadata", 0, 0, PSI_DOCUMENT_ME},
+  { &arch_key_file_data, "data", 0, 0, PSI_DOCUMENT_ME},
+  { &arch_key_file_frm, "FRM", 0, 0, PSI_DOCUMENT_ME}
 };
 #endif /* HAVE_PSI_FILE_INTERFACE */
 
 #ifdef HAVE_PSI_MEMORY_INTERFACE
 static PSI_memory_info all_archive_memory[]=
 {
-  { &az_key_memory_frm, "FRM", 0},
-  { &az_key_memory_record_buffer, "record_buffer", 0},
+  { &az_key_memory_frm, "FRM", 0, 0, PSI_DOCUMENT_ME},
+  { &az_key_memory_record_buffer, "record_buffer", 0, 0, PSI_DOCUMENT_ME},
 };
 #endif /* HAVE_PSI_MEMORY_INTERFACE */
 
@@ -1820,6 +1825,7 @@ mysql_declare_plugin(archive)
   "Archive storage engine",
   PLUGIN_LICENSE_GPL,
   archive_db_init, /* Plugin Init */
+  NULL, /* Plugin check uninstall */
   NULL, /* Plugin Deinit */
   0x0300 /* 3.0 */,
   NULL,                       /* status variables                */

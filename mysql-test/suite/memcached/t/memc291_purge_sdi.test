@@ -3,13 +3,15 @@ source include/not_valgrind.inc;
 source include/have_memcached_plugin.inc;
 # Memcached SDI APIs are enabled only for debug version
 source include/have_debug.inc;
-# Embedded mode doesn't work if there is shutdown or restart
-source include/not_embedded.inc;
 
 --disable_query_log
 CALL mtr.add_suppression("daemon-memcached-w-batch-size': unsigned");
 CALL mtr.add_suppression("Could not obtain server's UPN to be used as target service name");
 CALL mtr.add_suppression("InnoDB: Warning: MySQL is trying to drop");
+# We wiped out entire SDI created by Server. This is to avoid server
+# SDI interference with memcached inserted SDI. So server complains
+# on missing SDI
+CALL mtr.add_suppression("\\[Warning\\] \\[[^]]*\\] sdi_delete*");
 # Create the memcached tables
 source include/memcache_config.inc;
 --enable_query_log
@@ -35,6 +37,11 @@ ENGINE = INNODB;
 INSTALL PLUGIN daemon_memcached SONAME 'libmemcached.so';
 
 # Case 1: Purge before restart of server
+
+# Clear the current SDI in table
+--let MEMCACHED_TABLE_MAPPING = desc_t1
+--source ../include/sdi_drop_index.inc
+--source ../include/sdi_create_index.inc
 
 # Insert and Delete in SDI table via memcached
 --source ../include/sdi_insert_delete.inc

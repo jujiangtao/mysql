@@ -1,13 +1,20 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -18,33 +25,35 @@
 #include <string.h>
 #include <utility>
 
-#include "auth_internal.h"
-#include "field.h"
-#include "handler.h"
-#include "key.h"
 #include "lex_string.h"
 #include "m_string.h"
-#include "mdl.h"
 #include "my_base.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_sys.h"
 #include "mysql/mysql_lex_string.h"
 #include "mysql/psi/psi_base.h"
+#include "mysql/udf_registration_types.h"
 #include "mysqld_error.h"
-#include "records.h"
-#include "sql_auth_cache.h"
-#include "sql_base.h"
-#include "sql_const.h"
-#include "sql_plugin_ref.h"
-#include "sql_servers.h"
-#include "sql_user_table.h"
-#include "table.h"
+#include "sql/auth/auth_internal.h"
+#include "sql/auth/sql_auth_cache.h"
+#include "sql/auth/sql_security_ctx.h"
+#include "sql/auth/sql_user_table.h"
+#include "sql/field.h"
+#include "sql/handler.h"
+#include "sql/key.h"
+#include "sql/mdl.h"
+#include "sql/mysqld.h"
+#include "sql/records.h"
+#include "sql/sql_base.h"
+#include "sql/sql_const.h"
+#include "sql/sql_servers.h"
+#include "sql/table.h"
 #include "thr_lock.h"
 
 class THD;
+
 bool trans_commit_stmt(THD *thd);
-void grant_role(THD *thd, ACL_USER *role, ACL_USER *user, bool with_admin_opt);
 extern Granted_roles_graph *g_granted_roles;
 extern Default_roles *g_default_roles;
 extern Role_index_map *g_authid_to_vertex;
@@ -118,15 +127,8 @@ bool modify_role_edges_in_table(THD *thd, TABLE *table,
   uchar user_key[MAX_KEY_LENGTH];
   Acl_table_intact table_intact(thd);
 
-  if (table_intact.check(thd, table, &mysql_role_edges_table_def))
+  if (table_intact.check(table, ACL_TABLES::TABLE_ROLE_EDGES))
     DBUG_RETURN(true);
-
-  if (!table->key_info)
-  {
-    my_error(ER_TABLE_CORRUPT, MYF(0), table->s->db.str,
-             table->s->table_name.str);
-    DBUG_RETURN(true);
-  }
 
   table->use_all_columns();
 
@@ -190,15 +192,8 @@ bool modify_default_roles_in_table(THD *thd, TABLE *table,
   uchar user_key[MAX_KEY_LENGTH];
   Acl_table_intact table_intact(thd);
 
-  if (table_intact.check(thd, table, &mysql_default_roles_table_def))
+  if (table_intact.check(table, ACL_TABLES::TABLE_DEFAULT_ROLES))
     DBUG_RETURN(true);
-
-  if (!table->key_info)
-  {
-    my_error(ER_TABLE_CORRUPT, MYF(0), table->s->db.str,
-             table->s->table_name.str);
-    DBUG_RETURN(true);
-  }
 
   table->use_all_columns();
   table->field[MYSQL_DEFAULT_ROLE_FIELD_HOST]
@@ -240,7 +235,6 @@ bool modify_default_roles_in_table(THD *thd, TABLE *table,
   DBUG_RETURN(false);
 }
 
-
 /*
   Populates caches from roles tables.
   Assumes that tables are opened and requried locks are taken.
@@ -268,7 +262,7 @@ bool populate_roles_caches(THD *thd, TABLE_LIST *tablelst)
   {
     TABLE *table= ((!tablelst[0].table->key_info) ? tablelst[0].table :
                    tablelst[1].table);
-    my_error(ER_TABLE_CORRUPT, MYF(0), table->s->db.str,
+    my_error(ER_MISSING_KEY, MYF(0), table->s->db.str,
              table->s->table_name.str);
     DBUG_RETURN(true);
   }
@@ -355,6 +349,7 @@ bool populate_roles_caches(THD *thd, TABLE_LIST *tablelst)
   end_read_record(&read_record_info);
   free_root(&tmp_mem, MYF(0));
   rebuild_vertex_index(thd);
+  opt_mandatory_roles_cache= false;
   DBUG_RETURN(false);
 }
 

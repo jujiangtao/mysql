@@ -6,8 +6,6 @@
 
 # Valgrind can hang or return spurious messages on DBUG_SUICIDE
 --source include/not_valgrind.inc
-# Embedded server does not support crashing
---source include/not_embedded.inc
 # Avoid CrashReporter popup on Mac
 --source include/not_crashrep.inc
 
@@ -15,7 +13,7 @@
 
 # In the test scenario, there can be orphaned .frm files.
 # These are expected.  So suppressing the associated warnings.
-call mtr.add_suppression("\\[ERROR\\] InnoDB: table .* does not exist "
+call mtr.add_suppression("\\[ERROR\\] \\[[^]]*\\] InnoDB: table .* does not exist "
 			 "in the InnoDB internal");
 
 ################################################################################
@@ -37,7 +35,7 @@ set global innodb_file_per_table = off;
 let $MYSQL_TMP_DIR = `select @@tmpdir`;
 let $MYSQL_DATA_DIR = `select @@datadir`;
 let SEARCH_FILE = $MYSQLTEST_VARDIR/log/my_restart.err;
-let $args = --loose-console > $SEARCH_FILE 2>&1;
+let $args = --loose-console --log-error-verbosity=3 > $SEARCH_FILE 2>&1;
 let crash = $args --innodb-force-recovery-crash;
 
 #-----------------------------------------------------------------------------
@@ -59,7 +57,7 @@ let crash = $args --innodb-force-recovery-crash;
 --error 137,3
 --exec $MYSQLD_CMD $crash=100
 let SEARCH_PATTERN = InnoDB: Creating shared tablespace for temporary tables;
---source include/search_pattern_in_file.inc
+--source include/search_pattern.inc
 #
 --source include/start_mysqld.inc
 --echo # files in MYSQL_DATA_DIR

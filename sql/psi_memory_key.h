@@ -1,13 +1,20 @@
 /* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -44,6 +51,8 @@ extern PSI_memory_key key_memory_NAMED_ILINK_name;
 extern PSI_memory_key key_memory_Rows_query_log_event_rows_query;
 extern PSI_memory_key key_memory_Sid_map_Node;
 extern PSI_memory_key key_memory_String_value;
+extern PSI_memory_key key_memory_log_error_loaded_services;
+extern PSI_memory_key key_memory_log_error_stack;
 extern PSI_memory_key key_memory_log_event;
 extern PSI_memory_key key_memory_Gtid_state_group_commit_sidno;
 
@@ -51,10 +60,10 @@ extern PSI_memory_key key_memory_Gtid_state_group_commit_sidno;
   These are defined in psi_memory_key.cc
  */
 extern PSI_memory_key key_memory_DATE_TIME_FORMAT;
+extern PSI_memory_key key_memory_DD_column_statistics;
 extern PSI_memory_key key_memory_DD_default_values;
 extern PSI_memory_key key_memory_DD_import;
 extern PSI_memory_key key_memory_DD_String_type;
-extern PSI_memory_key key_memory_DDL_LOG_MEMORY_ENTRY;
 extern PSI_memory_key key_memory_Event_queue_element_for_exec_names;
 extern PSI_memory_key key_memory_Event_scheduler_scheduler_param;
 extern PSI_memory_key key_memory_File_query_log_name;
@@ -82,7 +91,6 @@ extern PSI_memory_key key_memory_Owned_gtids_sidno_to_hash;
 extern PSI_memory_key key_memory_Owned_gtids_to_string;
 extern PSI_memory_key key_memory_PROFILE;
 extern PSI_memory_key key_memory_QUICK_RANGE_SELECT_mrr_buf_desc;
-extern PSI_memory_key key_memory_Query_cache;
 extern PSI_memory_key key_memory_Quick_ranges;
 extern PSI_memory_key key_memory_READ_INFO;
 extern PSI_memory_key key_memory_READ_RECORD_cache;
@@ -93,6 +101,7 @@ extern PSI_memory_key key_memory_Rpl_info_table;
 extern PSI_memory_key key_memory_SLAVE_INFO;
 extern PSI_memory_key key_memory_ST_SCHEMA_TABLE;
 extern PSI_memory_key key_memory_Security_context;
+extern PSI_memory_key key_memory_Slave_applier_json_diff_vector;
 extern PSI_memory_key key_memory_Slave_job_group_group_relay_log_name;
 extern PSI_memory_key key_memory_Sort_param_tmp_buffer;
 extern PSI_memory_key key_memory_Sys_var_charptr_value;
@@ -134,6 +143,7 @@ extern PSI_memory_key key_memory_handler_errmsgs;
 extern PSI_memory_key key_memory_handlerton;
 extern PSI_memory_key key_memory_hash_index_key_buffer;
 extern PSI_memory_key key_memory_help;
+extern PSI_memory_key key_memory_histograms;
 extern PSI_memory_key key_memory_host_cache_hostname;
 extern PSI_memory_key key_memory_ignored_db;
 extern PSI_memory_key key_memory_locked_table_list;
@@ -176,6 +186,7 @@ extern PSI_memory_key key_memory_user_var_entry_value;
 extern PSI_memory_key key_memory_warning_info_warn_root;
 extern PSI_memory_key key_memory_sp_cache;
 extern PSI_memory_key key_memory_write_set_extraction;
+extern PSI_memory_key key_memory_string_service_iterator;
 
 }
 

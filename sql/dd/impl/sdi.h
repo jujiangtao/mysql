@@ -1,22 +1,30 @@
 /* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef DD__SDI_INCLUDED
 #define DD__SDI_INCLUDED
 
-#include "dd/string_type.h"                    // dd::String_type
+#include "my_compiler.h"
+#include "sql/dd/string_type.h"                // dd::String_type
 
 class THD;
 struct handlerton;
@@ -25,8 +33,7 @@ struct handlerton;
   @file
   @ingroup sdi
 
-  Declares the SDI ((de)serialization) api which exposes
-  SDI-related functionality to the rest of the dictionary code.
+  Exposes SDI-related functionality to the rest of the dictionary code.
 */
 
 namespace dd {
@@ -35,7 +42,19 @@ class Schema;
 class Table;
 class Tablespace;
 class View;
-typedef String_type sdi_t;
+
+typedef String_type Sdi_type;
+
+static constexpr std::uint64_t sdi_version= 1;
+
+/**
+  @defgroup serialize_api (De)serialize api functions.
+  @ingroup sdi
+
+  Functions for serializing (with complete header) and deserializing
+  the dd object which supports this.
+  @{
+ */
 
 /**
   Serialize a Schema object.
@@ -45,7 +64,7 @@ typedef String_type sdi_t;
   @return sdi (as json string).
 
 */
-sdi_t serialize(const Schema &schema);
+Sdi_type serialize(const Schema &schema);
 
 
 /**
@@ -57,7 +76,7 @@ sdi_t serialize(const Schema &schema);
   @return sdi (as json string).
 
 */
-sdi_t serialize(THD *thd, const Table &table, const String_type &schema_name);
+Sdi_type serialize(THD *thd, const Table &table, const String_type &schema_name);
 
 
 /**
@@ -69,7 +88,7 @@ sdi_t serialize(THD *thd, const Table &table, const String_type &schema_name);
 
 */
 
-sdi_t serialize(const Tablespace &tablespace);
+Sdi_type serialize(const Tablespace &tablespace);
 
 
 /**
@@ -89,7 +108,7 @@ sdi_t serialize(const Tablespace &tablespace);
 
 */
 
-bool deserialize(THD *thd, const sdi_t &sdi, Schema *schema);
+bool deserialize(THD *thd, const Sdi_type &sdi, Schema *schema);
 
 
 /**
@@ -110,7 +129,7 @@ bool deserialize(THD *thd, const sdi_t &sdi, Schema *schema);
 
 */
 
-bool deserialize(THD *thd, const sdi_t &sdi, Table *table,
+bool deserialize(THD *thd, const Sdi_type &sdi, Table *table,
                  String_type *deser_schema_name= nullptr);
 
 
@@ -131,16 +150,21 @@ bool deserialize(THD *thd, const sdi_t &sdi, Table *table,
 
 */
 
-bool deserialize(THD *thd, const sdi_t &sdi, Tablespace *tablespace);
+bool deserialize(THD *thd, const Sdi_type &sdi, Tablespace *tablespace);
 
-
-/**
-  Wl#7524
- */
-bool import_sdi(THD *thd, Table *table, const String_type &schema_name);
-
+/** @} End of group serialize_api */
 
 namespace sdi {
+
+/**
+  @defgroup sdi_storage_ops Storage operations on SDIs.
+  @ingroup sdi
+
+  Functions for storing and dropping (deleting) SDIs. To be used from
+  dd::cache::Storage_adapter and dd::cache::Dictionary_client to store
+  and remove SDIs as DD objects are added, modified or deleted.
+  @{
+*/
 
 /**
   Generic noop for all types that don't have a specific overload. No
@@ -158,24 +182,6 @@ inline bool store(THD *thd MY_ATTRIBUTE((unused)),
 {
   return false;
 }
-
-
-/**
-  Stores the SDI for a Schema.
-
-  Serializes the schema object, and then forwards to SE through handlerton
-  api, or falls back to storing the sdi string in an .SDI file in the
-  default case.
-
-  @param thd    Thread handle.
-  @param s      Schema object.
-
-  @return error status
-    @retval false on success
-    @retval true otherwise
-*/
-
-bool store(THD *thd, const Schema *s);
 
 
 /**
@@ -234,24 +240,6 @@ inline bool drop(THD *thd MY_ATTRIBUTE((unused)),
 
 
 /**
-  Remove SDI for a schema.
-
-  Forwards to SE through handlerton api, which will remove from
-  tablespace, or falls back to deleting the .SDI file in the default
-  case.
-
-  @param thd
-  @param s      Schema object.
-
-  @return error status
-    @retval false on success
-    @retval true otherwise
-*/
-
-bool drop(THD *thd, const Schema *s);
-
-
-/**
   Remove SDI for a table.
 
   Forwards to SE through handlerton api, which will remove from
@@ -268,24 +256,8 @@ bool drop(THD *thd, const Schema *s);
 
 bool drop(THD *thd, const Table *t);
 
-
-/**
-  Remove SDI for a table space.
-
-  Forwards to SE through handlerton api, which will remove from
-  tablespace, or falls back to deleting the .SDI file in the default
-  case.
-
-  @param thd    Thread handle.
-  @param ts     Tablespace object.
-
-  @return error status
-    @retval false on success
-    @retval true otherwise
-*/
-
-bool drop(THD *thd, const Tablespace *ts);
-
+// Note that there is NO drop() overload for Tablespace. Dropping a
+// tablespace implies that all sdis in it are dropped also.
 
 /**
   Hook for SDI cleanup after updating DD object. Generic noop for all
@@ -305,27 +277,6 @@ inline bool drop_after_update(THD *thd MY_ATTRIBUTE((unused)),
 {
   return false;
 }
-
-
-/**
-  Schema cleanup hook. When Dictionary_client issues a store which is
-  performed as an update in the DD a new schema SDI file will be
-  stored. If the update modifies the name of the schema it is
-  necessary to remove the old SDI file after the new one has been
-  written successfully. If the file names are the same the file is
-  updated in place, potentially leaving it corrupted if something goes
-  wrong.
-
-  @param thd
-  @param old_s old Schema object
-  @param new_s new Schema object
-
-  @return error status
-    @retval false on success
-    @retval true otherwise
-*/
-
-bool drop_after_update(THD *thd, const Schema *old_s, const Schema *new_s);
 
 
 /**
@@ -350,6 +301,7 @@ bool drop_after_update(THD *thd, const Schema *old_s, const Schema *new_s);
 
 bool drop_after_update(THD *thd, const Table *old_t, const Table *new_t);
 
+/** @} End of group sdi_storage_ops */
 } // namespace sdi
 } // namespace dd
 

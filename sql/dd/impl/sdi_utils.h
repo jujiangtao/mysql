@@ -1,27 +1,39 @@
 /* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef DD__SDI_UTILS_INCLUDED
 #define DD__SDI_UTILS_INCLUDED
 
-#include "current_thd.h"             // inline_current_thd
-#include "dd/string_type.h"          // dd::String_type
-#include "error_handler.h"           // Internal_error_handler
-#include "mdl.h"                     // MDL_request
 #include "my_dbug.h"
-#include "sql_class.h"               // THD
+#include "sql/current_thd.h"         // inline_current_thd
+#include "sql/dd/string_type.h"      // dd::String_type
+#include "sql/error_handler.h"       // Internal_error_handler
+#include "sql/mdl.h"                 // MDL_request
+#include "sql/sql_class.h"           // THD
+
+#ifndef DBUG_OFF
+#define ENTITY_FMT "(%s, %llu)"
+#define ENTITY_VAL(obj) (obj).name().c_str(), (obj).id()
+#endif /* !DBUG_OFF */
 
 /**
   @file
@@ -45,8 +57,8 @@ namespace sdi_utils {
 inline bool checked_return(bool ret)
 {
 #ifndef DBUG_OFF
-  THD *cthd= inline_current_thd();
-  DBUG_ASSERT(!ret || cthd->is_error() || cthd->killed);
+  THD *cthd= current_thd;
+  DBUG_ASSERT(!ret || cthd->is_system_thread() || cthd->is_error() || cthd->killed);
 #endif /*!DBUG_OFF*/
   return ret;
 }
@@ -78,6 +90,12 @@ inline bool mdl_lock(THD *thd, MDL_key::enum_mdl_namespace ns,
                                    thd->variables.lock_wait_timeout));
 }
 
+template <typename T>
+const T& ptr_as_cref(const T *p)
+{
+  DBUG_ASSERT(p != nullptr);
+  return *p;
+}
 
 /**
   Class template which derives from Internal_error_handler and
@@ -117,6 +135,12 @@ bool handle_errors(THD *thd, CH_CLOS &&chc, ACTION_CLOS &&ac)
   bool r= ac();
   thd->pop_internal_handler();
   return r;
+}
+
+template <typename P_TYPE, typename CLOS_TYPE>
+std::unique_ptr<P_TYPE, CLOS_TYPE> make_guard(P_TYPE *p, CLOS_TYPE &&clos)
+{
+  return std::unique_ptr<P_TYPE, CLOS_TYPE>(p, std::forward<CLOS_TYPE>(clos));
 }
 
 } // namespace sdi_utils

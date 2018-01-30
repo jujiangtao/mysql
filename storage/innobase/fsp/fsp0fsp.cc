@@ -3,16 +3,24 @@
 Copyright (c) 1995, 2017, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+the terms of the GNU General Public License, version 2.0, as published by the
+Free Software Foundation.
+
+This program is also distributed with certain software (including but not
+limited to OpenSSL) that is licensed under separate terms, as designated in a
+particular file or component or in included license documentation. The authors
+of MySQL hereby grant you an additional permission to link the program and
+your derivative works with the separately licensed software that they have
+included with MySQL.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+FOR A PARTICULAR PURPOSE. See the GNU General Public License, version 2.0,
+for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 *****************************************************************************/
 
@@ -36,24 +44,25 @@ Created 11/29/1995 Heikki Tuuri
 #include "ut0byte.h"
 #ifdef UNIV_HOTBACKUP
 # include "fut0lst.h"
-#else /* UNIV_HOTBACKUP */
-# include <my_aes.h>
+#endif /* UNIV_HOTBACKUP */
+#include <my_aes.h>
 
+#ifndef UNIV_HOTBACKUP
 # include "btr0btr.h"
 # include "btr0sea.h"
 # include "dict0boot.h"
+# include "dict0dd.h"
 # include "fut0fut.h"
 # include "ibuf0ibuf.h"
 # include "log0log.h"
 # include "srv0srv.h"
-# include "srv0start.h"
-#endif /* UNIV_HOTBACKUP */
+#endif /* !UNIV_HOTBACKUP */
+#include "srv0start.h"
 #include "dict0mem.h"
 #include "fsp0sysspace.h"
 #include "trx0purge.h"
 
 #ifndef UNIV_HOTBACKUP
-
 /** Returns an extent to the free list of a space.
 @param[in]	page_id		page id in the extent
 @param[in]	page_size	page size
@@ -159,6 +168,7 @@ fseg_alloc_free_page_low(
 #endif /* UNIV_DEBUG */
 )
 	MY_ATTRIBUTE((warn_unused_result));
+#endif /* !UNIV_HOTBACKUP */
 
 /** Get the segment identifier to which the extent belongs to.
 @param[in]	descr	extent descriptor
@@ -181,15 +191,18 @@ xdes_get_segment_id(
 	const xdes_t*		descr,
 	mtr_t*			mtr)
 {
+#ifndef UNIV_HOTBACKUP
 	ut_ad(mtr_memo_contains_page_flagged(
 			mtr, descr,
 			MTR_MEMO_PAGE_S_FIX
 			| MTR_MEMO_PAGE_X_FIX
 			| MTR_MEMO_PAGE_SX_FIX));
+#endif /* !UNIV_HOTBACKUP */
 
 	return(xdes_get_segment_id(descr));
 }
 
+#ifndef UNIV_HOTBACKUP
 /** Gets a pointer to the space header and x-locks its page.
 @param[in]	id		space id
 @param[in]	page_size	page size
@@ -250,109 +263,32 @@ fsp_flags_to_dict_tf(
 
 	return(flags);
 }
-
-/** Validate the tablespace flags.
-These flags are stored in the tablespace header at offset FSP_SPACE_FLAGS.
-They should be 0 for ROW_FORMAT=COMPACT and ROW_FORMAT=REDUNDANT.
-The newer row formats, COMPRESSED and DYNAMIC, will have at least
-the DICT_TF_COMPACT bit set.
-@param[in]	flags	Tablespace flags
-@return true if valid, false if not */
-bool
-fsp_flags_is_valid(
-	ulint	flags)
-{
-	bool	post_antelope = FSP_FLAGS_GET_POST_ANTELOPE(flags);
-	ulint	zip_ssize = FSP_FLAGS_GET_ZIP_SSIZE(flags);
-	bool	atomic_blobs = FSP_FLAGS_HAS_ATOMIC_BLOBS(flags);
-	ulint	page_ssize = FSP_FLAGS_GET_PAGE_SSIZE(flags);
-	bool	has_data_dir = FSP_FLAGS_HAS_DATA_DIR(flags);
-	bool	is_shared = FSP_FLAGS_GET_SHARED(flags);
-	bool	is_temp = FSP_FLAGS_GET_TEMPORARY(flags);
-	bool	is_encryption = FSP_FLAGS_GET_ENCRYPTION(flags);
-
-	ulint	unused = FSP_FLAGS_GET_UNUSED(flags);
-
-	DBUG_EXECUTE_IF("fsp_flags_is_valid_failure", return(false););
-
-	/* The Antelope row formats REDUNDANT and COMPACT did
-	not use tablespace flags, so the entire 4-byte field
-	is zero for Antelope row formats. */
-	if (flags == 0) {
-		return(true);
-	}
-
-	/* Row_FORMAT=COMPRESSED and ROW_FORMAT=DYNAMIC use a feature called
-	ATOMIC_BLOBS which builds on the page structure introduced for the
-	COMPACT row format by allowing long fields to be broken into prefix
-	and externally stored parts. So if it is Post_antelope, it uses
-	Atomic BLOBs. */
-	if (post_antelope != atomic_blobs) {
-		return(false);
-	}
-
-	/* Make sure there are no bits that we do not know about. */
-	if (unused != 0) {
-		return(false);
-	}
-
-	/* The zip ssize can be zero if it is other than compressed row format,
-	or it could be from 1 to the max. */
-	if (zip_ssize > PAGE_ZIP_SSIZE_MAX) {
-		return(false);
-	}
-
-	/* The actual page size must be within 4k and 16K (3 =< ssize =< 5). */
-	if (page_ssize != 0
-	    && (page_ssize < UNIV_PAGE_SSIZE_MIN
-	        || page_ssize > UNIV_PAGE_SSIZE_MAX)) {
-		return(false);
-	}
-
-	/* Only single-table tablespaces use the DATA DIRECTORY clause.
-	It is not compatible with the TABLESPACE clause.  Nor is it
-	compatible with the TEMPORARY clause. */
-	if (has_data_dir && (is_shared || is_temp)) {
-		return(false);
-	}
-
-	/* Only single-table and not temp tablespaces use the encryption
-	clause. */
-	if (is_encryption && (is_shared || is_temp)) {
-		return(false);
-	}
-
-#if FSP_FLAGS_POS_UNUSED != 15
-# error You have added a new FSP_FLAG without adding a validation check.
-#endif
-
-	return(true);
-}
+#endif /* !UNIV_HOTBACKUP */
 
 /** Check whether a space id is an undo tablespace ID
+Undo tablespaces have space_id's starting 1 less than the redo logs.
+They are numbered down from this.  Since rseg_id=0 always refers to the
+system tablespace, undo_space_num values start at 1.  The current limit
+is 127. The translation from an undo_space_num is:
+   undo space_id = log_first_space_id - undo_space_num
 @param[in]	space_id	space id to check
 @return true if it is undo tablespace else false. */
 bool
 fsp_is_undo_tablespace(space_id_t space_id)
 {
-	/* Quick elimination.  space_id==0 is most common. */
-	if (fsp_is_system_or_temp_tablespace(space_id)
-	    || space_id >= SRV_LOG_SPACE_FIRST_ID
-	    /* Before trx_sys_undo_spaces is set, we do not know
-	    what the undo tablespace ID range is. Assume this is
-	    not an undo space. */
-	    || trx_sys_undo_spaces == nullptr
-	    || trx_sys_undo_spaces->size() == 0) {
-		return(false);
+	/* Starting with v8, undo space_ids have a unique range. */
+	if (space_id >= dict_sys_t::s_min_undo_space_id
+	    && space_id <= dict_sys_t::s_max_undo_space_id) {
+		return(true);
 	}
 
-	/* There is a list of undo tablespaces.  Search them. */
-	Space_Ids::iterator it = std::find(
-		trx_sys_undo_spaces->begin(),
-		trx_sys_undo_spaces->end(),
-		space_id);
+	/* If upgrading from 5.7, there may be a list of old-style
+	undo tablespaces.  Search them. */
+	if (trx_sys_undo_spaces != nullptr) {
+		return(trx_sys_undo_spaces->contains(space_id));
+	}
 
-	return(it != trx_sys_undo_spaces->end());
+	return(false);
 }
 
 /** Check if tablespace is system temporary.
@@ -373,6 +309,7 @@ fsp_is_checksum_disabled(space_id_t space_id)
 	return(fsp_is_system_temporary(space_id));
 }
 
+#ifndef UNIV_HOTBACKUP
 #ifdef UNIV_DEBUG
 
 /** Skip some of the sanity checks that are time consuming even in debug mode
@@ -687,10 +624,10 @@ xdes_get_descriptor_with_space_hdr(
 	flags = mach_read_from_4(sp_header + FSP_SPACE_FLAGS);
 	ut_ad(limit == fspace->free_limit
 	      || (fspace->free_limit == 0
-		  && (init_space
-		      || fspace->purpose == FIL_TYPE_TEMPORARY
-		      || (srv_startup_is_before_trx_rollback_phase
-			  && fspace->id <= srv_undo_tablespaces))));
+	          && (init_space
+	              || fspace->purpose == FIL_TYPE_TEMPORARY
+	              || (srv_startup_is_before_trx_rollback_phase
+	                  && fsp_is_undo_tablespace(fspace->id)))));
 	ut_ad(size == fspace->size_in_header);
 	ut_ad(flags == fspace->flags);
 
@@ -781,8 +718,9 @@ xdes_lst_get_descriptor(
 	xdes_t*	descr;
 
 	ut_ad(mtr);
-	ut_ad(mtr_memo_contains(mtr, fil_space_get_latch(space, NULL),
-				MTR_MEMO_X_LOCK));
+	ut_ad(mtr_memo_contains(
+			mtr, fil_space_get_latch(space), MTR_MEMO_X_LOCK));
+
 	descr = fut_get_ptr(space, page_size, lst_node, RW_SX_LATCH, mtr)
 		- XDES_FLST_NODE;
 
@@ -826,12 +764,18 @@ fsp_init_file_page_low(
 	mach_write_to_4(page + FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID,
 			block->page.id.space());
 
+	/* Reset FRAME LSN, which otherwise points to the LSN of the last
+	page that used this buffer block. This is needed by CLONE for
+	tracking dirty pages. */
+	memset(page + FIL_PAGE_LSN, 0, 8);
+
 	if (page_zip) {
 		memset(page_zip->data, 0, page_zip_get_size(page_zip));
 		memcpy(page_zip->data + FIL_PAGE_OFFSET,
 		       page + FIL_PAGE_OFFSET, 4);
 		memcpy(page_zip->data + FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID,
 		       page + FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID, 4);
+		memcpy(page_zip->data + FIL_PAGE_LSN, page + FIL_PAGE_LSN, 8);
 	}
 }
 
@@ -862,7 +806,7 @@ fsp_space_modify_check(
 			     || type == FIL_TYPE_TEMPORARY
 			     || type == FIL_TYPE_IMPORT
 			     || fil_space_is_redo_skipped(id)
-			     || undo::is_under_construction(id));
+			     || undo::is_inactive(id));
 		}
 #endif /* UNIV_DEBUG */
 		return;
@@ -872,7 +816,6 @@ fsp_space_modify_check(
 		ut_ad(!fsp_is_system_temporary(id));
 		/* If we write redo log, the tablespace must exist. */
 		ut_ad(fil_space_get_type(id) == FIL_TYPE_TABLESPACE);
-		ut_ad(mtr->is_named_space(id));
 		return;
 	}
 
@@ -917,22 +860,21 @@ fsp_parse_init_file_page(
 	return(ptr);
 }
 
-/**********************************************************************//**
-Initializes the fsp system. */
+/** Initializes the fsp system. */
 void
-fsp_init(void)
-/*==========*/
+fsp_init()
 {
 	/* FSP_EXTENT_SIZE must be a multiple of page & zip size */
+	ut_a(UNIV_PAGE_SIZE > 0);
 	ut_a(0 == (UNIV_PAGE_SIZE % FSP_EXTENT_SIZE));
-	ut_a(UNIV_PAGE_SIZE);
 
-#if UNIV_PAGE_SIZE_MAX % FSP_EXTENT_SIZE_MAX
-# error "UNIV_PAGE_SIZE_MAX % FSP_EXTENT_SIZE_MAX != 0"
-#endif
-#if UNIV_ZIP_SIZE_MIN % FSP_EXTENT_SIZE_MIN
-# error "UNIV_ZIP_SIZE_MIN % FSP_EXTENT_SIZE_MIN != 0"
-#endif
+        static_assert(
+                !(UNIV_PAGE_SIZE_MAX % FSP_EXTENT_SIZE_MAX),
+                "UNIV_PAGE_SIZE_MAX % FSP_EXTENT_SIZE_MAX != 0");
+
+        static_assert(
+                !(UNIV_ZIP_SIZE_MIN % FSP_EXTENT_SIZE_MIN),
+                "UNIV_ZIP_SIZE_MIN % FSP_EXTENT_SIZE_MIN != 0");
 
 	/* Does nothing at the moment */
 }
@@ -957,7 +899,6 @@ fsp_header_init_fields(
 			flags);
 }
 
-#ifndef UNIV_HOTBACKUP
 /** Get the offset of encrytion information in page 0.
 @param[in]	page_size	page size.
 @return	offset on success, otherwise 0. */
@@ -981,6 +922,7 @@ fsp_header_get_encryption_offset(
 	return offset;
 }
 
+#ifndef UNIV_HOTBACKUP
 /** Write the encryption info into the space header.
 @param[in]      space_id		tablespace id
 @param[in]      space_flags		tablespace flags
@@ -990,7 +932,7 @@ fsp_header_get_encryption_offset(
 @return true if success. */
 bool
 fsp_header_write_encryption(
-	ulint			space_id,
+	space_id_t		space_id,
 	ulint			space_flags,
 	byte*			encrypt_info,
 	bool			update_fsp_flags,
@@ -1019,7 +961,7 @@ fsp_header_write_encryption(
 	tablespaces. */
 	master_key_id = mach_read_from_4(
 		page + offset + ENCRYPTION_MAGIC_SIZE);
-	if (master_key_id == Encryption::master_key_id) {
+	if (master_key_id == Encryption::s_master_key_id) {
 		ut_ad(memcmp(page + offset,
 			     ENCRYPTION_KEY_MAGIC_V1,
 			     ENCRYPTION_MAGIC_SIZE) == 0
@@ -1057,6 +999,9 @@ fsp_header_rotate_encryption(
 	ut_ad(mtr);
 	ut_ad(space->encryption_type != Encryption::NONE);
 
+	DBUG_EXECUTE_IF("fsp_header_rotate_encryption_failure",
+			return(false););
+
 	/* Fill encryption info. */
 	if (!Encryption::fill_encryption_info(space->encryption_key,
 					      space->encryption_iv,
@@ -1093,7 +1038,9 @@ fsp_header_init(
 
 	ut_ad(mtr);
 
-	fil_space_t*		space	= mtr_x_lock_space(space_id, mtr);
+	fil_space_t*		space	= fil_space_get(space_id);
+
+	mtr_x_lock_space(space, mtr);
 
 	const page_id_t		page_id(space_id, 0);
 	const page_size_t	page_size(space->flags);
@@ -1113,6 +1060,13 @@ fsp_header_init(
 
 	mlog_write_ulint(page + FIL_PAGE_TYPE, FIL_PAGE_TYPE_FSP_HDR,
 			 MLOG_2BYTES, mtr);
+
+	mlog_write_ulint(page + FIL_PAGE_SRV_VERSION,
+			 DD_SPACE_CURRENT_SRV_VERSION,
+			 MLOG_4BYTES, mtr);
+	mlog_write_ulint(page + FIL_PAGE_SPACE_VERSION,
+			 DD_SPACE_CURRENT_SPACE_VERSION,
+			 MLOG_4BYTES, mtr);
 
 	header = FSP_HEADER_OFFSET + page;
 
@@ -1243,16 +1197,18 @@ fsp_header_inc_size(
 	page_no_t	size_inc,	/*!< in: size increment in pages */
 	mtr_t*		mtr)		/*!< in/out: mini-transaction */
 {
-	fsp_header_t*	header;
-	page_no_t	size;
+	fil_space_t*	space = fil_space_get(space_id);
 
-	ut_ad(mtr);
+	mtr_x_lock_space(space, mtr);
 
-	fil_space_t*	space = mtr_x_lock_space(space_id, mtr);
 	ut_d(fsp_space_modify_check(space_id, mtr));
+
+	fsp_header_t*	header;
 
 	header = fsp_get_space_header(
 		space_id, page_size_t(space->flags), mtr);
+
+	page_no_t	size;
 
 	size = mach_read_from_4(header + FSP_SIZE);
 	ut_ad(size == space->size_in_header);
@@ -1273,20 +1229,22 @@ page_no_t
 fsp_header_get_tablespace_size(void)
 /*================================*/
 {
-	fsp_header_t*	header;
-	page_no_t	size;
+	fil_space_t*	space = fil_space_get_sys_space();
+
 	mtr_t		mtr;
 
 	mtr_start(&mtr);
 
-#ifdef UNIV_DEBUG
-	fil_space_t*	space =
-#endif /* UNIV_DEBUG */
-	mtr_x_lock_space(TRX_SYS_SPACE, &mtr);
+	mtr_x_lock_space(space, &mtr);
+
+	fsp_header_t*	header;
 
 	header = fsp_get_space_header(TRX_SYS_SPACE, univ_page_size, &mtr);
 
+	page_no_t	size;
+
 	size = mach_read_from_4(header + FSP_SIZE);
+
 	ut_ad(space->size_in_header == size);
 
 	mtr_commit(&mtr);
@@ -1309,19 +1267,18 @@ fsp_try_extend_data_file_with_pages(
 	fsp_header_t*	header,
 	mtr_t*		mtr)
 {
-	bool		success;
-	ulint	size;
 	DBUG_ENTER("fsp_try_extend_data_file_with_pages");
 
 	ut_a(!fsp_is_system_or_temp_tablespace(space->id));
 	ut_d(fsp_space_modify_check(space->id, mtr));
 
-	size = mach_read_from_4(header + FSP_SIZE);
+	page_no_t	size = mach_read_from_4(header + FSP_SIZE);
 	ut_ad(size == space->size_in_header);
 
 	ut_a(page_no >= size);
 
-	success = fil_space_extend(space, page_no + 1);
+	bool	success = fil_space_extend(space, page_no + 1);
+
 	/* The size may be less than we wanted if we ran out of disk space. */
 	fsp_header_size_update(header, space->size, mtr);
 	space->size_in_header = space->size;
@@ -1485,7 +1442,7 @@ fsp_init_xdes_free_frag(
 	xdes_t*		descr,
 	mtr_t*		mtr)
 {
-	ulint           n_used;
+	ulint		n_used;
 
 	/* The first page in the extent is a extent descriptor page
 	and the second is an ibuf bitmap page: mark them used */
@@ -1597,7 +1554,6 @@ fsp_fill_free_list(
 				mtr_t	ibuf_mtr;
 
 				mtr_start(&ibuf_mtr);
-				ibuf_mtr.set_named_space(space);
 
 				if (space->purpose == FIL_TYPE_TEMPORARY) {
 					mtr_set_log_mode(
@@ -1644,8 +1600,8 @@ fsp_fill_free_list(
 
 		i += FSP_EXTENT_SIZE;
 	}
-
-	space->free_len += count;
+	ut_a(count < std::numeric_limits<uint32_t>::max());
+	space->free_len += (uint32_t) count;
 }
 
 /** Allocates a new free extent.
@@ -2055,13 +2011,22 @@ fsp_free_extent(
 	case XDES_FSEG:
 	case XDES_FREE_FRAG:
 	case XDES_FULL_FRAG:
+
 		xdes_init(descr, mtr);
+
 		flst_add_last(header + FSP_FREE, descr + XDES_FLST_NODE, mtr);
-		mtr->fsp_free_list_length_incr(page_id.space());
+
+		fil_space_t*	space;
+
+		space = fil_space_get(page_id.space());
+
+		++space->free_len;
+
 		break;
+
 	case XDES_FREE:
 	case XDES_NOT_INITED:
-                ut_error;
+		ut_error;
 	}
 }
 
@@ -2526,7 +2491,10 @@ fseg_create_general(
 	      <= UNIV_PAGE_SIZE - FIL_PAGE_DATA_END);
 	ut_d(fsp_space_modify_check(space_id, mtr));
 
-	fil_space_t*		space = mtr_x_lock_space(space_id, mtr);
+	fil_space_t*	space = fil_space_get(space_id);
+
+	mtr_x_lock_space(space, mtr);
+
 	const page_size_t	page_size(space->flags);
 
 	if (page != 0) {
@@ -2693,19 +2661,21 @@ fseg_n_reserved_pages(
 	ulint*		used,	/*!< out: number of pages used (<= reserved) */
 	mtr_t*		mtr)	/*!< in/out: mini-transaction */
 {
-	ulint		ret;
-	fseg_inode_t*	inode;
 	space_id_t	space_id;
-	fil_space_t*	space;
 
 	space_id = page_get_space_id(page_align(header));
-	space = mtr_x_lock_space(space_id, mtr);
+
+	fil_space_t*	space = fil_space_get(space_id);
+
+	mtr_x_lock_space(space, mtr);
 
 	const page_size_t	page_size(space->flags);
 
+	fseg_inode_t*	inode;
+
 	inode = fseg_inode_get(header, space_id, page_size, mtr);
 
-	ret = fseg_n_reserved_pages_low(inode, used, mtr);
+	ulint	ret = fseg_n_reserved_pages_low(inode, used, mtr);
 
 	return(ret);
 }
@@ -2867,7 +2837,7 @@ fsp_alloc_xdes_free_frag(
 	ulint		n_used;
 
 	ut_ad(mtr);
-	ut_ad(mtr_memo_contains(mtr, fil_space_get_latch(space, NULL),
+	ut_ad(mtr_memo_contains(mtr, fil_space_get_latch(space),
 				MTR_MEMO_X_LOCK));
 
 	fsp_header_t*   header = fsp_get_space_header(space, page_size, mtr);
@@ -3101,7 +3071,7 @@ take_hinted_page:
 		} else if (xdes_get_state(ret_descr, mtr) == XDES_FSEG_FRAG) {
 			ret_page += xdes_find_bit(
 				ret_descr, XDES_FREE_BIT, TRUE, 0, mtr);
-                }
+		}
 
 		ut_ad(!has_done_reservation || ret_page != FIL_NULL);
 		/*-----------------------------------------------------------*/
@@ -3274,13 +3244,16 @@ fseg_alloc_free_page_general(
 {
 	fseg_inode_t*	inode;
 	space_id_t	space_id;
-	fil_space_t*	space;
 	buf_block_t*	iblock;
 	buf_block_t*	block;
 	ulint		n_reserved = 0;
 
 	space_id = page_get_space_id(page_align(seg_header));
-	space = mtr_x_lock_space(space_id, mtr);
+
+	fil_space_t*	space = fil_space_get(space_id);
+
+	mtr_x_lock_space(space, mtr);
+
 	const page_size_t	page_size(space->flags);
 
 	if (rw_lock_get_x_lock_count(&space->latch) == 1) {
@@ -3414,10 +3387,13 @@ fsp_reserve_free_extents(
 	ulint		reserve;
 	DBUG_ENTER("fsp_reserve_free_extents");
 
-	ut_ad(mtr);
+
 	*n_reserved = n_ext;
 
-	fil_space_t*		space = mtr_x_lock_space(space_id, mtr);
+	fil_space_t*	space = fil_space_get(space_id);
+
+	mtr_x_lock_space(space, mtr);
+
 	const page_size_t	page_size(space->flags);
 
 	space_header = fsp_get_space_header(space_id, page_size, mtr);
@@ -3507,12 +3483,18 @@ tablespace without running out of space.
 uintmax_t
 fsp_get_available_space_in_free_extents(space_id_t space_id)
 {
-	FilSpace	space(space_id);
-	if (space() == NULL) {
+	fil_space_t*	space = fil_space_acquire(space_id);
+
+	if (space == nullptr) {
+
 		return(UINTMAX_MAX);
 	}
 
-	return(fsp_get_available_space_in_free_extents(space));
+	auto	n_free_extents = fsp_get_available_space_in_free_extents(space);
+
+	fil_space_release(space);
+
+	return(n_free_extents);
 }
 
 /** Calculate how many KiB of new data we will be able to insert to the
@@ -3521,8 +3503,7 @@ been acquired by the caller who holds it for the calculation,
 @param[in]	space		tablespace object from fil_space_acquire()
 @return available space in KiB */
 uintmax_t
-fsp_get_available_space_in_free_extents(
-	const fil_space_t*	space)
+fsp_get_available_space_in_free_extents(const fil_space_t* space)
 {
 	ut_ad(space->n_pending_ops > 0);
 
@@ -3781,7 +3762,11 @@ fseg_free_page(
 	DBUG_ENTER("fseg_free_page");
 	fseg_inode_t*		seg_inode;
 	buf_block_t*		iblock;
-	const fil_space_t*	space = mtr_x_lock_space(space_id, mtr);
+
+	fil_space_t*	space = fil_space_get(space_id);
+
+	mtr_x_lock_space(space, mtr);
+
 	const page_size_t	page_size(space->flags);
 
 	DBUG_LOG("fseg_free_page", "space_id: " << space_id
@@ -3815,8 +3800,12 @@ fseg_page_is_free(
 	xdes_t*		descr;
 	fseg_inode_t*	seg_inode;
 
+	fil_space_t*	space = fil_space_get(space_id);
+
 	mtr_start(&mtr);
-	const fil_space_t*	space = mtr_x_lock_space(space_id, &mtr);
+
+	mtr_x_lock_space(space, &mtr);
+
 	const page_size_t	page_size(space->flags);
 
 	seg_inode = fseg_inode_get(seg_header, space_id, page_size, &mtr);
@@ -3954,7 +3943,10 @@ fseg_free_step(
 	space_id = page_get_space_id(page_align(header));
 	header_page = page_get_page_no(page_align(header));
 
-	const fil_space_t*	space = mtr_x_lock_space(space_id, mtr);
+	fil_space_t*	space = fil_space_get(space_id);
+
+	mtr_x_lock_space(space, mtr);
+
 	const page_size_t	page_size(space->flags);
 
 	descr = xdes_get_descriptor(space_id, header_page, page_size, mtr);
@@ -4033,9 +4025,11 @@ fseg_free_step_not_header(
 	page_no_t	page_no;
 
 	space_id = page_get_space_id(page_align(header));
-	ut_ad(mtr->is_named_space(space_id));
 
-	const fil_space_t*	space = mtr_x_lock_space(space_id, mtr);
+	fil_space_t*	space = fil_space_get(space_id);
+
+	mtr_x_lock_space(space, mtr);
+
 	const page_size_t	page_size(space->flags);
 	buf_block_t*		iblock;
 
@@ -4182,7 +4176,11 @@ fseg_print(
 	space_id_t	space_id;
 
 	space_id = page_get_space_id(page_align(header));
-	const fil_space_t*	space = mtr_x_lock_space(space_id, mtr);
+
+	fil_space_t*	space = fil_space_get();
+
+	mtr_x_lock_space(space, mtr);
+
 	const page_size_t	page_size(space->flags);
 
 	inode = fseg_inode_get(header, space_id, page_size, mtr);
@@ -4192,87 +4190,68 @@ fseg_print(
 #endif /* UNIV_BTR_PRINT */
 
 /** Retrieve tablespace dictionary index root page number stored in the
-page 1
+page 0
 @param[in]	space		tablespace id
-@param[in]	copy_num	sdi index copy number
 @param[in]	page_size	page size
 @param[in,out]	mtr		mini-transaction
 @return root page num of the tablspace dictionary index copy */
 page_no_t
 fsp_sdi_get_root_page_num(
 	space_id_t		space,
-	uint32_t		copy_num,
 	const page_size_t&	page_size,
 	mtr_t*			mtr)
 {
 	ut_ad(mtr != NULL);
-	ut_ad(copy_num < MAX_SDI_COPIES);
 
-	buf_block_t*	block2 = buf_page_get(
-		page_id_t(space, 2), page_size, RW_S_LATCH, mtr);
-	buf_block_dbg_add_level(block2, SYNC_FSP_PAGE);
-
-	page_t*	page2 = buf_block_get_frame(block2);
-
-	page_no_t	root_from_page2 = mach_read_from_4(
-		page2 + FIL_SDI_ROOT_PAGE_NUM + 4 * copy_num);
-
-	buf_block_t*	block1 = buf_page_get(
-		page_id_t(space, 1), page_size, RW_S_LATCH, mtr);
-	buf_block_dbg_add_level(block1, SYNC_IBUF_BITMAP);
-
-	page_t*	page1 = buf_block_get_frame(block1);
-
-	page_no_t	root_from_page1 = mach_read_from_4(
-		page1 + FIL_SDI_ROOT_PAGE_NUM + 4 * copy_num);
-
-	if (root_from_page1 != root_from_page2) {
-		ib::error() << "SDI Root page number for copy number "
-			<< copy_num << " mismatches. From page 1: "
-			<< root_from_page1 << " From page 2: "
-			<< root_from_page2;
-		ut_ad(0);
-	}
-
-	return(root_from_page1);
-}
-
-/** Write SDI Index root page num to page 1 or 2 of tablespace.
-@param[in]	space		tablespace id
-@param[in]	page_num	page number in tablespace
-@param[in]	page_size	size of page
-@param[in]	root_page_num_0	root page number of SDI copy 0
-@param[in]	root_page_num_1	root page number of SDI copy 1
-@param[in,out]	mtr		mini-transaction */
-void
-fsp_sdi_write_root_to_page(
-	space_id_t		space,
-	page_no_t		page_num,
-	const page_size_t&	page_size,
-	page_no_t		root_page_num_0,
-	page_no_t		root_page_num_1,
-	mtr_t*			mtr)
-{
-	/* We store SDI Index root page numbers only in page 1 & 2 of a
-	tablespace */
-	ut_ad(page_num == FSP_IBUF_BITMAP_OFFSET
-	      || page_num == FSP_FIRST_INODE_PAGE_NO);
-
-	buf_block_t*	block = buf_page_get(page_id_t(space, page_num),
-					     page_size, RW_SX_LATCH, mtr);
-
-	buf_block_dbg_add_level(block, page_num == FSP_IBUF_BITMAP_OFFSET
-		? SYNC_IBUF_BITMAP : SYNC_FSP_PAGE);
+	buf_block_t*	block = buf_page_get(
+		page_id_t(space, 0), page_size, RW_S_LATCH, mtr);
+	buf_block_dbg_add_level(block, SYNC_FSP_PAGE);
 
 	page_t*	page = buf_block_get_frame(block);
 
-	mlog_write_ulint(FIL_SDI_ROOT_PAGE_NUM + page,
-			 root_page_num_0, MLOG_4BYTES, mtr);
+	ulint sdi_offset = fsp_header_get_sdi_offset(page_size);
 
-	mlog_write_ulint(FIL_SDI_ROOT_PAGE_NUM + page + 4,
-			 root_page_num_1, MLOG_4BYTES, mtr);
+	uint32_t	sdi_ver = mach_read_from_4(
+		page + sdi_offset);
+
+	if (sdi_ver != SDI_VERSION) {
+		ib::warn() << "SDI version mismatch. Expected: " << SDI_VERSION
+			<< " Current version: " << sdi_ver;
+	}
+	ut_ad(sdi_ver == SDI_VERSION);
+
+	page_no_t	root = mach_read_from_4(
+		page + sdi_offset + 4);
+
+	ut_ad(root > 2);
+
+	return(root);
 }
-#endif /* !UNIV_HOTBACKUP */
+
+/** Write SDI Index root page num to page 0 of tablespace.
+@param[in,out]	page		page 0 frame
+@param[in]	page_size	size of page
+@param[in]	root_page_num	root page number of SDI
+@param[in,out]	mtr		mini-transaction */
+void
+fsp_sdi_write_root_to_page(
+	page_t*			page,
+	const page_size_t&	page_size,
+	page_no_t		root_page_num,
+	mtr_t*			mtr)
+{
+	ut_ad(page_get_page_no(page) == 0);
+
+	ulint	sdi_offset = fsp_header_get_sdi_offset(page_size);
+
+	/* Write SDI version here. */
+	mlog_write_ulint(page + sdi_offset,
+			 SDI_VERSION, MLOG_4BYTES, mtr);
+
+	/* Write SDI root page number */
+	mlog_write_ulint(page + sdi_offset + 4,
+			 root_page_num, MLOG_4BYTES, mtr);
+}
 
 #ifdef UNIV_DEBUG
 /** Print the file segment header to the given output stream.
@@ -4415,8 +4394,11 @@ fsp_check_tablespace_size(space_id_t space_id)
 
 	mtr_start(&mtr);
 
-	fil_space_t* space = mtr_x_lock_space(space_id, &mtr);
-        const page_size_t       page_size(space->flags);
+	fil_space_t*	space = fil_space_get(space_id);
+
+	mtr_x_lock_space(space, &mtr);
+
+	const page_size_t page_size(space->flags);
 
 	fsp_header_t* space_header = fsp_get_space_header(
 		space_id, page_size, &mtr);
@@ -4424,12 +4406,49 @@ fsp_check_tablespace_size(space_id_t space_id)
 	xdes_t* descr = xdes_get_descriptor_with_space_hdr(
 		space_header, space->id, 0, &mtr);
 
-        ulint	n_used = xdes_get_n_used(descr, &mtr);
-        ulint	size = mach_read_from_4(space_header + FSP_SIZE);
-        ut_a(n_used <= size);
+	ulint	n_used = xdes_get_n_used(descr, &mtr);
+	ulint	size = mach_read_from_4(space_header + FSP_SIZE);
+	ut_a(n_used <= size);
 
 	mtr_commit(&mtr);
 
 	return(true);
 }
 #endif /* UNIV_DEBUG */
+
+/** Determine if the tablespace has SDI.
+@param[in]	space_id	Tablespace id
+@return DB_SUCCESS if SDI is present else DB_ERROR
+or DB_TABLESPACE_NOT_FOUND */
+dberr_t
+fsp_has_sdi(space_id_t space_id)
+{
+	fil_space_t*	space = fil_space_acquire_silent(space_id);
+	if (space == NULL) {
+		DBUG_EXECUTE_IF("ib_sdi",
+			ib::warn() << "Tablespace doesn't exist for space_id: "
+				<< space_id;
+			ib::warn() << "Is the tablespace dropped or discarded";
+		);
+		return(DB_TABLESPACE_NOT_FOUND);
+	}
+
+#ifdef UNIV_DEBUG
+	mtr_t	mtr;
+	mtr.start();
+	ut_ad(fsp_sdi_get_root_page_num(
+		space_id, page_size_t(space->flags),
+		&mtr) != 0);
+	mtr.commit();
+#endif /* UNIV_DEBUG */
+
+	fil_space_release(space);
+	DBUG_EXECUTE_IF("ib_sdi",
+		if (!FSP_FLAGS_HAS_SDI(space->flags)) {
+			ib::warn() << "SDI doesn't exist in tablespace: "
+				<< space->name;
+		}
+	);
+	return(FSP_FLAGS_HAS_SDI(space->flags) ? DB_SUCCESS : DB_ERROR);
+}
+#endif /* !UNIV_HOTBACKUP */

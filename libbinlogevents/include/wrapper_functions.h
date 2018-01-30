@@ -1,13 +1,20 @@
 /* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -53,11 +60,14 @@ extern PSI_memory_key key_memory_log_event;
 
 #ifdef HAVE_MYSYS
 #define BAPI_ASSERT(x) DBUG_ASSERT(x)
+#define BAPI_PRINT(name, params) DBUG_PRINT(name, params)
 #else
 #define BAPI_ASSERT(x) assert(x)
+#define BAPI_PRINT(name, params)
 #endif
 #else
 #define BAPI_ASSERT(x) do { } while(0)
+#define BAPI_PRINT(name, params)
 #endif
 
 #ifndef HAVE_STRNDUP
@@ -151,7 +161,7 @@ inline void* bapi_memdup(const void* source, size_t len)
   @param flags        flags to pass to MySQL server my_malloc functions
   @return Void pointer to the allocated chunk of memory
 */
-inline void * bapi_malloc(size_t size, int flags)
+inline void * bapi_malloc(size_t size, int flags MY_ATTRIBUTE((unused)))
 {
   void * dest= NULL;
 #ifdef HAVE_MYSYS

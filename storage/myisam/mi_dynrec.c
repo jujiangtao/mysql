@@ -1,13 +1,20 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -34,8 +41,8 @@
 #include "my_io.h"
 #include "my_macros.h"
 #include "my_pointer_arithmetic.h"
-#include "myisam_sys.h"
-#include "myisamdef.h"
+#include "storage/myisam/myisam_sys.h"
+#include "storage/myisam/myisamdef.h"
 
 /* Enough for comparing if number is zero */
 static char zero_string[]={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
@@ -420,7 +427,7 @@ static int _mi_find_writepos(MI_INFO *info,
   {
     /* No deleted blocks;  Allocate a new block */
     *filepos=info->state->data_file_length;
-    if ((tmp=reclength+3 + MY_TEST(reclength >= (65520-3))) <
+    if ((tmp=reclength+3 + (reclength >= (65520-3))) <
 	info->s->base.min_block_length)
       tmp= info->s->base.min_block_length;
     else
@@ -867,8 +874,8 @@ static int update_dynamic_record(MI_INFO *info, my_off_t filepos, uchar *record,
       length=(ulong) (block_info.filepos-filepos) + block_info.block_len;
       if (length < reclength)
       {
-	uint tmp=MY_ALIGN(reclength - length + 3 +
-			  MY_TEST(reclength >= 65520L),MI_DYN_ALIGN_SIZE);
+	uint tmp=MY_ALIGN(reclength - length + 3 + (reclength >= 65520L),
+                          MI_DYN_ALIGN_SIZE);
 	/* Don't create a block bigger than MI_MAX_BLOCK_LENGTH */
 	tmp= MY_MIN(length+tmp, MI_MAX_BLOCK_LENGTH)-length;
 	/* Check if we can extend this block */
@@ -1029,7 +1036,7 @@ uint _mi_rec_pack(MI_INFO *info, uchar *to,
 	    pos++;
 	}
 	new_length=(uint) (end-pos);
-	if (new_length +1 + MY_TEST(rec->length > 255 && new_length > 127)
+	if (new_length +1 + (rec->length > 255 && new_length > 127)
 	    < length)
 	{
 	  if (rec->length > 255 && new_length > 127)
@@ -1149,7 +1156,7 @@ bool _mi_rec_check(MI_INFO *info,const uchar *record, uchar *rec_buff,
 	    pos++;
 	}
 	new_length=(uint) (end-pos);
-	if (new_length +1 + MY_TEST(rec->length > 255 && new_length > 127)
+	if (new_length +1 + (rec->length > 255 && new_length > 127)
 	    < length)
 	{
 	  if (!(flag & bit))
@@ -1201,7 +1208,8 @@ bool _mi_rec_check(MI_INFO *info,const uchar *record, uchar *rec_buff,
     else
       to+= length;
   }
-  if (packed_length != (uint) (to - rec_buff) + MY_TEST(info->s->calc_checksum) ||
+  if (packed_length != (uint) (to - rec_buff) +
+                                (info->s->calc_checksum != NULL) ||
       (bit != 1 && (flag & ~(bit - 1))))
     goto err;
   if (with_checksum && ((uchar) info->checksum != (uchar) *to))
@@ -1735,7 +1743,7 @@ int _mi_read_rnd_dynamic_record(MI_INFO *info, uchar *buf,
   {
     if (share->tot_locks == 0)
     {
-      if (my_lock(share->kfile,F_RDLCK,0L,F_TO_EOF,
+      if (my_lock(share->kfile,F_RDLCK,
 		  MYF(MY_SEEK_NOT_DONE) | info->lock_wait))
 	DBUG_RETURN(my_errno());
     }

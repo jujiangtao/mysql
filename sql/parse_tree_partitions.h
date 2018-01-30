@@ -1,13 +1,20 @@
 /* Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -20,14 +27,13 @@
 #include <sys/types.h>
 
 #include "lex_string.h"
-#include "mem_root_array.h"
 #include "my_base.h"
 #include "my_inttypes.h"
-#include "parse_tree_helpers.h"
-#include "parse_tree_node_base.h"
-#include "partition_element.h"
-#include "partition_info.h"
-#include "sql_udf.h"
+#include "sql/mem_root_array.h"
+#include "sql/parse_tree_helpers.h"
+#include "sql/parse_tree_node_base.h"
+#include "sql/partition_element.h"
+#include "sql/partition_info.h"
 
 class Item;
 class THD;
@@ -46,11 +52,21 @@ struct Partition_parse_context : public Parse_context,
   Partition_parse_context(THD * const thd,
                           partition_info *part_info,
                           partition_element *current_partition,
-                          partition_element *curr_part_elem);
+                          partition_element *curr_part_elem,
+                          bool is_add_or_reorganize_partition);
 
-  Partition_parse_context(THD *thd, partition_info *part_info)
-  : Partition_parse_context(thd, part_info, NULL, NULL)
+  Partition_parse_context(THD *thd,
+                          partition_info *part_info,
+                          bool is_add_or_reorganize_partition)
+    : Partition_parse_context(thd, part_info, NULL, NULL,
+                              is_add_or_reorganize_partition)
   {}
+
+  /**
+    True for "ALTER TABLE ADD PARTITION" and "ALTER TABLE REORGANIZE PARTITION"
+    statements, otherwise false.
+  */
+  const bool is_add_or_reorganize_partition;
 };
 
 
@@ -696,71 +712,6 @@ public:
     opt_sub_part(opt_sub_part),
     part_defs_pos(part_defs_pos),
     part_defs(part_defs)
-  {}
-
-  virtual bool contextualize(Parse_context *pc);
-};
-
-
-/**
-  Node for the @SQL{ALTER TABLE ADD PARTITION} statement
-
-  @ingroup ptn_alter_table
-*/
-class PT_add_partition : public Parse_tree_node
-{
-  typedef Parse_tree_node super;
-
-  const bool no_write_to_binlog;
-
-public:
-  explicit PT_add_partition(bool no_write_to_binlog)
-  : no_write_to_binlog(no_write_to_binlog)
-  {}
-
-  virtual bool contextualize(Parse_context *pc);
-};
-
-
-/**
-  Node for the @SQL{ALTER TABLE ADD PARTITION (@<partition list@>)} statement
-
-  @ingroup ptn_alter_table
-*/
-class PT_add_partition_def_list : public PT_add_partition
-{
-  typedef PT_add_partition super;
-
-  partition_info part_info;
-
-  Trivial_array<PT_part_definition *> *def_list;
-
-public:
-  PT_add_partition_def_list(bool no_write_to_binlog,
-                            Trivial_array<PT_part_definition *> *def_list)
-  : super(no_write_to_binlog), def_list(def_list)
-  {}
-
-  virtual bool contextualize(Parse_context *pc);
-};
-
-
-/**
-  Node for the @SQL{ALTER TABLE ADD PARTITION PARTITIONS (@<n>@)} statement
-
-  @ingroup ptn_alter_table
-*/
-class PT_add_partition_num : public PT_add_partition
-{
-  typedef PT_add_partition super;
-
-  partition_info part_info;
-
-  const uint num_parts;
-
-public:
-  PT_add_partition_num(bool no_write_to_binlog, uint num_parts)
-  : super(no_write_to_binlog), num_parts(num_parts)
   {}
 
   virtual bool contextualize(Parse_context *pc);

@@ -1,42 +1,50 @@
 /* Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "dd_event.h"
+#include "sql/dd/dd_event.h"
 
 #include <memory>
+#include <string>
 
-#include "dd/cache/dictionary_client.h"  // dd::cache::Dictionary_client
-#include "dd/types/schema.h"
-#include "event_parse_data.h"   // Event_parse_data
-#include "key.h"
 #include "lex_string.h"
-#include "log.h"                // sql_print_error
 #include "my_dbug.h"
-#include "my_sys.h"
+#include "my_loglevel.h"
+#include "mysql/components/services/log_shared.h"
 #include "mysqld_error.h"
-#include "sp_head.h"            // sp_head
-#include "sql_admin.h"
-#include "sql_class.h"          // THD
-#include "sql_db.h"             // get_default_db_collation
-#include "sql_lex.h"
+#include "sql/dd/cache/dictionary_client.h" // dd::cache::Dictionary_client
+#include "sql/dd/types/schema.h"
+#include "sql/event_parse_data.h" // Event_parse_data
+#include "sql/log.h"
+#include "sql/sql_class.h"      // THD
+#include "sql/sql_connect.h"
+#include "sql/sql_db.h"         // get_default_db_collation
+#include "sql/system_variables.h"
+#include "sql/tztime.h"         // Time_zone
 #include "sql_string.h"
-#include "system_variables.h"
-#include "tztime.h"             // Time_zone
 
 
 namespace dd {
+
+static const char *failsafe_object= "Event status option";
 
 int get_old_status(Event::enum_event_status event_status)
 {
@@ -51,7 +59,7 @@ int get_old_status(Event::enum_event_status event_status)
   }
 
   /* purecov: begin deadcode */
-  sql_print_error("Error: Invalid Event status option");
+  LogErr(ERROR_LEVEL, ER_DD_FAILSAFE, failsafe_object);
   DBUG_ASSERT(false);
 
   return Event_parse_data::DISABLED;
@@ -81,7 +89,7 @@ static Event::enum_event_status get_enum_event_status(int event_status)
   }
 
   /* purecov: begin deadcode */
-  sql_print_error("Error: Invalid Event status option");
+  LogErr(ERROR_LEVEL, ER_DD_FAILSAFE, failsafe_object);
   DBUG_ASSERT(false);
 
   return Event::ES_DISABLED;
@@ -100,7 +108,7 @@ int get_old_on_completion(Event::enum_on_completion on_completion)
   }
 
   /* purecov: begin deadcode */
-  sql_print_error("Error: Invalid Event status option");
+  LogErr(ERROR_LEVEL, ER_DD_FAILSAFE, failsafe_object);
   DBUG_ASSERT(false);
 
   return Event_parse_data::ON_COMPLETION_DROP;
@@ -129,7 +137,7 @@ static Event::enum_on_completion get_on_completion(int on_completion)
   }
 
   /* purecov: begin deadcode */
-  sql_print_error("Error: Invalid Event status option");
+  LogErr(ERROR_LEVEL, ER_DD_FAILSAFE, failsafe_object);
   DBUG_ASSERT(false);
 
   return Event::OC_DROP;
@@ -184,7 +192,7 @@ interval_type get_old_interval_type(Event::enum_interval_field interval_field)
   }
 
   /* purecov: begin deadcode */
-  sql_print_error("Error: Invalid Event status option");
+  LogErr(ERROR_LEVEL, ER_DD_FAILSAFE, failsafe_object);
   DBUG_ASSERT(false);
 
   return INTERVAL_YEAR;
@@ -251,10 +259,11 @@ static Event::enum_interval_field get_enum_interval_field(
   }
 
   /* purecov: begin deadcode */
-  sql_print_error("Error: Invalid Event status option");
+  LogErr(ERROR_LEVEL, ER_DD_FAILSAFE, failsafe_object);
   DBUG_ASSERT(false);
 
   return Event::IF_YEAR;
+  /* purecov: end deadcode */
 }
 
 
@@ -262,6 +271,7 @@ static Event::enum_interval_field get_enum_interval_field(
   Set Event attributes.
 
   @param    thd               THD context.
+  @param    schema            Schema containing the event.
   @param    event             Pointer to Event Object.
   @param    event_name        Event name.
   @param    event_body        Event body.
@@ -272,7 +282,9 @@ static Event::enum_interval_field get_enum_interval_field(
                               else false.
 */
 
-static void set_event_attributes(THD *thd, Event *event,
+static void set_event_attributes(THD *thd,
+                                 const dd::Schema &schema,
+                                 Event *event,
                                  const String_type &event_name,
                                  const String_type &event_body,
                                  const String_type &event_body_utf8,
@@ -351,7 +363,7 @@ static void set_event_attributes(THD *thd, Event *event,
     thd->variables.collation_connection->number);
 
   const CHARSET_INFO *db_cl= nullptr;
-  if (get_default_db_collation(thd, event_data->dbname.str, &db_cl))
+  if (get_default_db_collation(schema, &db_cl))
   {
     DBUG_PRINT("error", ("get_default_db_collation failed."));
     // Obtain collation from thd and proceed.
@@ -376,7 +388,7 @@ bool create_event(THD *thd,
   std::unique_ptr<dd::Event> event(schema.create_event(thd));
 
   // Set Event attributes.
-  set_event_attributes(thd, event.get(), event_name, event_body,
+  set_event_attributes(thd, schema, event.get(), event_name, event_body,
                        event_body_utf8, definer, event_data, false);
 
   DBUG_RETURN(thd->dd_client()->store(event.get()));
@@ -384,6 +396,7 @@ bool create_event(THD *thd,
 
 
 bool update_event(THD *thd, Event *event,
+                  const dd::Schema &schema,
                   const dd::Schema *new_schema,
                   const String_type &new_event_name,
                   const String_type &new_event_body,
@@ -402,7 +415,7 @@ bool update_event(THD *thd, Event *event,
     event->set_schema_id(new_schema->id());
 
   // Set the altered event attributes.
-  set_event_attributes(thd, event,
+  set_event_attributes(thd, (new_schema != nullptr) ? *new_schema : schema, event,
                        new_event_name != "" ? new_event_name : event->name(),
                        new_event_body, new_event_body_utf8, definer,
                        event_data, true);

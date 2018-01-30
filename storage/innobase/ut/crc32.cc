@@ -3,17 +3,25 @@
 Copyright (c) 2009, 2010 Facebook, Inc. All Rights Reserved.
 Copyright (c) 2011, 2017, Oracle and/or its affiliates. All Rights Reserved.
 
-This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
 
-This program is distributed in the hope that it will be useful, but WITHOUT
-ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
-You should have received a copy of the GNU General Public License along with
-this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License, version 2.0, for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 *****************************************************************************/
 
@@ -82,13 +90,40 @@ mysys/my_perf.c, contributed by Facebook under the following license.
 other files in library. The code in this file is used to make a library for
 external tools. */
 
-// First include (the generated) my_config.h, to get correct platform defines.
 #include "my_config.h"
+
 #include <string.h>
 
-#if defined(_WIN32)
-#include <intrin.h>
+#include "my_compiler.h"
+#include "my_inttypes.h"
+
+#if defined(__GNUC__) && defined(__x86_64__)
+#define gnuc64
 #endif
+
+#if defined(gnuc64) || defined(_WIN32)
+/*
+  GCC 4.8 can't include intrinsic headers without -msse4.2.
+  4.9 and newer can, so we can remove this test once we no longer
+  support 4.8.
+*/
+#if defined(__SSE4_2__) || defined(__clang__) || !defined(__GNUC__) || __GNUC__ >= 5 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 9)
+#include <nmmintrin.h>
+#else
+// GCC 4.8 without -msse4.2.
+MY_ATTRIBUTE((target("sse4.2")))
+ALWAYS_INLINE uint32 _mm_crc32_u8(uint32 __C, uint32 __V)
+{
+  return __builtin_ia32_crc32qi(__C, __V);
+}
+
+MY_ATTRIBUTE((target("sse4.2")))
+ALWAYS_INLINE uint64 _mm_crc32_u64(uint64 __C, uint64 __V)
+{
+  return __builtin_ia32_crc32di(__C, __V);
+}
+#endif
+#endif  // defined(gnuc64) || defined(_WIN32)
 
 #include "univ.i"
 #include "ut0crc32.h"
@@ -128,10 +163,9 @@ ut_crc32_swap_byteorder(
 The CRC32 instructions are part of the SSE4.2 instruction set. */
 bool	ut_crc32_cpu_enabled = false;
 
-#if defined(__GNUC__) && defined(__x86_64__)
-#define gnuc64
+#if defined(_WIN32)
+#include <intrin.h>
 #endif
-
 #if defined(gnuc64) || defined(_WIN32)
 /** Checks whether the CPU has the CRC32 instructions (part of the SSE4.2
 instruction set).
@@ -189,6 +223,7 @@ when the function ends it will contain the new checksum
 @param[in,out]	data	data to be checksummed, the pointer will be advanced
 with 1 byte
 @param[in,out]	len	remaining bytes, it will be decremented with 1 */
+MY_ATTRIBUTE((target("sse4.2")))
 inline
 void
 ut_crc32_8_hw(
@@ -196,18 +231,7 @@ ut_crc32_8_hw(
 	const byte**	data,
 	ulint*		len)
 {
-#if defined(gnuc64)
-	asm("crc32b %1, %0"
-	    /* output operands */
-	    : "+r" (*crc)
-	    /* input operands */
-	    : "rm" ((*data)[0]));
-#elif defined(_WIN32)
-	*crc = _mm_crc32_u8(*crc, (*data)[0]);
-#else
-#error Dont know how to handle non-gnuc64 and non-windows platforms.
-#endif
-
+	*crc = _mm_crc32_u8(static_cast<unsigned>(*crc), (*data)[0]);
 	(*data)++;
 	(*len)--;
 }
@@ -216,6 +240,7 @@ ut_crc32_8_hw(
 @param[in]	crc	crc32 checksum so far
 @param[in]	data	data to be checksummed
 @return resulting checksum of crc + crc(data) */
+MY_ATTRIBUTE((target("sse4.2")))
 inline
 uint64_t
 ut_crc32_64_low_hw(
@@ -223,19 +248,7 @@ ut_crc32_64_low_hw(
 	uint64_t	data)
 {
 	uint64_t	crc_64bit = crc;
-
-#if defined(gnuc64)
-	asm("crc32q %1, %0"
-	    /* output operands */
-	    : "+r" (crc_64bit)
-	    /* input operands */
-	    : "rm" (data));
-#elif defined(_WIN32)
 	crc_64bit = _mm_crc32_u64(crc_64bit, data);
-#else
-#error Dont know how to handle non-gnuc64 and non-windows platforms.
-#endif
-
 	return(crc_64bit);
 }
 
@@ -245,6 +258,7 @@ when the function ends it will contain the new checksum
 @param[in,out]	data	data to be checksummed, the pointer will be advanced
 with 8 bytes
 @param[in,out]	len	remaining bytes, it will be decremented with 8 */
+MY_ATTRIBUTE((target("sse4.2")))
 inline
 void
 ut_crc32_64_hw(
@@ -305,6 +319,7 @@ ut_crc32_64_legacy_big_endian_hw(
 @param[in]	buf	data over which to calculate CRC32
 @param[in]	len	data length
 @return CRC-32C (polynomial 0x11EDC6F41) */
+MY_ATTRIBUTE((target("sse4.2")))
 static
 uint32_t
 ut_crc32_hw(

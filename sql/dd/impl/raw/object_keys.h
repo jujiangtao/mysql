@@ -1,17 +1,24 @@
 /* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef DD__OBJECT_KEYS_INCLUDED
 #define DD__OBJECT_KEYS_INCLUDED
@@ -20,10 +27,10 @@
 #include <sys/types.h>
 #include <string>
 
-#include "dd/impl/object_key.h"  // dd::Object_key
-#include "dd/object_id.h"        // dd::Object_id
-#include "m_ctype.h"
 #include "my_inttypes.h"
+#include "sql/dd/impl/object_key.h" // dd::Object_key
+#include "sql/dd/object_id.h"    // dd::Object_id
+#include "sql/dd/string_type.h"
 
 namespace dd {
 
@@ -227,7 +234,7 @@ public:
                     Object_id private_id)
    :m_index_no(index_no),
     m_engine_column_no(engine_column_no),
-    m_engine(&engine),
+    m_engine(engine),
     m_private_id_column_no(private_id_column_no),
     m_private_id(private_id)
   { }
@@ -242,7 +249,7 @@ public:
   {
     m_index_no= index_no;
     m_engine_column_no= engine_column_no;
-    m_engine= &engine;
+    m_engine= engine;
     m_private_id_column_no= private_id_column_no;
     m_private_id= private_id;
   }
@@ -253,13 +260,15 @@ public:
   virtual String_type str() const;
 
   bool operator <(const Se_private_id_key &rhs) const
-  { return m_private_id < rhs.m_private_id; }
+  { return m_private_id < rhs.m_private_id ? true :
+      rhs.m_private_id < m_private_id ? false :
+      m_engine < rhs.m_engine; }
 
 private:
   int m_index_no;
 
   int m_engine_column_no;
-  const String_type *m_engine;
+  String_type m_engine;
 
   int m_private_id_column_no;
   Object_id m_private_id;
@@ -468,13 +477,15 @@ public:
   Routine_name_key()
   { }
 
-  Routine_name_key(int container_id_column_no,
+  Routine_name_key(int index_no,
+                   int container_id_column_no,
                    Object_id container_id,
                    int type_column_no,
                    uint type,
                    int name_column_no,
                    const String_type &object_name)
-   :m_container_id_column_no(container_id_column_no),
+   :m_index_no(index_no),
+    m_container_id_column_no(container_id_column_no),
     m_type_column_no(type_column_no),
     m_name_column_no(name_column_no),
     m_container_id(container_id),
@@ -483,13 +494,15 @@ public:
   { }
 
   // Update a preallocated instance.
-  void update(int container_id_column_no,
+  void update(int index_no,
+              int container_id_column_no,
               Object_id container_id,
               int type_column_no,
               uint type,
               int name_column_no,
               const String_type &object_name)
   {
+    m_index_no= index_no;
     m_container_id_column_no= container_id_column_no;
     m_type_column_no= type_column_no;
     m_name_column_no= name_column_no;
@@ -506,6 +519,7 @@ public:
   bool operator <(const Routine_name_key &rhs) const;
 
 private:
+  int m_index_no;
   int m_container_id_column_no;
   int m_type_column_no;
   int m_name_column_no;
@@ -517,18 +531,17 @@ private:
 
 ///////////////////////////////////////////////////////////////////////////
 
-// Range key to find views using base table/view in mysql.view_table_usage table
-// or views using stored function in mysql.view_routine_usage table.
-class View_usage_range_key : public Object_key
+// Range key to find rows using catalog/schema/table name.
+class Table_reference_range_key : public Object_key
 {
 public:
-  View_usage_range_key(int index_no,
-                       int catalog_name_column_no,
-                       const String_type &catalog_name,
-                       int schema_name_column_no,
-                       const String_type &schema_name,
-                       int table_name_column_no,
-                       const String_type &table_name)
+  Table_reference_range_key(int index_no,
+                            int catalog_name_column_no,
+                            const String_type &catalog_name,
+                            int schema_name_column_no,
+                            const String_type &schema_name,
+                            int table_name_column_no,
+                            const String_type &table_name)
     :m_index_no(index_no),
      m_catalog_name_column_no(catalog_name_column_no),
      m_catalog_name(catalog_name),
@@ -555,6 +568,41 @@ private:
   int m_table_name_column_no;
   String_type m_table_name;
 };
+
+///////////////////////////////////////////////////////////////////////////
+
+// Range key to find sub partition entries by table id and parent partition
+// id in mysql.partitions.
+class Sub_partition_range_key : public Object_key
+{
+public:
+  Sub_partition_range_key(int index_no,
+                       int table_id_column_no,
+                       const Object_id table_id,
+                       int parent_partition_id_column_no,
+                       const Object_id parent_partition_id)
+   :m_index_no(index_no),
+    m_table_id_column_no(table_id_column_no),
+    m_table_id(table_id),
+    m_parent_partition_id_column_no(parent_partition_id_column_no),
+    m_parent_partition_id(parent_partition_id)
+  { }
+
+public:
+  virtual Raw_key *create_access_key(Raw_table *db_table) const;
+
+  virtual String_type str() const;
+
+private:
+  int m_index_no;
+
+  int m_table_id_column_no;
+  Object_id m_table_id;
+
+  int m_parent_partition_id_column_no;
+  Object_id m_parent_partition_id;
+};
+
 
 ///////////////////////////////////////////////////////////////////////////
 }

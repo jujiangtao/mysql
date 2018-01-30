@@ -1,37 +1,39 @@
 /* Copyright (c) 2012, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA */
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include <gtest/gtest.h>
 #include <algorithm>
 #include <memory>
 #include <vector>
 
-#include "filesort_utils.h"
 #include "my_inttypes.h"
-#include "test_utils.h"
+#include "sql/filesort_utils.h"
+#include "unittest/gunit/test_utils.h"
 
 namespace filesort_compare_unittest {
 
 /*
   Below are some performance microbenchmarks in order to compare our sorting
   options: 
-  my_qsort2        - requires no extra memory, uses insert sort on small ranges,
-                     uses quicksort on larger ranges
-  radixsort -        requires extra memory: array of n pointers,
-                     seems to be quite fast on intel *when it is appliccable*:
-                     if (size <= 20 && items >= 1000 && items < 100000)
   std::sort -        requires no extra memory,
                      typically implemented with introsort/insertion sort
   std::stable_sort - requires extra memory: array of n pointers,
@@ -339,30 +341,6 @@ TEST_F(FileSortCompareTest, SetUpOnly)
   for (int ix= 0; ix < num_iterations; ++ix)
   {
     std::vector<uchar*> keys(sort_keys, sort_keys + num_records);
-  }
-}
-
-// Disabled because radixsort takes forever when benchmarking.
-TEST_F(FileSortCompareTest, DISABLED_RadixSort)
-{
-  for (int ix= 0; ix < num_iterations; ++ix)
-  {
-    std::vector<uchar*> keys(sort_keys, sort_keys + num_records);
-    std::pair<uchar**, ptrdiff_t> buffer=
-      std::get_temporary_buffer<uchar*>(num_records);
-    radixsort_for_str_ptr(&keys[0], num_records, record_size, buffer.first);
-    std::return_temporary_buffer(buffer.first);
-  }
-}
-
-TEST_F(FileSortCompareTest, MyQsort)
-{
-  size_t size= record_size;
-  for (int ix= 0; ix < num_iterations; ++ix)
-  {
-    std::vector<uchar*> keys(sort_keys, sort_keys + num_records);
-    my_qsort2((uchar*) &keys[0], num_records, sizeof(uchar*),
-              my_testing::get_ptr_compare(record_size), &size);
   }
 }
 

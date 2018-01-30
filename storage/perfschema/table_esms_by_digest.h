@@ -1,17 +1,24 @@
 /* Copyright (c) 2010, 2017, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
   along with this program; if not, write to the Free Software
-  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA
+  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
   */
 
 #ifndef TABLE_ESMS_BY_DIGEST_H
@@ -25,8 +32,8 @@
 #include <sys/types.h>
 
 #include "my_inttypes.h"
-#include "pfs_digest.h"
-#include "table_helper.h"
+#include "storage/perfschema/pfs_digest.h"
+#include "storage/perfschema/table_helper.h"
 
 /**
   @addtogroup performance_schema_tables
@@ -77,6 +84,13 @@ struct row_esms_by_digest
   ulonglong m_p99;
   /** Column QUANTILE_999. */
   ulonglong m_p999;
+
+  /** Column QUERY_SAMPLE_TEXT. */
+  String m_query_sample;
+  /** Column QUERY_SAMPLE_SEEN. */
+  ulonglong m_query_sample_seen;
+  /** Column QUERY_SAMPLE_TIMER_WAIT. */
+  ulonglong m_query_sample_timer_wait;
 };
 
 /** Table PERFORMANCE_SCHEMA.EVENTS_STATEMENTS_SUMMARY_BY_DIGEST. */
@@ -85,7 +99,7 @@ class table_esms_by_digest : public PFS_engine_table
 public:
   /** Table share */
   static PFS_engine_table_share m_share;
-  static PFS_engine_table *create();
+  static PFS_engine_table *create(PFS_engine_table_share *);
   static int delete_all_rows();
   static ha_rows get_row_count();
 
@@ -116,8 +130,8 @@ protected:
 private:
   /** Table share lock. */
   static THR_LOCK m_table_lock;
-  /** Fields definition. */
-  static TABLE_FIELD_DEF m_field_def;
+  /** Table definition. */
+  static Plugin_table m_table_def;
 
   /** Current row. */
   row_esms_by_digest m_row;

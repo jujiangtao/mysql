@@ -1,13 +1,20 @@
 /* Copyright (c) 2005, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -25,12 +32,13 @@
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
-#include "mysql/mysql_lex_string.h"
 #include "mysql/service_my_snprintf.h"
+#include "mysql/udf_registration_types.h"
 #include "mysql_com.h" /* MYSQL_ERRMSG_SIZE */
-#include "sql_alloc.h"
-#include "sql_list.h"
-#include "sql_plist.h" /* I_P_List */
+#include "sql/sql_alloc.h"
+#include "sql/sql_list.h"
+#include "sql/sql_plist.h" /* I_P_List */
+#include "sql/thr_malloc.h"
 #include "sql_string.h"                        /* String */
 
 class THD;
@@ -358,8 +366,7 @@ public:
     Mark the Diagnostics Area as 'DISABLED'.
 
     This is used in rare cases when the COM_ command at hand sends a response
-    in a custom format. One example is the query cache, another is
-    COM_STMT_PREPARE.
+    in a custom format. One example is COM_STMT_PREPARE.
   */
   void disable_status()
   {
@@ -471,7 +478,11 @@ public:
   void inc_current_row_for_condition()
   { m_current_row_for_condition++; }
 
-  /** Reset the current row counter. Start counting from the first row. */
+  /** Set the current row counter to point to the given row number. */
+  void set_current_row_for_condition(ulong rowno)
+  { m_current_row_for_condition= rowno; }
+
+  /** Reset the current row counter. Start counting from 1. */
   void reset_current_row_for_condition()
   { m_current_row_for_condition= 1; }
 
@@ -733,6 +744,10 @@ void push_warning_printf(THD *thd, Sql_condition::enum_severity_level severity,
     "The syntax 'BAD' is deprecated and will be removed in a
      future release. Please use 'GOOD' instead"
 
+  If a function is deprecated, it should implement
+  Item_func::is_deprecated() to return true to prevent the
+  usage of the function in the generated column expression.
+
   @param thd         Thread context. If NULL, warning is written
                      to the error log, otherwise the warning is
                      sent to the client.
@@ -750,6 +765,10 @@ void push_deprecated_warn(THD *thd, const char *old_syntax,
   Will result in a warning:
     "The syntax 'old' is deprecated and will be removed in a
      future release.
+
+  If a function is deprecated, it should implement
+  Item_func::is_deprecated() to return true to prevent the
+  usage of the function in the generated column expression.
 
   @param thd         Thread context. If NULL, warning is written
                      to the error log, otherwise the warning is

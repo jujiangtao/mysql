@@ -1,13 +1,20 @@
-/* Copyright (c) 2015, 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -20,8 +27,8 @@
 extern "C" {
 #endif
 
-#define dbg_node_set( s ) _dbg_node_set( s , #s )
-#define g_dbg_node_set( s ) _g_dbg_node_set( s , #s )
+#define dbg_node_set(s) _dbg_node_set(s, #s)
+#define g_dbg_node_set(s) _g_dbg_node_set(s, #s)
 bool_t equal_node_set(node_set x, node_set y);
 bool_t is_empty_node_set(node_set set);
 bool_t is_full_node_set(node_set set);
@@ -47,10 +54,8 @@ void remove_node(node_set set, node_no node);
 void xor_node_set(node_set *x, node_set const *y);
 node_set *realloc_node_set(node_set *set, u_int n);
 
-
 #ifdef __cplusplus
 }
 #endif
 
 #endif
-

@@ -3,16 +3,24 @@
 Copyright (c) 2016, 2017, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+the terms of the GNU General Public License, version 2.0, as published by the
+Free Software Foundation.
+
+This program is also distributed with certain software (including but not
+limited to OpenSSL) that is licensed under separate terms, as designated in a
+particular file or component or in included license documentation. The authors
+of MySQL hereby grant you an additional permission to link the program and
+your derivative works with the separately licensed software that they have
+included with MySQL.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+FOR A PARTICULAR PURPOSE. See the GNU General Public License, version 2.0,
+for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 *****************************************************************************/
 
@@ -32,7 +40,6 @@ Created 2014/01/16 Jimmy Yang
 #include "page0page.h"
 #include "page0zip.h"
 
-#ifndef UNIV_HOTBACKUP
 #include "btr0cur.h"
 #include "btr0pcur.h"
 #include "btr0sea.h"
@@ -42,8 +49,6 @@ Created 2014/01/16 Jimmy Yang
 #include "srv0mon.h"
 #include "trx0trx.h"
 #include "sync0sync.h"
-
-#endif /* UNIV_HOTBACKUP */
 
 /** Restore the stored position of a persistent cursor bufferfixing the page */
 static
@@ -1569,7 +1574,6 @@ rtr_copy_buf(
 	(another) thread while it was copied. */
 	memcpy(&matches->block.page, &block->page, sizeof(buf_page_t));
 	matches->block.frame = block->frame;
-#ifndef UNIV_HOTBACKUP
 	matches->block.unzip_LRU = block->unzip_LRU;
 
 	ut_d(matches->block.in_unzip_LRU_list = block->in_unzip_LRU_list);
@@ -1593,8 +1597,6 @@ rtr_copy_buf(
 
 	/* Use copy CTOR rather than assignment operator */
 	ut_d(new (&matches->block.debug_latch) rw_lock_t(block->debug_latch));
-
-#endif /* !UNIV_HOTBACKUP */
 }
 
 /****************************************************************//**
@@ -1761,22 +1763,26 @@ rtr_cur_search_with_match(
 				both CONTAIN and INTERSECT for either of
 				the search mode */
 				cmp = cmp_dtuple_rec_with_gis(
-					tuple, rec, offsets, PAGE_CUR_CONTAIN);
+					tuple, rec, offsets, PAGE_CUR_CONTAIN,
+					index->rtr_srs.get());
 
 				if (cmp != 0) {
 					cmp = cmp_dtuple_rec_with_gis(
 						tuple, rec, offsets,
-						PAGE_CUR_INTERSECT);
+						PAGE_CUR_INTERSECT,
+						index->rtr_srs.get());
 				}
 				break;
 			case PAGE_CUR_DISJOINT:
 				cmp = cmp_dtuple_rec_with_gis(
-					tuple, rec, offsets, mode);
+					tuple, rec, offsets, mode,
+					index->rtr_srs.get());
 
 				if (cmp != 0) {
 					cmp = cmp_dtuple_rec_with_gis(
 						tuple, rec, offsets,
-						PAGE_CUR_INTERSECT);
+						PAGE_CUR_INTERSECT,
+						index->rtr_srs.get());
 				}
 				break;
 			case PAGE_CUR_RTREE_INSERT:
@@ -1784,11 +1790,13 @@ rtr_cur_search_with_match(
 				double	area;
 
 				cmp = cmp_dtuple_rec_with_gis(
-					tuple, rec, offsets, PAGE_CUR_WITHIN);
+					tuple, rec, offsets, PAGE_CUR_WITHIN,
+					index->rtr_srs.get());
 
 				if (cmp != 0) {
 					increase = rtr_rec_cal_increase(
-						tuple, rec, offsets, &area);
+						tuple, rec, offsets, &area,
+						index->rtr_srs.get());
 					/* Once it goes beyond DBL_MAX,
 					it would not make sense to record
 					such value, just make it
@@ -1811,19 +1819,22 @@ rtr_cur_search_with_match(
 				break;
 			case PAGE_CUR_RTREE_GET_FATHER:
 				cmp = cmp_dtuple_rec_with_gis_internal(
-					tuple, rec, offsets);
+					tuple, rec, offsets,
+					index->rtr_srs.get());
 				break;
 			default:
 				/* WITHIN etc. */
 				cmp = cmp_dtuple_rec_with_gis(
-					tuple, rec, offsets, mode);
+					tuple, rec, offsets, mode,
+					index->rtr_srs.get());
 			}
 		} else {
 			/* At leaf level, INSERT should translate to LE */
 			ut_ad(mode != PAGE_CUR_RTREE_INSERT);
 
 			cmp = cmp_dtuple_rec_with_gis(
-				tuple, rec, offsets, mode);
+				tuple, rec, offsets, mode,
+				index->rtr_srs.get());
 		}
 
 		if (cmp == 0) {

@@ -4,31 +4,39 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 
 /* This file includes all reserved words and functions */
 
-#include "lex_symbol.h"
 #include "m_string.h"
+#include "sql/lex_symbol.h"
 
 /* We don't want to include sql_yacc.h into gen_lex_hash */
 #ifdef NO_YACC_SYMBOLS
 #define SYM_OR_NULL(A) 0
 #else
-#include "sql_hints.yy.h"
-#include <sql_yacc.h>
-#include "sql_hints.yy.h"
+
+#include "sql/sql_hints.yy.h"
+#include "sql/sql_yacc.h"
+
 #define SYM_OR_NULL(A) A
 #endif
 
@@ -103,6 +111,7 @@ static const SYMBOL symbols[] = {
   { SYM("BOOLEAN",                  BOOLEAN_SYM)},
   { SYM("BOTH",                     BOTH)},
   { SYM("BTREE",                    BTREE_SYM)},
+  { SYM("BUCKETS",                  BUCKETS_SYM)},
   { SYM("BY",                       BY)},
   { SYM("BYTE",                     BYTE_SYM)},
   { SYM("CACHE",                    CACHE_SYM)},
@@ -123,6 +132,7 @@ static const SYMBOL symbols[] = {
   { SYM("CIPHER",                   CIPHER_SYM)},
   { SYM("CLASS_ORIGIN",             CLASS_ORIGIN_SYM)},
   { SYM("CLIENT",                   CLIENT_SYM)},
+  { SYM("CLONE",                    CLONE_SYM)},
   { SYM("CLOSE",                    CLOSE_SYM)},
   { SYM("COALESCE",                 COALESCE)},
   { SYM("CODE",                     CODE_SYM)},
@@ -157,6 +167,7 @@ static const SYMBOL symbols[] = {
   { SYM("CREATE",                   CREATE)},
   { SYM("CROSS",                    CROSS)},
   { SYM("CUBE",                     CUBE_SYM)},
+  { SYM("CUME_DIST",                CUME_DIST_SYM)},
   { SYM("CURRENT",                  CURRENT_SYM)},
   { SYM("CURRENT_DATE",             CURDATE)},
   { SYM("CURRENT_TIME",             CURTIME)},
@@ -182,11 +193,13 @@ static const SYMBOL symbols[] = {
   { SYM("DEFAULT",                  DEFAULT_SYM)},
   { SYM("DEFAULT_AUTH",             DEFAULT_AUTH_SYM)},
   { SYM("DEFINER",                  DEFINER_SYM)},
+  { SYM("DEFINITION",               DEFINITION_SYM)},
   { SYM("DELAYED",                  DELAYED_SYM)},
   { SYM("DELAY_KEY_WRITE",          DELAY_KEY_WRITE_SYM)},
+  { SYM("DENSE_RANK",               DENSE_RANK_SYM)},
   { SYM("DESC",                     DESC)},
   { SYM("DESCRIBE",                 DESCRIBE)},
-  { SYM("DES_KEY_FILE",             DES_KEY_FILE)},
+  { SYM("DESCRIPTION",              DESCRIPTION_SYM)},
   { SYM("DETERMINISTIC",            DETERMINISTIC_SYM)},
   { SYM("DIAGNOSTICS",              DIAGNOSTICS_SYM)},
   { SYM("DIRECTORY",                DIRECTORY_SYM)},
@@ -206,6 +219,7 @@ static const SYMBOL symbols[] = {
   { SYM("EACH",                     EACH_SYM)},
   { SYM("ELSE",                     ELSE)},
   { SYM("ELSEIF",                   ELSEIF_SYM)},
+  { SYM("EMPTY",                    EMPTY_SYM)},
   { SYM("ENABLE",                   ENABLE_SYM)},
   { SYM("ENCLOSED",                 ENCLOSED)},
   { SYM("END",                      END)},
@@ -222,6 +236,7 @@ static const SYMBOL symbols[] = {
   { SYM("EVERY",                    EVERY_SYM)},
   { SYM("EXCEPT",                   EXCEPT_SYM)},
   { SYM("EXCHANGE",                 EXCHANGE_SYM)},
+  { SYM("EXCLUDE",                  EXCLUDE_SYM)},
   { SYM("EXECUTE",                  EXECUTE_SYM)},
   { SYM("EXISTS",                   EXISTS)},
   { SYM("EXIT",                     EXIT_SYM)},
@@ -240,12 +255,14 @@ static const SYMBOL symbols[] = {
   { SYM("FILE_BLOCK_SIZE",          FILE_BLOCK_SIZE_SYM)},
   { SYM("FILTER",                   FILTER_SYM)},
   { SYM("FIRST",                    FIRST_SYM)},
+  { SYM("FIRST_VALUE",              FIRST_VALUE_SYM)},
   { SYM("FIXED",                    FIXED_SYM)},
   { SYM("FLOAT",                    FLOAT_SYM)},
   { SYM("FLOAT4",                   FLOAT_SYM)},
   { SYM("FLOAT8",                   DOUBLE_SYM)},
   { SYM("FLUSH",                    FLUSH_SYM)},
   { SYM("FOLLOWS",                  FOLLOWS_SYM)},
+  { SYM("FOLLOWING",                FOLLOWING_SYM)},
   { SYM("FOR",                      FOR_SYM)},
   { SYM("FORCE",                    FORCE_SYM)},
   { SYM("FOREIGN",                  FOREIGN)},
@@ -260,6 +277,7 @@ static const SYMBOL symbols[] = {
   { SYM("GEOMETRY",                 GEOMETRY_SYM)},
   { SYM("GEOMETRYCOLLECTION",       GEOMETRYCOLLECTION_SYM)},
   { SYM("GET_FORMAT",               GET_FORMAT)},
+  { SYM("GET_MASTER_PUBLIC_KEY",    GET_MASTER_PUBLIC_KEY_SYM)},
   { SYM("GET",                      GET_SYM)},
   { SYM("GENERATED",                GENERATED)},
   { SYM("GLOBAL",                   GLOBAL_SYM)},
@@ -267,11 +285,14 @@ static const SYMBOL symbols[] = {
   { SYM("GRANTS",                   GRANTS)},
   { SYM("GROUP",                    GROUP_SYM)},
   { SYM("GROUPING",                 GROUPING_SYM)},
+  { SYM("GROUPS",                   GROUPS_SYM)},
   { SYM("HANDLER",                  HANDLER_SYM)},
   { SYM("HASH",                     HASH_SYM)},
   { SYM("HAVING",                   HAVING)},
   { SYM("HELP",                     HELP_SYM)},
   { SYM("HIGH_PRIORITY",            HIGH_PRIORITY)},
+  { SYM("HISTOGRAM",                HISTOGRAM_SYM)},
+  { SYM("HISTORY",                  HISTORY_SYM)},
   { SYM("HOST",                     HOST_SYM)},
   { SYM("HOSTS",                    HOSTS_SYM)},
   { SYM("HOUR",                     HOUR_SYM)},
@@ -316,12 +337,16 @@ static const SYMBOL symbols[] = {
   { SYM("INVOKER",                  INVOKER_SYM)},
   { SYM("JOIN",                     JOIN_SYM)},
   { SYM("JSON",                     JSON_SYM)},
+  { SYM("JSON_TABLE",               JSON_TABLE_SYM)},
   { SYM("KEY",                      KEY_SYM)},
   { SYM("KEYS",                     KEYS)},
   { SYM("KEY_BLOCK_SIZE",           KEY_BLOCK_SIZE)},
   { SYM("KILL",                     KILL_SYM)},
+  { SYM("LAG",                      LAG_SYM)},
   { SYM("LANGUAGE",                 LANGUAGE_SYM)},
   { SYM("LAST",                     LAST_SYM)},
+  { SYM("LAST_VALUE",               LAST_VALUE_SYM)},
+  { SYM("LEAD",                     LEAD_SYM)},
   { SYM("LEADING",                  LEADING)},
   { SYM("LEAVE",                    LEAVE_SYM)},
   { SYM("LEAVES",                   LEAVES)},
@@ -358,6 +383,7 @@ static const SYMBOL symbols[] = {
   { SYM("MASTER_LOG_POS",           MASTER_LOG_POS_SYM)},
   { SYM("MASTER_PASSWORD",          MASTER_PASSWORD_SYM)},
   { SYM("MASTER_PORT",              MASTER_PORT_SYM)},
+  { SYM("MASTER_PUBLIC_KEY_PATH",   MASTER_PUBLIC_KEY_PATH_SYM)},
   { SYM("MASTER_RETRY_COUNT",       MASTER_RETRY_COUNT_SYM)},
   { SYM("MASTER_SERVER_ID",         MASTER_SERVER_ID_SYM)},
   { SYM("MASTER_SSL",               MASTER_SSL_SYM)},
@@ -411,6 +437,7 @@ static const SYMBOL symbols[] = {
   { SYM("NDB",                      NDBCLUSTER_SYM)},
   { SYM("NDBCLUSTER",               NDBCLUSTER_SYM)},
   { SYM("NCHAR",                    NCHAR_SYM)},
+  { SYM("NESTED",                   NESTED_SYM)},
   { SYM("NEVER",                    NEVER_SYM)},
   { SYM("NEW",                      NEW_SYM)},
   { SYM("NEXT",                     NEXT_SYM)},
@@ -421,7 +448,10 @@ static const SYMBOL symbols[] = {
   { SYM("NONE",                     NONE_SYM)},
   { SYM("NOT",                      NOT_SYM)},
   { SYM("NO_WRITE_TO_BINLOG",       NO_WRITE_TO_BINLOG)},
+  { SYM("NTH_VALUE",                NTH_VALUE_SYM)},
+  { SYM("NTILE",                    NTILE_SYM)},
   { SYM("NULL",                     NULL_SYM)},
+  { SYM("NULLS",                    NULLS_SYM)},
   { SYM("NUMBER",                   NUMBER_SYM)},
   { SYM("NUMERIC",                  NUMERIC_SYM)},
   { SYM("NVARCHAR",                 NVARCHAR_SYM)},
@@ -437,12 +467,17 @@ static const SYMBOL symbols[] = {
   { SYM("OPTION",                   OPTION)},
   { SYM("OPTIONALLY",               OPTIONALLY)},
   { SYM("OR",                       OR_SYM)},
+  { SYM("ORGANIZATION",             ORGANIZATION_SYM)},
+  { SYM("OTHERS",                   OTHERS_SYM)},
   { SYM("ORDER",                    ORDER_SYM)},
+  { SYM("ORDINALITY",               ORDINALITY_SYM)},
   { SYM("OUT",                      OUT_SYM)},
   { SYM("OUTER",                    OUTER)},
   { SYM("OUTFILE",                  OUTFILE)},
+  { SYM("OVER",                     OVER_SYM)},
   { SYM("OWNER",                    OWNER_SYM)},
   { SYM("PACK_KEYS",                PACK_KEYS_SYM)},
+  { SYM("PATH",                     PATH_SYM)},
   { SYM("PARSER",                   PARSER_SYM)},
   { SYM("PAGE",                     PAGE_SYM)},
   { SYM("PARTIAL",                  PARTIAL)},
@@ -450,7 +485,9 @@ static const SYMBOL symbols[] = {
   { SYM("PARTITIONING",             PARTITIONING_SYM)},
   { SYM("PARTITIONS",               PARTITIONS_SYM)},
   { SYM("PASSWORD",                 PASSWORD)},
+  { SYM("PERCENT_RANK",             PERCENT_RANK_SYM)},
   { SYM("PERSIST",                  PERSIST_SYM)},
+  { SYM("PERSIST_ONLY",             PERSIST_ONLY_SYM)},
   { SYM("PHASE",                    PHASE_SYM)},
   { SYM("PLUGIN",                   PLUGIN_SYM)},
   { SYM("PLUGINS",                  PLUGINS_SYM)},
@@ -459,6 +496,7 @@ static const SYMBOL symbols[] = {
   { SYM("POLYGON",                  POLYGON_SYM)},
   { SYM("PORT",                     PORT_SYM)},
   { SYM("PRECEDES",                 PRECEDES_SYM)},
+  { SYM("PRECEDING",                PRECEDING_SYM)},
   { SYM("PRECISION",                PRECISION)},
   { SYM("PREPARE",                  PREPARE_SYM)},
   { SYM("PRESERVE",                 PRESERVE_SYM)},
@@ -475,6 +513,7 @@ static const SYMBOL symbols[] = {
   { SYM("QUARTER",                  QUARTER_SYM)},
   { SYM("QUERY",                    QUERY_SYM)},
   { SYM("QUICK",                    QUICK)},
+  { SYM("RANK",                     RANK_SYM)},
   { SYM("RANGE",                    RANGE_SYM)},
   { SYM("READ",                     READ_SYM)},
   { SYM("READ_ONLY",                READ_ONLY_SYM)},
@@ -485,8 +524,8 @@ static const SYMBOL symbols[] = {
   { SYM("RECOVER",                  RECOVER_SYM)},
   { SYM("RECURSIVE",                RECURSIVE_SYM)},
   { SYM("REDO_BUFFER_SIZE",         REDO_BUFFER_SIZE_SYM)},
-  { SYM("REDOFILE",                 REDOFILE_SYM)},
   { SYM("REDUNDANT",                REDUNDANT_SYM)},
+  { SYM("REFERENCE",                REFERENCE_SYM)},
   { SYM("REFERENCES",               REFERENCES)},
   { SYM("REGEXP",                   REGEXP)},
   { SYM("RELAY",                    RELAY)},
@@ -496,6 +535,7 @@ static const SYMBOL symbols[] = {
   { SYM("RELAY_THREAD",             RELAY_THREAD)},
   { SYM("RELEASE",                  RELEASE_SYM)},
   { SYM("RELOAD",                   RELOAD)},
+  { SYM("REMOTE",                   REMOTE_SYM)},
   { SYM("REMOVE",                   REMOVE_SYM)},
   { SYM("RENAME",                   RENAME)},
   { SYM("REORGANIZE",               REORGANIZE_SYM)},
@@ -512,13 +552,17 @@ static const SYMBOL symbols[] = {
   { SYM("REPEAT",                   REPEAT_SYM)},
   { SYM("REQUIRE",                  REQUIRE_SYM)},
   { SYM("RESET",                    RESET_SYM)},
+  { SYM("RESPECT",                  RESPECT_SYM)},
   { SYM("RESIGNAL",                 RESIGNAL_SYM)},
+  { SYM("RESOURCE",                 RESOURCE_SYM)},
+  { SYM("RESTART",                  RESTART_SYM)},
   { SYM("RESTORE",                  RESTORE_SYM)},
   { SYM("RESTRICT",                 RESTRICT)},
   { SYM("RESUME",                   RESUME_SYM)},
   { SYM("RETURNED_SQLSTATE",        RETURNED_SQLSTATE_SYM)},
   { SYM("RETURN",                   RETURN_SYM)},
   { SYM("RETURNS",                  RETURNS_SYM)},
+  { SYM("REUSE",                    REUSE_SYM)},
   { SYM("REVERSE",                  REVERSE_SYM)},
   { SYM("REVOKE",                   REVOKE)},
   { SYM("RIGHT",                    RIGHT)},
@@ -530,6 +574,7 @@ static const SYMBOL symbols[] = {
   { SYM("ROTATE",                   ROTATE_SYM)},
   { SYM("ROW",                      ROW_SYM)},
   { SYM("ROW_COUNT",                ROW_COUNT_SYM)},
+  { SYM("ROW_NUMBER",               ROW_NUMBER_SYM)},
   { SYM("ROWS",                     ROWS_SYM)},
   { SYM("ROW_FORMAT",               ROW_FORMAT_SYM)},
   { SYM("RTREE",                    RTREE_SYM)},
@@ -575,7 +620,6 @@ static const SYMBOL symbols[] = {
   { SYM("SQL_BEFORE_GTIDS",         SQL_BEFORE_GTIDS)},
   { SYM("SQL_BIG_RESULT",           SQL_BIG_RESULT)},
   { SYM("SQL_BUFFER_RESULT",        SQL_BUFFER_RESULT)},
-  { SYM("SQL_CACHE",                SQL_CACHE_SYM)},
   { SYM("SQL_CALC_FOUND_ROWS",      SQL_CALC_FOUND_ROWS)},
   { SYM("SQL_NO_CACHE",             SQL_NO_CACHE_SYM)},
   { SYM("SQL_SMALL_RESULT",         SQL_SMALL_RESULT)},
@@ -588,6 +632,7 @@ static const SYMBOL symbols[] = {
   { SYM("SQL_TSI_MONTH",            MONTH_SYM)},
   { SYM("SQL_TSI_QUARTER",          QUARTER_SYM)},
   { SYM("SQL_TSI_YEAR",             YEAR_SYM)},
+  { SYM("SRID",                     SRID_SYM)},
   { SYM("SSL",                      SSL_SYM)},
   { SYM("STACKED",                  STACKED_SYM)},
   { SYM("START",                    START_SYM)},
@@ -610,6 +655,7 @@ static const SYMBOL symbols[] = {
   { SYM("SUSPEND",                  SUSPEND_SYM)},
   { SYM("SWAPS",                    SWAPS_SYM)},
   { SYM("SWITCHES",                 SWITCHES_SYM)},
+  { SYM("SYSTEM",                   SYSTEM_SYM)},
   { SYM("TABLE",                    TABLE_SYM)},
   { SYM("TABLE_NAME",               TABLE_NAME_SYM)},
   { SYM("TABLES",                   TABLES)},
@@ -621,6 +667,8 @@ static const SYMBOL symbols[] = {
   { SYM("TEXT",                     TEXT_SYM)},
   { SYM("THAN",                     THAN_SYM)},
   { SYM("THEN",                     THEN_SYM)},
+  { SYM("THREAD_PRIORITY",          THREAD_PRIORITY_SYM)},
+  { SYM("TIES",                     TIES_SYM)},
   { SYM("TIME",                     TIME_SYM)},
   { SYM("TIMESTAMP",                TIMESTAMP_SYM)},
   { SYM("TIMESTAMPADD",             TIMESTAMP_ADD)},
@@ -637,6 +685,7 @@ static const SYMBOL symbols[] = {
   { SYM("TRUNCATE",                 TRUNCATE_SYM)},
   { SYM("TYPE",                     TYPE_SYM)},
   { SYM("TYPES",                    TYPES_SYM)},
+  { SYM("UNBOUNDED",                UNBOUNDED_SYM)},
   { SYM("UNCOMMITTED",              UNCOMMITTED_SYM)},
   { SYM("UNDEFINED",                UNDEFINED_SYM)},
   { SYM("UNDO_BUFFER_SIZE",         UNDO_BUFFER_SIZE_SYM)},
@@ -675,6 +724,8 @@ static const SYMBOL symbols[] = {
   { SYM("WHEN",                     WHEN_SYM)},
   { SYM("WHERE",                    WHERE)},
   { SYM("WHILE",                    WHILE_SYM)},
+  { SYM("WINDOW",                   WINDOW_SYM)},
+  { SYM("VCPU",                     VCPU_SYM)},
   { SYM("VIEW",                     VIEW_SYM)},
   { SYM("VIRTUAL",                  VIRTUAL_SYM)},
   { SYM("VISIBLE",                  VISIBLE_SYM)},
@@ -757,6 +808,7 @@ static const SYMBOL symbols[] = {
   { SYM_H("MRR",                    MRR_HINT)},
   { SYM_H("QB_NAME",                QB_NAME_HINT)},
   { SYM_H("SEMIJOIN",               SEMIJOIN_HINT)},
+  { SYM_H("SET_VAR",                SET_VAR_HINT)},
   { SYM_H("SUBQUERY",               SUBQUERY_HINT)},
   { SYM_H("MERGE",                  DERIVED_MERGE_HINT)},
   { SYM_H("NO_MERGE",               NO_DERIVED_MERGE_HINT)},
@@ -766,6 +818,7 @@ static const SYMBOL symbols[] = {
   { SYM_H("JOIN_FIXED_ORDER",       JOIN_FIXED_ORDER_HINT)},
   { SYM_H("INDEX_MERGE",            INDEX_MERGE_HINT)},
   { SYM_H("NO_INDEX_MERGE",         NO_INDEX_MERGE_HINT)},
+  { SYM_H("RESOURCE_GROUP",         RESOURCE_GROUP_HINT)}
 };
 
 #endif /* LEX_INCLUDED */

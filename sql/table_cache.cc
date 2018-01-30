@@ -1,28 +1,34 @@
 /* Copyright (c) 2012, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA */
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "table_cache.h"
+#include "sql/table_cache.h"
 
 #include <stdio.h>
 #include <string.h>
 
-#include "m_ctype.h"
+#include "my_compiler.h"
 #include "my_dbug.h"
-#include "my_inttypes.h"
-#include "sql_test.h" // lock_descriptions[]
-#include "template_utils.h"
+#include "my_macros.h"
+#include "sql/sql_test.h" // lock_descriptions[]
 #include "thr_lock.h"
 #include "thr_mutex.h"
 
@@ -36,25 +42,9 @@ Table_cache_manager table_cache_manager;
 #ifdef HAVE_PSI_INTERFACE
 PSI_mutex_key Table_cache::m_lock_key;
 PSI_mutex_info Table_cache::m_mutex_keys[]= {
-  { &m_lock_key, "LOCK_table_cache", 0, 0}
+  { &m_lock_key, "LOCK_table_cache", 0, 0, PSI_DOCUMENT_ME}
 };
 #endif
-
-
-static const uchar *table_cache_key(const uchar *record,
-                                    size_t *length)
-{
-  TABLE_SHARE *share= ((Table_cache_element*)record)->get_share();
-  *length= share->table_cache_key.length;
-  return (uchar*) share->table_cache_key.str;
-}
-
-
-static void table_cache_free_entry(void *arg)
-{
-  Table_cache_element *element= pointer_cast<Table_cache_element*>(arg);
-  delete element;
-}
 
 
 /**
@@ -69,16 +59,6 @@ bool Table_cache::init()
   mysql_mutex_init(m_lock_key, &m_lock, MY_MUTEX_INIT_FAST);
   m_unused_tables= NULL;
   m_table_count= 0;
-
-  if (my_hash_init(&m_cache, &my_charset_bin,
-                   table_cache_size_per_instance, 0,
-                   table_cache_key, table_cache_free_entry,
-                   0,
-                   PSI_INSTRUMENT_ME))
-  {
-    mysql_mutex_destroy(&m_lock);
-    return true;
-  }
   return false;
 }
 
@@ -87,7 +67,6 @@ bool Table_cache::init()
 
 void Table_cache::destroy()
 {
-  my_hash_free(&m_cache);
   mysql_mutex_destroy(&m_lock);
 }
 
@@ -185,10 +164,9 @@ void Table_cache::print_tables()
 
   static_assert(TL_WRITE_ONLY+1 == array_elements(lock_descriptions), "");
 
-  for (uint idx= 0; idx < m_cache.records; idx++)
+  for (const auto &key_and_value : m_cache)
   {
-    Table_cache_element *el=
-      (Table_cache_element*) my_hash_element(&m_cache, idx);
+    Table_cache_element *el= key_and_value.second.get();
 
     Table_cache_element::TABLE_list::Iterator it(el->used_tables);
     TABLE *entry;
@@ -346,9 +324,10 @@ void Table_cache_manager::assert_owner_all_and_tdc()
    @note Caller should own LOCK_open and locks on all table cache
          instances.
 */
-void Table_cache_manager::free_table(THD *thd,
-                                     enum_tdc_remove_table_type remove_type,
-                                     TABLE_SHARE *share)
+void Table_cache_manager::
+free_table(THD *thd MY_ATTRIBUTE((unused)),
+           enum_tdc_remove_table_type remove_type MY_ATTRIBUTE((unused)),
+           TABLE_SHARE *share)
 {
   Table_cache_element *cache_el[MAX_TABLE_CACHES];
 

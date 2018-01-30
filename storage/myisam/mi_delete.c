@@ -1,13 +1,20 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -19,11 +26,11 @@
 #include <fcntl.h>
 #include <sys/types.h>
 
-#include "fulltext.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_macros.h"
-#include "rt_index.h"
+#include "storage/myisam/fulltext.h"
+#include "storage/myisam/rt_index.h"
 
 static int d_search(MI_INFO *info,MI_KEYDEF *keyinfo,uint comp_flag,
                     uchar *key,uint key_length,my_off_t page,uchar *anc_buff);
@@ -112,12 +119,6 @@ int mi_delete(MI_INFO *info,const uchar *record)
   myisam_log_command(MI_LOG_DELETE,info,(uchar*) lastpos,sizeof(lastpos),0);
   (void) _mi_writeinfo(info,WRITEINFO_UPDATE_KEYFILE);
 
-  if (info->invalidator != 0)
-  {
-    DBUG_PRINT("info", ("invalidator... '%s' (delete)", info->filename));
-    (*info->invalidator)(info->filename);
-    info->invalidator=0;
-  }
   DBUG_RETURN(0);
 
 err:
@@ -362,8 +363,8 @@ static int d_search(MI_INFO *info, MI_KEYDEF *keyinfo,
 	DBUG_RETURN(-1);
       }
       /* Page will be update later if we return 1 */
-      DBUG_RETURN(MY_TEST(length <= (info->quick_mode ? MI_MIN_KEYBLOCK_LENGTH :
-                                     (uint) keyinfo->underflow_block_length)));
+      DBUG_RETURN(length <= (info->quick_mode ? MI_MIN_KEYBLOCK_LENGTH :
+                               (uint) keyinfo->underflow_block_length));
     }
     save_flag=1;
     ret_value=del(info,keyinfo,key,anc_buff,leaf_page,leaf_buff,keypos,

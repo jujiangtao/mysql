@@ -1,18 +1,26 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2016, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1995, 2017, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+the terms of the GNU General Public License, version 2.0, as published by the
+Free Software Foundation.
+
+This program is also distributed with certain software (including but not
+limited to OpenSSL) that is licensed under separate terms, as designated in a
+particular file or component or in included license documentation. The authors
+of MySQL hereby grant you an additional permission to link the program and
+your derivative works with the separately licensed software that they have
+included with MySQL.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+FOR A PARTICULAR PURPOSE. See the GNU General Public License, version 2.0,
+for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 *****************************************************************************/
 
@@ -33,7 +41,6 @@ Created 12/7/1995 Heikki Tuuri
 // Forward declaration
 struct dict_index_t;
 
-#ifndef UNIV_HOTBACKUP
 /********************************************************//**
 Writes 1, 2 or 4 bytes to a file page. Writes the corresponding log
 record to the mini-transaction log if mtr is not NULL. */
@@ -169,6 +176,7 @@ mlog_close(
 /** Writes a log record about a dictionary operation.
 @param[in]	type		redo log record type
 @param[in]	id		table id
+@param[in]	version		table dynamic metadata version
 @param[in,out]	log_ptr		current end of mini-transaction log
 @param[in,out]	mtr		mini-transaction
 @return end of mini-transaction log */
@@ -177,6 +185,7 @@ byte*
 mlog_write_initial_dict_log_record(
 	mlog_id_t	type,
 	table_id_t	id,
+	uint64_t	version,
 	byte*		log_ptr,
 	mtr_t*		mtr);
 
@@ -196,6 +205,7 @@ mlog_write_initial_log_record_low(
 	byte*		log_ptr,
 	mtr_t*		mtr);
 
+#ifndef UNIV_HOTBACKUP
 /** Writes the initial part of a log record (3..11 bytes).
 If the implementation of this function is changed, all size parameters to
 mlog_open() should be adjusted accordingly!
@@ -223,13 +233,15 @@ mlog_write_initial_log_record_fast(
 @param[out]	type		log record type, should be
 				MLOG_TABLE_DYNAMIC_META
 @param[out]	id		table id
+@param[out]	version		table dynamic metadata version
 @return parsed record end, NULL if not a complete record */
 byte*
 mlog_parse_initial_dict_log_record(
 	const byte*	ptr,
 	const byte*	end_ptr,
 	mlog_id_t*	type,
-	table_id_t*	id);
+	table_id_t*	id,
+	uint64*		version);
 
 /********************************************************//**
 Parses an initial log record written by mlog_write_initial_log_record.
@@ -265,7 +277,6 @@ mlog_parse_string(
 	byte*	page,	/*!< in: page where to apply the log record, or NULL */
 	void*	page_zip);/*!< in/out: compressed page, or NULL */
 
-#ifndef UNIV_HOTBACKUP
 /********************************************************//**
 Opens a buffer for mlog, writes the initial log record and,
 if needed, the field lengths of an index.  Reserves space
@@ -282,7 +293,6 @@ mlog_open_and_write_index(
 	ulint			size);	/*!< in: requested buffer size in bytes
 					(if 0, calls mlog_close() and
 					returns NULL) */
-#endif /* !UNIV_HOTBACKUP */
 
 /********************************************************//**
 Parses a log record written by mlog_open_and_write_index.
@@ -295,11 +305,9 @@ mlog_parse_index(
 	ibool		comp,	/*!< in: TRUE=compact record format */
 	dict_index_t**	index);	/*!< out, own: dummy index */
 
-#ifndef UNIV_HOTBACKUP
 /** Insert, update, and maybe other functions may use this value to define an
 extra mlog buffer size for variable size data */
 #define MLOG_BUF_MARGIN	256
-#endif /* !UNIV_HOTBACKUP */
 
 #include "mtr0log.ic"
 

@@ -1,17 +1,24 @@
 /* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef MEMBER_INFO_INCLUDE
 #define MEMBER_INFO_INCLUDE
@@ -25,16 +32,19 @@
   Since this file is used on unit tests includes must set here and
   not through plugin_server_include.h.
 */
-#include <my_sys.h>
-#include <mysql/gcs/gcs_member_identifier.h>
+
 #include <map>
 #include <set>
 #include <string>
+#include <sstream>
 #include <vector>
 
-#include "gcs_plugin_messages.h"
-#include "member_version.h"
 #include "my_inttypes.h"
+#include "my_sys.h"
+#include "plugin/group_replication/include/gcs_plugin_messages.h"
+#include "plugin/group_replication/include/member_version.h"
+#include "plugin/group_replication/include/services/notification/notification.h"
+#include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/gcs_member_identifier.h"
 
 /*
   Encoding of the group_replication_enforce_update_everywhere_checks
@@ -100,8 +110,11 @@ public:
     // length of the conflict detection enabled: 1 byte
     PIT_CONFLICT_DETECTION_ENABLE= 13,
 
+    // Length of the payload item: 2 bytes
+    PIT_MEMBER_WEIGHT= 14,
+
     // No valid type codes can appear after this one.
-    PIT_MAX= 14
+    PIT_MAX= 15
   };
 
   /*
@@ -147,6 +160,7 @@ public:
     @param[in] role_arg                               member role within the group
     @param[in] in_single_primary_mode                 is member in single mode
     @param[in] has_enforces_update_everywhere_checks  has member enforce update check
+    @param[in] member_weight_arg                      member_weight
    */
   Group_member_info(char* hostname_arg,
                     uint port_arg,
@@ -158,7 +172,8 @@ public:
                     ulonglong gtid_assignment_block_size_arg,
                     Group_member_info::Group_member_role role_arg,
                     bool in_single_primary_mode,
-                    bool has_enforces_update_everywhere_checks);
+                    bool has_enforces_update_everywhere_checks,
+                    uint member_weight_arg);
 
   /**
     Copy constructor
@@ -209,6 +224,11 @@ public:
     @return the member role type code.
    */
   Group_member_role get_role();
+
+  /**
+    @return the member role type code in string
+   */
+  const char* get_member_role_string();
 
   /**
     @return the member plugin version
@@ -291,16 +311,41 @@ public:
   static std::string get_configuration_flags_string(const uint32 configuation_flags);
 
   /**
-    @return Compare two members using "operator <"
+    @return Compare two members using member version
    */
-  static bool comparator_group_member_info(Group_member_info *m1, Group_member_info *m2);
+  static bool comparator_group_member_version(Group_member_info *m1, Group_member_info *m2);
 
   /**
-   Redefinition of operate == and <. They operate upon the uuid
+    @return Compare two members using server uuid
+   */
+  static bool comparator_group_member_uuid(Group_member_info *m1, Group_member_info *m2);
+
+  /**
+    @return Compare two members using member weight
+    @note if the weight is same, the member is sorted in
+          lexicographical order using its uuid.
+   */
+  static bool comparator_group_member_weight(Group_member_info *m1, Group_member_info *m2);
+
+  /**
+    Return true if member version is higher than other member version
+   */
+  bool has_greater_version(Group_member_info *other);
+
+  /**
+    Return true if server uuid is lower than other member server uuid
+   */
+  bool has_lower_uuid(Group_member_info *other);
+
+  /**
+    Return true if member weight is higher than other member weight
+   */
+  bool has_greater_weight(Group_member_info *other);
+
+  /**
+    Redefinition of operate ==, which operate upon the uuid
    */
   bool operator ==(Group_member_info& other);
-
-  bool operator <(Group_member_info& other);
 
   /**
     Sets this member as unreachable.
@@ -332,6 +377,18 @@ public:
    */
   bool is_conflict_detection_enabled();
 
+  /**
+    Update member weight
+
+    @param[in] new_member_weight  new member_weight to set
+   */
+  void set_member_weight(uint new_member_weight);
+
+  /**
+    Return member weight
+   */
+  uint get_member_weight();
+
 protected:
   void encode_payload(std::vector<unsigned char>* buffer) const;
   void decode_payload(const unsigned char* buffer, const unsigned char*);
@@ -351,6 +408,7 @@ private:
   Group_member_role role;
   uint32 configuration_flags;
   bool conflict_detection_enable;
+  uint member_weight;
 };
 
 
@@ -423,10 +481,12 @@ public:
 
     @param[in] uuid        member uuid
     @param[in] new_status  status to change to
+    @param[in,out] ctx     The notification context to update.
    */
   virtual void
   update_member_status(const std::string& uuid,
-                       Group_member_info::Group_member_status new_status)= 0;
+                       Group_member_info::Group_member_status new_status,
+                       Notification_context& ctx)= 0;
 
   /**
     Updates the GTID sets on a single member
@@ -444,10 +504,12 @@ public:
 
     @param[in] uuid        member uuid
     @param[in] new_role    role to change to
+    @param[in,out] ctx     The notification context to update.
    */
   virtual void
   update_member_role(const std::string& uuid,
-                     Group_member_info::Group_member_role new_role)= 0;
+                     Group_member_info::Group_member_role new_role,
+                     Notification_context& ctx)= 0;
 
   /**
     Encodes this object to send via the network
@@ -472,6 +534,26 @@ public:
   @return true if at least one member has  conflict detection enabled
   */
   virtual bool is_conflict_detection_enabled()= 0;
+
+  virtual void get_primary_member_uuid(std::string &primary_member_uuid)= 0;
+
+  /**¬
+  Check if majority of the group is unreachable
+
+  This approach is optimistic, right after return the majority can be
+  reestablish or go away.
+
+  @return true if majority of the group is unreachable
+  */
+  virtual bool is_majority_unreachable()= 0;
+
+  /**
+    This method returns all ONLINE and RECOVERING members comma separated
+    host and port in string format.
+
+    @return hosts and port of all ONLINE and RECOVERING members
+  */
+  virtual std::string get_string_current_view_active_hosts() const = 0;
 };
 
 
@@ -504,14 +586,16 @@ public:
 
   void
   update_member_status(const std::string& uuid,
-                       Group_member_info::Group_member_status new_status);
+                       Group_member_info::Group_member_status new_status,
+                       Notification_context& ctx);
 
   void update_gtid_sets(const std::string& uuid,
                         std::string& gtid_executed,
                         std::string& gtid_retrieved);
   void
   update_member_role(const std::string& uuid,
-                     Group_member_info::Group_member_role new_role);
+                     Group_member_info::Group_member_role new_role,
+                     Notification_context& ctx);
 
   void encode(std::vector<uchar>* to_encode);
 
@@ -519,6 +603,12 @@ public:
                                           size_t length);
 
   bool is_conflict_detection_enabled();
+
+  void get_primary_member_uuid(std::string &primary_member_uuid);
+
+  bool is_majority_unreachable();
+
+  std::string get_string_current_view_active_hosts() const;
 
 private:
   void clear_members();

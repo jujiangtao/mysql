@@ -1,13 +1,20 @@
 /* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -23,14 +30,17 @@
 
 #include <sys/types.h>
 
-#include "mem_root_array.h"
 #include "my_compiler.h"
-#include "opt_hints.h"
-#include "parse_tree_node_base.h"
-#include "sql_plugin.h"
-#include "sql_show.h"
+#include "mysql/udf_registration_types.h"
+#include "sql/dd/properties.h"
+#include "sql/key.h"
+#include "sql/mem_root_array.h"
+#include "sql/opt_hints.h"
+#include "sql/parse_tree_helpers.h"
+#include "sql/parse_tree_node_base.h"
+#include "sql/sql_show.h"
+#include "sql/thr_malloc.h"
 #include "sql_string.h"
-#include "typelib.h"
 
 class THD;
 
@@ -295,5 +305,71 @@ public:
   }
 };
 
+
+class PT_hint_sys_var : public PT_hint
+{
+  const LEX_CSTRING sys_var_name;
+  Item *sys_var_value;
+
+  typedef PT_hint super;
+public:
+  explicit PT_hint_sys_var(const LEX_CSTRING sys_var_name_arg,
+                           Item *sys_var_value_arg)
+    : PT_hint(MAX_HINT_ENUM, true), sys_var_name(sys_var_name_arg),
+      sys_var_value(sys_var_value_arg)
+  {}
+  /**
+    Function initializes SET_VAR hint.
+
+    @param pc   Pointer to Parse_context object
+
+    @return  true in case of error,
+             false otherwise
+  */
+  virtual bool contextualize(Parse_context *pc);
+};
+
+/**
+  Parse tree hint object for RESOURCE_GROUP hint.
+*/
+
+class PT_hint_resource_group : public PT_hint
+{
+  const LEX_CSTRING m_resource_group_name;
+
+  typedef PT_hint super;
+public:
+  PT_hint_resource_group(const LEX_CSTRING &name)
+    : PT_hint(RESOURCE_GROUP_HINT_ENUM, true), m_resource_group_name(name)
+  {}
+
+
+  /**
+    Function initializes resource group name and checks for presence of
+    resource group. Also it checks for invocation of hint from stored
+    routines or sub query.
+
+     @param pc Pointer to Parse_context object
+
+     @return true in case of error,
+             false otherwise
+  */
+
+  virtual bool contextualize(Parse_context *pc);
+
+
+  /**
+    Append hint arguments to given string.
+
+    @param thd      Pointer to THD object.
+    @param str      Pointer to String object.
+  */
+  
+  virtual void append_args(THD *thd, String *str) const
+  {
+    append_identifier(thd, str, m_resource_group_name.str,
+                      m_resource_group_name.length);
+  }
+};
 
 #endif /* PARSE_TREE_HINTS_INCLUDED */

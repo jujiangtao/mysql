@@ -2,25 +2,24 @@
 #
 #
 # This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; version 2 of the License.
+# it under the terms of the GNU General Public License, version 2.0,
+# as published by the Free Software Foundation.
+#
+# This program is also distributed with certain software (including
+# but not limited to OpenSSL) that is licensed under separate terms,
+# as designated in a particular file or component or in included license
+# documentation.  The authors of MySQL hereby grant you an additional
+# permission to link the program and your derivative works with the
+# separately licensed software that they have included with MySQL.
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU General Public License, version 2.0, for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software Foundation,
-# 51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
-
-INCLUDE_DIRECTORIES(${CMAKE_SOURCE_DIR}
-                    ${CMAKE_SOURCE_DIR}/include
-                    ${CMAKE_SOURCE_DIR}/sql
-                    ${CMAKE_BINARY_DIR}/sql
-                    ${CMAKE_SOURCE_DIR}/extra/regex
-                    ${CMAKE_SOURCE_DIR}/extra/yassl/include
-                    ${SSL_INCLUDE_DIRS})
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 ADD_DEFINITIONS(-DMYSQL_SERVER)
 
@@ -36,12 +35,12 @@ cursor_by_thread.h
 cursor_by_user.h
 pfs.h
 pfs_account.h
-pfs_atomic.h
 pfs_buffer_container.h
 pfs_builtin_memory.h
 pfs_column_types.h
 pfs_column_values.h
 pfs_con_slice.h
+pfs_dd_version.h
 pfs_defaults.h
 pfs_digest.h
 pfs_engine_table.h
@@ -58,6 +57,7 @@ pfs_instr.h
 pfs_instr_class.h
 pfs_lock.h
 pfs_memory.h
+pfs_plugin_table.h
 pfs_prepared_stmt.h
 pfs_program.h
 pfs_server.h
@@ -129,7 +129,7 @@ table_setup_actors.h
 table_setup_consumers.h
 table_setup_instruments.h
 table_setup_objects.h
-table_setup_timers.h
+table_setup_threads.h
 table_sync_instances.h
 table_status_by_account.h
 table_status_by_host.h
@@ -146,6 +146,7 @@ table_threads.h
 table_tiws_by_index_usage.h
 table_tiws_by_table.h
 table_tlws_by_table.h
+table_user_defined_functions.h
 table_users.h
 table_uvar_by_thread.h
 table_variables_info.h
@@ -161,6 +162,7 @@ table_replication_applier_status.h
 table_replication_applier_status_by_coordinator.h
 table_replication_applier_status_by_worker.h
 table_replication_group_member_stats.h
+table_plugin_table.h
 table_replication_applier_filters.h
 table_replication_applier_global_filters.h
 cursor_by_account.cc
@@ -173,7 +175,6 @@ pfs_account.cc
 pfs_autosize.cc
 pfs_buffer_container.cc
 pfs_builtin_memory.cc
-pfs_check.cc
 pfs_column_types.cc
 pfs_column_values.cc
 pfs_con_slice.cc
@@ -192,6 +193,7 @@ pfs_host.cc
 pfs_instr.cc
 pfs_instr_class.cc
 pfs_memory.cc
+pfs_plugin_table.cc
 pfs_prepared_stmt.cc
 pfs_program.cc
 pfs_server.cc
@@ -202,6 +204,8 @@ pfs_timer.cc
 pfs_user.cc
 pfs_variable.cc
 pfs_visitor.cc
+service_pfs_notification.cc
+service_pfs_resource_group.cc
 table_accounts.cc
 table_all_instr.cc
 table_esgs_by_account_by_event_name.cc
@@ -262,7 +266,7 @@ table_setup_actors.cc
 table_setup_consumers.cc
 table_setup_instruments.cc
 table_setup_objects.cc
-table_setup_timers.cc
+table_setup_threads.cc
 table_sync_instances.cc
 table_status_by_account.cc
 table_status_by_host.cc
@@ -279,6 +283,7 @@ table_threads.cc
 table_tiws_by_index_usage.cc
 table_tiws_by_table.cc
 table_tlws_by_table.cc
+table_user_defined_functions.cc
 table_users.cc
 table_uvar_by_thread.cc
 table_variables_info.cc
@@ -294,6 +299,7 @@ table_replication_applier_status.cc
 table_replication_applier_status_by_coordinator.cc
 table_replication_applier_status_by_worker.cc
 table_replication_group_member_stats.cc
+table_plugin_table.cc
 table_replication_applier_filters.cc
 table_replication_applier_global_filters.cc
 )

@@ -90,7 +90,7 @@ setup_actors
 setup_consumers
 setup_instruments
 setup_objects
-setup_timers
+setup_threads
 socket_instances
 socket_summary_by_event_name
 socket_summary_by_instance
@@ -103,6 +103,7 @@ table_io_waits_summary_by_index_usage
 table_io_waits_summary_by_table
 table_lock_waits_summary_by_table
 threads
+user_defined_functions
 user_variables_by_thread
 users
 variables_by_thread
@@ -247,7 +248,7 @@ events_statements_current	CREATE TABLE `events_statements_current` (
   `TIMER_WAIT` bigint(20) unsigned DEFAULT NULL,
   `LOCK_TIME` bigint(20) unsigned NOT NULL,
   `SQL_TEXT` longtext,
-  `DIGEST` varchar(32) DEFAULT NULL,
+  `DIGEST` varchar(64) DEFAULT NULL,
   `DIGEST_TEXT` longtext,
   `CURRENT_SCHEMA` varchar(64) DEFAULT NULL,
   `OBJECT_TYPE` varchar(64) DEFAULT NULL,
@@ -293,7 +294,7 @@ events_statements_history	CREATE TABLE `events_statements_history` (
   `TIMER_WAIT` bigint(20) unsigned DEFAULT NULL,
   `LOCK_TIME` bigint(20) unsigned NOT NULL,
   `SQL_TEXT` longtext,
-  `DIGEST` varchar(32) DEFAULT NULL,
+  `DIGEST` varchar(64) DEFAULT NULL,
   `DIGEST_TEXT` longtext,
   `CURRENT_SCHEMA` varchar(64) DEFAULT NULL,
   `OBJECT_TYPE` varchar(64) DEFAULT NULL,
@@ -339,7 +340,7 @@ events_statements_history_long	CREATE TABLE `events_statements_history_long` (
   `TIMER_WAIT` bigint(20) unsigned DEFAULT NULL,
   `LOCK_TIME` bigint(20) unsigned NOT NULL,
   `SQL_TEXT` longtext,
-  `DIGEST` varchar(32) DEFAULT NULL,
+  `DIGEST` varchar(64) DEFAULT NULL,
   `DIGEST_TEXT` longtext,
   `CURRENT_SCHEMA` varchar(64) DEFAULT NULL,
   `OBJECT_TYPE` varchar(64) DEFAULT NULL,
@@ -375,7 +376,7 @@ show create table events_statements_summary_by_digest;
 Table	Create Table
 events_statements_summary_by_digest	CREATE TABLE `events_statements_summary_by_digest` (
   `SCHEMA_NAME` varchar(64) DEFAULT NULL,
-  `DIGEST` varchar(32) DEFAULT NULL,
+  `DIGEST` varchar(64) DEFAULT NULL,
   `DIGEST_TEXT` longtext,
   `COUNT_STAR` bigint(20) unsigned NOT NULL,
   `SUM_TIMER_WAIT` bigint(20) unsigned NOT NULL,
@@ -401,11 +402,14 @@ events_statements_summary_by_digest	CREATE TABLE `events_statements_summary_by_d
   `SUM_SORT_SCAN` bigint(20) unsigned NOT NULL,
   `SUM_NO_INDEX_USED` bigint(20) unsigned NOT NULL,
   `SUM_NO_GOOD_INDEX_USED` bigint(20) unsigned NOT NULL,
-  `FIRST_SEEN` timestamp NOT NULL DEFAULT '0000-00-00 00:00:00',
-  `LAST_SEEN` timestamp NOT NULL DEFAULT '0000-00-00 00:00:00',
+  `FIRST_SEEN` timestamp(6) NOT NULL DEFAULT '0000-00-00 00:00:00.000000',
+  `LAST_SEEN` timestamp(6) NOT NULL DEFAULT '0000-00-00 00:00:00.000000',
   `QUANTILE_95` bigint(20) unsigned NOT NULL,
   `QUANTILE_99` bigint(20) unsigned NOT NULL,
   `QUANTILE_999` bigint(20) unsigned NOT NULL,
+  `QUERY_SAMPLE_TEXT` longtext,
+  `QUERY_SAMPLE_SEEN` timestamp(6) NOT NULL DEFAULT '0000-00-00 00:00:00.000000',
+  `QUERY_SAMPLE_TIMER_WAIT` bigint(20) unsigned NOT NULL,
   UNIQUE KEY `SCHEMA_NAME` (`SCHEMA_NAME`,`DIGEST`)
 ) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
 show create table events_statements_summary_by_host_by_event_name;
@@ -994,6 +998,7 @@ metadata_locks	CREATE TABLE `metadata_locks` (
   `OBJECT_TYPE` varchar(64) NOT NULL,
   `OBJECT_SCHEMA` varchar(64) DEFAULT NULL,
   `OBJECT_NAME` varchar(64) DEFAULT NULL,
+  `COLUMN_NAME` varchar(64) DEFAULT NULL,
   `OBJECT_INSTANCE_BEGIN` bigint(20) unsigned NOT NULL,
   `LOCK_TYPE` varchar(32) NOT NULL,
   `LOCK_DURATION` varchar(32) NOT NULL,
@@ -1002,7 +1007,7 @@ metadata_locks	CREATE TABLE `metadata_locks` (
   `OWNER_THREAD_ID` bigint(20) unsigned DEFAULT NULL,
   `OWNER_EVENT_ID` bigint(20) unsigned DEFAULT NULL,
   PRIMARY KEY (`OBJECT_INSTANCE_BEGIN`),
-  KEY `OBJECT_TYPE` (`OBJECT_TYPE`,`OBJECT_SCHEMA`,`OBJECT_NAME`),
+  KEY `OBJECT_TYPE` (`OBJECT_TYPE`,`OBJECT_SCHEMA`,`OBJECT_NAME`,`COLUMN_NAME`),
   KEY `OWNER_THREAD_ID` (`OWNER_THREAD_ID`,`OWNER_EVENT_ID`)
 ) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
 show create table file_instances;
@@ -1143,7 +1148,7 @@ objects_summary_global_by_type	CREATE TABLE `objects_summary_global_by_type` (
 show create table performance_timers;
 Table	Create Table
 performance_timers	CREATE TABLE `performance_timers` (
-  `TIMER_NAME` enum('CYCLE','NANOSECOND','MICROSECOND','MILLISECOND','TICK') NOT NULL,
+  `TIMER_NAME` enum('CYCLE','NANOSECOND','MICROSECOND','MILLISECOND') NOT NULL,
   `TIMER_FREQUENCY` bigint(20) DEFAULT NULL,
   `TIMER_RESOLUTION` bigint(20) DEFAULT NULL,
   `TIMER_OVERHEAD` bigint(20) DEFAULT NULL
@@ -1225,7 +1230,10 @@ Table	Create Table
 setup_instruments	CREATE TABLE `setup_instruments` (
   `NAME` varchar(128) NOT NULL,
   `ENABLED` enum('YES','NO') NOT NULL,
-  `TIMED` enum('YES','NO') NOT NULL,
+  `TIMED` enum('YES','NO') DEFAULT NULL,
+  `PROPERTIES` set('singleton','progress','user','global_statistics','mutable') NOT NULL,
+  `VOLATILITY` int(11) NOT NULL,
+  `DOCUMENTATION` longtext,
   PRIMARY KEY (`NAME`)
 ) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
 show create table setup_objects;
@@ -1237,13 +1245,6 @@ setup_objects	CREATE TABLE `setup_objects` (
   `ENABLED` enum('YES','NO') NOT NULL DEFAULT 'YES',
   `TIMED` enum('YES','NO') NOT NULL DEFAULT 'YES',
   UNIQUE KEY `OBJECT` (`OBJECT_TYPE`,`OBJECT_SCHEMA`,`OBJECT_NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
-show create table setup_timers;
-Table	Create Table
-setup_timers	CREATE TABLE `setup_timers` (
-  `NAME` varchar(64) NOT NULL,
-  `TIMER_NAME` enum('CYCLE','NANOSECOND','MICROSECOND','MILLISECOND','TICK') NOT NULL,
-  PRIMARY KEY (`NAME`)
 ) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
 show create table socket_instances;
 Table	Create Table
@@ -1513,12 +1514,14 @@ threads	CREATE TABLE `threads` (
   `HISTORY` enum('YES','NO') NOT NULL,
   `CONNECTION_TYPE` varchar(16) DEFAULT NULL,
   `THREAD_OS_ID` bigint(20) unsigned DEFAULT NULL,
+  `RESOURCE_GROUP` varchar(64) DEFAULT NULL,
   PRIMARY KEY (`THREAD_ID`),
   KEY `PROCESSLIST_ID` (`PROCESSLIST_ID`),
   KEY `THREAD_OS_ID` (`THREAD_OS_ID`),
   KEY `NAME` (`NAME`),
   KEY `PROCESSLIST_ACCOUNT` (`PROCESSLIST_USER`,`PROCESSLIST_HOST`),
-  KEY `PROCESSLIST_HOST` (`PROCESSLIST_HOST`)
+  KEY `PROCESSLIST_HOST` (`PROCESSLIST_HOST`),
+  KEY `RESOURCE_GROUP` (`RESOURCE_GROUP`)
 ) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
 show create table users;
 Table	Create Table

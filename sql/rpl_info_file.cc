@@ -1,19 +1,26 @@
-/* Copyright (c) 2010, 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "rpl_info_file.h"
+#include "sql/rpl_info_file.h"
 
 #include "my_config.h"
 
@@ -21,20 +28,23 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "my_inttypes.h"
+#include "my_loglevel.h"
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
 
-#include "dynamic_ids.h"       // Server_ids
-#include "log.h"               // sql_print_error
 #include "m_string.h"
-#include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_dir.h"            // MY_STAT
 #include "my_thread_local.h"   // my_errno
 #include "mysql/service_mysql_alloc.h"
-#include "mysqld.h"            // mysql_data_home
-#include "psi_memory_key.h"
+#include "mysqld_error.h"      // ER_*
+#include "sql/dynamic_ids.h"   // Server_ids
+#include "sql/log.h"
+#include "sql/mysqld.h"        // mysql_data_home
+#include "sql/psi_memory_key.h"
 #include "sql_string.h"
 
 
@@ -104,15 +114,15 @@ int Rpl_info_file::do_init_info()
     }
     if ((info_fd = my_open(info_fname, O_CREAT | O_RDWR, MYF(MY_WME))) < 0)
     {
-      sql_print_error("Failed to create a new info file (\
-file '%s', errno %d)", info_fname, my_errno());
+      LogErr(ERROR_LEVEL, ER_RPL_FAILED_TO_CREATE_NEW_INFO_FILE,
+             info_fname, my_errno());
       error= 1;
     }
     else if (init_io_cache(&info_file, info_fd, IO_SIZE*2, READ_CACHE, 0L,0,
                       MYF(MY_WME)))
     {
-      sql_print_error("Failed to create a cache on info file (\
-file '%s')", info_fname);
+      LogErr(ERROR_LEVEL, ER_RPL_FAILED_TO_CREATE_CACHE_FOR_INFO_FILE,
+             info_fname);
       error= 1;
     }
     if (error)
@@ -131,15 +141,15 @@ file '%s')", info_fname);
     {
       if ((info_fd = my_open(info_fname, O_RDWR, MYF(MY_WME))) < 0 )
       {
-        sql_print_error("Failed to open the existing info file (\
-file '%s', errno %d)", info_fname, my_errno());
+        LogErr(ERROR_LEVEL, ER_RPL_FAILED_TO_OPEN_INFO_FILE,
+               info_fname, my_errno());
         error= 1;
       }
       else if (init_io_cache(&info_file, info_fd, IO_SIZE*2, READ_CACHE, 0L,
                         0, MYF(MY_WME)))
       {
-        sql_print_error("Failed to create a cache on info file (\
-file '%s')", info_fname);
+        LogErr(ERROR_LEVEL, ER_RPL_FAILED_TO_CREATE_CACHE_FOR_INFO_FILE,
+               info_fname);
         error= 1;
       }
       if (error)

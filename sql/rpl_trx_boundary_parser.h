@@ -1,13 +1,20 @@
-/* Copyright (c) 2015, 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -47,7 +54,8 @@ public:
      Constructor.
   */
   Transaction_boundary_parser()
-    :current_parser_state(EVENT_PARSER_NONE)
+    :current_parser_state(EVENT_PARSER_NONE),
+     last_parser_state(EVENT_PARSER_NONE)
   {
     DBUG_ENTER("Transaction_boundary_parser::Transaction_boundary_parser");
     DBUG_VOID_RETURN;
@@ -128,6 +136,16 @@ public:
                   const Format_description_log_event *fd_event,
                   bool throw_warnings);
 
+  /**
+     Rolls back to the last parser state.
+
+     This should be called in the case of a failed queued event.
+  */
+  void rollback()
+  {
+    current_parser_state= last_parser_state;
+  }
+
 private:
   enum enum_event_boundary_type {
     EVENT_BOUNDARY_TYPE_ERROR= -1,
@@ -146,11 +164,13 @@ private:
       (Rows, Load_data, etc.)
     */
     EVENT_BOUNDARY_TYPE_STATEMENT= 5,
+    /* Incident */
+    EVENT_BOUNDARY_TYPE_INCIDENT= 6,
     /*
-      All non DDL/DML events: Format_desc, Rotate, Incident,
+      All non DDL/DML events: Format_desc, Rotate,
       Previous_gtids, Stop, etc.
     */
-    EVENT_BOUNDARY_TYPE_IGNORE= 6
+    EVENT_BOUNDARY_TYPE_IGNORE= 7
   };
 
   /*
@@ -184,6 +204,13 @@ private:
      Current internal state of the event parser.
   */
   enum_event_parser_state current_parser_state;
+
+  /**
+     Last internal state of the event parser.
+
+     This should be used if we had to roll back the last parsed event.
+  */
+  enum_event_parser_state last_parser_state;
 
   /**
      Parses an event based on the event parser logic.

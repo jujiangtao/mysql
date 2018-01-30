@@ -1,28 +1,42 @@
 /* Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "dd/info_schema/show_query_builder.h" // Select_lex_builder
+#include "sql/dd/info_schema/show_query_builder.h" // Select_lex_builder
 
-#include "item_cmpfunc.h"                      // Item_func_like
-#include "item_func.h"
 #include "m_string.h"                          // C_STRING_WITH_LEN
 #include "my_dbug.h"
-#include "parse_tree_helpers.h"
-#include "parse_tree_items.h"                  // PTI_simple_ident_ident
-#include "parse_tree_nodes.h"                  // PT_select_item_list
-#include "sql_lex.h"                           // Query_options
+#include "sql/auth/sql_security_ctx.h"
+#include "sql/item_cmpfunc.h"                  // Item_func_like
+#include "sql/item_func.h"
+#include "sql/key.h"
+#include "sql/key_spec.h"
+#include "sql/parse_location.h"
+#include "sql/parse_tree_helpers.h"
+#include "sql/parse_tree_items.h"              // PTI_simple_ident_ident
+#include "sql/parse_tree_node_base.h"
+#include "sql/parse_tree_nodes.h"              // PT_select_item_list
+#include "sql/query_options.h"                 // OPTION_SELECT_FOR_SHOW
+#include "sql/sql_class.h"
+#include "sql/sql_lex.h"                       // Query_options
 #include "sql_string.h"
 
 class Item;
@@ -33,8 +47,7 @@ namespace info_schema {
 
 static const Query_options options=
 {
-  0, /* query_spec_options */
-  SELECT_LEX::SQL_CACHE_UNSPECIFIED /* sql_cache */
+  OPTION_SELECT_FOR_SHOW /* query_spec_options */
 };
 
 
@@ -145,8 +158,7 @@ bool Select_lex_builder::add_from_item(const LEX_STRING schema_name,
   /* ... FROM schame_name.<table_name> ... */
   PT_table_factor_table_ident *table_factor;
   table_factor= new (m_thd->mem_root)
-    PT_table_factor_table_ident(table_ident,
-                                nullptr, nullptr, nullptr);
+    PT_table_factor_table_ident(table_ident, nullptr, NULL_CSTR, nullptr);
   if (table_factor == nullptr)
     return true;
 
@@ -335,18 +347,11 @@ PT_derived_table* Select_lex_builder::prepare_derived_table(
   if (sub_query == nullptr)
     return nullptr;
 
-  LEX_STRING *derived_table_name= nullptr;
-  derived_table_name= m_thd->make_lex_string(derived_table_name,
-                                             table_alias.str,
-                                             table_alias.length, true);
-  if (derived_table_name == nullptr)
-    return nullptr;
-
   Create_col_name_list column_names;
   column_names.init(m_thd->mem_root);
   PT_derived_table *derived_table;
   derived_table= new (m_thd->mem_root)
-    PT_derived_table(sub_query, derived_table_name, &column_names);
+    PT_derived_table(sub_query, to_lex_cstring(table_alias), &column_names);
 
   return derived_table;
 }
@@ -393,18 +398,15 @@ SELECT_LEX* Select_lex_builder::prepare_select_lex()
   if (query_expression2 == nullptr)
     return nullptr;
 
-  PT_select_stmt *select2;
-  select2= new (m_thd->mem_root) PT_select_stmt(query_expression2);
-  if (select2 == nullptr)
-    return nullptr;
-
   LEX *lex= m_thd->lex;
   SELECT_LEX *current_select= lex->current_select();
+
+  lex->sql_command= SQLCOM_SELECT;
   Parse_context pc(m_thd, current_select);
   if (m_thd->is_error())
     return nullptr;
 
-  if (select2->contextualize(&pc))
+  if (query_expression2->contextualize(&pc))
     return nullptr;
 
   return current_select;

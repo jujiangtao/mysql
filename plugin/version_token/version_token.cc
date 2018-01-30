@@ -1,39 +1,52 @@
 /* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include <current_thd.h>
-#include <derror.h>
-#include <errmsg.h>
-#include <hash.h>
-#include <locking_service.h>
-#include <m_string.h>
+#include <mysql/components/my_service.h>
+#include <mysql/components/services/dynamic_privilege.h>
 #include <mysql/plugin_audit.h>
 #include <mysql/psi/mysql_memory.h>
 #include <mysql/psi/mysql_rwlock.h>
 #include <mysql/service_locking.h>
-#include <mysql/components/my_service.h>
-#include <mysql/components/services/dynamic_privilege.h>
-#include <sql_class.h>
 #include <sys/types.h>
+#include <algorithm>
+#include <atomic>
 #include <sstream>
+#include <string>
+#include <utility>
+#include <vector>
 
+#include "errmsg.h"
 #include "lex_string.h"
+#include "m_string.h"
+#include "map_helpers.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_psi_config.h"
+#include "sql/auth/auth_acls.h"
+#include "sql/current_thd.h"
+#include "sql/derror.h"
+#include "sql/locking_service.h"
+#include "sql/sql_class.h"
 
 #ifdef WIN32
 #define PLUGIN_EXPORT extern "C" __declspec(dllexport)
@@ -41,25 +54,24 @@
 #define PLUGIN_EXPORT extern "C"
 #endif
 
+using std::pair;
+using std::sort;
+using std::string;
+using std::vector;
+
 // This global value is initiated with 1 and the corresponding session
 // value with 0. Hence Every session must compare its tokens with the
 // global values when it runs its very first query.
-static volatile int64 session_number= 1;
+static std::atomic<int64> session_number{1};
 static size_t vtoken_string_length;
-
-// This flag is for memory management when the variable
-// is updated for the first time.
-struct version_token_st {
-  LEX_STRING token_name;
-  LEX_STRING token_val;
-};
-
 
 #define VTOKEN_LOCKS_NAMESPACE "version_token_locks"
 
 #define LONG_TIMEOUT ((ulong) 3600L*24L*365L)
 
-static HASH version_tokens_hash;
+PSI_memory_key key_memory_vtoken;
+
+static malloc_unordered_map<string, string> *version_tokens_hash;
 
 /**
   Utility class implementing an atomic boolean on top of an int32
@@ -71,7 +83,7 @@ class atomic_boolean
   /** constants for true and false */
   static const int m_true, m_false;
   /** storage for the boolean's current value */
-  volatile int32 m_value;
+  std::atomic<int32> m_value;
 public:
 
   /**
@@ -95,7 +107,7 @@ public:
   {
     int32 cmp= value ? m_true : m_false, actual_value;
 
-    actual_value= my_atomic_load32(&m_value);
+    actual_value= m_value.load();
 
     return actual_value == cmp;
   }
@@ -108,7 +120,7 @@ public:
   void set(bool new_value)
   {
     int32 new_val= new_value ? m_true : m_false;
-    my_atomic_store32(&m_value, new_val);
+    m_value.store(new_val);
   }
 };
 
@@ -125,7 +137,8 @@ const int atomic_boolean::m_false= 1;
 static atomic_boolean version_tokens_hash_inited;
 
 static MYSQL_THDVAR_ULONG(session_number,
-                          PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_READONLY,
+                          PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_READONLY |
+                          PLUGIN_VAR_NOPERSIST,
                           "Version number to assist with session tokens check",
                           NULL, NULL, 0L, 0, ((ulong) -1), 0);
 
@@ -149,19 +162,17 @@ static MYSQL_THDVAR_STR(session,
 // Lock to be used for global variable hash.
 mysql_rwlock_t LOCK_vtoken_hash;
 
-PSI_memory_key key_memory_vtoken;
-
 #ifdef HAVE_PSI_INTERFACE
 PSI_rwlock_key key_LOCK_vtoken_hash;
 
 static PSI_rwlock_info all_vtoken_rwlocks[]=
 {
-  {&key_LOCK_vtoken_hash, "LOCK_vtoken_hash", 0},
+  {&key_LOCK_vtoken_hash, "LOCK_vtoken_hash", 0, 0, PSI_DOCUMENT_ME},
 };
 
 static PSI_memory_info all_vtoken_memory[]=
 {
-  {&key_memory_vtoken, "vtoken", 0}
+  {&key_memory_vtoken, "vtoken", 0, 0, PSI_DOCUMENT_ME}
 };
 
 // Function to register the lock
@@ -171,10 +182,10 @@ static void vtoken_init_psi_keys(void)
   int count;
 
   count= static_cast<int>(array_elements(all_vtoken_rwlocks));
-  PSI_RWLOCK_CALL(register_rwlock)(category, all_vtoken_rwlocks, count);
+  mysql_rwlock_register(category, all_vtoken_rwlocks, count);
 
   count= static_cast<int>(array_elements(all_vtoken_memory));
-  PSI_MEMORY_CALL(register_memory)(category, all_vtoken_memory, count);
+  mysql_memory_register(category, all_vtoken_memory, count);
 }
 
 #endif /* HAVE_PSI_INTERFACE */
@@ -225,25 +236,13 @@ bool has_required_privileges(THD *thd)
   return true;
 }
 
-static const uchar *
-version_token_get_key(const uchar *entry, size_t *length);
-
 static void set_vtoken_string_length()
 {
-  version_token_st *token_obj;
-  int i= 0;
   size_t str_size= 0;
-  while ((token_obj= (version_token_st *) my_hash_element(&version_tokens_hash, i)))
+  for (const auto &key_and_value : *version_tokens_hash)
   {
-    if ((token_obj->token_name).str)
-      str_size= str_size+ (token_obj->token_name).length;
-
-    if ((token_obj->token_val).str)
-      str_size= str_size+ (token_obj->token_val).length;
-
-    str_size+= 2;
-
-    i++;
+    str_size+= key_and_value.first.size() + 1;
+    str_size+= key_and_value.second.size() + 1;
   }
   vtoken_string_length= str_size;
 }
@@ -314,8 +313,7 @@ static int parse_vtokens(char *input, enum command type)
   int result= 0;
   THD *thd= current_thd;
   ulonglong thd_session_number= THDVAR(thd, session_number);
-  ulonglong tmp_token_number= (ulonglong)
-                              my_atomic_load64((volatile int64 *) &session_number);
+  ulonglong tmp_token_number= (ulonglong) session_number.load();
 
   bool vtokens_unchanged= (thd_session_number == tmp_token_number);
 
@@ -397,60 +395,23 @@ static int parse_vtokens(char *input, enum command type)
       case SET_VTOKEN:
       case EDIT_VTOKEN:
       {
-	char *name= NULL, *val= NULL;
-	size_t name_len, val_len;
-
-	name_len= token_name.length;
-	val_len= token_val.length;
-	version_token_st *v_token= NULL;
-
-	if (!my_multi_malloc(key_memory_vtoken, MYF(0),
-	  		     &v_token, sizeof(version_token_st), &name, name_len,
-			     &val, val_len, NULL))
-	{
-	  push_warning(thd, Sql_condition::SL_WARNING, CR_OUT_OF_MEMORY,
-		       "Not enough memory available");
-	  return result;
-	}
-
-	memcpy(name, token_name.str, name_len);
-	memcpy(val, token_val.str, val_len);
-	v_token->token_name.str= name;
-	v_token->token_val.str= val;
-	v_token->token_name.length= name_len;
-	v_token->token_val.length= val_len;
-
-	if (my_hash_insert(&version_tokens_hash, (uchar *) v_token))
-	{
-	  version_token_st *tmp= (version_token_st *)
-				 my_hash_search(&version_tokens_hash,
-						(uchar *) name, name_len);
-
-	  if (tmp)
-	  {
-	    my_hash_delete(&version_tokens_hash, (uchar *) tmp);
-	  }
-	  my_hash_insert(&version_tokens_hash, (uchar *) v_token);
-	}
+        (*version_tokens_hash)[to_string(token_name)]= to_string(token_val);
 	result++;
       }
 	break;
 
       case CHECK_VTOKEN:
       {
-	version_token_st *token_obj;
         char error_str[MYSQL_ERRMSG_SIZE];
         if (!mysql_acquire_locking_service_locks(thd, VTOKEN_LOCKS_NAMESPACE,
 	                                         (const char **) &(token_name.str), 1,
 					         LOCKING_SERVICE_READ, LONG_TIMEOUT) &&
             !vtokens_unchanged)
 	{
-	  if ((token_obj= (version_token_st *)my_hash_search(&version_tokens_hash,
-							     (const uchar*) token_name.str,
-							     token_name.length)))
+          auto it= version_tokens_hash->find(to_string(token_name));
+	  if (it != version_tokens_hash->end())
 	  {
-	    if ((token_obj->token_val.length != token_val.length) ||
-		(memcmp(token_obj->token_val.str, token_val.str, token_val.length) != 0))
+            if (it->second != to_string(token_val))
 	    {
 
               if (!thd->get_stmt_da()->is_set())
@@ -458,8 +419,8 @@ static int parse_vtokens(char *input, enum command type)
                 my_snprintf(error_str, sizeof(error_str),
                             ER_THD(thd, ER_VTOKEN_PLUGIN_TOKEN_MISMATCH),
                             (int) token_name.length, token_name.str,
-                            (int) token_obj->token_val.length, 
-                            token_obj->token_val.str);
+                            (int) it->second.size(),
+                            it->second.data());
 
                 thd->get_stmt_da()->set_error_status(ER_VTOKEN_PLUGIN_TOKEN_MISMATCH,
                                                      (const char *) error_str,
@@ -515,9 +476,10 @@ static int parse_vtokens(char *input, enum command type)
   @param event_class  audit API event class
   @param event        pointer to the audit API event data
 */
-static int version_token_check(MYSQL_THD thd,
-                               mysql_event_class_t event_class,
-                               const void *event)
+static
+int version_token_check(MYSQL_THD thd,
+                        mysql_event_class_t event_class MY_ATTRIBUTE((unused)),
+                        const void *event)
 {
   char *sess_var;
 
@@ -642,12 +604,8 @@ static int version_tokens_init(void *arg MY_ATTRIBUTE((unused)))
   vtoken_init_psi_keys();
 #endif /* HAVE_PSI_INTERFACE */
 
-  // Initialize hash.
-  my_hash_init(&version_tokens_hash,
-	       &my_charset_bin,
-               4, 0, version_token_get_key,
-               my_free, HASH_UNIQUE,
-               key_memory_vtoken);
+  version_tokens_hash=
+    new malloc_unordered_map<string, string>{key_memory_vtoken};
   version_tokens_hash_inited.set(true);
 
   if (!cleanup_lock.is_active())
@@ -686,10 +644,9 @@ static int version_tokens_deinit(void *arg MY_ATTRIBUTE((unused)))
   }
   mysql_plugin_registry_release(r);
   mysql_rwlock_wrlock(&LOCK_vtoken_hash);
-  if (version_tokens_hash.records)
-    my_hash_reset(&version_tokens_hash);
 
-  my_hash_free(&version_tokens_hash);
+  delete version_tokens_hash;
+  version_tokens_hash= nullptr;
   version_tokens_hash_inited.set(false);
   mysql_rwlock_unlock(&LOCK_vtoken_hash);
 
@@ -713,6 +670,7 @@ mysql_declare_plugin(version_tokens)
   "version token check",             /* description                     */
   PLUGIN_LICENSE_GPL,
   version_tokens_init,               /* init function (when loaded)     */
+  NULL,                              /* cwcheck uninstall function      */
   version_tokens_deinit,             /* deinit function (when unloaded) */
   0x0101,                            /* version          */
   NULL,                              /* status variables */
@@ -815,8 +773,7 @@ PLUGIN_EXPORT char *version_tokens_set(UDF_INIT*, UDF_ARGS *args,
     hash_str[len]= 0;
 
     // Hash built with its own copy of string.
-    if (version_tokens_hash.records)
-      my_hash_reset(&version_tokens_hash);
+    version_tokens_hash->clear();
     vtokens_count= parse_vtokens(hash_str, SET_VTOKEN);
     ss << vtokens_count << " version tokens set.";
 
@@ -825,13 +782,12 @@ PLUGIN_EXPORT char *version_tokens_set(UDF_INIT*, UDF_ARGS *args,
   }
   else
   {
-    if (version_tokens_hash.records)
-      my_hash_reset(&version_tokens_hash);
+    version_tokens_hash->clear();
     ss << "Version tokens list cleared.";
   }
   set_vtoken_string_length();
 
-  my_atomic_add64((volatile int64 *) &session_number, 1);
+  ++session_number;
 
   mysql_rwlock_unlock(&LOCK_vtoken_hash);
 
@@ -914,7 +870,7 @@ PLUGIN_EXPORT char *version_tokens_edit(UDF_INIT*, UDF_ARGS *args,
     set_vtoken_string_length();
 
     if (vtokens_count)
-      my_atomic_add64((volatile int64 *) &session_number, 1);
+      ++session_number;
 
     mysql_rwlock_unlock(&LOCK_vtoken_hash);
     my_free(hash_str);
@@ -993,21 +949,13 @@ PLUGIN_EXPORT char *version_tokens_delete(UDF_INIT*, UDF_ARGS *args,
 
     while (token)
     {
-      version_token_st *tmp;
       LEX_STRING st={ token, strlen(token) };
 
       trim_whitespace(&my_charset_bin, &st);
 
       if (st.length)
       {
-        tmp= (version_token_st *) my_hash_search(&version_tokens_hash,
-                                                 (uchar *) st.str,
-                                                 st.length);
-        if (tmp)
-        {
-          my_hash_delete(&version_tokens_hash, (uchar *) tmp);
-          vtokens_count++;
-        }
+        vtokens_count+= version_tokens_hash->erase(to_string(st));
       }
 
       token= my_strtok_r(NULL, separator, &lasts_token);
@@ -1017,7 +965,7 @@ PLUGIN_EXPORT char *version_tokens_delete(UDF_INIT*, UDF_ARGS *args,
 
     if (vtokens_count)
     {
-      my_atomic_add64((volatile int64 *) &session_number, 1);
+      ++session_number;
     }
 
     mysql_rwlock_unlock(&LOCK_vtoken_hash);
@@ -1044,21 +992,14 @@ PLUGIN_EXPORT char *version_tokens_delete(UDF_INIT*, UDF_ARGS *args,
 PLUGIN_EXPORT bool version_tokens_show_init(UDF_INIT *initid, UDF_ARGS *args,
                                                char *message)
 {
-  int i= 0;
   size_t str_size= 0;
   char *result_str;
-  version_token_st *token_obj;
 
   THD *thd= current_thd;
   if (!has_required_privileges(thd))
   {
         my_stpcpy(message, "The user is not privileged to use this function.");
         return true;
-  }
-  if (!(my_hash_inited(&version_tokens_hash)))
-  {
-    my_stpcpy(message, "version_token plugin is not installed.");
-    return true;
   }
 
   if (args->arg_count != 0)
@@ -1092,27 +1033,31 @@ PLUGIN_EXPORT bool version_tokens_show_init(UDF_INIT *initid, UDF_ARGS *args,
 
     result_str= initid->ptr;
 
-    i= 0;
+    // This sort isn't required, but makes for easier testing.
+    vector<pair<string, string>> sorted_version_tokens
+      (version_tokens_hash->begin(), version_tokens_hash->end());
+    sort(sorted_version_tokens.begin(), sorted_version_tokens.end());
 
-    while ((token_obj= (version_token_st *) my_hash_element(&version_tokens_hash, i)))
+    for (const auto &key_and_value : sorted_version_tokens)
     {
-      memcpy(result_str, (token_obj->token_name).str, (token_obj->token_name).length);
+      const string &token_name= key_and_value.first;
+      const string &token_val= key_and_value.second;
 
-      result_str+= (token_obj->token_name).length;
+      memcpy(result_str, token_name.data(), token_name.size());
+
+      result_str+= token_name.size();
 
       memcpy(result_str, "=", 1);
 
       result_str++;
 
-      memcpy(result_str, (token_obj->token_val).str, (token_obj->token_val).length);
+      memcpy(result_str, token_val.data(), token_val.size());
 
-      result_str+= (token_obj->token_val).length;
+      result_str+= token_val.size();
 
       memcpy(result_str, ";", 1);
 
       result_str++;
-
-      i++;
     }
 
     initid->ptr[str_size-1]= '\0';
@@ -1271,14 +1216,4 @@ long long version_tokens_unlock(UDF_INIT*, UDF_ARGS*,
 {
   // For the UDF 1 == success, 0 == failure.
   return !release_locking_service_locks(NULL, VTOKEN_LOCKS_NAMESPACE);
-}
-
-
-
-static const uchar *version_token_get_key(const uchar *entry, size_t *length)
-{
-  char *key;
-  key= (((version_token_st *) entry)->token_name).str;
-  *length= (((version_token_st *) entry)->token_name).length;
-  return (uchar *) key;
 }

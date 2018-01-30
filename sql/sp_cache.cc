@@ -1,66 +1,56 @@
 /* Copyright (c) 2002, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 
 #include "sql/sp_cache.h"
 
 #include <stddef.h>
 #include <atomic>
+#include <memory>
+#include <string>
 
-#include "handler.h"
-#include "hash.h"
 #include "lex_string.h"
+#include "map_helpers.h"
 #include "my_dbug.h"
-#include "psi_memory_key.h"
-#include "sp_head.h"
-#include "sql_class.h"
-#include "table.h"
+#include "mysql/udf_registration_types.h"
+#include "sql/auth/sql_security_ctx.h"
+#include "sql/psi_memory_key.h"
+#include "sql/sp_head.h"
 
 
 /*
   Cache of stored routines.
 */
 
-static const uchar *hash_get_key_for_sp_head(const uchar *ptr, size_t *plen)
-{
-  sp_head *sp= (sp_head *)ptr;
-  *plen= sp->m_qname.length;
-  return (uchar*) sp->m_qname.str;
-}
-
-
-static void hash_free_sp_head(void *p)
-{
-  sp_head *sp= (sp_head *)p;
-  sp_head::destroy(sp);
-}
-
-
 class sp_cache
 {
 public:
   sp_cache()
+    : m_hashtable(system_charset_info, key_memory_sp_cache)
   {
-    my_hash_init(&m_hashtable, system_charset_info, 0, 0,
-                 hash_get_key_for_sp_head, hash_free_sp_head, 0,
-                 key_memory_sp_cache);
   }
 
   ~sp_cache()
   {
-    my_hash_free(&m_hashtable);
   }
 
   /**
@@ -72,18 +62,19 @@ public:
   */
   bool insert(sp_head *sp)
   {
-    return my_hash_insert(&m_hashtable, (const uchar *)sp);
+    m_hashtable.emplace(
+      to_string(sp->m_qname), std::unique_ptr<sp_head, sp_head_deleter>(sp));
+    return false;
   }
 
   sp_head *lookup(char *name, size_t namelen)
   {
-    return (sp_head *) my_hash_search(&m_hashtable, (const uchar *)name,
-                                      namelen);
+    return find_or_nullptr(m_hashtable, std::string(name, namelen));
   }
 
   void remove(sp_head *sp)
   {
-    my_hash_delete(&m_hashtable, (uchar *)sp);
+    m_hashtable.erase(to_string(sp->m_qname));
   }
 
   /**
@@ -95,13 +86,18 @@ public:
   */
   void enforce_limit(ulong upper_limit_for_elements)
   {
-    if (m_hashtable.records > upper_limit_for_elements)
-      my_hash_reset(&m_hashtable);
+    if (m_hashtable.size() > upper_limit_for_elements)
+      m_hashtable.clear();
   }
 
 private:
+  struct sp_head_deleter {
+    void operator() (sp_head *sp) const { sp_head::destroy(sp); }
+  };
+
   /* All routines in this cache */
-  HASH m_hashtable;
+  collation_unordered_map<
+    std::string, std::unique_ptr<sp_head, sp_head_deleter>> m_hashtable;
 }; // class sp_cache
 
 

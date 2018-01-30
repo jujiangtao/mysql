@@ -1,39 +1,55 @@
 /* Copyright (c) 2012, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA */
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef TABLE_CACHE_INCLUDED
 #define TABLE_CACHE_INCLUDED
 
 #include <stddef.h>
 #include <sys/types.h>
+#include <map>
+#include <memory>
+#include <string>
+#include <unordered_map>
+#include <utility>
 
-#include "handler.h"
-#include "hash.h"
 #include "lex_string.h"
 #include "my_base.h"
 #include "my_dbug.h"
+#include "my_inttypes.h"
 #include "my_psi_config.h"
+#include "mysql/components/services/mysql_mutex_bits.h"
+#include "mysql/components/services/psi_mutex_bits.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/psi/psi_base.h"
 #include "mysql/psi/psi_mutex.h"
-#include "sql_base.h"
-#include "sql_class.h"
-#include "sql_plist.h"
-#include "sql_plugin_ref.h"
-#include "system_variables.h"
-#include "table.h"
+#include "mysql/udf_registration_types.h"
+#include "sql/handler.h"
+#include "sql/sql_base.h"
+#include "sql/sql_class.h"
+#include "sql/sql_plist.h"
+#include "sql/system_variables.h"
+#include "sql/table.h"
+
+class Table_cache_element;
 
 extern ulong table_cache_size_per_instance, table_cache_instances;
 
@@ -87,7 +103,7 @@ private:
     of used TABLE objects in this table cache is stored.
     We use Table_cache_element::share::table_cache_key as key for this hash.
   */
-  HASH m_cache;
+  std::unordered_map<std::string, std::unique_ptr<Table_cache_element>> m_cache;
 
   /**
     List that contains all TABLE instances for tables in this particular
@@ -135,7 +151,7 @@ public:
   /** Assert that caller owns lock on the table cache. */
   void assert_owner() { mysql_mutex_assert_owner(&m_lock); }
 
-  inline TABLE* get_table(THD *thd, my_hash_value_type hash_value,
+  inline TABLE* get_table(THD *thd,
                           const char *key, size_t key_length,
                           TABLE_SHARE **share);
 
@@ -387,19 +403,12 @@ bool Table_cache::add_used_table(THD *thd, TABLE *table)
       Allocate new Table_cache_element object and add it to the cache
       and array in TABLE_SHARE.
     */
-    DBUG_ASSERT(! my_hash_search(&m_cache,
-                                 (uchar*)table->s->table_cache_key.str,
-                                 table->s->table_cache_key.length));
+    std::string key(
+      table->s->table_cache_key.str, table->s->table_cache_key.length);
+    DBUG_ASSERT(m_cache.count(key) == 0);
 
-    if (!(el= new Table_cache_element(table->s)))
-      return true;
-
-    if (my_hash_insert(&m_cache, (uchar*)el))
-    {
-      delete el;
-      return true;
-    }
-
+    el= new Table_cache_element(table->s);
+    m_cache.emplace(key, std::unique_ptr<Table_cache_element>(el));
     table->s->cache_element[table_cache_manager.cache_index(this)]= el;
   }
 
@@ -446,7 +455,9 @@ void Table_cache::remove_table(TABLE *table)
 
   if (el->used_tables.is_empty() && el->free_tables.is_empty())
   {
-    (void) my_hash_delete(&m_cache, (uchar*) el);
+    std::string key(
+      table->s->table_cache_key.str, table->s->table_cache_key.length);
+    m_cache.erase(key);
     /*
       Remove reference to deleted cache element from array
       in the TABLE_SHARE.
@@ -460,7 +471,6 @@ void Table_cache::remove_table(TABLE *table)
   Get an unused TABLE instance from the table cache.
 
   @param      thd         Thread context.
-  @param      hash_value  Hash value for the key identifying table.
   @param      key         Key identifying table.
   @param      key_length  Length of key for the table.
   @param[out] share       NULL - if table cache doesn't contain any
@@ -478,20 +488,21 @@ void Table_cache::remove_table(TABLE *table)
                      are used TABLE objects in cache and NULL otherwise.
 */
 
-TABLE* Table_cache::get_table(THD *thd, my_hash_value_type hash_value,
+TABLE* Table_cache::get_table(THD *thd,
                               const char *key, size_t key_length,
                               TABLE_SHARE **share)
 {
-  Table_cache_element *el;
   TABLE *table;
 
   assert_owner();
 
   *share= NULL;
 
-  if (!(el= (Table_cache_element*) my_hash_search_using_hash_value(&m_cache,
-                                     hash_value, (uchar*) key, key_length)))
+  std::string key_str(key, key_length);
+  const auto el_it= m_cache.find(key_str);
+  if (el_it == m_cache.end())
     return NULL;
+  Table_cache_element *el= el_it->second.get();
 
   *share= el->share;
 

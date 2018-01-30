@@ -1,7 +1,8 @@
-## Using Mysqlx::Expr::OBJECT in collection 
+## Using Mysqlx::Expr::OBJECT in collection
 
 ## Preamble
 --source include/xplugin_preamble.inc
+--source include/xplugin_create_user.inc
 ## Test starts here
 --write_file $MYSQL_TMP_DIR/crud_doc_expr_object.tmp
 
@@ -9,8 +10,11 @@
 -->sql
 DROP SCHEMA IF EXISTS xtest;
 CREATE SCHEMA xtest;
-CREATE TABLE xtest.xcoll (doc JSON, _id VARBINARY(16) GENERATED ALWAYS AS (JSON_UNQUOTE(JSON_EXTRACT(doc, '$._id'))) STORED PRIMARY KEY);
 -->endsql
+
+-->stmtadmin create_collection	{"schema":"xtest", "name":"xcoll"}
+-->recvresult
+
 
 -->echo Inserting object into collection
 Mysqlx.Crud.Insert {
@@ -45,7 +49,7 @@ Mysqlx.Crud.Insert {
   }
 }
 
--- Mysqlx.Sql.StmtExecuteOk
+#-- Mysqlx.Sql.StmtExecuteOk
 -->recvresult
 
 -->sql
@@ -109,7 +113,7 @@ Mysqlx.Crud.Find {
   }
 }
   
--- Mysqlx.Sql.StmtExecuteOk
+#-- Mysqlx.Sql.StmtExecuteOk
 -->recvresult
 
 
@@ -158,7 +162,7 @@ Mysqlx.Crud.Find {
   }
 }
   
--- Mysqlx.Sql.StmtExecuteOk
+#-- Mysqlx.Sql.StmtExecuteOk
 -->recvresult
 
 
@@ -229,7 +233,7 @@ Mysqlx.Crud.Find {
   }
 }
 
--- Mysqlx.Sql.StmtExecuteOk
+#-- Mysqlx.Sql.StmtExecuteOk
 -->recvresult
 
 
@@ -264,7 +268,7 @@ Mysqlx.Crud.Update {
   }
 }
   
--- Mysqlx.Sql.StmtExecuteOk
+#-- Mysqlx.Sql.StmtExecuteOk
 -->recvresult
 
 -->sql
@@ -322,9 +326,10 @@ drop schema if exists xtest;
 -->endsql
 EOF
 
---exec $MYSQLXTEST -uroot --password='' --file=$MYSQL_TMP_DIR/crud_doc_expr_object.tmp 2>&1
+--exec $MYSQLXTEST -ux_root --password='' --file=$MYSQL_TMP_DIR/crud_doc_expr_object.tmp 2>&1
 --remove_file $MYSQL_TMP_DIR/crud_doc_expr_object.tmp
 
 ## Postamble
+--source include/xplugin_drop_user.inc
 uninstall plugin mysqlx;
 

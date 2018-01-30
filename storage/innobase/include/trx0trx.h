@@ -1,18 +1,26 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2016, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1996, 2017, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+the terms of the GNU General Public License, version 2.0, as published by the
+Free Software Foundation.
+
+This program is also distributed with certain software (including but not
+limited to OpenSSL) that is licensed under separate terms, as designated in a
+particular file or component or in included license documentation. The authors
+of MySQL hereby grant you an additional permission to link the program and
+your derivative works with the separately licensed software that they have
+included with MySQL.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+FOR A PARTICULAR PURPOSE. See the GNU General Public License, version 2.0,
+for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 *****************************************************************************/
 
@@ -34,8 +42,8 @@ Created 3/26/1996 Heikki Tuuri
 #include "dict0types.h"
 #include "trx0types.h"
 #include "ut0new.h"
+#include "sql/handler.h"
 
-#ifndef UNIV_HOTBACKUP
 #include "lock0types.h"
 #include "log0log.h"
 #include "usr0types.h"
@@ -43,7 +51,9 @@ Created 3/26/1996 Heikki Tuuri
 #include "mem0mem.h"
 #include "trx0xa.h"
 #include "ut0vec.h"
-#include "fts0fts.h"
+#ifndef UNIV_HOTBACKUP
+# include "fts0fts.h"
+#endif /* !UNIV_HOTBACKUP */
 #include "srv0srv.h"
 
 // Forward declaration
@@ -58,6 +68,7 @@ class FlushObserver;
 /** Dummy session used currently in MySQL interface */
 extern sess_t*	trx_dummy_sess;
 
+#ifndef UNIV_HOTBACKUP
 /** Set flush observer for the transaction
 @param[in,out]	trx		transaction struct
 @param[in]	observer	flush observer */
@@ -216,27 +227,6 @@ trx_start_internal_read_only_low(
 
 #define trx_start_if_not_started_xa(t, rw)			\
 	trx_start_if_not_started_xa_low((t), (rw))
-#endif /* UNIV_DEBUG */
-
-/*************************************************************//**
-Starts the transaction for a DDL operation. */
-void
-trx_start_for_ddl_low(
-/*==================*/
-	trx_t*		trx,	/*!< in/out: transaction */
-	trx_dict_op_t	op);	/*!< in: dictionary operation type */
-
-#ifdef UNIV_DEBUG
-#define trx_start_for_ddl(t, o)					\
-	do {							\
-	ut_ad((t)->start_file == 0);				\
-	(t)->start_line = __LINE__;				\
-	(t)->start_file = __FILE__;				\
-	trx_start_for_ddl_low((t), (o));			\
-	} while (0)
-#else
-#define trx_start_for_ddl(t, o)					\
-	trx_start_for_ddl_low((t), (o))
 #endif /* UNIV_DEBUG */
 
 /****************************************************************//**
@@ -417,7 +407,6 @@ trx_set_dict_operation(
 	trx_t*			trx,
 	enum trx_dict_op_t	op);
 
-#ifndef UNIV_HOTBACKUP
 /**********************************************************************//**
 Determines if a transaction is in the given state.
 The caller must hold trx_sys->mutex, or it must be the thread
@@ -457,9 +446,6 @@ ibool
 trx_is_strict(
 /*==========*/
 	trx_t*	trx);	/*!< in: transaction */
-#else /* !UNIV_HOTBACKUP */
-#define trx_is_interrupted(trx) FALSE
-#endif /* !UNIV_HOTBACKUP */
 
 /*******************************************************************//**
 Calculates the "weight" of a transaction. The weight of one transaction
@@ -683,6 +669,7 @@ rw_trx_list and that it is a read-only transaction.
 The tranasction must be in the mysql_trx_list. */
 # define assert_trx_nonlocking_or_in_list(trx) ((void)0)
 #endif /* UNIV_DEBUG */
+#endif /* !UNIV_HOTBACKUP */
 
 typedef std::vector<ib_lock_t*, ut_allocator<ib_lock_t*> >	lock_pool_t;
 
@@ -777,6 +764,12 @@ struct trx_lock_t {
 					Protected by both the lock sys mutex
 					and the trx_t::mutex. */
 	ulint		n_rec_locks;	/*!< number of rec locks in this trx */
+#ifdef UNIV_DEBUG
+	/** When a transaction is forced to rollback due to a deadlock
+	check or by another high priority transaction this is true. Used
+	by debug checks in lock0lock.cc */
+	bool		in_rollback;
+#endif /* UNIV_DEBUG */
 
 	/** The transaction called ha_innobase::start_stmt() to
 	lock a table. Most likely a temporary table. */
@@ -823,18 +816,20 @@ transactions while the system is already processing new user
 transactions. The trx_sys->mutex prevents a race condition between it
 and lock_trx_release_locks() [invoked by trx_commit()].
 
-* trx_print_low() may access transactions not associated with the current
-thread. The caller must be holding trx_sys->mutex and lock_sys->mutex.
+* Print of transactions may access transactions not associated with
+the current thread. The caller must be holding trx_sys->mutex and
+lock_sys->mutex.
 
 * When a transaction handle is in the trx_sys->mysql_trx_list or
 trx_sys->trx_list, some of its fields must not be modified without
 holding trx_sys->mutex exclusively.
 
-* The locking code (in particular, lock_deadlock_recursive() and
-lock_rec_convert_impl_to_expl()) will access transactions associated
-to other connections. The locks of transactions are protected by
-lock_sys->mutex and sometimes by trx->mutex. */
+* The locking code (in particular, deadlock checking and implicit to
+explicit conversion) will access transactions associated to other
+connections. The locks of transactions are protected by lock_sys->mutex
+and sometimes by trx->mutex.
 
+* Killing of asynchronous transactions. */
 
 /** Represents an instance of rollback segment along with its state variables.*/
 struct trx_undo_ptr_t {
@@ -913,6 +908,13 @@ struct trx_t {
 					state and lock (except some fields
 					of lock, which are protected by
 					lock_sys->mutex) */
+
+	bool		owns_mutex;	/*!< Set to the transaction that owns
+					the mutex during lock acquire and/or
+					release.
+
+					This is used to avoid taking the
+					trx_t::mutex recursively. */
 
 	/* Note: in_depth was split from in_innodb for fixing a RO
 	performance issue. Acquiring the trx_t::mutex for each row
@@ -1009,6 +1011,13 @@ struct trx_t {
 
 	trx_state_t	state;
 
+	/* If set, this transaction should stop inheriting (GAP)locks.
+	Generally set to true during transaction prepare for RC or lower
+	isolation, if requested. Needed for replication replay where
+	we don't want to get blocked on GAP locks taken for protecting
+	concurrent unique insert or replace operation. */
+	bool		skip_lock_inheritance;
+
 	ReadView*	read_view;	/*!< consistent read view used in the
 					transaction, or NULL if not yet set */
 
@@ -1095,6 +1104,12 @@ struct trx_t {
 					and this flag would be set to false */
 	trx_dict_op_t	dict_operation;	/**< @see enum trx_dict_op_t */
 
+	bool		ddl_operation; /*!< True if this trx involves dd table
+					change */
+	bool		ddl_must_flush; /*!< True if this trx involves dd table
+					change, and must flush */
+	bool		in_truncate;	/* This trx is doing truncation */
+
 	/* Fields protected by the srv_conc_mutex. */
 	bool		declared_to_be_inside_innodb;
 					/*!< this is TRUE if we have declared
@@ -1114,12 +1129,19 @@ struct trx_t {
 
 	time_t		start_time;	/*!< time the state last time became
 					TRX_STATE_ACTIVE */
+
+	/** Weight/Age of the transaction in the record lock wait queue. */
+	int32_t		age;
+
+	/** For tracking if Weight/age has been updated. */
+	uint64_t	age_updated;
+
 	lsn_t		commit_lsn;	/*!< lsn at the time of the commit */
-	table_id_t	table_id;	/*!< Table to drop iff dict_operation
-					== TRX_DICT_OP_TABLE, or 0. */
+
 	/*------------------------------*/
 	THD*		mysql_thd;	/*!< MySQL thread handle corresponding
 					to this trx, or NULL */
+
 	const char*	mysql_log_file_name;
 					/*!< if MySQL binlog is used, this field
 					contains a pointer to the latest file
@@ -1230,6 +1252,7 @@ struct trx_t {
 	ib_uint32_t	will_lock;	/*!< Will acquire some locks. Increment
 					each time we determine that a lock will
 					be acquired by the MySQL layer. */
+#ifndef UNIV_HOTBACKUP
 	/*------------------------------*/
 	fts_trx_t*	fts_trx;	/*!< FTS information, or NULL if
 					transaction hasn't modified tables
@@ -1240,11 +1263,8 @@ struct trx_t {
 					count of tables being flushed. */
 
 	/*------------------------------*/
-	bool		ddl;		/*!< true if it is an internal
-					transaction for DDL */
 	bool		internal;	/*!< true if it is a system/internal
-					transaction background task. This
-					includes DDL transactions too.  Such
+					transaction background task. Such
 					transactions are always treated as
 					read-write. */
 	/*------------------------------*/
@@ -1272,6 +1292,7 @@ struct trx_t {
 					transaction branch */
 	trx_mod_tables_t mod_tables;	/*!< List of tables that were modified
 					by this transaction */
+#endif /* !UNIV_HOTBACKUP */
         /*------------------------------*/
 	bool		api_trx;	/*!< trx started by InnoDB API */
 	bool		api_auto_commit;/*!< automatic commit */
@@ -1308,6 +1329,7 @@ struct trx_t {
 		return(skip_gap_locks());
 	}
 };
+#ifndef UNIV_HOTBACKUP
 
 /* Transaction isolation levels (trx->isolation_level) */
 #define TRX_ISO_READ_UNCOMMITTED	trx_t::READ_UNCOMMITTED

@@ -1,56 +1,16 @@
 #include "mysql/psi/psi_socket.h"
-#include "my_inttypes.h"
-#include "my_config.h"
-typedef unsigned char uchar;
-typedef signed char int8;
-typedef unsigned char uint8;
-typedef short int16;
-typedef unsigned short uint16;
-typedef int int32;
-typedef unsigned int uint32;
-typedef unsigned long long int ulonglong;
-typedef long long int longlong;
-typedef longlong int64;
-typedef ulonglong uint64;
-typedef unsigned long long my_ulonglong;
-typedef intptr_t intptr;
-typedef ulonglong my_off_t;
-typedef ptrdiff_t my_ptrdiff_t;
-typedef int myf;
-#include "my_io.h"
-#include "my_config.h"
-static inline int is_directory_separator(char c)
-{
-  return c == '/';
-}
+#include "my_macros.h"
+#include "my_psi_config.h"
+#include "my_sharedlib.h"
+#include "mysql/components/services/psi_socket_bits.h"
+#include <mysql/components/services/my_io_bits.h>
 typedef int File;
 typedef mode_t MY_MODE;
 typedef socklen_t socket_len_t;
 typedef int my_socket;
-#include "my_macros.h"
-#include "my_psi_config.h"
-#include "my_sharedlib.h"
-#include "psi_base.h"
-#include "my_psi_config.h"
-typedef unsigned int PSI_mutex_key;
-typedef unsigned int PSI_rwlock_key;
-typedef unsigned int PSI_cond_key;
-typedef unsigned int PSI_thread_key;
-typedef unsigned int PSI_file_key;
-typedef unsigned int PSI_stage_key;
-typedef unsigned int PSI_statement_key;
 typedef unsigned int PSI_socket_key;
-struct PSI_placeholder
-{
-  int m_placeholder;
-};
 struct PSI_socket;
 typedef struct PSI_socket PSI_socket;
-struct PSI_socket_bootstrap
-{
-  void *(*get_interface)(int version);
-};
-typedef struct PSI_socket_bootstrap PSI_socket_bootstrap;
 struct PSI_socket_locker;
 typedef struct PSI_socket_locker PSI_socket_locker;
 enum PSI_socket_state
@@ -82,17 +42,19 @@ struct PSI_socket_info_v1
 {
   PSI_socket_key *m_key;
   const char *m_name;
-  int m_flags;
+  unsigned int m_flags;
+  int m_volatility;
+  const char *m_documentation;
 };
 typedef struct PSI_socket_info_v1 PSI_socket_info_v1;
 struct PSI_socket_locker_state_v1
 {
-  uint m_flags;
+  unsigned int m_flags;
   struct PSI_socket *m_socket;
   struct PSI_thread *m_thread;
   size_t m_number_of_bytes;
-  ulonglong m_timer_start;
-  ulonglong (*m_timer)(void);
+  unsigned long long m_timer_start;
+  unsigned long long (*m_timer)(void);
   enum PSI_socket_operation m_operation;
   const char *m_src_file;
   int m_src_line;
@@ -113,7 +75,7 @@ typedef struct PSI_socket_locker *(*start_socket_wait_v1_t)(
   enum PSI_socket_operation op,
   size_t count,
   const char *src_file,
-  uint src_line);
+  unsigned int src_line);
 typedef void (*end_socket_wait_v1_t)(struct PSI_socket_locker *locker,
                                      size_t count);
 typedef void (*set_socket_state_v1_t)(struct PSI_socket *socket,
@@ -123,6 +85,13 @@ typedef void (*set_socket_info_v1_t)(struct PSI_socket *socket,
                                      const struct sockaddr *addr,
                                      socklen_t addr_len);
 typedef void (*set_socket_thread_owner_v1_t)(struct PSI_socket *socket);
+typedef struct PSI_socket_info_v1 PSI_socket_info;
+typedef struct PSI_socket_locker_state_v1 PSI_socket_locker_state;
+struct PSI_socket_bootstrap
+{
+  void *(*get_interface)(int version);
+};
+typedef struct PSI_socket_bootstrap PSI_socket_bootstrap;
 struct PSI_socket_service_v1
 {
   register_socket_v1_t register_socket;
@@ -135,6 +104,4 @@ struct PSI_socket_service_v1
   set_socket_thread_owner_v1_t set_socket_thread_owner;
 };
 typedef struct PSI_socket_service_v1 PSI_socket_service_t;
-typedef struct PSI_socket_info_v1 PSI_socket_info;
-typedef struct PSI_socket_locker_state_v1 PSI_socket_locker_state;
 extern PSI_socket_service_t *psi_socket_service;

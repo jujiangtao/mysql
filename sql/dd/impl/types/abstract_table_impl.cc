@@ -1,45 +1,54 @@
-/* Copyright (c) 2014, 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "dd/impl/types/abstract_table_impl.h"
+#include "sql/dd/impl/types/abstract_table_impl.h"
 
 #include <new>
 #include <sstream>
+#include <string>
 
-#include "dd/string_type.h"                 // dd::String_type
-#include "dd/impl/properties_impl.h"        // Properties_impl
-#include "dd/impl/raw/object_keys.h"        // Primary_id_key
-#include "dd/impl/raw/raw_record.h"         // Raw_record
-#include "dd/impl/sdi_impl.h"               // sdi read/write functions
-#include "dd/impl/tables/columns.h"         // Columns
-#include "dd/impl/tables/tables.h"          // Tables
-#include "dd/impl/transaction_impl.h"       // Open_dictionary_tables_ctx
-#include "dd/impl/types/column_impl.h"      // Column_impl
-#include "dd/types/column.h"
-#include "dd/types/dictionary_object_table.h"
-#include "dd/types/table.h"
-#include "dd/types/view.h"                  // View
-#include "dd/types/weak_object.h"
+#include "my_rapidjson_size_t.h"    // IWYU pragma: keep
+#include <rapidjson/document.h>
+#include <rapidjson/prettywriter.h>
+
 #include "m_ctype.h"
 #include "m_string.h"
 #include "my_sys.h"
 #include "mysql_version.h"                  // MYSQL_VERSION_ID
-#include "mysqld.h"
 #include "mysqld_error.h"                   // ER_*
-#include "rapidjson/document.h"
-#include "rapidjson/prettywriter.h"
+#include "sql/auth/sql_security_ctx.h"
+#include "sql/dd/impl/properties_impl.h"    // Properties_impl
+#include "sql/dd/impl/raw/raw_record.h"     // Raw_record
+#include "sql/dd/impl/sdi_impl.h"           // sdi read/write functions
+#include "sql/dd/impl/tables/columns.h"     // Columns
+#include "sql/dd/impl/tables/tables.h"      // Tables
+#include "sql/dd/impl/transaction_impl.h"   // Open_dictionary_tables_ctx
+#include "sql/dd/impl/types/column_impl.h"  // Column_impl
+#include "sql/dd/string_type.h"             // dd::String_type
+#include "sql/dd/types/column.h"
+#include "sql/dd/types/entity_object_table.h"
+#include "sql/dd/types/table.h"
+#include "sql/dd/types/view.h"              // View
+#include "sql/dd/types/weak_object.h"
 
 using dd::tables::Columns;
 using dd::tables::Tables;
@@ -50,21 +59,6 @@ class Sdi_rcontext;
 class Sdi_wcontext;
 
 ///////////////////////////////////////////////////////////////////////////
-// Abstract_table implementation.
-///////////////////////////////////////////////////////////////////////////
-
-const Object_type &Abstract_table::TYPE()
-{
-  static Abstract_table_type s_instance;
-  return s_instance;
-}
-
-const Dictionary_object_table &Abstract_table::OBJECT_TABLE()
-{
-  return Tables::instance();
-}
-
-///////////////////////////////////////////////////////////////////////////
 // Abstract_table_impl implementation.
 ///////////////////////////////////////////////////////////////////////////
 
@@ -72,7 +66,7 @@ Abstract_table_impl::Abstract_table_impl()
  :m_mysql_version_id(MYSQL_VERSION_ID),
   m_created(0),
   m_last_altered(0),
-  m_hidden(false),
+  m_hidden(HT_VISIBLE),
   m_options(new Properties_impl()),
   m_columns(),
   m_schema_id(INVALID_OBJECT_ID)
@@ -101,7 +95,7 @@ bool Abstract_table_impl::validate() const
   {
     my_error(ER_INVALID_DD_OBJECT,
              MYF(0),
-             Abstract_table_impl::OBJECT_TABLE().name().c_str(),
+             DD_table::instance().name().c_str(),
              "Schema ID is not set");
     return true;
   }
@@ -146,7 +140,7 @@ bool Abstract_table_impl::restore_attributes(const Raw_record &r)
 
   m_created= r.read_int(Tables::FIELD_CREATED);
   m_last_altered= r.read_int(Tables::FIELD_LAST_ALTERED);
-  m_hidden= r.read_bool(Tables::FIELD_HIDDEN);
+  m_hidden= static_cast<enum_hidden_type>(r.read_int(Tables::FIELD_HIDDEN));
   m_schema_id= r.read_ref_id(Tables::FIELD_SCHEMA_ID);
   m_mysql_version_id= r.read_uint(Tables::FIELD_MYSQL_VERSION_ID);
 
@@ -188,12 +182,12 @@ bool Abstract_table_impl::store_attributes(Raw_record *r)
     r->store(Tables::FIELD_OPTIONS, *m_options) ||
     r->store(Tables::FIELD_CREATED, m_created) ||
     r->store(Tables::FIELD_LAST_ALTERED, m_last_altered) ||
-    r->store(Tables::FIELD_HIDDEN, m_hidden);
+    r->store(Tables::FIELD_HIDDEN, static_cast<int>(m_hidden));
 }
 
 ///////////////////////////////////////////////////////////////////////////
 
-bool Abstract_table::update_id_key(id_key_type *key, Object_id id)
+bool Abstract_table::update_id_key(Id_key *key, Object_id id)
 {
   key->update(id);
   return false;
@@ -201,7 +195,7 @@ bool Abstract_table::update_id_key(id_key_type *key, Object_id id)
 
 ///////////////////////////////////////////////////////////////////////////
 
-static_assert(Tables::FIELD_VIEW_DEFINITION == 22,
+static_assert(Tables::FIELD_VIEW_DEFINITION == 24,
               "Tables definition has changed, review (de)ser member function"
               "s (also in derived classes");
 
@@ -212,7 +206,7 @@ void Abstract_table_impl::serialize(Sdi_wcontext *wctx, Sdi_writer *w) const
   write(w, m_mysql_version_id, STRING_WITH_LEN("mysql_version_id"));
   write(w, m_created, STRING_WITH_LEN("created"));
   write(w, m_last_altered, STRING_WITH_LEN("last_altered"));
-  write(w, m_hidden, STRING_WITH_LEN("hidden"));
+  write_enum(w, m_hidden, STRING_WITH_LEN("hidden"));
   write_properties(w, m_options, STRING_WITH_LEN("options"));
   serialize_each(wctx, w, m_columns, STRING_WITH_LEN("columns"));
   write(w, lookup_schema_name(wctx),
@@ -229,7 +223,7 @@ bool Abstract_table_impl::deserialize(Sdi_rcontext *rctx,
   read(&m_mysql_version_id, val, "mysql_version_id");
   read(&m_created, val, "created");
   read(&m_last_altered, val, "last_altered");
-  read(&m_hidden, val, "hidden");
+  read_enum(&m_hidden, val, "hidden");
   read_properties(&m_options, val, "options");
   deserialize_each(rctx, [this] () { return add_column(); },
                    val, "columns");
@@ -238,7 +232,7 @@ bool Abstract_table_impl::deserialize(Sdi_rcontext *rctx,
 
 ///////////////////////////////////////////////////////////////////////////
 
-bool Abstract_table::update_name_key(name_key_type *key,
+bool Abstract_table::update_name_key(Name_key *key,
                                      Object_id schema_id,
                                      const String_type &name)
 { return Tables::update_object_key(key, schema_id, name); }
@@ -344,11 +338,16 @@ const Column *Abstract_table_impl::get_column(const String_type name) const
   return NULL;
 }
 
-////////////////////////////////////////////////////////////////////////////
-// Table_type implementation.
 ///////////////////////////////////////////////////////////////////////////
 
-void Abstract_table_type::register_tables(Open_dictionary_tables_ctx *otx) const
+const Object_table &Abstract_table_impl::object_table() const
+{
+  return DD_table::instance();
+}
+
+///////////////////////////////////////////////////////////////////////////
+
+void Abstract_table_impl::register_tables(Open_dictionary_tables_ctx *otx)
 {
   otx->register_tables<Table>();
   otx->register_tables<View>();

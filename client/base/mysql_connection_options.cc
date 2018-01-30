@@ -2,29 +2,36 @@
    Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 */
 
-#include <mysys_err.h>
+#include "client/base/mysql_connection_options.h"
+
 #include <stdlib.h>
 #include <functional>
 #include <sstream>
 #include <vector>
 
-#include "abstract_options_provider.h"
-#include "abstract_program.h"
+#include "client/base/abstract_options_provider.h"
+#include "client/base/abstract_program.h"
 #include "mysys_err.h"
-#include "mysql_connection_options.h"
 #include "typelib.h"
 
 using Mysql::Nullable;
@@ -106,11 +113,6 @@ void Mysql_connection_options::create_options()
   this->create_new_option(&this->m_mysql_unix_port, "socket",
     "The socket file to use for connection.")
     ->set_short_character('S');
-  this->create_new_option(&this->m_secure_auth, "secure-auth",
-      "Refuse client connecting to server if it uses old (pre-4.1.1) "
-      "protocol. Deprecated. Always TRUE")
-    ->add_callback(new std::function<void(char*)>(
-      std::bind(&Mysql_connection_options::secure_auth_callback, this, _1)));
   this->create_new_option(&this->m_user, "user",
     "User for login if not current user.")
     ->set_short_character('u');
@@ -118,6 +120,11 @@ void Mysql_connection_options::create_options()
     "Directory for client-side plugins.");
   this->create_new_option(&this->m_default_auth, "default_auth",
     "Default authentication client-side plugin to use.");
+  this->create_new_option(&this->m_server_public_key, "server_public_key_path",
+    "Path to file containing server public key");
+  this->create_new_option(&this->m_get_server_public_key,
+    "get-server-public-key",
+    "Get public key from server");
 }
 
 MYSQL* Mysql_connection_options::create_connection()
@@ -134,9 +141,6 @@ MYSQL* Mysql_connection_options::create_connection()
   if (this->m_bind_addr.has_value())
     mysql_options(connection,MYSQL_OPT_BIND,
       this->m_bind_addr.value().c_str());
-  if (!this->m_secure_auth)
-    mysql_options(connection,MYSQL_SECURE_AUTH,
-      (char*)&this->m_secure_auth);
 #if defined (_WIN32)
   if (this->m_shared_memory_base_name.has_value())
     mysql_options(connection,MYSQL_SHARED_MEMORY_BASE_NAME,
@@ -162,6 +166,13 @@ MYSQL* Mysql_connection_options::create_connection()
   mysql_options(connection, MYSQL_OPT_CONNECT_ATTR_RESET, 0);
   mysql_options4(connection, MYSQL_OPT_CONNECT_ATTR_ADD,
                   "program_name", this->m_program->get_name().c_str());
+
+  mysql_options(connection, MYSQL_SERVER_PUBLIC_KEY,
+                this->get_null_or_string(this->m_user));
+
+  if (this->m_get_server_public_key)
+    mysql_options(connection, MYSQL_OPT_GET_SERVER_PUBLIC_KEY,
+                  (void*)&this->m_get_server_public_key);
 
   if (!mysql_real_connect(connection,
     this->get_null_or_string(this->m_host),
@@ -219,20 +230,6 @@ void Mysql_connection_options::protocol_callback(
     find_type_or_exit(this->m_protocol_string.value().c_str(),
     &sql_protocol_typelib, "protocol");
 }
-
-void Mysql_connection_options::secure_auth_callback(
-  char* not_used MY_ATTRIBUTE((unused)))
-{
-  /* --secure-auth is a zombie option. */
-  if (!this->m_secure_auth)
-  {
-    my_printf_error(0, "--skip-secure-auth is not supported.\n", MYF(0));
-    exit(1);
-  }
-  else
-    CLIENT_WARN_DEPRECATED_NO_REPLACEMENT("--secure-auth");
-}
-
 
 void Mysql_connection_options::db_error(
   MYSQL* connection, const char* when)

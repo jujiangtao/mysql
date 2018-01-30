@@ -2,13 +2,20 @@
   Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
   along with this program; if not, write to the Free Software
@@ -19,17 +26,18 @@
 
 #include "my_config.h"
 
-#include <boost/algorithm/string.hpp>
 #include <sys/types.h>
-#include <time.h>
 #include <chrono>
+#include <ctime>
 #include <functional>
 #include <sstream>
+#include <string>
 
-#include "mysql_function.h"
-#include "privilege.h"
-#include "stored_procedure.h"
-#include "view.h"
+#include "client/dump/column_statistic.h"
+#include "client/dump/mysql_function.h"
+#include "client/dump/privilege.h"
+#include "client/dump/stored_procedure.h"
+#include "client/dump/view.h"
 
 using namespace Mysql::Tools::Dump;
 
@@ -264,14 +272,13 @@ void Sql_formatter::format_database_start(
     this->append_output(database->get_sql_formatted_definition() + ";\n");
 }
 
-void Sql_formatter::format_dump_end(Dump_end_dump_task* dump_start_dump_task)
+void Sql_formatter::format_dump_end(Dump_end_dump_task*)
 {
   std::ostringstream out;
   std::time_t sys_time = std::chrono::system_clock::to_time_t(
     std::chrono::system_clock::now());
-  // Convert to calendar time.
+  // Convert to calendar time. time_string ends with '\n'.
   std::string time_string = std::ctime(&sys_time);
-  boost::trim(time_string);
 
   if (m_options->m_timezone_consistent)
     out << "SET TIME_ZONE=@OLD_TIME_ZONE;\n";
@@ -285,7 +292,7 @@ void Sql_formatter::format_dump_end(Dump_end_dump_task* dump_start_dump_task)
   if (m_options->m_innodb_stats_tables_included)
     out << "SET GLOBAL INNODB_STATS_AUTO_RECALC="
       << "@OLD_INNODB_STATS_AUTO_RECALC;\n";
-  out << "-- Dump end time: " << time_string << "\n";
+  out << "-- Dump end time: " << time_string;
 
   this->append_output(out.str());
 }
@@ -296,15 +303,13 @@ void Sql_formatter::format_dump_start(
   // Convert to system time.
   std::time_t sys_time = std::chrono::system_clock::to_time_t(
     std::chrono::system_clock::now());
-  // Convert to calendar time.
+  // Convert to calendar time. time_string ends with '\n'.
   std::string time_string = std::ctime(&sys_time);
-  // Skip trailing newline
-  boost::trim(time_string);
 
   std::ostringstream out;
   out << "-- Dump created by MySQL pump utility, version: "
     MYSQL_SERVER_VERSION ", " SYSTEM_TYPE " (" MACHINE_TYPE ")\n"
-    << "-- Dump start time: " << time_string << "\n"
+    << "-- Dump start time: " << time_string
     << "-- Server version: " << this->get_server_version_string() << "\n\n"
     << "SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0;\n"
     "SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, "
@@ -331,7 +336,7 @@ void Sql_formatter::format_dump_start(
       << "SET GLOBAL INNODB_STATS_AUTO_RECALC=OFF;\n";
 
   if (dump_start_dump_task->m_gtid_mode == "OFF" &&
-      *((ulong*)&m_options->m_gtid_purged) == ((ulong)GTID_PURGED_ON))
+      m_options->m_gtid_purged == enum_gtid_purged_mode::GTID_PURGED_ON)
   {
     m_options->m_mysql_chain_element_options->get_program()->error(
       Mysql::Tools::Base::Message_data(1, "Server has GTIDs disabled.\n",
@@ -340,20 +345,21 @@ void Sql_formatter::format_dump_start(
   }
   if (dump_start_dump_task->m_gtid_mode != "OFF")
   {
-    /*
-     value for m_gtid_purged is set by typecasting its address to ulong*
-     however below conditions fails if we do direct comparison without
-     typecasting on solaris sparc. Guessing that this is due to differnt
-     endianess.
-    */
-    if (*((ulong*)&m_options->m_gtid_purged) == ((ulong)GTID_PURGED_ON) ||
-        *((ulong*)&m_options->m_gtid_purged) == ((ulong)GTID_PURGED_AUTO))
+    if (m_options->m_gtid_purged == enum_gtid_purged_mode::GTID_PURGED_ON ||
+        m_options->m_gtid_purged == enum_gtid_purged_mode::GTID_PURGED_AUTO)
     {
-      if (!m_mysqldump_tool_options->m_dump_all_databases)
+      if (!m_mysqldump_tool_options->m_dump_all_databases &&
+          m_options->m_gtid_purged == enum_gtid_purged_mode::GTID_PURGED_AUTO)
       {
         m_options->m_mysql_chain_element_options->get_program()->error(
           Mysql::Tools::Base::Message_data(1,
-          "A partial dump from a server that has GTIDs is not allowed.\n",
+          "A partial dump from a server that is using GTID-based replication "
+          "requires the --set-gtid-purged=[ON|OFF] option to be specified. Use ON "
+          "if the intention is to deploy a new replication slave using only some "
+          "of the data from the dumped server. Use OFF if the intention is to "
+          "repair a table by copying it within a topology, and use OFF if the "
+          "intention is to copy a table between replication topologies that are "
+          "disjoint and will remain so.\n",
           Mysql::Tools::Base::Message_type_error));
         return;
       }
@@ -407,6 +413,16 @@ void Sql_formatter::format_plain_sql_object(
        + ";\n");
   }
 
+  Column_statistic* new_col_stats_task=
+    dynamic_cast<Column_statistic*>(plain_sql_dump_task);
+  if (new_col_stats_task != NULL)
+  {
+    if (m_options->m_column_statistics)
+      this->append_output(plain_sql_dump_task->get_sql_formatted_definition()
+        + ";\n");
+    return;
+  }
+
   this->append_output(plain_sql_dump_task->get_sql_formatted_definition()
     + ";\n");
 }
@@ -416,17 +432,12 @@ void Sql_formatter::format_sql_objects_definer(
 {
   if (m_options->m_skip_definer)
   {
-    std::vector<std::string> object_ddl_lines;
-    std::string object_ddl(plain_sql_dump_task->get_sql_formatted_definition());
-    boost::split(object_ddl_lines, object_ddl,
-                 boost::is_any_of("\n"), boost::token_compress_on);
-
+    std::istringstream ddl_stream(plain_sql_dump_task
+                                  ->get_sql_formatted_definition());
     std::string new_sql_stmt;
-    bool is_replaced= FALSE;
-    for (std::vector<std::string>::iterator it= object_ddl_lines.begin();
-         it != object_ddl_lines.end(); ++it)
+    bool is_replaced= false;
+    for (std::string object_sql; std::getline(ddl_stream, object_sql); )
     {
-      std::string object_sql(*it);
       size_t object_pos= object_sql.find(object_type);
       size_t definer_pos= object_sql.find("DEFINER");
       if (object_pos != std::string::npos &&

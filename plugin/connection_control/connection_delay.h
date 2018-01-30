@@ -1,13 +1,20 @@
 /* Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -16,16 +23,16 @@
 #ifndef CONNECTION_DELAY_H
 #define CONNECTION_DELAY_H
 
-#include <lf.h>                         /* LF Hash */
-#include <my_atomic.h>                  /* my_atomic_* */
 #include <mysql_com.h>                  /* USERNAME_LENGTH */
+#include <atomic>
 
-#include "connection_control_data.h"    /* variables and status */
-#include "connection_control_interfaces.h" /* Observer interface */
-#include "connection_control_memory.h"  /* Connection_control_alloc */
-#include "connection_delay_api.h"       /* Constants */
+#include "lf.h"                         /* LF Hash */
 #include "my_inttypes.h"
-#include "table.h"                      /* TABLE_LIST */
+#include "plugin/connection_control/connection_control_data.h" /* variables and status */
+#include "plugin/connection_control/connection_control_interfaces.h" /* Observer interface */
+#include "plugin/connection_control/connection_control_memory.h" /* Connection_control_alloc */
+#include "plugin/connection_control/connection_delay_api.h" /* Constants */
+#include "sql/table.h"                  /* TABLE_LIST */
 
 namespace connection_control
 {
@@ -46,7 +53,6 @@ namespace connection_control
       memset((void *)m_userhost, 0, sizeof(m_userhost));
       memcpy((void *)m_userhost, s.c_str(), s.length());
       m_length= s.length();
-      m_count= 1;
     }
 
     /**
@@ -56,20 +62,19 @@ namespace connection_control
     */
     int64 get_count() const
     {
-      int64 result= my_atomic_load64((volatile int64*)&m_count);
-      return result;
+      return m_count.load();
     }
 
     /** Increment failed login count for given user entry by 1 */
     void inc_count()
     {
-      my_atomic_add64((volatile int64*)&m_count, 1);
+      ++m_count;
     }
 
     /** Reset failed login count for given user entry */
     void reset_count()
     {
-      my_atomic_store64(&m_count, 0);
+      m_count.store(0);
     }
 
     /** Get user information */
@@ -96,7 +101,7 @@ namespace connection_control
     /* Length of m_userhost */
     size_t m_length;
     /* connection event count */
-    volatile int64 m_count;
+    std::atomic<int64> m_count;
   };
 
 
@@ -172,7 +177,7 @@ namespace connection_control
 
     void set_threshold(int64 threshold)
     {
-      my_atomic_store64(&m_threshold, threshold);
+      m_threshold.store(threshold);
       /* Clear the hash */
       m_userhost_hash.reset_all();
     }
@@ -180,8 +185,7 @@ namespace connection_control
     /** Get threshold value */
     int64 get_threshold()
     {
-      int64 result= my_atomic_load64(&m_threshold);
-      return result;
+      return m_threshold.load();
     }
 
     /**
@@ -208,23 +212,20 @@ namespace connection_control
         return true;
 
       else
-        min ? my_atomic_store64(&m_min_delay, new_value) :
-        my_atomic_store64(&m_max_delay, new_value);
+        min ? m_min_delay.store(new_value) : m_max_delay.store(new_value);
       return false;
     }
 
     /** Get max value */
     int64 get_max_delay()
     {
-      int64 result= my_atomic_load64(&m_max_delay);
-      return result;
+      return m_max_delay.load();
     }
 
     /** Get min value */
     int64 get_min_delay()
     {
-      int64 result= my_atomic_load64(&m_min_delay);
-      return result;
+      return m_min_delay.load();
     }
 
     void fill_IS_table(THD *thd,
@@ -274,11 +275,11 @@ namespace connection_control
 
   private:
     /** Threshold value which triggers wait */
-    volatile int64 m_threshold;
+    std::atomic<int64> m_threshold;
     /** Lower cap on delay to be generated */
-    volatile int64 m_min_delay;
+    std::atomic<int64> m_min_delay;
     /** Upper cap on delay to be generated */
-    volatile int64 m_max_delay;
+    std::atomic<int64> m_max_delay;
     /** System variables */
     std::vector<opt_connection_control> m_sys_vars;
     /** Status variables */

@@ -1,38 +1,52 @@
 /* Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
 
 This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; version 2 of the License.
+it under the terms of the GNU General Public License, version 2.0,
+as published by the Free Software Foundation.
+
+This program is also distributed with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have included with MySQL.
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
+GNU General Public License, version 2.0, for more details.
 
 You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
-Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02111-1307  USA */
+Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
+#include <component_status_var_service.h>
+#include <component_sys_var_service.h>
+#include <system_variable_source_imp.h>
+#include <security_context_imp.h>
 #include <example_services.h>
 #include <gtest/gtest.h>
-#include <m_ctype.h>
-#include <my_sys.h>
 #include <mysql/components/component_implementation.h>
 #include <mysql/components/my_service.h>
 #include <mysql/components/service.h>
 #include <mysql/components/service_implementation.h>
+#include <mysql/components/services/backup_lock_service.h>
+#include <mysql/components/services/component_sys_var_service.h>
 #include <mysql/components/services/dynamic_loader.h>
 #include <mysql/components/services/persistent_dynamic_loader.h>
 #include <mysql/mysql_lex_string.h>
-#include <auth/dynamic_privileges_impl.h>
-#include <persistent_dynamic_loader.h>
-#include <scope_guard.h>
 #include <server_component.h>
 #include <stddef.h>
 
+#include "components/mysql_server/persistent_dynamic_loader.h"
 #include "lex_string.h"
+#include "m_ctype.h"
 #include "my_inttypes.h"
 #include "my_io.h"
+#include "my_sys.h"
+#include "scope_guard.h"
+#include "sql/auth/dynamic_privileges_impl.h"
+#include "sql/udf_registration_imp.h"
 
 extern mysql_component_t COMPONENT_REF(mysql_server);
 
@@ -43,37 +57,179 @@ struct mysql_component_t *mysql_builtin_components[]=
 };
 
 DEFINE_BOOL_METHOD(mysql_persistent_dynamic_loader_imp::load,
-  (void* thd_ptr, const char *urns[], int component_count))
+  (void*, const char *[], int))
 {
   return true;
 }
 
 DEFINE_BOOL_METHOD(mysql_persistent_dynamic_loader_imp::unload,
-  (void* thd_ptr, const char *urns[], int component_count))
+  (void*, const char *[], int))
 {
   return true;
 }
 
 DEFINE_BOOL_METHOD(dynamic_privilege_services_impl::register_privilege,
-  (const char *privilege_str, size_t privilege_str_len))
+  (const char *, size_t))
 {
   return true;
 }
 
 DEFINE_BOOL_METHOD(dynamic_privilege_services_impl::unregister_privilege,
-  (const char *privilege_str, size_t privilege_str_len))
+  (const char *, size_t))
 {
   return true;
 }
 
 DEFINE_BOOL_METHOD(dynamic_privilege_services_impl::has_global_grant,
-  (Security_context_handle handle, const char *privilege_str,
-   size_t privilege_str_len))
+  (Security_context_handle, const char *, size_t))
 {
   return true;
 }
 
-  
+DEFINE_BOOL_METHOD(mysql_udf_registration_imp::udf_unregister,
+(const char *, int *))
+{
+  return true;
+}
+
+DEFINE_BOOL_METHOD(mysql_udf_registration_imp::udf_register_aggregate,
+(const char *,
+ enum Item_result,
+ Udf_func_any,
+ Udf_func_init,
+ Udf_func_deinit,
+ Udf_func_add,
+ Udf_func_clear))
+{
+  return true;
+}
+
+DEFINE_BOOL_METHOD(mysql_udf_registration_imp::udf_register,
+(const char *,
+ Item_result,
+ Udf_func_any,
+ Udf_func_init,
+ Udf_func_deinit))
+{
+  return true;
+}
+
+void component_sys_var_init()
+{
+}
+
+void component_sys_var_deinit()
+{
+}
+
+DEFINE_BOOL_METHOD(mysql_component_sys_variable_imp::register_variable,
+  (const char *,
+   const char *,
+   int,
+   const char *,
+   mysql_sys_var_check_func,
+   mysql_sys_var_update_func,
+   void *,
+   void *))
+{
+  return true;
+}
+
+DEFINE_BOOL_METHOD(mysql_component_sys_variable_imp::get_variable,
+  (const char *,
+   const char *, void **,
+   size_t *))
+{
+  return true;
+}
+
+DEFINE_BOOL_METHOD(mysql_component_sys_variable_imp::unregister_variable,
+  (const char *,
+   const char *))
+{
+  return true;
+}
+
+DEFINE_BOOL_METHOD(mysql_status_variable_registration_imp::register_variable,
+  (STATUS_VAR *))
+{
+  return true;
+}
+
+DEFINE_BOOL_METHOD(mysql_status_variable_registration_imp::unregister_variable,
+  (STATUS_VAR *))
+{
+  return true;
+}
+
+DEFINE_BOOL_METHOD(mysql_system_variable_source_imp::get,
+  (const char*, unsigned int, enum enum_variable_source*))
+{
+  return true;
+}
+
+DEFINE_BOOL_METHOD(mysql_acquire_backup_lock,
+  (MYSQL_THD,
+   enum enum_backup_lock_service_lock_kind,
+   unsigned long))
+{
+  return true;
+}
+
+DEFINE_BOOL_METHOD(mysql_release_backup_lock,
+  (MYSQL_THD))
+{
+  return true;
+}
+
+DEFINE_BOOL_METHOD(mysql_security_context_imp::get,
+  (void *, Security_context_handle *))
+{
+  return true;
+}
+
+DEFINE_BOOL_METHOD(mysql_security_context_imp::set,
+  (void *, Security_context_handle))
+{
+  return true;
+}
+
+DEFINE_BOOL_METHOD(mysql_security_context_imp::create,
+  (Security_context_handle *))
+{
+  return true;
+}
+
+DEFINE_BOOL_METHOD(mysql_security_context_imp::destroy,
+  (Security_context_handle))
+{
+  return true;
+}
+
+DEFINE_BOOL_METHOD(mysql_security_context_imp::copy,
+  (Security_context_handle, Security_context_handle *))
+{
+  return true;
+}
+
+DEFINE_BOOL_METHOD(mysql_security_context_imp::lookup,
+  (Security_context_handle, const char *, const char *,
+   const char *, const char *))
+{
+  return true;
+}
+
+DEFINE_BOOL_METHOD(mysql_security_context_imp::get,
+  (Security_context_handle, const char *, void *))
+{
+  return true;
+}
+
+DEFINE_BOOL_METHOD(mysql_security_context_imp::set,
+  (Security_context_handle, const char *, void *))
+{
+  return true;
+}
 /* TODO following code resembles symbols used in sql library, these should be
   some day extracted to be reused both in sql library and server component unit
   tests. */
@@ -85,9 +241,9 @@ extern "C"
 }
 char opt_plugin_dir[FN_REFLEN];
 
-bool check_string_char_length(const LEX_CSTRING &str, const char *err_msg,
-  size_t max_char_length, const CHARSET_INFO *cs,
-  bool no_error)
+bool check_string_char_length(const LEX_CSTRING &, const char *,
+                              size_t, const CHARSET_INFO *,
+                              bool)
 {
   return false;
 }
@@ -124,6 +280,7 @@ namespace dynamic_loader_unittest {
       {
         ASSERT_FALSE(reg->release((my_h_service)loader));
       }
+      shutdown_dynamic_loader();
       ASSERT_FALSE(mysql_services_shutdown());
     }
     SERVICE_TYPE(registry)* reg;
@@ -419,5 +576,19 @@ namespace dynamic_loader_unittest {
 int main(int argc, char **argv)
 {
   ::testing::InitGoogleTest(&argc, argv);
-  return RUN_ALL_TESTS();
+
+  MY_INIT(argv[0]);
+
+  char realpath_buf[FN_REFLEN];
+  char basedir_buf[FN_REFLEN];
+  my_realpath(realpath_buf, my_progname, 0);
+  size_t res_length;
+  dirname_part(basedir_buf, realpath_buf, &res_length);
+  if (res_length > 0)
+    basedir_buf[res_length - 1] = '\0';
+  my_setwd(basedir_buf, 0);
+
+  int retval= RUN_ALL_TESTS();
+  my_end(0);
+  return retval;
 }

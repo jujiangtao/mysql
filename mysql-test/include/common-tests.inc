@@ -1645,7 +1645,7 @@ select companynr,count(*),sum(fld1) from t2 group by companynr;
 select companynr,count(*) from t2 group by companynr order by companynr desc limit 5;
 select count(*),min(fld4),max(fld4),sum(fld1),avg(fld1),std(fld1),variance(fld1) from t2 where companynr = 34 and fld4<>"";
 --replace_column 10 # 11 #
-explain extended select count(*),min(fld4),max(fld4),sum(fld1),avg(fld1),std(fld1),variance(fld1) from t2 where companynr = 34 and fld4<>"";
+explain select count(*),min(fld4),max(fld4),sum(fld1),avg(fld1),std(fld1),variance(fld1) from t2 where companynr = 34 and fld4<>"";
 select companynr,count(*),min(fld4),max(fld4),sum(fld1),avg(fld1),std(fld1),variance(fld1) from t2 group by companynr asc limit 3;
 select companynr,t2nr,count(price),sum(price),min(price),max(price),avg(price) from t3 where companynr = 37 group by companynr asc,t2nr asc limit 10;
 select /*! SQL_SMALL_RESULT */
@@ -1798,12 +1798,8 @@ select period as "Nuvarande period" from t1 group by "Nuvarande period" limit 1;
 show tables;
 show tables from test like "s%";
 show tables from test like "t?";
-# We mask out the Privileges column because it differs with embedded server
---replace_column 8 #
 show full columns from t2;
---replace_column 8 #
 show full columns from t2 from test like 'f%';
---replace_column 8 #
 show full columns from t2 from test like 's%';
 analyze table t2;
 --replace_column 7 #

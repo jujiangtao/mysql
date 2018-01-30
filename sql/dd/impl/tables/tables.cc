@@ -1,40 +1,41 @@
-/* Copyright (c) 2014, 2017 Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "dd/impl/tables/tables.h"
+#include "sql/dd/impl/tables/tables.h"
 
-#include <memory>
 #include <new>
+#include <string>
 
-#include "dd/dd.h"                         // dd::create_object
-#include "dd/impl/object_key.h"
-#include "dd/impl/raw/object_keys.h"       // dd::Item_name_key
-#include "dd/impl/raw/raw_record.h"        // dd::Raw_record
-#include "dd/impl/raw/raw_table.h"         // dd::Raw_table
-#include "dd/impl/transaction_impl.h"      // dd::Open_dictionary_tables_ctx
-#include "dd/impl/types/object_table_definition_impl.h"
-#include "dd/types/abstract_table.h"
-#include "dd/types/table.h"
-#include "dd/types/view.h"                 // dd::View
-#include "my_dbug.h"
 #include "mysql_com.h"
-#include "system_variables.h"
-
-namespace dd {
-class Dictionary_object;
-}  // namespace dd
+#include "sql/dd/dd.h"                     // dd::create_object
+#include "sql/dd/impl/raw/object_keys.h"   // dd::Item_name_key
+#include "sql/dd/impl/raw/raw_record.h"    // dd::Raw_record
+#include "sql/dd/impl/tables/dd_properties.h"     // TARGET_DD_VERSION
+#include "sql/dd/impl/types/object_table_definition_impl.h"
+#include "sql/dd/types/abstract_table.h"
+#include "sql/dd/types/table.h"
+#include "sql/dd/types/view.h"             // dd::View
+#include "sql/mysqld.h"
+#include "sql/stateless_allocator.h"
 
 namespace dd {
 namespace tables {
@@ -49,8 +50,7 @@ const Tables &Tables::instance()
 
 Tables::Tables()
 {
-  m_target_def.table_name(table_name());
-  m_target_def.dd_version(1);
+  m_target_def.set_table_name("tables");
 
   m_target_def.add_field(FIELD_ID,
                          "FIELD_ID",
@@ -86,7 +86,7 @@ Tables::Tables()
                          "comment VARCHAR(2048) NOT NULL");
   m_target_def.add_field(FIELD_HIDDEN,
                          "FIELD_HIDDEN",
-                         "hidden BOOL NOT NULL");
+                         "hidden ENUM('Visible', 'System', 'SE', 'DDL') NOT NULL");
   m_target_def.add_field(FIELD_OPTIONS,
                          "FIELD_OPTIONS",
                          "options MEDIUMBLOB");
@@ -111,6 +111,9 @@ Tables::Tables()
   m_target_def.add_field(FIELD_PARTITION_EXPRESSION,
                          "FIELD_PARTITION_EXPRESSION",
                          "partition_expression VARCHAR(2048)");
+  m_target_def.add_field(FIELD_PARTITION_EXPRESSION_UTF8,
+                         "FIELD_PARTITION_EXPRESSION_UTF8",
+                         "partition_expression_utf8 VARCHAR(2048)");
   m_target_def.add_field(FIELD_DEFAULT_PARTITIONING,
                          "FIELD_DEFAULT_PARTITIONING",
                          "default_partitioning ENUM('NO', 'YES', 'NUMBER')");
@@ -125,6 +128,9 @@ Tables::Tables()
   m_target_def.add_field(FIELD_SUBPARTITION_EXPRESSION,
                          "FIELD_SUBPARTITION_EXPRESSION",
                          "subpartition_expression VARCHAR(2048)");
+  m_target_def.add_field(FIELD_SUBPARTITION_EXPRESSION_UTF8,
+                         "FIELD_SUBPARTITION_EXPRESSION_UTF8",
+                         "subpartition_expression_utf8 VARCHAR(2048)");
   m_target_def.add_field(FIELD_DEFAULT_SUBPARTITIONING,
                          "FIELD_DEFAULT_SUBPARTITIONING",
                          "default_subpartitioning ENUM('NO', 'YES', "
@@ -171,22 +177,42 @@ Tables::Tables()
                          "FIELD_VIEW_COLUMN_NAMES",
                          "view_column_names LONGTEXT");
 
-  m_target_def.add_index("PRIMARY KEY (id)");
-  m_target_def.add_index("UNIQUE KEY (schema_id, name)");
-  m_target_def.add_index("UNIQUE KEY (engine, se_private_id)");
-  m_target_def.add_index("KEY(engine)");
+  m_target_def.add_index(INDEX_PK_ID,
+                         "INDEX_PK_ID",
+                         "PRIMARY KEY (id)");
+  m_target_def.add_index(INDEX_UK_SCHEMA_ID_NAME,
+                         "INDEX_UK_SCHEMA_ID_NAME",
+                         "UNIQUE KEY (schema_id, name)");
+  m_target_def.add_index(INDEX_UK_ENGINE_SE_PRIVATE_ID,
+                         "INDEX_UK_ENGINE_SE_PRIVATE_ID",
+                         "UNIQUE KEY (engine, se_private_id)");
+  m_target_def.add_index(INDEX_K_ENGINE,
+                         "INDEX_K_ENGINE",
+                         "KEY(engine)");
+  m_target_def.add_index(INDEX_K_COLLATION_ID,
+                         "INDEX_K_COLLATION_ID",
+                         "KEY(collation_id)");
+  m_target_def.add_index(INDEX_K_TABLESPACE_ID,
+                         "INDEX_K_TABLESPACE_ID",
+                         "KEY(tablespace_id)");
 
-  m_target_def.add_foreign_key("FOREIGN KEY (schema_id) "
+  m_target_def.add_foreign_key(FK_SCHEMA_ID,
+                               "FK_SCHEMA_ID",
+                               "FOREIGN KEY (schema_id) "
                                "REFERENCES schemata(id)");
-  m_target_def.add_foreign_key("FOREIGN KEY (collation_id) "
+  m_target_def.add_foreign_key(FK_COLLATION_ID,
+                               "FK_COLLATION_ID",
+                               "FOREIGN KEY (collation_id) "
                                "REFERENCES collations(id)");
-  m_target_def.add_foreign_key("FOREIGN KEY (tablespace_id) "
+  m_target_def.add_foreign_key(FK_TABLESPACE_ID,
+                               "FK_TABLESPACE_ID",
+                               "FOREIGN KEY (tablespace_id) "
                                "REFERENCES tablespaces(id)");
 }
 
 ///////////////////////////////////////////////////////////////////////////
 
-Dictionary_object *Tables::create_dictionary_object(
+Abstract_table *Tables::create_entity_object(
   const Raw_record &r) const
 {
   enum_table_type table_type=
@@ -216,8 +242,7 @@ bool Tables::update_aux_key(Se_private_id_key *key,
                             const String_type &engine,
                             ulonglong se_private_id)
 {
-  const int SE_PRIVATE_ID_INDEX_ID= 2;
-  key->update(SE_PRIVATE_ID_INDEX_ID,
+  key->update(INDEX_UK_ENGINE_SE_PRIVATE_ID,
               FIELD_ENGINE,
               engine,
               FIELD_SE_PRIVATE_ID,
@@ -232,11 +257,9 @@ Object_key *Tables::create_se_private_key(
   const String_type &engine,
   Object_id se_private_id)
 {
-  const int SE_PRIVATE_ID_INDEX_ID= 2;
-
   return
     new (std::nothrow) Se_private_id_key(
-      SE_PRIVATE_ID_INDEX_ID,
+      INDEX_UK_ENGINE_SE_PRIVATE_ID,
       FIELD_ENGINE,
       engine,
       FIELD_SE_PRIVATE_ID,
@@ -249,7 +272,8 @@ Object_key *Tables::create_se_private_key(
 Object_key *Tables::create_key_by_schema_id(
   Object_id schema_id)
 {
-  return new (std::nothrow) Parent_id_range_key(1, FIELD_SCHEMA_ID, schema_id);
+  return new (std::nothrow) Parent_id_range_key(
+          INDEX_UK_SCHEMA_ID_NAME, FIELD_SCHEMA_ID, schema_id);
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -257,9 +281,7 @@ Object_key *Tables::create_key_by_schema_id(
 Object_key *Tables::create_key_by_tablespace_id(
   Object_id tablespace_id)
 {
-  // Use the index that is generated implicitly for the FK.
-  const int TABLESPACE_INDEX_ID= 5;
-  return new (std::nothrow) Parent_id_range_key(TABLESPACE_INDEX_ID,
+  return new (std::nothrow) Parent_id_range_key(INDEX_K_TABLESPACE_ID,
                                                 FIELD_TABLESPACE_ID,
                                                 tablespace_id);
 }
@@ -270,43 +292,6 @@ Object_id Tables::read_se_private_id(const Raw_record &r)
 {
   return r.read_uint(Tables::FIELD_SE_PRIVATE_ID, -1);
 }
-
-///////////////////////////////////////////////////////////////////////////
-
-/**
-  @brief
-  Retrieve max se_private_id for a given engine name
-  stored in mysql.tables DD tables.
-
-  @param       otx     The context for opening the DD tables.
-  @param       engine  The engine name within which we get max se_private_id.
-  @param [out] max_id  The resulting max id found.
-*/
-/* purecov: begin deadcode */
-bool Tables::max_se_private_id(Open_dictionary_tables_ctx *otx,
-                               const String_type &engine,
-                               ulonglong *max_id)
-{
-  std::unique_ptr<Object_key> key(
-    create_se_private_key(engine, INVALID_OBJECT_ID));
-
-  Raw_table *t= otx->get_table(table_name());
-  DBUG_ASSERT(t);
-
-  // Find record by the object-key.
-  *max_id= 0;
-  std::unique_ptr<Raw_record> r;
-  if (t->find_last_record(*key, r))
-    return true;
-
-  if (r.get())
-    *max_id= read_se_private_id(*r.get());
-
-  return false;
-}
-/* purecov: end */
-
-///////////////////////////////////////////////////////////////////////////
 
 }
 }

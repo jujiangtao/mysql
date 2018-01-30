@@ -1,13 +1,20 @@
 /* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -21,11 +28,11 @@
 #include <memory>
 #include <vector>
 
-#include "malloc_allocator.h"
-#include "memroot_allocator.h"
 #include "my_inttypes.h"
-#include "psi_memory_key.h"
-#include "stateless_allocator.h"
+#include "sql/malloc_allocator.h"
+#include "sql/memroot_allocator.h"
+#include "sql/psi_memory_key.h"
+#include "sql/stateless_allocator.h"
 
 using std::vector;
 using std::list;
@@ -319,7 +326,7 @@ public:
     buffer= new char[20];
   }
 
-  Container_object(const Container_object &other)
+  Container_object(const Container_object&)
   {
     buffer= new char[20]; // Don't care about contents
   }
@@ -444,6 +451,32 @@ TYPED_TEST(STLAllocTestBasicStringTemplate, OutOfMemTest)
   // Set flag to force allocation failure
   simulate_failed_allocation= true;
   ASSERT_THROW(x.reserve(1000), std::bad_alloc);
+}
+
+//
+// Test of container of objects that cannot be copied.
+//
+
+template<typename T>
+class STLAllocTestMoveOnly : public STLAllocTestInt<T>
+{ };
+
+typedef ::testing::Types<Malloc_allocator_wrapper<std::unique_ptr<int>>,
+                         Memroot_allocator_wrapper<std::unique_ptr<int>>,
+                         Not_instr_allocator<std::unique_ptr<int>>,
+                         PSI_42_allocator<std::unique_ptr<int>>,
+                         Init_aa_allocator<std::unique_ptr<int>>>
+         AllocatorTypesMoveOnly;
+
+TYPED_TEST_CASE(STLAllocTestMoveOnly, AllocatorTypesMoveOnly);
+
+TYPED_TEST(STLAllocTestMoveOnly, MoveOnly)
+{
+  vector<std::unique_ptr<int>, TypeParam> v(this->allocator);
+  v.emplace_back(new int(1));
+  v.emplace_back(new int(2));
+  EXPECT_EQ(1, *v[0]);
+  EXPECT_EQ(2, *v[1]);
 }
 
 } // namespace stlalloc_unittest

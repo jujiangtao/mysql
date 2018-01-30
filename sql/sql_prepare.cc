@@ -1,13 +1,20 @@
-/* Copyright (c) 2002, 2017 Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2002, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -83,78 +90,82 @@ When one supplies long data for a placeholder:
     at statement execute.
 */
 
-#include "sql_prepare.h"
+#include "sql/sql_prepare.h"
+
+#include "my_config.h"
 
 #include <limits.h>
 #include <stdio.h>
 #include <string.h>
+#include <algorithm>
+#include <atomic>
+#include <memory>
+#include <string>
+#include <unordered_map>
+#include <utility>
 
-#include "auth_acls.h"
-#include "auth_common.h"        // check_table_access
 #include "binary_log_types.h"
-#include "binlog.h"
 #include "decimal.h"
-#include "derror.h"             // ER_THD
-#include "field.h"
-#include "handler.h"
-#include "hash.h"
-#include "item.h"
-#include "item_func.h"          // user_var_entry
-#include "log.h"                // query_logger
 #include "m_ctype.h"
 #include "m_string.h"
-#include "mdl.h"
+#include "map_helpers.h"
+#include "my_alloc.h"
 #include "my_byteorder.h"
 #include "my_command.h"
 #include "my_compiler.h"
-#include "my_config.h"
 #include "my_dbug.h"
-#include "my_decimal.h"
 #include "my_sqlcommand.h"
 #include "my_sys.h"
 #include "my_time.h"
 #include "mysql/plugin_audit.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/psi/mysql_ps.h" // MYSQL_EXECUTE_PS
-#include "mysql_time.h"
-#include "mysqld.h"             // opt_general_log
-#include "mysqld_error.h"
-#include "opt_trace.h"          // Opt_trace_array
-#include "protocol.h"
-#include "psi_memory_key.h"
-#include "set_var.h"            // set_var_base
-#include "sp.h"                 // Sroutine_hash_entry
-#include "sp_cache.h"           // sp_cache_enforce_limit
-#include "sql_audit.h"          // mysql_global_audit_mask
-#include "sql_base.h"           // open_tables_for_query, open_temporary_table
-#include "sql_cache.h"          // query_cache
-#include "sql_cmd.h"
-#include "sql_const.h"
-#include "sql_cursor.h"         // Server_side_cursor
-#include "sql_db.h"             // mysql_change_db
-#include "sql_digest_stream.h"
-#include "sql_handler.h"        // mysql_ha_rm_tables
-#include "sql_lex.h"
-#include "sql_parse.h"          // sql_command_flags
-#include "sql_profile.h"
-#include "sql_rewrite.h"        // mysql_rewrite_query
-#include "sql_security_ctx.h"
-#include "sql_string.h"
-#include "sql_udf.h"
-#include "sql_view.h"           // create_view_precheck
-#include "system_variables.h"
-#include "table.h"
-#include "thr_malloc.h"
-#include "transaction.h"        // trans_rollback_implicit
-#include "violite.h"
-
 #include "mysql_com.h"
-#include <algorithm>
-
-#include "sql_query_rewrite.h"
-
-struct PSI_statement_locker;
-union COM_DATA;
+#include "mysql_time.h"
+#include "mysqld_error.h"
+#include "sql/auth/auth_acls.h"
+#include "sql/auth/auth_common.h" // check_table_access
+#include "sql/auth/sql_security_ctx.h"
+#include "sql/binlog.h"
+#include "sql/derror.h"         // ER_THD
+#include "sql/field.h"
+#include "sql/handler.h"
+#include "sql/histograms/value_map.h"
+#include "sql/item.h"
+#include "sql/item_func.h"      // user_var_entry
+#include "sql/log.h"            // query_logger
+#include "sql/mdl.h"
+#include "sql/my_decimal.h"
+#include "sql/mysqld.h"         // opt_general_log
+#include "sql/opt_trace.h"      // Opt_trace_array
+#include "sql/protocol.h"
+#include "sql/psi_memory_key.h"
+#include "sql/resourcegroups/resource_group_mgr.h"
+#include "sql/session_tracker.h"
+#include "sql/set_var.h"        // set_var_base
+#include "sql/sp_cache.h"       // sp_cache_enforce_limit
+#include "sql/sql_audit.h"      // mysql_global_audit_mask
+#include "sql/sql_base.h"       // open_tables_for_query, open_temporary_table
+#include "sql/sql_cmd.h"
+#include "sql/sql_cmd_ddl_table.h"
+#include "sql/sql_const.h"
+#include "sql/sql_cursor.h"     // Server_side_cursor
+#include "sql/sql_db.h"         // mysql_change_db
+#include "sql/sql_digest_stream.h"
+#include "sql/sql_handler.h"    // mysql_ha_rm_tables
+#include "sql/sql_lex.h"
+#include "sql/sql_parse.h"      // sql_command_flags
+#include "sql/sql_profile.h"
+#include "sql/sql_query_rewrite.h"
+#include "sql/sql_rewrite.h"    // mysql_rewrite_query
+#include "sql/sql_view.h"       // create_view_precheck
+#include "sql/system_variables.h"
+#include "sql/table.h"
+#include "sql/thr_malloc.h"
+#include "sql/transaction.h"    // trans_rollback_implicit
+#include "sql/window.h"
+#include "sql_string.h"
+#include "violite.h"
 
 using std::max;
 using std::min;
@@ -311,6 +322,7 @@ class Statement_backup
 {
   LEX *m_lex;
   LEX_CSTRING m_query_string;
+  String m_rewritten_query;
 
 public:
   LEX *lex() const { return m_lex; }
@@ -324,7 +336,7 @@ public:
     DBUG_ENTER("Statement_backup::set_thd_to_ps");
 
     mysql_mutex_lock(&thd->LOCK_thd_data);
-    m_lex=    thd->lex;
+    m_lex= thd->lex;
     thd->lex= stmt->lex;
     mysql_mutex_unlock(&thd->LOCK_thd_data);
 
@@ -333,7 +345,6 @@ public:
 
     DBUG_VOID_RETURN;
   }
-
 
   /**
     Restore the THD statement state after the prepared
@@ -345,11 +356,49 @@ public:
 
     mysql_mutex_lock(&thd->LOCK_thd_data);
     stmt->lex= thd->lex;
-    thd->lex=  m_lex;
+    thd->lex= m_lex;
     mysql_mutex_unlock(&thd->LOCK_thd_data);
 
     stmt->m_query_string= thd->query();
     thd->set_query(m_query_string);
+
+    DBUG_VOID_RETURN;
+  }
+
+  /**
+    Save the current rewritten query prior to
+    rewriting the prepared statement.
+  */
+  void save_rlb(THD *thd)
+  {
+    DBUG_ENTER("Statement_backup::save_rlb");
+
+    if (thd->rewritten_query.length() > 0)
+    {
+      /* Duplicate the original rewritten query. */
+      m_rewritten_query.copy(thd->rewritten_query);
+      /* Swap the duplicate with the original. */
+      thd->rewritten_query.swap(m_rewritten_query);
+    }
+
+    DBUG_VOID_RETURN;
+  }
+
+  /**
+    Restore the rewritten query after the prepared
+    statement has finished executing.
+  */
+  void restore_rlb(THD *thd)
+  {
+    DBUG_ENTER("Statement_backup::restore_rlb");
+
+    if (m_rewritten_query.length() > 0)
+    {
+      /* Restore with swap() instead of '='. */
+      thd->rewritten_query.swap(m_rewritten_query);
+      /* Free the rewritten prepared statement. */
+      m_rewritten_query.mem_free();
+    }
 
     DBUG_VOID_RETURN;
   }
@@ -713,6 +762,8 @@ bool Prepared_statement::insert_params(String *query, PS_PARAM *parameters)
         param->set_null();
       else
       {
+
+        //TODO: Add error handling for set_param_func functions.
         param->set_param_func(param, const_cast<uchar**>(&parameters[i].value),
                               parameters[i].length);
         if (param->state == Item_param::NO_VALUE)
@@ -846,8 +897,6 @@ bool Prepared_statement::insert_params_from_vars(List<LEX_STRING>& varnames,
 {
   Item_param **begin= param_array;
   Item_param **end= begin + param_count;
-  user_var_entry *entry;
-  LEX_STRING *varname;
   List_iterator<LEX_STRING> var_it(varnames);
   String buf;
   const String *val;
@@ -862,18 +911,16 @@ bool Prepared_statement::insert_params_from_vars(List<LEX_STRING>& varnames,
   /* Protects thd->user_vars */
   mysql_mutex_lock(&thd->LOCK_thd_data);
 
-  Item_param *param= NULL;
   String      new_query(query->length());
 
   new_query.set_charset(query->charset());
 
   for (Item_param **it= begin; it < end; ++it)
   {
-    param=   *it;
-    varname=  var_it++;
+    Item_param *param=   *it;
+    LEX_STRING *varname=  var_it++;
 
-    entry= (user_var_entry *) my_hash_search(&thd->user_vars, (uchar*)
-                                             varname->str, varname->length);
+    user_var_entry *entry= find_or_nullptr(thd->user_vars, to_string(*varname));
     if (with_log)
     {
       /*
@@ -951,7 +998,7 @@ bool mysql_test_show(Prepared_statement *stmt, TABLE_LIST *tables)
 
   DBUG_ASSERT(lex->result == NULL);
   DBUG_ASSERT(lex->sql_command != SQLCOM_DO);
-  DBUG_ASSERT(!lex->describe);
+  DBUG_ASSERT(!lex->is_explain());
 
   if (!lex->result)
   {
@@ -1059,9 +1106,7 @@ static bool mysql_test_set_fields(Prepared_statement *stmt,
   @note Old version. Will be replaced with select_like_stmt_cmd_test() after
         the parser refactoring.
 
-  @param stmt                      prepared statement
-  @param specific_prepare          function of command specific prepare
-  @param setup_tables_done_option  options to be passed to LEX::unit->prepare()
+  @param thd            Thread handle.
 
   @note
     This function won't directly open tables used in select. They should
@@ -1075,23 +1120,17 @@ static bool mysql_test_set_fields(Prepared_statement *stmt,
     TRUE                 error, error message is set in THD
 */
 
-static bool select_like_stmt_test(Prepared_statement *stmt,
-                                  int (*specific_prepare)(THD *thd),
-                                  ulong setup_tables_done_option)
+static bool select_like_stmt_test(THD *thd)
 {
   DBUG_ENTER("select_like_stmt_test");
-  THD *thd= stmt->thd;
-  LEX *lex= stmt->lex;
+  LEX * const lex= thd->lex;
 
   lex->select_lex->context.resolve_in_select_list= true;
-
-  if (specific_prepare && (*specific_prepare)(thd))
-    DBUG_RETURN(TRUE);
 
   thd->lex->used_tables= 0;                        // Updated by setup_fields
 
   /* Calls SELECT_LEX::prepare */
-  const bool ret= lex->unit->prepare(thd, 0, setup_tables_done_option, 0);
+  const bool ret= lex->unit->prepare(thd, 0, 0, 0);
   DBUG_RETURN(ret);
 }
 
@@ -1099,7 +1138,7 @@ static bool select_like_stmt_test(Prepared_statement *stmt,
 /**
   Validate and prepare for execution CREATE TABLE statement.
 
-  @param stmt               prepared statement
+  @param thd          Thread handle.
 
   @retval
     FALSE             success
@@ -1107,20 +1146,15 @@ static bool select_like_stmt_test(Prepared_statement *stmt,
     TRUE              error, error message is set in THD
 */
 
-static bool mysql_test_create_table(Prepared_statement *stmt)
+bool Sql_cmd_create_table::prepare(THD *thd)
 {
-  THD *thd= stmt->thd;
-  LEX *lex= stmt->lex;
+  LEX * const lex= thd->lex;
   SELECT_LEX *select_lex= lex->select_lex;
-  bool res= FALSE;
-  bool link_to_local;
   TABLE_LIST *create_table= lex->query_tables;
-  TABLE_LIST *tables= lex->create_last_non_select_table->next_global;
   DBUG_ENTER("mysql_test_create_table");
-  DBUG_ASSERT(stmt->is_stmt_prepare());
 
-  if (create_table_precheck(thd, tables, create_table))
-    DBUG_RETURN(TRUE);
+  if (create_table_precheck(thd, query_expression_tables, create_table))
+    DBUG_RETURN(true);
 
   if (select_lex->item_list.elements)
   {
@@ -1128,17 +1162,18 @@ static bool mysql_test_create_table(Prepared_statement *stmt)
     if (!(lex->create_info->options & HA_LEX_CREATE_TMP_TABLE))
       create_table->open_type= OT_BASE_ONLY;
 
-    if (open_tables_for_query(stmt->thd, lex->query_tables,
+    if (open_tables_for_query(thd, lex->query_tables,
                               MYSQL_OPEN_FORCE_SHARED_MDL))
-      DBUG_RETURN(TRUE);
+      DBUG_RETURN(true);
 
     select_lex->context.resolve_in_select_list= true;
 
+    bool link_to_local;
     lex->unlink_first_table(&link_to_local);
-
-    res= select_like_stmt_test(stmt, 0, 0);
-
+    const bool res= select_like_stmt_test(thd);
     lex->link_first_table_back(create_table, link_to_local);
+    if (res)
+      DBUG_RETURN(true);
   }
   else
   {
@@ -1148,12 +1183,13 @@ static bool mysql_test_create_table(Prepared_statement *stmt)
       we validate metadata of all CREATE TABLE statements,
       which keeps metadata validation code simple.
     */
-    if (open_tables_for_query(stmt->thd, lex->query_tables,
+    if (open_tables_for_query(thd, lex->query_tables,
                               MYSQL_OPEN_FORCE_SHARED_MDL))
       DBUG_RETURN(TRUE);
   }
 
-  DBUG_RETURN(res);
+  set_prepared();
+  DBUG_RETURN(false);
 }
 
 
@@ -1194,7 +1230,7 @@ static bool mysql_test_create_view(Prepared_statement *stmt)
     goto err;
 
   lex->context_analysis_only|=  CONTEXT_ANALYSIS_ONLY_VIEW;
-  res= select_like_stmt_test(stmt, 0, 0);
+  res= select_like_stmt_test(thd);
 
 err:
   /* put view back for PS rexecuting */
@@ -1287,10 +1323,6 @@ static bool check_prepared_statement(Prepared_statement *stmt)
     if (mysql_test_show(stmt, tables))
       DBUG_RETURN(true);
     break;
-  case SQLCOM_CREATE_TABLE:
-    res= mysql_test_create_table(stmt);
-    break;
-
   case SQLCOM_CREATE_VIEW:
     if (lex->create_view_mode == enum_view_create_mode::VIEW_ALTER)
     {
@@ -1361,6 +1393,7 @@ static bool check_prepared_statement(Prepared_statement *stmt)
   case SQLCOM_CALL:
   case SQLCOM_SHOW_FIELDS:
   case SQLCOM_SHOW_KEYS:
+  case SQLCOM_CREATE_TABLE:
     res= lex->m_sql_cmd->prepare(thd);
     // @todo Temporary solution: Unprepare after preparation to preserve
     //       old behaviour
@@ -1398,7 +1431,7 @@ static bool check_prepared_statement(Prepared_statement *stmt)
   uint no_columns= 0;
 
   if ((sql_command_flags[lex->sql_command] & CF_HAS_RESULT_SET) &&
-      !lex->describe)
+      !lex->is_explain())
   {
     SELECT_LEX_UNIT *unit = lex->unit;
     result= unit->query_result();
@@ -1411,13 +1444,6 @@ static bool check_prepared_statement(Prepared_statement *stmt)
   }
 
   DBUG_RETURN(send_statement(thd, stmt, no_columns, result, types));
-}
-
-
-static int Item_param_comp(Item_param *e1, Item_param *e2, void*)
-{
-  return ((e1->pos_in_query < e2->pos_in_query) ? -1 :
-          ((e1->pos_in_query > e2->pos_in_query) ? 1 : 0));
 }
 
 
@@ -1438,16 +1464,6 @@ static bool init_param_array(Prepared_statement *stmt)
       my_error(ER_PS_MANY_PARAM, MYF(0));
       return TRUE;
     }
-    /*
-      Sort parameters by order of char position in the query, to correspond
-      with the order in which the user supplies values.
-      Parameters may have been added to param_list (by itemize()) in a
-      different order, for example a CTE is itemized when a reference
-      to it ('FROM ref') is found, and references can be in any order in the
-      FROM clause.
-    */
-    lex->param_list.sort(reinterpret_cast<Node_cmp_func>(Item_param_comp),
-                         NULL);
 
     Item_param **to;
     List_iterator<Item_param> param_iterator(lex->param_list);
@@ -1510,10 +1526,12 @@ void mysqld_stmt_prepare(THD *thd, const char *query, uint length,
         thd->get_protocol()->get_client_capabilities());
     thd->push_protocol(&thd->protocol_binary);
   }
+
+  /* Create PS table entry, set query text after rewrite. */
   stmt->m_prepared_stmt= MYSQL_CREATE_PS(stmt, stmt->id,
                                          thd->m_statement_psi,
                                          stmt->name().str, stmt->name().length,
-                                         query, length);
+                                         NULL, 0);
 
   if (stmt->prepare(query, length))
   {
@@ -1656,7 +1674,6 @@ static const char *get_dynamic_sql_string(LEX *lex, size_t *query_len)
     String str;
     const CHARSET_INFO *to_cs= thd->variables.collation_connection;
     bool needs_conversion;
-    user_var_entry *entry;
     String *var_value= &str;
     size_t unused;
     size_t len;
@@ -1664,17 +1681,16 @@ static const char *get_dynamic_sql_string(LEX *lex, size_t *query_len)
     /* Protects thd->user_vars */
     mysql_mutex_lock(&thd->LOCK_thd_data);
 
-    entry= (user_var_entry*)my_hash_search(&thd->user_vars,
-                                           (uchar*)lex->prepared_stmt_code.str,
-                                           lex->prepared_stmt_code.length);
+    const auto it= thd->user_vars.find(to_string(lex->prepared_stmt_code));
 
     /*
       Convert @var contents to string in connection character set. Although
       it is known that int/real/NULL value cannot be a valid query we still
       convert it for error messages to be uniform.
     */
-    if ((entry != NULL) && entry->ptr())
+    if (it != thd->user_vars.end() && it->second->ptr())
     {
+      user_var_entry *entry= it->second.get();
       bool is_var_null;
       var_value= entry->val_str(&is_var_null, &str, NOT_FIXED_DEC);
 
@@ -1789,10 +1805,11 @@ void mysql_sql_stmt_prepare(THD *thd)
     DBUG_VOID_RETURN;
   }
 
+  /* Create PS table entry, set query text after rewrite. */
   stmt->m_prepared_stmt= MYSQL_CREATE_PS(stmt, stmt->id,
                                          thd->m_statement_psi,
                                          stmt->name().str, stmt->name().length,
-                                         query, query_len);
+                                         NULL, 0);
 
   if (stmt->prepare(query, query_len))
   {
@@ -1895,6 +1912,13 @@ bool reinit_stmt_before_use(THD *thd, LEX *lex)
       }
       for (order= sl->order_list.first; order; order= order->next)
         order->item= &order->item_ptr;
+      if (sl->m_windows.elements > 0)
+      {
+        List_iterator<Window> li(sl->m_windows);
+        Window *w;
+        while ((w= li++))
+            w->reinit_before_use();
+      }
     }
     {
       SELECT_LEX_UNIT *unit= sl->master_unit();
@@ -1932,18 +1956,16 @@ bool reinit_stmt_before_use(THD *thd, LEX *lex)
     tables->reinit_before_use(thd);
   }
 
-  /* Reset MDL tickets for procedures/functions */
-  for (Sroutine_hash_entry *rt= thd->lex->sroutines_list.first;
-       rt; rt= rt->next)
-    rt->mdl_request.ticket= NULL;
-
   lex->set_current_select(lex->select_lex);
 
   if (lex->result)
     lex->result->set_thd(thd);
 
   lex->allow_sum_func= 0;
+  lex->m_deny_window_func= 0;
   lex->in_sum_func= NULL;
+
+  lex->reset_exec_started();
 
   if (unlikely(lex->is_broken()))
   {
@@ -2458,7 +2480,7 @@ Prepared_statement::Prepared_statement(THD *thd_arg)
 
 void Prepared_statement::close_cursor()
 {
-  delete result;
+  destroy(result);
   result= nullptr;
   delete cursor;
   cursor= nullptr;
@@ -2468,16 +2490,8 @@ void Prepared_statement::close_cursor()
 void Prepared_statement::setup_set_params()
 {
   /*
-    Note: BUG#25843 applies here too (query cache lookup uses thd->db, not
-    db from "prepare" time).
-  */
-  if (thd->variables.query_cache_type == 0 ||
-      query_cache.query_cache_size == 0) // we won't expand the query
-    lex->safe_to_cache_query= FALSE;   // so don't cache it at Execution
-
-  /*
-    Decide if we have to expand the query (because we must write it to logs or
-    because we want to look it up in the query cache) or not.
+    Decide if we have to expand the query (because we must write it to logs)
+    or not.
     We don't have to substitute the params when bin-logging DML in RBL.
   */
   if ((mysql_bin_log.is_open() && is_update_query(lex->sql_command) &&
@@ -2487,7 +2501,7 @@ void Prepared_statement::setup_set_params()
       opt_general_log || opt_slow_log ||
       (lex->sql_command == SQLCOM_SELECT &&
        lex->safe_to_cache_query &&
-       !lex->describe))
+       !lex->is_explain()))
   {
     with_log= true;
   }
@@ -2507,7 +2521,7 @@ Prepared_statement::~Prepared_statement()
   DBUG_ENTER("Prepared_statement::~Prepared_statement");
   DBUG_PRINT("enter",("stmt: %p  cursor: %p",
                       this, cursor));
-  delete result;
+  destroy(result);
   delete cursor;
   /*
     We have to call free on the items even if cleanup is called as some items,
@@ -2518,7 +2532,7 @@ Prepared_statement::~Prepared_statement()
   {
     DBUG_ASSERT(lex->sphead == NULL);
     lex_end(lex);
-    delete lex->result;
+    destroy(lex->result);
     delete (st_lex_local *) lex;                // TRASH memory
   }
   free_root(&main_mem_root, MYF(0));
@@ -2632,11 +2646,13 @@ bool Prepared_statement::prepare(const char *query_str, size_t query_length)
   */
   Statement_backup stmt_backup;
   stmt_backup.set_thd_to_ps(thd, this);
+  stmt_backup.save_rlb(thd);
   thd->set_n_backup_active_arena(this, &arena_backup);
 
   if (alloc_query(thd, query_str, query_length))
   {
     stmt_backup.restore_thd(thd, this);
+    stmt_backup.restore_rlb(thd);
     thd->restore_active_arena(this, &arena_backup);
     DBUG_RETURN(TRUE);
   }
@@ -2653,6 +2669,7 @@ bool Prepared_statement::prepare(const char *query_str, size_t query_length)
   if (parser_state.init(thd, thd->query().str, thd->query().length))
   {
     stmt_backup.restore_thd(thd, this);
+    stmt_backup.restore_rlb(thd);
     thd->restore_active_arena(this, &arena_backup);
     thd->stmt_arena= old_stmt_arena;
     DBUG_RETURN(TRUE);
@@ -2750,6 +2767,7 @@ bool Prepared_statement::prepare(const char *query_str, size_t query_length)
   /* The order is important */
   lex->unit->cleanup(true);
 
+  lex->clear_values_map();
 
   close_thread_tables(thd);
   thd->mdl_context.rollback_to_savepoint(mdl_savepoint);
@@ -2772,6 +2790,19 @@ bool Prepared_statement::prepare(const char *query_str, size_t query_length)
   lex_end(lex);
 
   rewrite_query_if_needed(thd);
+
+  if (thd->rewritten_query.length())
+  {
+    MYSQL_SET_PS_TEXT(m_prepared_stmt,
+                      thd->rewritten_query.c_ptr_safe(),
+                      thd->rewritten_query.length());
+  }
+  else
+  {
+    MYSQL_SET_PS_TEXT(m_prepared_stmt,
+                      thd->query().str,
+                      thd->query().length);
+  }
 
   cleanup_stmt();
   stmt_backup.restore_thd(thd, this);
@@ -2826,8 +2857,11 @@ bool Prepared_statement::prepare(const char *query_str, size_t query_length)
       error |= thd->is_error();
     }
   }
-  thd->m_digest= parent_digest;
 
+  /* Restore the original rewritten query. */
+  stmt_backup.restore_rlb(thd);
+
+  thd->m_digest= parent_digest;
   thd->m_statement_psi= parent_locker;
 
   DBUG_RETURN(error);
@@ -2933,7 +2967,8 @@ Prepared_statement::execute_loop(String *expanded_query, bool open_cursor)
 
   DBUG_ASSERT(!thd->get_stmt_da()->is_set());
 
-  if (unlikely(thd->security_context()->password_expired() &&
+  if (unlikely(!thd->security_context()->account_is_locked() &&
+               thd->security_context()->password_expired() &&
                lex->sql_command != SQLCOM_SET_PASSWORD &&
                lex->sql_command != SQLCOM_ALTER_USER))
   {
@@ -3004,6 +3039,7 @@ Prepared_statement::execute_server_runnable(Server_runnable *server_runnable)
 
   Statement_backup stmt_backup;
   stmt_backup.set_thd_to_ps(thd, this);
+  stmt_backup.save_rlb(thd);
   thd->set_n_backup_active_arena(this, &arena_backup);
   thd->stmt_arena= this;
 
@@ -3013,6 +3049,7 @@ Prepared_statement::execute_server_runnable(Server_runnable *server_runnable)
 
   thd->restore_active_arena(this, &arena_backup);
   stmt_backup.restore_thd(thd, this);
+  stmt_backup.restore_rlb(thd);
   thd->stmt_arena= save_stmt_arena;
 
   save_change_list.move_elements_to(&thd->change_list);
@@ -3109,7 +3146,7 @@ bool Prepared_statement::validate_metadata(Prepared_statement *copy)
     return FALSE -- the metadata of the original SELECT,
     if any, has not been sent to the client.
   */
-  if (is_sql_prepare() || lex->describe)
+  if (is_sql_prepare() || lex->is_explain())
     return FALSE;
 
   if (lex->select_lex->item_list.elements !=
@@ -3257,6 +3294,7 @@ bool Prepared_statement::execute(String *expanded_query, bool open_cursor)
 
   Statement_backup stmt_backup;
   stmt_backup.set_thd_to_ps(thd, this);
+  stmt_backup.save_rlb(thd);
 
   /*
     Change the current database (if needed).
@@ -3270,6 +3308,7 @@ bool Prepared_statement::execute(String *expanded_query, bool open_cursor)
   {
     flags&= ~ (uint) IS_IN_USE;
     stmt_backup.restore_thd(thd, this);
+    stmt_backup.restore_rlb(thd);
     return TRUE;
   }
 
@@ -3282,6 +3321,7 @@ bool Prepared_statement::execute(String *expanded_query, bool open_cursor)
     my_error(ER_OUTOFMEMORY, MYF(ME_FATALERROR), expanded_query->length());
     flags&= ~ (uint) IS_IN_USE;
     stmt_backup.restore_thd(thd, this);
+    stmt_backup.restore_rlb(thd);
     return TRUE;
   }
 
@@ -3321,43 +3361,55 @@ bool Prepared_statement::execute(String *expanded_query, bool open_cursor)
       else if ((error= mysql_open_cursor(thd, result, &cursor)))
       {
         // cursor is freed inside mysql_open_cursor
-        delete result;
+        destroy(result);
         result= nullptr;
       }
     }
     else
     {
       /*
-        Try to find it in the query cache, if not, execute it.
-        Note that multi-statements cannot exist here (they are not supported in
-        prepared statements).
+        Log COM_STMT_EXECUTE to the general log. Note, that in case of SQL
+        prepared statements this causes two records to be output:
+
+        Query       EXECUTE <statement name>
+        Execute     <statement SQL text>
+
+        This is considered user-friendly, since in the
+        second log entry we output values of parameter markers.
+
+        Rewriting/password obfuscation:
+
+        - Any passwords in the "Execute" line should be substituted with
+        their hashes, or a notice.
+
+        Rewrite first (if needed); execution might replace passwords
+        with hashes in situ without flagging it, and then we'd make
+        a hash of that hash.
       */
-      if (query_cache.send_result_to_client(thd, thd->query()) <= 0)
-      {
-        /*
-          Log COM_STMT_EXECUTE to the general log. Note, that in case of SQL
-          prepared statements this causes two records to be output:
+      rewrite_query_if_needed(thd);
+      log_execute_line(thd);
 
-          Query       EXECUTE <statement name>
-          Execute     <statement SQL text>
+      thd->binlog_need_explicit_defaults_ts= lex->binlog_need_explicit_defaults_ts;
+      resourcegroups::Resource_group *src_res_grp= nullptr;
+      resourcegroups::Resource_group *dest_res_grp= nullptr;
+      MDL_ticket *ticket= nullptr;
+      MDL_ticket *cur_ticket= nullptr;
+      auto mgr_ptr= resourcegroups::Resource_group_mgr::instance();
+      bool switched= mgr_ptr->switch_resource_group_if_needed(thd, &src_res_grp,
+                                                              &dest_res_grp,
+                                                              &ticket,
+                                                              &cur_ticket);
 
-          This is considered user-friendly, since in the
-          second log entry we output values of parameter markers.
+      error= mysql_execute_command(thd, true);
 
-          Rewriting/password obfuscation:
-
-          - Any passwords in the "Execute" line should be substituted with
-          their hashes, or a notice.
-
-          Rewrite first (if needed); execution might replace passwords
-          with hashes in situ without flagging it, and then we'd make
-          a hash of that hash.
-        */
-        rewrite_query_if_needed(thd);
-        log_execute_line(thd);
-        thd->binlog_need_explicit_defaults_ts= lex->binlog_need_explicit_defaults_ts;
-        error= mysql_execute_command(thd, true);
-      }
+      if (switched)
+        mgr_ptr->restore_original_resource_group(thd, src_res_grp,
+                                                 dest_res_grp);
+      thd->resource_group_ctx()->m_switch_resource_group_str[0]= '\0';
+      if (ticket != nullptr)
+        mgr_ptr->release_shared_mdl_for_resource_group(thd, ticket);
+      if (cur_ticket != nullptr)
+        mgr_ptr->release_shared_mdl_for_resource_group(thd, cur_ticket);
     }
   }
 
@@ -3392,6 +3444,9 @@ bool Prepared_statement::execute(String *expanded_query, bool open_cursor)
   alloc_query(thd, thd->query().str, thd->query().length);
 
   thd->stmt_arena= old_stmt_arena;
+
+  /* Restore the original rewritten query. */
+  stmt_backup.restore_rlb(thd);
 
   if (state == Query_arena::STMT_PREPARED)
     state= Query_arena::STMT_EXECUTED;

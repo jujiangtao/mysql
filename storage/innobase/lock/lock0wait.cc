@@ -3,16 +3,24 @@
 Copyright (c) 1996, 2017, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+the terms of the GNU General Public License, version 2.0, as published by the
+Free Software Foundation.
+
+This program is also distributed with certain software (including but not
+limited to OpenSSL) that is licensed under separate terms, as designated in a
+particular file or component or in included license documentation. The authors
+of MySQL hereby grant you an additional permission to link the program and
+your derivative works with the separately licensed software that they have
+included with MySQL.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+FOR A PARTICULAR PURPOSE. See the GNU General Public License, version 2.0,
+for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 *****************************************************************************/
 
@@ -101,6 +109,8 @@ lock_wait_table_release_slot(
 	slot->thr->slot = NULL;
 	slot->thr = NULL;
 	slot->in_use = FALSE;
+
+	--lock_sys->n_waiting;
 
 	lock_mutex_exit();
 
@@ -232,6 +242,8 @@ lock_wait_suspend_thread(
 
 			trx->error_state = DB_DEADLOCK;
 			trx->lock.was_chosen_as_deadlock_victim = false;
+
+			ut_d(trx->lock.in_rollback = true);
 		}
 
 		lock_wait_mutex_exit();
@@ -247,16 +259,12 @@ lock_wait_suspend_thread(
 		srv_stats.n_lock_wait_count.inc();
 		srv_stats.n_lock_wait_current_count.inc();
 
-		if (ut_high_res_usectime(&sec, &ms) == -1) {
+		if (ut_usectime(&sec, &ms) == -1) {
 			start_time = -1;
 		} else {
 			start_time = static_cast<int64_t>(sec) * 1000000 + ms;
 		}
 	}
-
-	/* Wake the lock timeout monitor thread, if it is suspended */
-
-	os_event_set(lock_sys->timeout_event);
 
 	lock_wait_mutex_exit();
 	trx_mutex_exit(trx);
@@ -268,6 +276,8 @@ lock_wait_suspend_thread(
 	if (const lock_t* wait_lock = trx->lock.wait_lock) {
 		lock_type = lock_get_type_low(wait_lock);
 	}
+
+	++lock_sys->n_waiting;
 
 	lock_mutex_exit();
 
@@ -282,17 +292,13 @@ lock_wait_suspend_thread(
 
 		DEBUG_SYNC_C("lock_wait_release_s_latch_before_sleep");
 		break;
-	default:
-		/* There should never be a lock wait when the
-		dictionary latch is reserved in X mode.  Dictionary
-		transactions should only acquire locks on dictionary
-		tables, not other tables. All access to dictionary
-		tables should be covered by dictionary
-		transactions. */
-		ut_error;
+	case RW_X_LATCH:
+		/* We may wait for rec lock in dd holding
+		dict_operation_lock for creating FTS AUX table */
+		ut_ad(!mutex_own(&dict_sys->mutex));
+		rw_lock_x_unlock(dict_operation_lock);
+		break;
 	}
-
-	ut_a(trx->dict_operation_lock_mode == 0);
 
 	/* Suspend this thread and wait for the event. */
 
@@ -328,9 +334,10 @@ lock_wait_suspend_thread(
 		srv_conc_force_enter_innodb(trx);
 	}
 
-	if (had_dict_lock) {
-
+	if (had_dict_lock == RW_S_LATCH) {
 		row_mysql_freeze_data_dictionary(trx);
+	} else if (had_dict_lock == RW_X_LATCH) {
+		rw_lock_x_lock(dict_operation_lock);
 	}
 
 	wait_time = ut_difftime(ut_time(), slot->suspend_time);
@@ -342,7 +349,7 @@ lock_wait_suspend_thread(
 	if (thr->lock_state == QUE_THR_LOCK_ROW) {
 		ulint	diff_time;
 
-		if (ut_high_res_usectime(&sec, &ms) == -1) {
+		if (ut_usectime(&sec, &ms) == -1) {
 			finish_time = -1;
 		} else {
 			finish_time = static_cast<int64_t>(sec) * 1000000 + ms;
@@ -372,6 +379,7 @@ lock_wait_suspend_thread(
 
 	/* The transaction is chosen as deadlock victim during sleep. */
 	if (trx->error_state == DB_DEADLOCK) {
+		ut_d(trx->lock.in_rollback = true);
 		return;
 	}
 
@@ -414,6 +422,8 @@ lock_wait_release_thread_if_suspended(
 
 			trx->error_state = DB_DEADLOCK;
 			trx->lock.was_chosen_as_deadlock_victim = false;
+
+			ut_d(trx->lock.in_rollback = true);
 		}
 
 		os_event_set(thr->slot->event);
@@ -460,18 +470,22 @@ lock_wait_check_and_cancel(
 
 		trx_mutex_enter(trx);
 
+		trx->owns_mutex = true;
+
 		if (trx->lock.wait_lock != NULL && !trx_is_high_priority(trx)) {
 
 			ut_a(trx->lock.que_state == TRX_QUE_LOCK_WAIT);
 
-			lock_cancel_waiting_and_release(trx->lock.wait_lock);
+			lock_cancel_waiting_and_release(
+				trx->lock.wait_lock, false);
 		}
 
 		lock_mutex_exit();
 
+		trx->owns_mutex = false;
+
 		trx_mutex_exit(trx);
 	}
-
 }
 
 /** A thread which wakes up threads whose lock wait may have lasted too long. */

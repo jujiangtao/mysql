@@ -1,13 +1,20 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -26,8 +33,6 @@
 #include "mysql/psi/mysql_stage.h"
 #include "mysql/psi/mysql_file.h"
 
-#ifdef HAVE_PSI_INTERFACE
-
 C_MODE_START
 
 extern PSI_mutex_key key_BITMAP_mutex, key_IO_CACHE_append_buffer_lock,
@@ -44,25 +49,16 @@ extern PSI_cond_key key_IO_CACHE_SHARE_cond,
   key_IO_CACHE_SHARE_cond_writer,
   key_THR_COND_threads;
 
-C_MODE_END
-
-#endif /* HAVE_PSI_INTERFACE */
-
-C_MODE_START
-
 extern PSI_stage_info stage_waiting_for_table_level_lock;
 
 extern mysql_mutex_t THR_LOCK_malloc, THR_LOCK_open, THR_LOCK_keycache;
 extern mysql_mutex_t THR_LOCK_net;
 extern mysql_mutex_t THR_LOCK_charset;
 
-#ifdef HAVE_PSI_INTERFACE
 #ifdef HAVE_LINUX_LARGE_PAGES
 extern PSI_file_key key_file_proc_meminfo;
 #endif /* HAVE_LINUX_LARGE_PAGES */
 extern PSI_file_key key_file_charset;
-
-#endif /* HAVE_PSI_INTERFACE */
 
 /* These keys are always defined. */
 

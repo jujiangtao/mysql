@@ -1,21 +1,33 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "mysqld_thd_manager.h"
+#include "sql/mysqld_thd_manager.h"
 
 #include "my_config.h"
+
+#include "mysql/components/services/psi_cond_bits.h"
+#include "mysql/components/services/psi_mutex_bits.h"
+#include "mysql/psi/mysql_cond.h"
+#include "mysql/psi/mysql_mutex.h"
 
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
@@ -25,17 +37,16 @@
 #include <new>
 #include <utility>
 
-#include "mutex_lock.h"              // Mutex_lock
+#include "mutex_lock.h"              // MUTEX_LOCK
 #include "my_command.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
+#include "my_macros.h"
 #include "my_psi_config.h"
 #include "my_sys.h"
 #include "mysql/psi/psi_base.h"
-#include "mysql/psi/psi_cond.h"
-#include "mysql/psi/psi_mutex.h"
 #include "mysql/thread_pool_priv.h"  // inc_thread_created
-#include "sql_class.h"               // THD
+#include "sql/sql_class.h"           // THD
 #include "thr_mutex.h"
 
 
@@ -109,18 +120,20 @@ static PSI_mutex_key key_LOCK_thd_list;
 static PSI_mutex_key key_LOCK_thd_remove;
 static PSI_mutex_key key_LOCK_thread_ids;
 
+/* clang-format off */
 static PSI_mutex_info all_thd_manager_mutexes[]=
 {
-  { &key_LOCK_thd_list, "LOCK_thd_list", 0, 0},
-  { &key_LOCK_thd_remove, "LOCK_thd_remove", 0, 0},
-  { &key_LOCK_thread_ids, "LOCK_thread_ids", PSI_FLAG_GLOBAL, 0}
+  { &key_LOCK_thd_list, "LOCK_thd_list", 0, 0, PSI_DOCUMENT_ME},
+  { &key_LOCK_thd_remove, "LOCK_thd_remove", 0, 0, PSI_DOCUMENT_ME},
+  { &key_LOCK_thread_ids, "LOCK_thread_ids", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME}
 };
+/* clang-format on */
 
 static PSI_cond_key key_COND_thd_list;
 
 static PSI_cond_info all_thd_manager_conds[]=
 {
-  { &key_COND_thd_list, "COND_thd_list", 0 }
+  { &key_COND_thd_list, "COND_thd_list", 0, 0, PSI_DOCUMENT_ME}
 };
 #endif // HAVE_PSI_INTERFACE
 
@@ -211,7 +224,7 @@ void Global_THD_manager::add_thd(THD *thd)
   // Should have an assigned ID before adding to the list.
   DBUG_ASSERT(thd->thread_id() != reserved_thread_id);
   const int partition= thd_partition(thd->thread_id());
-  Mutex_lock lock_list(&LOCK_thd_list[partition]);
+  MUTEX_LOCK(lock_list, &LOCK_thd_list[partition]);
   // Technically it is not supported to compare pointers, but it works.
   std::pair<THD_array::iterator, bool> insert_result=
     thd_list[partition].insert_unique(thd);
@@ -226,8 +239,8 @@ void Global_THD_manager::remove_thd(THD *thd)
 {
   DBUG_PRINT("info", ("Global_THD_manager::remove_thd %p", thd));
   const int partition= thd_partition(thd->thread_id());
-  Mutex_lock lock_remove(&LOCK_thd_remove[partition]);
-  Mutex_lock lock_list(&LOCK_thd_list[partition]);
+  MUTEX_LOCK(lock_remove, &LOCK_thd_remove[partition]);
+  MUTEX_LOCK(lock_list, &LOCK_thd_list[partition]);
 
   DBUG_ASSERT(unit_test || thd->release_resources_done());
 
@@ -250,7 +263,7 @@ void Global_THD_manager::remove_thd(THD *thd)
 my_thread_id Global_THD_manager::get_new_thread_id()
 {
   my_thread_id new_id;
-  Mutex_lock lock(&LOCK_thread_ids);
+  MUTEX_LOCK(lock, &LOCK_thread_ids);
   do {
     new_id= thread_id_counter++;
   } while (!thread_ids.insert_unique(new_id).second);
@@ -262,7 +275,7 @@ void Global_THD_manager::release_thread_id(my_thread_id thread_id)
 {
   if (thread_id == reserved_thread_id)
     return; // Some temporary THDs are never given a proper ID.
-  Mutex_lock lock(&LOCK_thread_ids);
+  MUTEX_LOCK(lock, &LOCK_thread_ids);
   const size_t num_erased MY_ATTRIBUTE((unused))=
     thread_ids.erase_unique(thread_id);
   // Assert if the ID was not found in the list.
@@ -273,7 +286,7 @@ void Global_THD_manager::release_thread_id(my_thread_id thread_id)
 void Global_THD_manager::set_thread_id_counter(my_thread_id new_id)
 {
   DBUG_ASSERT(unit_test == true);
-  Mutex_lock lock(&LOCK_thread_ids);
+  MUTEX_LOCK(lock, &LOCK_thread_ids);
   thread_id_counter= new_id;
 }
 
@@ -282,7 +295,7 @@ void Global_THD_manager::wait_till_no_thd()
 {
   for (int i= 0; i < NUM_PARTITIONS; i++)
   {
-    Mutex_lock lock(&LOCK_thd_list[i]);
+    MUTEX_LOCK(lock, &LOCK_thd_list[i]);
     while (thd_list[i].size() > 0)
     {
       mysql_cond_wait(&COND_thd_list[i], &LOCK_thd_list[i]);
@@ -299,7 +312,7 @@ void Global_THD_manager::do_for_all_thd_copy(Do_THD_Impl *func)
 
   for (int i= 0; i < NUM_PARTITIONS; i++)
   {
-    Mutex_lock lock_remove(&LOCK_thd_remove[i]);
+    MUTEX_LOCK(lock_remove, &LOCK_thd_remove[i]);
     mysql_mutex_lock(&LOCK_thd_list[i]);
 
     /* Take copy of global_thread_list. */
@@ -324,7 +337,7 @@ void Global_THD_manager::do_for_all_thd(Do_THD_Impl *func)
   Do_THD doit(func);
   for (int i= 0; i < NUM_PARTITIONS; i++)
   {
-    Mutex_lock lock(&LOCK_thd_list[i]);
+    MUTEX_LOCK(lock, &LOCK_thd_list[i]);
     std::for_each(thd_list[i].begin(), thd_list[i].end(), doit);
   }
 }
@@ -335,7 +348,7 @@ THD* Global_THD_manager::find_thd(Find_THD_Impl *func)
   Find_THD find_thd(func);
   for (int i= 0; i < NUM_PARTITIONS; i++)
   {
-    Mutex_lock lock(&LOCK_thd_list[i]);
+    MUTEX_LOCK(lock, &LOCK_thd_list[i]);
     THD_array::const_iterator it=
       std::find_if(thd_list[i].begin(), thd_list[i].end(), find_thd);
     if (it != thd_list[i].end())
@@ -353,7 +366,7 @@ THD* Global_THD_manager::find_thd(Find_thd_with_id *func)
   // Since we know the thread_id, we can check the correct
   // partition directly.
   const int partition= thd_partition(func->m_thread_id);
-  Mutex_lock lock(&LOCK_thd_list[partition]);
+  MUTEX_LOCK(lock, &LOCK_thd_list[partition]);
   THD_array::const_iterator it=
     std::find_if(thd_list[partition].begin(),
                  thd_list[partition].end(), find_thd);

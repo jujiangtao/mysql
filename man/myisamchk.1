@@ -2,12 +2,12 @@
 .\"     Title: \fBmyisamchk\fR
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 03/22/2017
+.\"      Date: 01/18/2018
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 8.0
 .\"  Language: English
 .\"
-.TH "\FBMYISAMCHK\FR" "1" "03/22/2017" "MySQL 8\&.0" "MySQL Database System"
+.TH "\FBMYISAMCHK\FR" "1" "01/18/2018" "MySQL 8\&.0" "MySQL Database System"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -53,8 +53,8 @@ REPAIR TABLE
 statements to check and repair
 MyISAM
 tables\&. See
-Section\ \&14.7.2.2, \(lqCHECK TABLE Syntax\(rq, and
-Section\ \&14.7.2.5, \(lqREPAIR TABLE Syntax\(rq\&.
+Section\ \&13.7.3.2, \(lqCHECK TABLE Syntax\(rq, and
+Section\ \&13.7.3.5, \(lqREPAIR TABLE Syntax\(rq\&.
 .PP
 The use of
 \fBmyisamchk\fR
@@ -192,7 +192,7 @@ the section called \(lqMYISAMCHK MEMORY USAGE\(rq\&.
 .PP
 For additional information about using
 \fBmyisamchk\fR, see
-Section\ \&8.6, \(lqMyISAM Table Maintenance and Crash Recovery\(rq\&.
+Section\ \&7.6, \(lqMyISAM Table Maintenance and Crash Recovery\(rq\&.
 .if n \{\
 .sp
 .\}
@@ -241,7 +241,7 @@ CHECK TABLE
 instead of
 \fBmyisamchk\fR
 to check tables\&. See
-Section\ \&14.7.2.2, \(lqCHECK TABLE Syntax\(rq\&.
+Section\ \&13.7.3.2, \(lqCHECK TABLE Syntax\(rq\&.
 .sp .5v
 .RE
 .PP
@@ -249,7 +249,7 @@ Section\ \&14.7.2.2, \(lqCHECK TABLE Syntax\(rq\&.
 supports the following options, which can be specified on the command line or in the
 [myisamchk]
 group of an option file\&. For information about option files used by MySQL programs, see
-Section\ \&5.2.6, \(lqUsing Option Files\(rq\&.
+Section\ \&4.2.6, \(lqUsing Option Files\(rq\&.
 .SH "MYISAMCHK GENERAL OPTIONS"
 .PP
 The options described in this section can be used for any type of table maintenance operation performed by
@@ -619,8 +619,8 @@ myisam_stats_method
 system variable\&. For more information, see the description of
 myisam_stats_method
 in
-Section\ \&6.1.5, \(lqServer System Variables\(rq, and
-Section\ \&9.3.7, \(lqInnoDB and MyISAM Index Statistics Collection\(rq\&.
+Section\ \&5.1.5, \(lqServer System Variables\(rq, and
+Section\ \&8.3.8, \(lqInnoDB and MyISAM Index Statistics Collection\(rq\&.
 .PP
 ft_min_word_len
 and
@@ -890,7 +890,7 @@ file as
 \fB\-\-character\-sets\-dir=\fR\fB\fIdir_name\fR\fR
 .sp
 The directory where character sets are installed\&. See
-Section\ \&11.5, \(lqCharacter Set Configuration\(rq\&.
+Section\ \&10.5, \(lqCharacter Set Configuration\(rq\&.
 .RE
 .sp
 .RS 4
@@ -1371,7 +1371,7 @@ CREATE TABLE person
   PRIMARY KEY (id),
   INDEX (last_name, first_name),
   INDEX (birth)
-) MAX_ROWS = 1000000;
+) MAX_ROWS = 1000000 ENGINE=MYISAM;
 .fi
 .if n \{\
 .RE
@@ -1400,11 +1400,10 @@ output:
 .nf
 MyISAM file:         person
 Record format:       Packed
-Character set:       latin1_swedish_ci (8)
+Character set:       utf8mb4_0900_ai_ci (255)
 File\-version:        1
-Creation time:       2009\-08\-19 16:47:41
-Recover time:        2009\-08\-19 16:47:56
-Status:              checked,analyzed,optimized keys
+Creation time:       2017\-03\-30 21:21:30
+Status:              checked,analyzed,optimized keys,sorted index pages
 Auto increment key:              1  Last value:                306688
 Data records:               306688  Deleted blocks:                 0
 Datafile parts:             306688  Deleted data:                   0
@@ -1413,18 +1412,18 @@ Datafile length:           9347072  Keyfile length:           6066176
 Max datafile length:    4294967294  Max keyfile length:   17179868159
 Recordlength:                   54
 table description:
-Key Start Len Index   Type                 Rec/key         Root  Blocksize
-1   2     4   unique  long                       1        99328       1024
-2   6     20  multip\&. varchar prefix           512      3563520       1024
-    27    20          varchar                  512
-3   48    3   multip\&. uint24 NULL           306688      6065152       1024
+Key Start Len Index   Type                     Rec/key         Root  Blocksize
+1   2     4   unique  long                           1                    1024
+2   6     80  multip\&. varchar prefix                 0                    1024
+    87    80          varchar                        0
+3   168   3   multip\&. uint24 NULL                    0                    1024
 Field Start Length Nullpos Nullbit Type
-1     1     1
-2     2     4                      no zeros
-3     6     21                     varchar
-4     27    21                     varchar
-5     48    3      1       1       no zeros
-6     51    3      1       2       no zeros
+1     1     1                                                         
+2     2     4                      no zeros                           
+3     6     81                     varchar                            
+4     87    81                     varchar                            
+5     168   3      1       1       no zeros                           
+6     171   3      1       2       no zeros                           
 .fi
 .if n \{\
 .RE
@@ -1594,7 +1593,7 @@ The number of rows in the table\&.
 Deleted blocks
 .sp
 How many deleted blocks still have reserved space\&. You can optimize your table to minimize this space\&. See
-Section\ \&8.6.4, \(lqMyISAM Table Optimization\(rq\&.
+Section\ \&7.6.4, \(lqMyISAM Table Optimization\(rq\&.
 .RE
 .sp
 .RS 4
@@ -1622,7 +1621,7 @@ Data records\&.
 Deleted data
 .sp
 How many bytes of unreclaimed deleted data there are\&. You can optimize your table to minimize this space\&. See
-Section\ \&8.6.4, \(lqMyISAM Table Optimization\(rq\&.
+Section\ \&7.6.4, \(lqMyISAM Table Optimization\(rq\&.
 .RE
 .sp
 .RS 4
@@ -2109,7 +2108,7 @@ The number of rows in the table\&.
 Deleted blocks
 .sp
 How many deleted blocks still have reserved space\&. You can optimize your table to minimize this space\&. See
-Section\ \&8.6.4, \(lqMyISAM Table Optimization\(rq\&.
+Section\ \&7.6.4, \(lqMyISAM Table Optimization\(rq\&.
 .RE
 .sp
 .RS 4
@@ -2247,7 +2246,7 @@ What percentage of the data file is unused\&.
 Blocks/Record
 .sp
 Average number of blocks per row (that is, how many links a fragmented row is composed of)\&. This is always 1\&.0 for fixed\-format tables\&. This value should stay as close to 1\&.0 as possible\&. If it gets too large, you can reorganize the table\&. See
-Section\ \&8.6.4, \(lqMyISAM Table Optimization\(rq\&.
+Section\ \&7.6.4, \(lqMyISAM Table Optimization\(rq\&.
 .RE
 .sp
 .RS 4
@@ -2455,7 +2454,7 @@ instead of
 .SH "COPYRIGHT"
 .br
 .PP
-Copyright \(co 1997, 2017, Oracle and/or its affiliates. All rights reserved.
+Copyright \(co 1997, 2018, Oracle and/or its affiliates. All rights reserved.
 .PP
 This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP

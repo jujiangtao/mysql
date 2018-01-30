@@ -1,36 +1,45 @@
 /*
-  Copyright (c) 2015, 2016, Oracle and/or its affiliates. All rights reserved.
+  Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
   along with this program; if not, write to the Free Software
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 */
 
+#include "client/dump/mysql_crawler.h"
+
 #include <stdlib.h>
 #include <functional>
 #include <string>
 #include <vector>
 
-#include "base/mysql_query_runner.h"
-#include "event_scheduler_event.h"
-#include "mysql_crawler.h"
-#include "mysql_function.h"
-#include "privilege.h"
-#include "stored_procedure.h"
-#include "table_deferred_indexes_dump_task.h"
-#include "table_definition_dump_task.h"
-#include "table_rows_dump_task.h"
-#include "trigger.h"
-#include "view.h"
+#include "client/base/mysql_query_runner.h"
+#include "client/dump/column_statistic.h"
+#include "client/dump/event_scheduler_event.h"
+#include "client/dump/mysql_function.h"
+#include "client/dump/privilege.h"
+#include "client/dump/stored_procedure.h"
+#include "client/dump/table_deferred_indexes_dump_task.h"
+#include "client/dump/table_definition_dump_task.h"
+#include "client/dump/table_rows_dump_task.h"
+#include "client/dump/trigger.h"
+#include "client/dump/view.h"
 
 using std::string;
 using std::vector;
@@ -150,17 +159,43 @@ void Mysql_crawler::enumerate_database_objects(const Database& db)
   this->enumerate_event_scheduler_events(db);
 }
 
+static std::vector<std::string> ignored_tables =
+{
+  /*
+    @TODO: MYSQL_DUMP contains more exceptions,
+    investigate which one needs to be ported to MYSQL_PUMP.
+  */
+  {"mysql.innodb_ddl_log"},
+  {"mysql.innodb_dynamic_metadata"},
+  {"mysql.gtid_executed"}
+};
+
+static bool is_ignored_table(const std::string& qualified_name)
+{
+  for (std::vector<std::string>::iterator it= ignored_tables.begin();
+       it != ignored_tables.end();
+       ++it)
+  {
+    if (*it == qualified_name)
+    {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 void Mysql_crawler::enumerate_tables(const Database& db)
 {
   Mysql::Tools::Base::Mysql_query_runner* runner= this->get_runner();
 
   /*
-    Get statistics from SE by setting information_schema_stats=LATEST
-    for this session. This makes the queries IS queries retrieve latest
+    Get statistics from SE by setting information_schema_stats_expiry=0.
+    This makes the queries IS queries retrieve latest
     statistics and avoids getting outdated statistics.
   */
   std::vector<const Mysql::Tools::Base::Mysql_query_runner::Row*> t;
-  runner->run_query_store("SET SESSION information_schema_stats=latest", &t);
+  runner->run_query_store("SET SESSION information_schema_stats_expiry=0", &t);
 
   std::vector<const Mysql::Tools::Base::Mysql_query_runner::Row*> tables;
 
@@ -173,6 +208,13 @@ void Mysql_crawler::enumerate_tables(const Database& db)
     const Mysql::Tools::Base::Mysql_query_runner::Row& table_data= **it;
 
     std::string table_name= table_data[0]; // "Name"
+
+    std::string qualified_name = db.get_name() + "." + table_name;
+    if (is_ignored_table(qualified_name))
+    {
+      continue;
+    }
+
     std::vector<const Mysql::Tools::Base::Mysql_query_runner::Row*> fields_data;
     runner->run_query_store("SHOW COLUMNS IN " + this->quote_name(table_name)
       + " FROM " + this->quote_name(db.get_name()), &fields_data);
@@ -247,9 +289,12 @@ void Mysql_crawler::enumerate_tables(const Database& db)
 
     this->enumerate_table_triggers(*table, rows_task);
 
+    this->enumerate_column_statistics(*table, rows_task);
+
     this->process_dump_task(indexes_task);
   }
   Mysql::Tools::Base::Mysql_query_runner::cleanup_result(&tables);
+  runner->run_query_store("SET SESSION information_schema_stats_expiry=default", &t);
   delete runner;
 }
 
@@ -458,6 +503,52 @@ void Mysql_crawler::enumerate_table_triggers(
   delete runner;
 }
 
+void Mysql_crawler::enumerate_column_statistics(
+  const Table& table, Abstract_dump_task* dependency)
+{
+  // Column statistics were supported since 8.0.2
+  if (this->get_server_version() < 80002)
+    return;
+
+  Mysql::Tools::Base::Mysql_query_runner* runner= this->get_runner();
+
+  std::vector<const Mysql::Tools::Base::Mysql_query_runner::Row*> column_statistics;
+  runner->run_query_store(
+  "SELECT COLUMN_NAME, \
+          JSON_EXTRACT(HISTOGRAM, '$.\"number-of-buckets-specified\"') \
+   FROM information_schema.column_statistics \
+   WHERE SCHEMA_NAME = '" + runner->escape_string(table.get_schema()) + "' \
+     AND TABLE_NAME = '" + runner->escape_string(table.get_name()) + "';",
+     &column_statistics);
+
+  for (std::vector<const Mysql::Tools::Base::Mysql_query_runner::Row*>::iterator
+    it= column_statistics.begin(); it != column_statistics.end(); ++it)
+  {
+    const Mysql::Tools::Base::Mysql_query_runner::Row& column_row= **it;
+
+    std::string definition;
+    definition.append("/*!80002 ANALYZE TABLE ");
+    definition.append(this->quote_name(table.get_schema()));
+    definition.append(".");
+    definition.append(this->quote_name(table.get_name()));
+    definition.append(" UPDATE HISTOGRAM ON ");
+    definition.append(this->quote_name(column_row[0]));
+    definition.append(" WITH ");
+    definition.append(column_row[1]);
+    definition.append(" BUCKETS */");
+
+    Column_statistic* column_statistic=
+      new Column_statistic(this->generate_new_object_id(), table.get_schema(),
+                           definition, &table);
+
+    column_statistic->add_dependency(dependency);
+    m_current_database_end_dump_task->add_dependency(column_statistic);
+
+    this->process_dump_task(column_statistic);
+  }
+  Mysql::Tools::Base::Mysql_query_runner::cleanup_result(&column_statistics);
+  delete runner;
+}
 
 std::string Mysql_crawler::get_version_specific_statement(
   std::string create_string, const std::string& keyword,

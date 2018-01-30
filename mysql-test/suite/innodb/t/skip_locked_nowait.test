@@ -3,8 +3,6 @@
 #
 
 --source include/count_sessions.inc
-# should work with embedded server after mysqltest is fixed
---source include/not_embedded.inc
 
 connect (con1,localhost,root,,);
 SET SESSION innodb_lock_wait_timeout=1;
@@ -137,7 +135,7 @@ DROP TABLE t1;
 --echo # Case 3: Test primary index & spatial index
 CREATE TABLE t1(
         seat_id    INT,
-        pos        POINT NOT NULL,
+        pos        POINT NOT NULL SRID 0,
         state      INT,
         PRIMARY KEY(seat_id),
         SPATIAL KEY(pos)

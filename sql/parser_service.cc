@@ -1,58 +1,62 @@
 /*  Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
-    This program is free software; you can redistribute it and/or modify it
-    under the terms of the GNU General Public License as published by the
-    Free Software Foundation; version 2 of the License.
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License, version 2.0,
+    as published by the Free Software Foundation.
 
-    This program is distributed in the hope that it will be useful, but
-    WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-    General Public License for more details.
+    This program is also distributed with certain software (including
+    but not limited to OpenSSL) that is licensed under separate terms,
+    as designated in a particular file or component or in included license
+    documentation.  The authors of MySQL hereby grant you an additional
+    permission to link the program and your derivative works with the
+    separately licensed software that they have included with MySQL.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License, version 2.0, for more details.
 
     You should have received a copy of the GNU General Public License
     along with this program; if not, write to the Free Software
-    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
-    02110-1301  USA */
+    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include <stddef.h>
 #include <sys/types.h>
 #include <algorithm>
 #include <new>
 
-#include "current_thd.h"
-#include "enum_query_type.h"
-#include "error_handler.h"
-#include "item.h"
-#include "lex_string.h"
 #include "m_string.h"
-#include "mdl.h"
 #include "my_dbug.h"
-#include "my_inttypes.h"
 #include "my_sqlcommand.h"
 #include "my_thread.h"
 #include "mysql/mysql_lex_string.h"
 #include "mysql/psi/mysql_thread.h"
-#include "mysql/service_locking.h"
 #include "mysql/service_parser.h"
-#include "mysql_com.h"
-#include "mysqld.h"                             // my_localhost
-#include "mysqld_thd_manager.h"
-#include "select_lex_visitor.h"
-#include "sql_base.h" // close_thread_tables
-#include "sql_class.h"
-#include "sql_const.h"
-#include "sql_digest.h"
-#include "sql_digest_stream.h"
-#include "sql_error.h"
-#include "sql_lex.h"
-#include "sql_list.h"
-#include "sql_parse.h"
-#include "sql_plugin.h"
-#include "sql_security_ctx.h"
+#include "mysql/udf_registration_types.h"
+#include "sql/auth/sql_security_ctx.h"
+#include "sql/current_thd.h"
+#include "sql/enum_query_type.h"
+#include "sql/error_handler.h"
+#include "sql/item.h"
+#include "sql/key.h"
+#include "sql/mdl.h"
+#include "sql/mysqld.h"                         // my_localhost
+#include "sql/mysqld_thd_manager.h"
+#include "sql/protocol_classic.h"
+#include "sql/select_lex_visitor.h"
+#include "sql/sql_base.h" // close_thread_tables
+#include "sql/sql_class.h"
+#include "sql/sql_const.h"
+#include "sql/sql_digest.h"
+#include "sql/sql_digest_stream.h"
+#include "sql/sql_error.h"
+#include "sql/sql_lex.h"
+#include "sql/sql_list.h"
+#include "sql/sql_parse.h"
+#include "sql/system_variables.h"
+#include "sql/transaction.h" // trans_commit_stmt
 #include "sql_string.h"
-#include "system_variables.h"
 #include "template_utils.h"
-#include "transaction.h" // trans_commit_stmt
 
 /**
   This class implements the parse tree visiting service.
@@ -333,9 +337,12 @@ int mysql_parser_get_statement_type(MYSQL_THD thd)
 extern "C"
 int mysql_parser_get_statement_digest(MYSQL_THD thd, uchar *digest)
 {
+  static_assert(PARSER_SERVICE_DIGEST_LENGTH == DIGEST_HASH_SIZE,
+                "If you change the digest hash, PARSER_SERVICE_DIGEST_LENGTH needs to adjust");
+
   if (thd->m_digest == NULL)
     return true;
-  compute_digest_md5(&thd->m_digest->m_digest_storage, digest);
+  compute_digest_hash(&thd->m_digest->m_digest_storage, digest);
   return false;
 }
 

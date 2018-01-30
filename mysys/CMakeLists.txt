@@ -1,19 +1,24 @@
 # Copyright (c) 2006, 2017, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; version 2 of the License.
-# 
+# it under the terms of the GNU General Public License, version 2.0,
+# as published by the Free Software Foundation.
+#
+# This program is also distributed with certain software (including
+# but not limited to OpenSSL) that is licensed under separate terms,
+# as designated in a particular file or component or in included license
+# documentation.  The authors of MySQL hereby grant you an additional
+# permission to link the program and your derivative works with the
+# separately licensed software that they have included with MySQL.
+#
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-# 
+# GNU General Public License, version 2.0, for more details.
+#
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
-# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
-
-INCLUDE_DIRECTORIES(${ZLIB_INCLUDE_DIR} ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/mysys)
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 SET(MYSYS_SOURCES
   array.cc
@@ -22,7 +27,6 @@ SET(MYSYS_SOURCES
   charset-def.cc
   checksum.cc
   errors.cc
-  hash.cc
   lf_alloc-pin.cc
   lf_dynarray.cc
   lf_hash.cc
@@ -40,9 +44,6 @@ SET(MYSYS_SOURCES
   mf_loadpath.cc
   mf_pack.cc
   mf_path.cc
-  mf_qsort2.cc
-  mf_qsort.cc
-  mf_radix.cc
   mf_same.cc
   mf_tempdir.cc
   mf_tempfile.cc
@@ -62,6 +63,7 @@ SET(MYSYS_SOURCES
   my_delete.cc
   my_div.cc
   my_error.cc
+  my_fallocator.cc
   my_file.cc
   my_fopen.cc
   my_fstream.cc
@@ -138,23 +140,20 @@ ENDIF()
 
 ADD_CONVENIENCE_LIBRARY(mysys ${MYSYS_SOURCES})
 TARGET_LINK_LIBRARIES(mysys dbug strings ${ZLIB_LIBRARY} 
- ${LIBNSL} ${LIBM} ${LIBRT} ${LIBATOMIC} ${LIBEXECINFO})
+ ${LIBNSL} ${LIBM} ${LIBRT} ${LIBEXECINFO})
 
 # Need explicit pthread for gcc -fsanitize=address
 IF(CMAKE_USE_PTHREADS_INIT AND CMAKE_C_FLAGS MATCHES "-fsanitize=")
   TARGET_LINK_LIBRARIES(mysys pthread)
 ENDIF()
 
-ADD_EXECUTABLE(thr_lock thr_lock.cc)
+MYSQL_ADD_EXECUTABLE(thr_lock thr_lock.cc SKIP_INSTALL)
 TARGET_LINK_LIBRARIES(thr_lock mysys)
 SET_TARGET_PROPERTIES(thr_lock PROPERTIES COMPILE_FLAGS "-DMAIN")
-ADD_EXECUTABLE(mf_iocache_test mf_iocache.cc)
+MYSQL_ADD_EXECUTABLE(mf_iocache_test mf_iocache.cc SKIP_INSTALL)
 TARGET_LINK_LIBRARIES(mf_iocache_test mysys)
 SET_TARGET_PROPERTIES(mf_iocache_test PROPERTIES COMPILE_FLAGS "-DMAIN")
-ADD_EXECUTABLE(base64_test base64.cc)
+MYSQL_ADD_EXECUTABLE(base64_test base64.cc SKIP_INSTALL)
 SET_TARGET_PROPERTIES(base64_test PROPERTIES COMPILE_FLAGS "-DMAIN")
 TARGET_LINK_LIBRARIES(base64_test mysys)
-
-IF(MSVC)
-   INSTALL_DEBUG_TARGET(mysys DESTINATION ${INSTALL_LIBDIR}/debug)
-ENDIF()
+ADD_DEPENDENCIES(base64_test GenError)

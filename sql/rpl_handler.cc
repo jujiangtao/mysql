@@ -1,52 +1,64 @@
 /* Copyright (c) 2008, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "rpl_handler.h"
+#include "sql/rpl_handler.h"
 
 #include <string.h>
+#include <memory>
 #include <new>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
-#include "current_thd.h"
-#include "debug_sync.h"        // DEBUG_SYNC
-#include "handler.h"
-#include "hash.h"
-#include "item_func.h"         // user_var_entry
-#include "key.h"
 #include "lex_string.h"
-#include "log.h"               // sql_print_error
+#include "map_helpers.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_io.h"
+#include "my_loglevel.h"
+#include "mysql/components/services/log_shared.h"
 #include "mysql/psi/mysql_mutex.h"
+#include "mysql/psi/psi_base.h"
 #include "mysql/service_mysql_alloc.h"
-#include "mysqld.h"            // server_uuid
+#include "mysqld_error.h"
 #include "prealloced_array.h"
-#include "psi_memory_key.h"
-#include "replication.h"       // Trans_param
-#include "rpl_gtid.h"
-#include "rpl_mi.h"            // Master_info
-#include "sql_class.h"         // THD
-#include "sql_const.h"
-#include "sql_error.h"
-#include "sql_plugin.h"        // plugin_int_to_ref
+#include "sql/current_thd.h"
+#include "sql/debug_sync.h"    // DEBUG_SYNC
+#include "sql/handler.h"
+#include "sql/item_func.h"     // user_var_entry
+#include "sql/key.h"
+#include "sql/log.h"
+#include "sql/mysqld.h"        // server_uuid
+#include "sql/psi_memory_key.h"
+#include "sql/replication.h"   // Trans_param
+#include "sql/rpl_gtid.h"
+#include "sql/rpl_mi.h"        // Master_info
+#include "sql/sql_class.h"     // THD
+#include "sql/sql_const.h"
+#include "sql/sql_plugin.h"    // plugin_int_to_ref
+#include "sql/system_variables.h"
+#include "sql/table.h"
+#include "sql/transaction_info.h"
 #include "sql_string.h"
-#include "system_variables.h"
-#include "table.h"
-#include "transaction_info.h"
-#include "rpl_write_set_handler.h"
 
 Trans_delegate *transaction_delegate;
 Binlog_storage_delegate *binlog_storage_delegate;
@@ -63,13 +75,13 @@ Observer_info::Observer_info(void *ob, st_plugin_int *p)
 
 
 Delegate::Delegate(
-#ifdef HAVE_PSI_INTERFACE
+#ifdef HAVE_PSI_RWLOCK_INTERFACE
          PSI_rwlock_key key
 #endif
          )
 {
   inited= FALSE;
-#ifdef HAVE_PSI_INTERFACE
+#ifdef HAVE_PSI_RWLOCK_INTERFACE
   if (mysql_rwlock_init(key, &lock))
     return;
 #else
@@ -98,15 +110,13 @@ int get_user_var_int(const char *name,
   /* Protects thd->user_vars. */
   mysql_mutex_lock(&thd->LOCK_thd_data);
 
-  user_var_entry *entry=
-    (user_var_entry*) my_hash_search(&thd->user_vars,
-                                  (uchar*) name, strlen(name));
-  if (!entry)
+  const auto it= thd->user_vars.find(name);
+  if (it == thd->user_vars.end())
   {
     mysql_mutex_unlock(&thd->LOCK_thd_data);
     return 1;
   }
-  *value= entry->val_int(&null_val);
+  *value= it->second->val_int(&null_val);
   if (null_value)
     *null_value= null_val;
   mysql_mutex_unlock(&thd->LOCK_thd_data);
@@ -122,15 +132,13 @@ int get_user_var_real(const char *name,
   /* Protects thd->user_vars. */
   mysql_mutex_lock(&thd->LOCK_thd_data);
 
-  user_var_entry *entry=
-    (user_var_entry*) my_hash_search(&thd->user_vars,
-                                  (uchar*) name, strlen(name));
-  if (!entry)
+  const auto it= thd->user_vars.find(name);
+  if (it == thd->user_vars.end())
   {
     mysql_mutex_unlock(&thd->LOCK_thd_data);
     return 1;
   }
-  *value= entry->val_real(&null_val);
+  *value= it->second->val_real(&null_val);
   if (null_value)
     *null_value= null_val;
   mysql_mutex_unlock(&thd->LOCK_thd_data);
@@ -147,15 +155,13 @@ int get_user_var_str(const char *name, char *value,
   /* Protects thd->user_vars. */
   mysql_mutex_lock(&thd->LOCK_thd_data);
 
-  user_var_entry *entry=
-    (user_var_entry*) my_hash_search(&thd->user_vars,
-                                  (uchar*) name, strlen(name));
-  if (!entry)
+  const auto it= thd->user_vars.find(name);
+  if (it == thd->user_vars.end())
   {
     mysql_mutex_unlock(&thd->LOCK_thd_data);
     return 1;
   }
-  entry->val_str(&null_val, &str, precision);
+  it->second->val_str(&null_val, &str, precision);
   strncpy(value, str.c_ptr(), len);
   if (null_value)
     *null_value= null_val;
@@ -184,8 +190,7 @@ int delegates_init()
 
   if (!transaction_delegate->is_inited())
   {
-    sql_print_error("Initialization of transaction delegates failed. "
-                    "Please report a bug.");
+    LogErr(ERROR_LEVEL, ER_RPL_TRX_DELEGATES_INIT_FAILED);
     return 1;
   }
 
@@ -193,8 +198,7 @@ int delegates_init()
 
   if (!binlog_storage_delegate->is_inited())
   {
-    sql_print_error("Initialization binlog storage delegates failed. "
-                    "Please report a bug.");
+    LogErr(ERROR_LEVEL, ER_RPL_BINLOG_STORAGE_DELEGATES_INIT_FAILED);
     return 1;
   }
 
@@ -207,8 +211,7 @@ int delegates_init()
 
   if (!binlog_transmit_delegate->is_inited())
   {
-    sql_print_error("Initialization of binlog transmit delegates failed. "
-                    "Please report a bug.");
+    LogErr(ERROR_LEVEL, ER_RPL_BINLOG_TRANSMIT_DELEGATES_INIT_FAILED);
     return 1;
   }
 
@@ -216,8 +219,7 @@ int delegates_init()
 
   if (!binlog_relay_io_delegate->is_inited())
   {
-    sql_print_error("Initialization binlog relay IO delegates failed. "
-                    "Please report a bug.");
+    LogErr(ERROR_LEVEL, ER_RPL_BINLOG_RELAY_DELEGATES_INIT_FAILED);
     return 1;
   }
 
@@ -266,8 +268,12 @@ void delegates_destroy()
         && ((Observer *)info->observer)->f args)                        \
     {                                                                   \
       r= 1;                                                             \
-      sql_print_error("Run function '" #f "' in plugin '%s' failed",    \
-                      info->plugin_int->name.str);                      \
+      LogEvent().prio(ERROR_LEVEL)                                      \
+                .errcode(ER_RPL_PLUGIN_FUNCTION_FAILED)                 \
+                .subsys(LOG_SUBSYSTEM_TAG)                              \
+                .function(#f)                                           \
+                .message("Run function '" #f "' in plugin '%s' failed", \
+                         info->plugin_int->name.str);                   \
       break;                                                            \
     }                                                                   \
   }                                                                     \
@@ -308,8 +314,12 @@ void delegates_destroy()
     if (hook_error)                                                     \
     {                                                                   \
       r= 1;                                                             \
-      sql_print_error("Run function '" #f "' in plugin '%s' failed",    \
-                      info->plugin_int->name.str);                      \
+      LogEvent().prio(ERROR_LEVEL)                                      \
+                .errcode(ER_RPL_PLUGIN_FUNCTION_FAILED)                 \
+                .subsys(LOG_SUBSYSTEM_TAG)                              \
+                .function(#f)                                           \
+                .message("Run function '" #f "' in plugin '%s' failed", \
+                         info->plugin_int->name.str);                   \
       break;                                                            \
     }                                                                   \
   }                                                                     \
@@ -359,34 +369,29 @@ int Trans_delegate::before_commit(THD *thd, bool all,
  Helper method to check if the given table has 'CASCADE' foreign key or not.
 
  @param[in]   table     Table object that needs to be verified.
- @param[in]   thd       Current execution thread.
 
  @return bool TRUE      If the table has 'CASCADE' foreign key.
               FALSE     If the table does not have 'CASCADE' foreign key.
 */
-bool has_cascade_foreign_key(TABLE *table, THD *thd)
+bool has_cascade_foreign_key(TABLE *table)
 {
   DBUG_ENTER("has_cascade_foreign_key");
-  List<FOREIGN_KEY_INFO> f_key_list;
-  table->file->get_foreign_key_list(thd, &f_key_list);
 
-  FOREIGN_KEY_INFO *f_key_info;
-  List_iterator_fast<FOREIGN_KEY_INFO> foreign_key_iterator(f_key_list);
-  while ((f_key_info=foreign_key_iterator++))
+  TABLE_SHARE_FOREIGN_KEY_INFO *fk= table->s->foreign_key;
+
+  for (uint i= 0; i < table->s->foreign_keys; i++)
   {
     /*
-     The possible values for update_method are
-     {"CASCADE", "SET NULL", "NO ACTION", "RESTRICT"}.
-
-     Hence we are avoiding the usage of strncmp
-     ("'update_method' value with 'CASCADE'") and just comparing
-     the first character of the update_method value with 'C'.
+      The supported values of update/delete_rule are: CASCADE, SET NULL,
+      NO ACTION, RESTRICT and SET DEFAULT.
     */
-    if (f_key_info->update_method->str[0] == 'C' ||
-        f_key_info->delete_method->str[0] == 'C')
+    if (dd::Foreign_key::RULE_CASCADE == fk[i].update_rule ||
+        dd::Foreign_key::RULE_CASCADE == fk[i].delete_rule ||
+        dd::Foreign_key::RULE_SET_NULL == fk[i].update_rule ||
+        dd::Foreign_key::RULE_SET_NULL == fk[i].delete_rule ||
+        dd::Foreign_key::RULE_SET_DEFAULT == fk[i].update_rule ||
+        dd::Foreign_key::RULE_SET_DEFAULT == fk[i].delete_rule)
     {
-      DBUG_ASSERT(!strncmp(f_key_info->update_method->str, "CASCADE", 7) ||
-                  !strncmp(f_key_info->delete_method->str, "CASCADE", 7));
       DBUG_RETURN(TRUE);
     }
   }
@@ -397,11 +402,11 @@ bool has_cascade_foreign_key(TABLE *table, THD *thd)
  Helper method to create table information for the hook call
  */
 void
-Trans_delegate::prepare_table_info(THD* thd,
-                                   Trans_table_info*& table_info_list,
-                                   uint& number_of_tables)
+prepare_table_info(THD* thd,
+                   Trans_table_info*& table_info_list,
+                   uint& number_of_tables)
 {
-  DBUG_ENTER("Trans_delegate::prepare_table_info");
+  DBUG_ENTER("prepare_table_info");
 
   TABLE* open_tables= thd->open_tables;
 
@@ -444,7 +449,7 @@ Trans_delegate::prepare_table_info(THD* thd,
       Find out if the table has foreign key with ON UPDATE/DELETE CASCADE
       clause.
     */
-    table_info.has_cascade_foreign_key= has_cascade_foreign_key(open_tables, thd);
+    table_info.has_cascade_foreign_key= has_cascade_foreign_key(open_tables);
 
     table_info_holder.push_back(table_info);
   }
@@ -890,6 +895,18 @@ int Binlog_relay_IO_delegate::thread_stop(THD *thd, Master_info *mi)
   return ret;
 }
 
+int Binlog_relay_IO_delegate::applier_start(THD *thd, Master_info *mi)
+{
+  Binlog_relay_IO_param param;
+  init_param(&param, mi);
+  param.server_id= thd->server_id;
+  param.thread_id= thd->thread_id();
+
+  int ret= 0;
+  FOREACH_OBSERVER(ret, applier_start, (&param));
+  return ret;
+}
+
 int Binlog_relay_IO_delegate::applier_stop(THD *thd,
                                            Master_info *mi,
                                            bool aborted)
@@ -965,6 +982,27 @@ int Binlog_relay_IO_delegate::after_reset_slave(THD *thd, Master_info *mi)
   int ret= 0;
   FOREACH_OBSERVER(ret, after_reset_slave, (&param));
   return ret;
+}
+
+int
+Binlog_relay_IO_delegate::applier_log_event(THD *thd, int& out)
+{
+  DBUG_ENTER("Binlog_relay_IO_delegate::applier_skip_event");
+  Trans_param trans_param;
+  TRANS_PARAM_ZERO(trans_param);
+  Binlog_relay_IO_param param;
+
+  param.server_id= thd->server_id;
+  param.thread_id= thd->thread_id();
+
+  prepare_table_info(thd, trans_param.tables_info, trans_param.number_of_tables);
+
+  int ret= 0;
+  FOREACH_OBSERVER(ret, applier_log_event, (&param, &trans_param, out));
+
+  my_free(trans_param.tables_info);
+
+  DBUG_RETURN(ret);
 }
 
 int register_trans_observer(Trans_observer *observer, void *p)

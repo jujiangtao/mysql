@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS query_rewrite.rewrite_rules (
   enabled ENUM('YES', 'NO') CHARACTER SET utf8 COLLATE utf8_bin NOT NULL
     DEFAULT 'YES',
   message VARCHAR(1000) CHARACTER SET utf8 COLLATE utf8_bin,
-  pattern_digest VARCHAR(32),
+  pattern_digest VARCHAR(64),
   normalized_pattern VARCHAR(100)
 ) DEFAULT CHARSET = utf8 ENGINE = INNODB;
 
@@ -24,15 +24,12 @@ BEGIN
   DECLARE message_text VARCHAR(100);
   COMMIT;
   SELECT load_rewrite_rules() INTO message_text;
-  RESET QUERY CACHE;
   IF NOT message_text IS NULL THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = message_text;
   END IF;
 END //
 
 DELIMITER ;//
-
-RESET QUERY CACHE;
 
 enable_query_log;
 echo # Query rewrite plugin was installed.;

@@ -1,17 +1,24 @@
 /* Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
   along with this program; if not, write to the Free Software
-  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA
+  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
   */
 
 /**
@@ -19,61 +26,40 @@
   Table EVENTS_STATEMENTS_HISTOGRAM_GLOBAL (implementation).
 */
 
+#include "storage/perfschema/table_esmh_global.h"
+
 #include "my_thread.h"
-#include "pfs_instr_class.h"
-#include "pfs_column_types.h"
-#include "pfs_column_values.h"
-#include "table_esmh_global.h"
-#include "pfs_global.h"
-#include "pfs_instr.h"
-#include "pfs_timer.h"
-#include "pfs_visitor.h"
-#include "pfs_digest.h"
-#include "field.h"
+#include "sql/field.h"
+#include "storage/perfschema/pfs_column_types.h"
+#include "storage/perfschema/pfs_column_values.h"
+#include "storage/perfschema/pfs_digest.h"
+#include "storage/perfschema/pfs_global.h"
+#include "storage/perfschema/pfs_instr.h"
+#include "storage/perfschema/pfs_instr_class.h"
+#include "storage/perfschema/pfs_timer.h"
+#include "storage/perfschema/pfs_visitor.h"
 
 THR_LOCK table_esmh_global::m_table_lock;
 
-/* clang-format off */
-static const TABLE_FIELD_TYPE field_types[]=
-{
-  {
-    { C_STRING_WITH_LEN("BUCKET_NUMBER") },
-    { C_STRING_WITH_LEN("int(10)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("BUCKET_TIMER_LOW") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("BUCKET_TIMER_HIGH") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("COUNT_BUCKET") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("COUNT_BUCKET_AND_LOWER") },
-    { C_STRING_WITH_LEN("bigint(20)") },
-    { NULL, 0}
-  },
-  {
-    { C_STRING_WITH_LEN("BUCKET_QUANTILE") },
-    { C_STRING_WITH_LEN("double(7,6)") },
-    { NULL, 0}
-  }
-};
-/* clang-format on */
-
-TABLE_FIELD_DEF
-table_esmh_global::m_field_def = {6, field_types};
+Plugin_table table_esmh_global::m_table_def(
+  /* Schema name */
+  "performance_schema",
+  /* Name */
+  "events_statements_histogram_global",
+  /* Definition */
+  "  BUCKET_NUMBER INTEGER unsigned not null,\n"
+  "  BUCKET_TIMER_LOW BIGINT unsigned not null,\n"
+  "  BUCKET_TIMER_HIGH BIGINT unsigned not null,\n"
+  "  COUNT_BUCKET BIGINT unsigned not null,\n"
+  "  COUNT_BUCKET_AND_LOWER BIGINT unsigned not null,\n"
+  "  BUCKET_QUANTILE DOUBLE(7,6) not null,\n"
+  "  PRIMARY KEY (BUCKET_NUMBER) USING HASH\n",
+  /* Options */
+  " ENGINE=PERFORMANCE_SCHEMA",
+  /* Tablespace */
+  nullptr);
 
 PFS_engine_table_share table_esmh_global::m_share = {
-  {C_STRING_WITH_LEN("events_statements_histogram_global")},
   &pfs_truncatable_acl,
   table_esmh_global::create,
   NULL,
@@ -81,9 +67,12 @@ PFS_engine_table_share table_esmh_global::m_share = {
   table_esmh_global::get_row_count,
   sizeof(pos_t),
   &m_table_lock,
-  &m_field_def,
+  &m_table_def,
   false,
-  false};
+  PFS_engine_table_proxy(),
+  {0},
+  false /* m_in_purgatory */
+};
 
 bool
 PFS_index_esmh_global::match_bucket(ulong bucket_index)
@@ -97,7 +86,7 @@ PFS_index_esmh_global::match_bucket(ulong bucket_index)
 }
 
 PFS_engine_table *
-table_esmh_global::create(void)
+table_esmh_global::create(PFS_engine_table_share *)
 {
   table_esmh_global *table = new table_esmh_global();
   table->materialize();
@@ -160,7 +149,7 @@ table_esmh_global::rnd_pos(const void *pos)
 }
 
 int
-table_esmh_global::index_init(uint idx, bool)
+table_esmh_global::index_init(uint idx MY_ATTRIBUTE((unused)), bool)
 {
   PFS_index_esmh_global *result = NULL;
   DBUG_ASSERT(idx == 0);

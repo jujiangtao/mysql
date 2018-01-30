@@ -1,17 +1,24 @@
 /* Copyright (c) 2008, 2017, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
-  along with this program; if not, write to the Free Software Foundation,
-  51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+  along with this program; if not, write to the Free Software
+  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef PFS_INSTR_CLASS_H
 #define PFS_INSTR_CLASS_H
@@ -19,6 +26,7 @@
 #include "my_config.h"
 
 #include <sys/types.h>
+#include <atomic>
 
 #include "lf.h"
 #include "my_compiler.h"
@@ -26,12 +34,11 @@
 #include "my_inttypes.h"
 #include "mysql_com.h" /* NAME_LEN */
 #include "mysqld_error.h"
-#include "pfs_atomic.h"
-#include "pfs_column_types.h"
-#include "pfs_global.h"
-#include "pfs_lock.h"
-#include "pfs_stat.h"
 #include "prealloced_array.h"
+#include "storage/perfschema/pfs_column_types.h"
+#include "storage/perfschema/pfs_global.h"
+#include "storage/perfschema/pfs_lock.h"
+#include "storage/perfschema/pfs_stat.h"
 
 struct TABLE_SHARE;
 
@@ -65,7 +72,6 @@ class PFS_opaque_container_page;
 */
 
 extern bool pfs_enabled;
-extern enum_timer_name *class_timers[];
 
 /** Key, naming a synch instrument (mutex, rwlock, cond). */
 typedef unsigned int PFS_sync_key;
@@ -102,7 +108,8 @@ enum PFS_class_type
   PFS_CLASS_MEMORY = 13,
   PFS_CLASS_METADATA = 14,
   PFS_CLASS_ERROR = 15,
-  PFS_CLASS_LAST = PFS_CLASS_ERROR,
+  PFS_CLASS_THREAD = 16,
+  PFS_CLASS_LAST = PFS_CLASS_THREAD,
   PFS_CLASS_MAX = PFS_CLASS_LAST + 1
 };
 
@@ -141,7 +148,7 @@ struct PFS_instr_class
   /** True if this instrument is timed. */
   bool m_timed;
   /** Instrument flags. */
-  int m_flags;
+  uint m_flags;
   /** Volatility index. */
   int m_volatility;
   /**
@@ -157,13 +164,13 @@ struct PFS_instr_class
   char m_name[PFS_MAX_INFO_NAME_LENGTH];
   /** Length in bytes of @c m_name. */
   uint m_name_length;
-  /** Timer associated with this class. */
-  enum_timer_name *m_timer;
+  /** Documentation. */
+  char *m_documentation;
 
   bool
   is_singleton() const
   {
-    return m_flags & PSI_FLAG_GLOBAL;
+    return m_flags & PSI_FLAG_SINGLETON;
   }
 
   bool
@@ -175,15 +182,47 @@ struct PFS_instr_class
   bool
   is_progress() const
   {
-    DBUG_ASSERT(m_type == PFS_CLASS_STAGE);
     return m_flags & PSI_FLAG_STAGE_PROGRESS;
   }
 
   bool
   is_shared_exclusive() const
   {
-    DBUG_ASSERT(m_type == PFS_CLASS_RWLOCK);
-    return m_flags & PSI_RWLOCK_FLAG_SX;
+    return m_flags & PSI_FLAG_RWLOCK_SX;
+  }
+
+  bool
+  is_transferable() const
+  {
+    return m_flags & PSI_FLAG_TRANSFER;
+  }
+
+  bool
+  is_user() const
+  {
+    return m_flags & PSI_FLAG_USER;
+  }
+
+  bool
+  is_global() const
+  {
+    return m_flags & PSI_FLAG_ONLY_GLOBAL_STAT;
+  }
+
+  void
+  enforce_valid_flags(uint allowed_flags)
+  {
+    /* Reserved for future use. */
+    allowed_flags |= PSI_FLAG_THREAD | PSI_FLAG_TRANSFER;
+
+    uint valid_flags = m_flags & allowed_flags;
+    /*
+      This fails when the instrumented code is providing
+      flags that are not supported for this instrument.
+      To fix it, clean up the instrumented code.
+    */
+    DBUG_ASSERT(valid_flags == m_flags);
+    m_flags = valid_flags;
   }
 
   static void set_enabled(PFS_instr_class *pfs, bool enabled);
@@ -200,6 +239,20 @@ struct PFS_instr_class
     default:
       return false;
       break;
+    };
+  }
+
+  bool
+  can_be_timed() const
+  {
+    switch (m_type)
+    {
+    case PFS_CLASS_MEMORY:
+    case PFS_CLASS_ERROR:
+    case PFS_CLASS_THREAD:
+      return false;
+    default:
+      return true;
     };
   }
 };
@@ -243,16 +296,12 @@ struct PFS_ALIGNED PFS_cond_class : public PFS_instr_class
 };
 
 /** Instrumentation metadata of a thread. */
-struct PFS_ALIGNED PFS_thread_class
+struct PFS_ALIGNED PFS_thread_class : public PFS_instr_class
 {
-  /** True if this thread instrument is enabled. */
-  bool m_enabled;
   /** Singleton instance. */
   PFS_thread *m_singleton;
-  /** Thread instrument name. */
-  char m_name[PFS_MAX_INFO_NAME_LENGTH];
-  /** Length in bytes of @c m_name. */
-  uint m_name_length;
+  /** Thread history instrumentation flag. */
+  bool m_history{false};
 };
 
 /** Key identifying a table share. */
@@ -337,25 +386,25 @@ public:
   inline void
   init_refcount(void)
   {
-    PFS_atomic::store_32(&m_refcount, 1);
+    m_refcount.store(1);
   }
 
   inline int
   get_refcount(void)
   {
-    return PFS_atomic::load_32(&m_refcount);
+    return m_refcount.load();
   }
 
   inline void
   inc_refcount(void)
   {
-    PFS_atomic::add_32(&m_refcount, 1);
+    ++m_refcount;
   }
 
   inline void
   dec_refcount(void)
   {
-    PFS_atomic::add_32(&m_refcount, -1);
+    --m_refcount;
   }
 
   void refresh_setup_object_flags(PFS_thread *thread);
@@ -399,11 +448,11 @@ public:
 
 private:
   /** Number of opened table handles. */
-  int m_refcount;
+  std::atomic<int> m_refcount;
   /** Table locks statistics. */
-  PFS_table_share_lock *m_race_lock_stat;
+  std::atomic<PFS_table_share_lock *> m_race_lock_stat;
   /** Table indexes stats. */
-  PFS_table_share_index *m_race_index_stat[MAX_INDEXES + 1];
+  std::atomic<PFS_table_share_index *> m_race_index_stat[MAX_INDEXES + 1];
 };
 
 /** Statistics for the IDLE instrument. */
@@ -521,17 +570,6 @@ struct PFS_ALIGNED PFS_socket_class : public PFS_instr_class
 /** Instrumentation metadata for a memory. */
 struct PFS_ALIGNED PFS_memory_class : public PFS_instr_class
 {
-  bool
-  is_global() const
-  {
-    return m_flags & PSI_FLAG_GLOBAL;
-  }
-
-  bool
-  is_transferable() const
-  {
-    return m_flags & PSI_FLAG_TRANSFER;
-  }
 };
 
 void init_event_name_sizing(const PFS_global_param *param);
@@ -691,6 +729,14 @@ void update_table_share_derived_flags(PFS_thread *thread);
 void update_program_share_derived_flags(PFS_thread *thread);
 
 extern LF_HASH table_share_hash;
+
+/**
+  Get current time for GTID monitoring.
+
+  @return my_getsystime() when PFS monitoring is enabled.
+  @return 0 when PFS monitoring is disabled.
+*/
+ulonglong gtid_monitoring_getsystime();
 
 /** @} */
 #endif

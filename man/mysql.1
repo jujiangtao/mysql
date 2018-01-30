@@ -2,12 +2,12 @@
 .\"     Title: \fBmysql\fR
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 03/22/2017
+.\"      Date: 01/18/2018
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 8.0
 .\"  Language: English
 .\"
-.TH "\FBMYSQL\FR" "1" "03/22/2017" "MySQL 8\&.0" "MySQL Database System"
+.TH "\FBMYSQL\FR" "1" "01/18/2018" "MySQL 8\&.0" "MySQL Database System"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -59,7 +59,7 @@ mysql_store_result()\&.
 .br
 .PP
 Alternatively, MySQL Shell offers access to the X DevAPI\&. For details, see
-Section\ \&3.8, \(lqMySQL Shell User Guide\(rq\&.
+Chapter\ \&19, MySQL Shell User Guide\&.
 .sp .5v
 .RE
 .PP
@@ -83,7 +83,8 @@ Or:
 .RS 4
 .\}
 .nf
-shell> \fBmysql \-\-user=\fR\fB\fIuser_name\fR\fR\fB \-\-password=\fR\fB\fIyour_password\fR\fR\fB \fR\fB\fIdb_name\fR\fR
+shell> \fBmysql \-\-user=\fR\fB\fIuser_name\fR\fR\fB \-\-password \fR\fB\fIdb_name\fR\fR
+Enter password: \fIyour_password\fR
 .fi
 .if n \{\
 .RE
@@ -123,7 +124,7 @@ supports the following options, which can be specified on the command line or in
 and
 [client]
 groups of an option file\&. For information about option files used by MySQL programs, see
-Section\ \&5.2.6, \(lqUsing Option Files\(rq\&.
+Section\ \&4.2.6, \(lqUsing Option Files\(rq\&.
 .sp
 .RS 4
 .ie n \{\
@@ -227,6 +228,22 @@ option\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+\fB\-\-binary\-as\-hex\fR,
+\fB\-b\fR
+.sp
+When this option is given,
+\fBmysql\fR
+displays binary data using hexadecimal notation (0x\fIvalue\fR)\&. This occurs whether the overall output dislay format is tabular, vertical, HTML, or XML\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
 \fB\-\-binary\-mode\fR
 .sp
 This option helps when processing
@@ -280,7 +297,7 @@ On a computer having multiple network interfaces, use this option to select whic
 \fB\-\-character\-sets\-dir=\fR\fB\fIdir_name\fR\fR
 .sp
 The directory where character sets are installed\&. See
-Section\ \&11.5, \(lqCharacter Set Configuration\(rq\&.
+Section\ \&10.5, \(lqCharacter Set Configuration\(rq\&.
 .RE
 .sp
 .RS 4
@@ -320,9 +337,9 @@ Display result set metadata\&.
 \fB\-\-comments\fR,
 \fB\-c\fR
 .sp
-Whether to preserve comments in statements sent to the server\&. The default is
+Whether to strip or preserve comments in statements sent to the server\&. The default is
 \fB\-\-skip\-comments\fR
-(discard comments), enable with
+(strip comments), enable with
 \fB\-\-comments\fR
 (preserve comments)\&.
 .if n \{\
@@ -340,6 +357,8 @@ Whether to preserve comments in statements sent to the server\&. The default is
 The
 \fBmysql\fR
 client always passes optimizer hints to the server, regardless of whether this option is given\&.
+.sp
+Comment stripping is deprecated\&. This feature and the options to control it will be removed in a future MySQL release\&.
 .sp .5v
 .RE
 .RE
@@ -371,7 +390,7 @@ Compress all information sent between the client and the server if both support 
 Indicate to the server that the client can handle sandbox mode if the account used to connect has an expired password\&. This can be useful for noninteractive invocations of
 \fBmysql\fR
 because normally the server disconnects noninteractive clients that attempt to connect using an account with an expired password\&. (See
-Section\ \&7.3.8, \(lqPassword Expiration and Sandbox Mode\(rq\&.)
+Section\ \&6.3.9, \(lqServer Handling of Expired Passwords\(rq\&.)
 .RE
 .sp
 .RS 4
@@ -449,7 +468,7 @@ Print debugging information and memory and CPU usage statistics when the program
 \fB\-\-default\-auth=\fR\fB\fIplugin\fR\fR
 .sp
 A hint about the client\-side authentication plugin to use\&. See
-Section\ \&7.3.9, \(lqPluggable Authentication\(rq\&.
+Section\ \&6.3.10, \(lqPluggable Authentication\(rq\&.
 .RE
 .sp
 .RS 4
@@ -471,8 +490,8 @@ This option can be useful if the operating system uses one character set and the
 client by default uses another\&. In this case, output may be formatted incorrectly\&. You can usually fix such issues by using this option to force the client to use the system character set instead\&.
 .sp
 For more information, see
-Section\ \&11.1.4, \(lqConnection Character Sets and Collations\(rq, and
-Section\ \&11.5, \(lqCharacter Set Configuration\(rq\&.
+Section\ \&10.1.4, \(lqConnection Character Sets and Collations\(rq, and
+Section\ \&10.5, \(lqCharacter Set Configuration\(rq\&.
 .RE
 .sp
 .RS 4
@@ -583,7 +602,7 @@ the section called \(lqMYSQL COMMANDS\(rq\&.
 Enable the
 mysql_clear_password
 cleartext authentication plugin\&. (See
-Section\ \&7.5.1.4, \(lqThe Cleartext Client-Side Authentication Plugin\(rq\&.)
+Section\ \&6.5.1.4, \(lqClient-Side Cleartext Pluggable Authentication\(rq\&.)
 .RE
 .sp
 .RS 4
@@ -599,7 +618,7 @@ Section\ \&7.5.1.4, \(lqThe Cleartext Client-Side Authentication Plugin\(rq\&.)
 .sp
 Execute the statement and quit\&. The default output format is like that produced with
 \fB\-\-batch\fR\&. See
-Section\ \&5.2.4, \(lqUsing Options on the Command Line\(rq, for some examples\&. With this option,
+Section\ \&4.2.4, \(lqUsing Options on the Command Line\(rq, for some examples\&. With this option,
 \fBmysql\fR
 does not use the history file\&.
 .RE
@@ -616,6 +635,31 @@ does not use the history file\&.
 \fB\-f\fR
 .sp
 Continue even if an SQL error occurs\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fB\-\-get\-server\-public\-key\fR
+.sp
+Request from the server the public key required for RSA key pair\-based password exchange\&. This option applies to clients that that authenticate with the
+caching_sha2_password
+authentication plugin\&. For that plugin, the server does not send the public key unless requested\&. This option is ignored for accounts that do not authenticate with that plugin\&. It is also ignored if RSA\-based password exchange is not used, as is the case when the client connects to the server using a secure connection\&.
+.sp
+If
+\fB\-\-server\-public\-key\-path=\fR\fB\fIfile_name\fR\fR
+is given and specifies a valid public key file, it takes precedence over
+\fB\-\-get\-server\-public\-key\fR\&.
+.sp
+For information about the
+caching_sha2_password
+plugin, see
+Section\ \&6.5.1.3, \(lqCaching SHA-2 Pluggable Authentication\(rq\&.
 .RE
 .sp
 .RS 4
@@ -678,7 +722,7 @@ Produce HTML output\&.
 Ignore spaces after function names\&. The effect of this is described in the discussion for the
 IGNORE_SPACE
 SQL mode (see
-Section\ \&6.1.8, \(lqServer SQL Modes\(rq)\&.
+Section\ \&5.1.8, \(lqServer SQL Modes\(rq)\&.
 .RE
 .sp
 .RS 4
@@ -721,15 +765,15 @@ Write line numbers for errors\&. Disable this with
 Enable or disable
 LOCAL
 capability for
-LOAD DATA INFILE\&. With no value, the option enables
+LOAD DATA INFILE\&. For
+\fBmysql\fR, this capability is disabled by default\&. With no value, the option enables
 LOCAL\&. The option may be given as
 \fB\-\-local\-infile=0\fR
 or
 \fB\-\-local\-infile=1\fR
 to explicitly disable or enable
-LOCAL\&. Enabling
-LOCAL
-has no effect if the server does not also support it\&.
+LOCAL\&. Enabling local data loading also requires that the server permits it; see
+Section\ \&6.1.6, \(lqSecurity Issues with LOAD DATA LOCAL\(rq
 .RE
 .sp
 .RS 4
@@ -976,7 +1020,7 @@ option on the command line,
 prompts for one\&.
 .sp
 Specifying a password on the command line should be considered insecure\&. See
-Section\ \&7.1.2.1, \(lqEnd-User Guidelines for Password Security\(rq\&. You can use an option file to avoid giving the password on the command line\&.
+Section\ \&6.1.2.1, \(lqEnd-User Guidelines for Password Security\(rq\&. You can use an option file to avoid giving the password on the command line\&.
 .RE
 .sp
 .RS 4
@@ -1008,7 +1052,7 @@ The directory in which to look for plugins\&. Specify this option if the
 option is used to specify an authentication plugin but
 \fBmysql\fR
 does not find it\&. See
-Section\ \&7.3.9, \(lqPluggable Authentication\(rq\&.
+Section\ \&6.3.10, \(lqPluggable Authentication\(rq\&.
 .RE
 .sp
 .RS 4
@@ -1064,7 +1108,7 @@ the section called \(lqMYSQL COMMANDS\(rq\&.
 \fB\-\-protocol={TCP|SOCKET|PIPE|MEMORY}\fR
 .sp
 The connection protocol to use for connecting to the server\&. It is useful when the other connection parameters normally would cause a protocol to be used other than the one you want\&. For details on the permissible values, see
-Section\ \&5.2.2, \(lqConnecting to the MySQL Server\(rq\&.
+Section\ \&4.2.2, \(lqConnecting to the MySQL Server\(rq\&.
 .RE
 .sp
 .RS 4
@@ -1182,25 +1226,7 @@ the section called \(lqMYSQL TIPS\(rq, for more information about this option\&.
 .\}
 \fB\-\-secure\-auth\fR
 .sp
-Do not send passwords to the server in old (pre\-4\&.1) format\&. This prevents connections except for servers that use the newer password format\&.
-.sp
-This option is deprecated and will be removed in a future MySQL release\&. It is always enabled and attempting to disable it (\fB\-\-skip\-secure\-auth\fR,
-\fB\-\-secure\-auth=0\fR) produces an error\&.
-.if n \{\
-.sp
-.\}
-.RS 4
-.it 1 an-trap
-.nr an-no-space-flag 1
-.nr an-break-flag 1
-.br
-.ps +1
-\fBNote\fR
-.ps -1
-.br
-Passwords that use the pre\-4\&.1 hashing method are less secure than passwords that use the native password hashing method and should be avoided\&. Pre\-4\&.1 passwords are deprecated and support for them has been removed\&.
-.sp .5v
-.RE
+This option was removed in MySQL 8\&.0\&.3\&.
 .RE
 .sp
 .RS 4
@@ -1211,20 +1237,28 @@ Passwords that use the pre\-4\&.1 hashing method are less secure than passwords 
 .sp -1
 .IP \(bu 2.3
 .\}
-\fB\-\-server\-public\-key\-path=\fR\fBfile_name\fR
+\fB\-\-server\-public\-key\-path=\fR\fB\fIfile_name\fR\fR
 .sp
-The path name to a file containing the server RSA public key\&. The file must be in PEM format\&. The public key is used for RSA encryption of the client password for connections to the server made using accounts that authenticate with the
+The path name to a file containing a client\-side copy of the public key required by the server for RSA key pair\-based password exchange\&. The file must be in PEM format\&. This option applies to clients that authenticate with the
 sha256_password
-plugin\&. This option is ignored for client accounts that do not authenticate with that plugin\&. It is also ignored if password encryption is not needed, as is the case when the client connects to the server using an SSL connection\&.
+or
+caching_sha2_password
+authentication plugin\&. This option is ignored for accounts that do not authenticate with one of those plugins\&. It is also ignored if RSA\-based password exchange is not used, as is the case when the client connects to the server using a secure connection\&.
 .sp
-The server sends the public key to the client as needed, so it is not necessary to use this option for RSA password encryption to occur\&. It is more efficient to do so because then the server need not send the key\&.
-.sp
-For additional discussion regarding use of the
-sha256_password
-plugin, including how to get the RSA public key, see
-Section\ \&7.5.1.2, \(lqThe SHA-256 Authentication Plugin\(rq\&.
+If
+\fB\-\-server\-public\-key\-path=\fR\fB\fIfile_name\fR\fR
+is given and specifies a valid public key file, it takes precedence over
+\fB\-\-get\-server\-public\-key\fR\&.
 .sp
 This option is available only if MySQL was built using OpenSSL\&.
+.sp
+For information about the
+sha256_password
+and
+caching_sha2_password
+plugins, see
+Section\ \&6.5.1.2, \(lqSHA-256 Pluggable Authentication\(rq, and
+Section\ \&6.5.1.3, \(lqCaching SHA-2 Pluggable Authentication\(rq\&.
 .RE
 .sp
 .RS 4
@@ -1238,7 +1272,7 @@ This option is available only if MySQL was built using OpenSSL\&.
 \fB\-\-shared\-memory\-base\-name=\fR\fB\fIname\fR\fR
 .sp
 On Windows, the shared\-memory name to use, for connections made using shared memory to a local server\&. The default value is
-MYSQL\&. The shared\-memory name is case sensitive\&.
+MYSQL\&. The shared\-memory name is case\-sensitive\&.
 .sp
 The server must be started with the
 \fB\-\-shared\-memory\fR
@@ -1348,7 +1382,7 @@ localhost, the Unix socket file to use, or, on Windows, the name of the named pi
 Options that begin with
 \fB\-\-ssl\fR
 specify whether to connect to the server using SSL and indicate where to find SSL keys and certificates\&. See
-Section\ \&7.4.5, \(lqCommand Options for Secure Connections\(rq\&.
+Section\ \&6.4.2, \(lqCommand Options for Encrypted Connections\(rq\&.
 .RE
 .sp
 .RS 4
@@ -1430,7 +1464,7 @@ the section called \(lqMYSQL COMMANDS\(rq, discusses tee files further\&.
 \fB\-\-tls\-version=\fR\fB\fIprotocol_list\fR\fR
 .sp
 The protocols permitted by the client for encrypted connections\&. The value is a comma\-separated list containing one or more protocol names\&. The protocols that can be named for this option depend on the SSL library used to compile MySQL\&. For details, see
-Section\ \&7.4.3, \(lqSecure Connection Protocols and Ciphers\(rq\&.
+Section\ \&6.4.6, \(lqEncrypted Connection Protocols and Ciphers\(rq\&.
 .RE
 .sp
 .RS 4
@@ -1548,9 +1582,9 @@ The output when
 is used with
 \fBmysql\fR
 matches that of
-\fBmysqldump \fR\fB\fB\-\-xml\fR\fR\&. See
-\fBmysqldump\fR(1)
-for details\&.
+\fBmysqldump\fR
+\fB\-\-xml\fR\&. See
+\fBmysqldump\fR(1), for details\&.
 .sp
 The XML output also uses an XML namespace, as shown here:
 .sp
@@ -1727,7 +1761,7 @@ or loaded using the
 source
 command)\&.
 .PP
-Each command has both a long and short form\&. The long form is not case sensitive; the short form is\&. The long form can be followed by an optional semicolon terminator, but the short form should not\&.
+Each command has both a long and short form\&. The long form is not case\-sensitive; the short form is\&. The long form can be followed by an optional semicolon terminator, but the short form should not\&.
 .PP
 The use of short\-form commands within multiple\-line
 /* \&.\&.\&. */
@@ -1840,8 +1874,8 @@ is set to something other than the default of
 ;, instances of that character are sent to the server without interpretation\&. However, the server itself still interprets
 ;
 as a statement delimiter and processes statements accordingly\&. This behavior on the server side comes into play for multiple\-statement execution (see
-Section\ \&25.7.20, \(lqC API Support for Multiple Statement Execution\(rq), and for parsing the body of stored procedures and functions, triggers, and events (see
-Section\ \&21.1, \(lqDefining Stored Programs\(rq)\&.
+Section\ \&28.7.19, \(lqC API Multiple Statement Execution Support\(rq), and for parsing the body of stored procedures and functions, triggers, and events (see
+Section\ \&24.1, \(lqDefining Stored Programs\(rq)\&.
 .RE
 .sp
 .RS 4
@@ -2083,8 +2117,8 @@ Reset the connection to clear the session state\&.
 Resetting a connection has effects similar to
 mysql_change_user()
 or an auto\-reconnect except that the connection is not closed and reopened, and re\-authentication is not done\&. See
-Section\ \&25.7.7.3, \(lqmysql_change_user()\(rq) and see
-Section\ \&25.7.19, \(lqControlling Automatic Reconnection Behavior\(rq)\&.
+Section\ \&28.7.7.3, \(lqmysql_change_user()\(rq) and see
+Section\ \&28.7.24, \(lqC API Automatic Reconnection Control\(rq)\&.
 .sp
 This example shows how
 resetconnection
@@ -2674,7 +2708,7 @@ prompt=(\e\eu@\e\eh) [\e\ed]>\e\e_
 In this example, note that the backslashes are doubled\&. If you set the prompt using the
 prompt
 option in an option file, it is advisable to double the backslashes when using the special prompt options\&. There is some overlap in the set of permissible prompt options and the set of special escape sequences that are recognized in option files\&. (The rules for escape sequences in option files are listed in
-Section\ \&5.2.6, \(lqUsing Option Files\(rq\&.) The overlap may cause you problems if you use single backslashes\&. For example,
+Section\ \&4.2.6, \(lqUsing Option Files\(rq\&.) The overlap may cause you problems if you use single backslashes\&. For example,
 \es
 is interpreted as a space rather than as the current seconds value\&. The following example shows how to define a prompt within an option file to include the current time in
 HH:MM:SS>
@@ -2921,7 +2955,7 @@ Controlling the History File.PP
 The
 \&.mysql_history
 file should be protected with a restrictive access mode because sensitive information might be written to it, such as the text of SQL statements that contain passwords\&. See
-Section\ \&7.1.2.1, \(lqEnd-User Guidelines for Password Security\(rq\&.
+Section\ \&6.1.2.1, \(lqEnd-User Guidelines for Password Security\(rq\&.
 .PP
 If you do not want to maintain a history file, first remove
 \&.mysql_history
@@ -3115,7 +3149,7 @@ command,
 uses it as a search string to access server\-side help from the contents of the MySQL Reference Manual\&. The proper operation of this command requires that the help tables in the
 mysql
 database be initialized with help topic information (see
-Section\ \&6.1.10, \(lqServer-Side Help\(rq)\&.
+Section\ \&5.1.10, \(lqServer-Side Help\(rq)\&.
 .PP
 If there is no match for the search string, the search fails:
 .sp
@@ -3335,7 +3369,7 @@ with an option such as
 \fB\-\-default\-character\-set=utf8\fR\&.
 .PP
 For more information about batch mode, see
-Section\ \&4.5, \(lqUsing mysql in Batch Mode\(rq\&.
+Section\ \&3.5, \(lqUsing mysql in Batch Mode\(rq\&.
 .SH "MYSQL TIPS"
 .PP
 This section describes some techniques that can help you use
@@ -3555,7 +3589,7 @@ SET sql_safe_updates=1, sql_select_limit=1000, max_join_size=1000000;
 .\}
 .PP
 See
-Section\ \&6.1.5, \(lqServer System Variables\(rq\&.
+Section\ \&5.1.5, \(lqServer System Variables\(rq\&.
 .PP
 The
 SET
@@ -3677,11 +3711,11 @@ client with the
 option\&.
 .PP
 For more information about auto\-reconnect and its effect on state information when a reconnection occurs, see
-Section\ \&25.7.19, \(lqControlling Automatic Reconnection Behavior\(rq\&.
+Section\ \&28.7.24, \(lqC API Automatic Reconnection Control\(rq\&.
 .SH "COPYRIGHT"
 .br
 .PP
-Copyright \(co 1997, 2017, Oracle and/or its affiliates. All rights reserved.
+Copyright \(co 1997, 2018, Oracle and/or its affiliates. All rights reserved.
 .PP
 This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP

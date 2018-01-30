@@ -18,9 +18,6 @@ if (!$require_case_insensitive_file_system)
 # Test need MyISAM to execute repair
 --source include/have_myisam.inc
 
-# Uses GRANT commands that usually disabled in embedded server
--- source include/not_embedded.inc
-
 #
 # Test of some show commands
 #
@@ -35,6 +32,7 @@ delete from mysql.user where user='mysqltest_1' || user='mysqltest_2' || user='m
 delete from mysql.db where user='mysqltest_1' || user='mysqltest_2' || user='mysqltest_3';
 flush privileges;
 --enable_warnings
+--character_set latin1
 
 create table t1 (a int not null primary key, b int not null,c int not null, key(b,c));
 insert into t1 values (1,2,2),(2,2,3),(3,2,4),(4,2,4);
@@ -149,9 +147,11 @@ flush tables;
 # after flush tables. These tables were open when we write to
 # mysql.general_log.
 #
+--sorted_result
 show open tables;
 create table t1(n int);
 insert into t1 values (1);
+--sorted_result
 show open tables;
 drop table t1;
 
@@ -483,6 +483,7 @@ SELECT 1 FROM t2;
 
 --echo
 
+--sorted_result
 SHOW OPEN TABLES FROM mysqltest1;
 
 --echo
@@ -518,72 +519,6 @@ SHOW TABLES FROM non_existing_database;
 --echo End of 4.1 tests
 
 #
-# Bug#17203 "sql_no_cache sql_cache" in views created from prepared
-# statement
-#
-# The problem was that initial user setting was forgotten, and current
-# runtime-determined values of the flags were shown instead.
-#
---disable_warnings
-DROP VIEW IF EXISTS v1;
-DROP PROCEDURE IF EXISTS p1;
---enable_warnings
-
-# Check that SHOW CREATE VIEW shows SQL_CACHE flag exaclty as
-# specified by the user.
-CREATE VIEW v1 AS SELECT 1;
-SHOW CREATE VIEW v1;
-DROP VIEW v1;
-
-CREATE VIEW v1 AS SELECT SQL_CACHE 1;
-SHOW CREATE VIEW v1;
-DROP VIEW v1;
-
-CREATE VIEW v1 AS SELECT SQL_NO_CACHE 1;
-SHOW CREATE VIEW v1;
-DROP VIEW v1;
-
-# Usage of NOW() disables caching, but we still have show what the
-# user have specified.
-CREATE VIEW v1 AS SELECT NOW();
-SHOW CREATE VIEW v1;
-DROP VIEW v1;
-
-CREATE VIEW v1 AS SELECT SQL_CACHE NOW();
-SHOW CREATE VIEW v1;
-DROP VIEW v1;
-
-CREATE VIEW v1 AS SELECT SQL_NO_CACHE NOW();
-SHOW CREATE VIEW v1;
-DROP VIEW v1;
-
---error ER_WRONG_USAGE
-CREATE VIEW v1 AS SELECT SQL_CACHE SQL_NO_CACHE NOW();
-
---error ER_WRONG_USAGE
-CREATE VIEW v1 AS SELECT SQL_NO_CACHE SQL_CACHE NOW();
-
---error ER_WRONG_USAGE
-CREATE VIEW v1 AS SELECT SQL_CACHE SQL_NO_CACHE SQL_CACHE NOW();
-
-# Check CREATE VIEW in a prepared statement in a procedure.
-delimiter |;
-CREATE PROCEDURE p1()
-BEGIN
-  SET @s= 'CREATE VIEW v1 AS SELECT SQL_CACHE 1';
-  PREPARE stmt FROM @s;
-  EXECUTE stmt;
-  DROP PREPARE stmt;
-END |
-delimiter ;|
-CALL p1();
-SHOW CREATE VIEW v1;
-
-DROP PROCEDURE p1;
-DROP VIEW v1;
-
-
-#
 # Check that SHOW TABLES and SHOW COLUMNS give a error if there is no
 # referenced database and table respectively.
 #
@@ -596,6 +531,8 @@ SHOW COLUMNS FROM no_such_table;
 #
 # Bug#19764 SHOW commands end up in the slow log as table scans
 #
+SET GLOBAL EVENT_SCHEDULER = OFF;
+--source include/no_running_event_scheduler.inc
 CREATE TABLE t1 (f1 INT, f2 INT);
 INSERT INTO t1 VALUES(10, 20);
 flush status;
@@ -630,6 +567,7 @@ show databases;
 show tables;
 show events;
 show table status;
+--sorted_result
 show open tables;
 show plugins;
 show columns in t1;
@@ -665,6 +603,8 @@ drop table t1;
 drop procedure p1;
 drop function f1;
 drop event e1;
+SET GLOBAL EVENT_SCHEDULER = ON;
+--source include/running_event_scheduler.inc
 
 #
 # Bug#10491 Server returns data as charset binary SHOW CREATE TABLE or SELECT
@@ -1494,7 +1434,6 @@ CREATE TABLE `t1` (
 
 DROP TABLE t1;
 
-
 --echo #
 --echo # Bug#24800048 - SHOW TABLES FROM DATABASE HANGS ON WINDOWS PLATFORM
 --echo #
@@ -1516,6 +1455,53 @@ SHOW TABLES FROM UNKNOWN;
 SHOW TABLES FROM UNKNOWN;
 
 DROP DATABASE unknown;
+
+--echo #
+--echo # WL#9570 -  Extend SHOW statements to list hidden columns and index
+--echo #            information.
+--echo #
+--echo #            Test case to verify hidden columns, index and index elements
+--echo #            display in INFORMATION_SCHEMA queries and SHOW statements.
+--echo #            EXPECTATION: INFORMATION_SCHEMA.COLUMNS/STATISTICS*/KEY_COLUMN_USAGE
+--echo #                         SHOW [FULL] COLUMNS and SHOW INDEX should not display
+--echo #                         hidden columns, indexes and index elements.
+--echo #                         SHOW EXTENED [FULL] COLUMNS and SHOW EXTENDED INDEX
+--echo #                         should display hidden columns, index and index elements
+--echo #                         too.
+--echo #
+--echo #
+CREATE TABLE t1 (c1 int(11) NOT NULL,
+                 c2 int(11) DEFAULT NULL,
+                 c3 text,
+                 PRIMARY KEY (c1));
+CREATE INDEX c2d ON t1(c2); 
+
+--echo # With fix, following statements should not show the hidden columns.
+--replace_column 3 # 4 # 5 # 6 #
+SHOW COLUMNS FROM t1;
+--replace_column 3 # 4 # 5 # 6 # 7 # 8 # 9 #
+SHOW FULL COLUMNS FROM t1;
+SELECT table_name, column_name, column_type FROM
+       INFORMATION_SCHEMA.COLUMNS WHERE table_name='t1';
+--echo # EXTENDED keyword is introduced to list the hidden columns.
+--replace_column 3 # 4 # 5 # 6 #
+SHOW EXTENDED COLUMNS FROM t1;
+--replace_column 3 # 4 # 5 # 6 # 7 # 8 # 9 #
+SHOW EXTENDED FULL COLUMNS FROM t1;
+
+--echo # With fix, following statements should not show the hidden index and
+--echo # index columns.
+SHOW INDEX FROM t1;
+SELECT table_schema, table_name, index_name, column_name FROM
+       INFORMATION_SCHEMA.STATISTICS WHERE table_name='t1';
+SELECT * FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE table_name='t1';
+SELECT constraint_schema, constraint_name, table_name, column_name FROM
+       INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE table_name='t1';
+
+--echo # EXTENDED keyword is introduced to list the hidden index and index
+--echo # columns.
+SHOW EXTENDED INDEX FROM t1;
+DROP TABLE t1;
 
 # Wait till all disconnects are completed
 --source include/wait_until_count_sessions.inc

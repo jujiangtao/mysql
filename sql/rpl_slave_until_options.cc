@@ -1,32 +1,40 @@
-/* Copyright (c) 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "rpl_slave_until_options.h"
+#include "sql/rpl_slave_until_options.h"
 
 #include <stdlib.h>
 #include <string.h>
 
 #include "binlog_event.h"
-#include "log.h"
-#include "log_event.h"
 #include "m_string.h"
+#include "my_loglevel.h"
 #include "my_sys.h"
 #include "mysql/service_mysql_alloc.h"
 #include "mysqld_error.h"
-#include "rpl_group_replication.h"
-#include "rpl_rli.h"
+#include "sql/log.h"
+#include "sql/log_event.h"
+#include "sql/rpl_group_replication.h"
+#include "sql/rpl_rli.h"
 
 int Until_position::init(const char *log_name, my_off_t log_pos)
 {
@@ -95,8 +103,8 @@ bool Until_position::check_position(const char* log_name,
     else
     {
       /* Base names do not match, so we abort */
-      sql_print_error("Slave SQL thread is stopped because UNTIL condition "
-                      "is bad(%s:%llu).", m_until_log_name, m_until_log_pos);
+      LogErr(ERROR_LEVEL, ER_SLAVE_SQL_THREAD_STOPPED_UNTIL_CONDITION_BAD,
+             m_until_log_name, m_until_log_pos);
       DBUG_RETURN(true);
     }
   }
@@ -106,8 +114,8 @@ bool Until_position::check_position(const char* log_name,
        log_pos < m_until_log_pos))
     DBUG_RETURN(false);
 
-  sql_print_information("Slave SQL thread stopped because it reached its"
-                          " UNTIL position %llu", m_until_log_pos);
+  LogErr(INFORMATION_LEVEL,
+         ER_SLAVE_SQL_THREAD_STOPPED_UNTIL_POSITION_REACHED, m_until_log_pos);
   DBUG_RETURN(true);
 }
 
@@ -195,9 +203,8 @@ bool Until_before_gtids::check_at_start_slave()
     m_gtids.to_string(&buffer);
     global_sid_lock->unlock();
 
-    sql_print_information("Slave SQL thread stopped because "
-                          "UNTIL SQL_BEFORE_GTIDS %s is already "
-                          "applied", buffer);
+    LogErr(INFORMATION_LEVEL,
+           ER_SLAVE_SQL_THREAD_STOPPED_BEFORE_GTIDS_ALREADY_APPLIED, buffer);
     my_free(buffer);
     return true;
   }
@@ -216,8 +223,8 @@ bool Until_before_gtids::check_before_dispatching_event(const Log_event *ev)
       char *buffer;
       m_gtids.to_string(&buffer);
       global_sid_lock->unlock();
-      sql_print_information("Slave SQL thread stopped because it reached "
-                            "UNTIL SQL_BEFORE_GTIDS %s", buffer);
+      LogErr(INFORMATION_LEVEL,
+             ER_SLAVE_SQL_THREAD_STOPPED_BEFORE_GTIDS_REACHED, buffer);
       my_free(buffer);
       return true;
     }
@@ -239,8 +246,8 @@ bool Until_after_gtids::check_at_start_slave()
     char *buffer;
     m_gtids.to_string(&buffer);
     global_sid_lock->unlock();
-    sql_print_information("Slave SQL thread stopped because it reached "
-                          "UNTIL SQL_AFTER_GTIDS %s", buffer);
+    LogErr(INFORMATION_LEVEL,
+           ER_SLAVE_SQL_THREAD_STOPPED_AFTER_GTIDS_REACHED, buffer);
     my_free(buffer);
     return true;
   }
@@ -323,10 +330,7 @@ bool Until_mts_gap::check_before_dispatching_event(const Log_event*)
 {
   if (m_rli->mts_recovery_group_cnt == 0)
   {
-    sql_print_information("Slave SQL thread stopped according to "
-                          "UNTIL SQL_AFTER_MTS_GAPS as it has "
-                          "processed all gap transactions left from "
-                          "the previous slave session.");
+    LogErr(INFORMATION_LEVEL, ER_SLAVE_SQL_THREAD_STOPPED_GAP_TRX_PROCESSED);
     m_rli->until_condition= Relay_log_info::UNTIL_DONE;
     return true;
   }

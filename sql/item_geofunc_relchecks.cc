@@ -1,45 +1,62 @@
 /* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 
 #include <boost/concept/usage.hpp>
 #include <boost/geometry/algorithms/equals.hpp>
-#include <boost/geometry/algorithms/overlaps.hpp>
 #include <boost/geometry/geometries/box.hpp>
 #include <boost/geometry/index/rtree.hpp>
 #include <boost/iterator/iterator_facade.hpp>
+#include <boost/geometry/strategies/strategies.hpp>
 #include <stddef.h>
+#include <memory>
 #include <set>
 #include <utility>
 #include <vector>
 
-#include "current_thd.h"
-#include "derror.h"                            // ER_THD
-#include "item.h"
-#include "item_cmpfunc.h"
-#include "item_func.h"
-#include "item_geofunc.h"
-#include "item_geofunc_internal.h"
-#include "item_geofunc_relchecks_bgwrap.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_sys.h"
+#include "mysql/udf_registration_types.h"
 #include "mysqld_error.h"
-#include "parse_tree_node_base.h"
-#include "spatial.h"
-#include "sql_error.h"
+#include "sql/current_thd.h"
+#include "sql/dd/cache/dictionary_client.h"
+#include "sql/dd/types/spatial_reference_system.h"
+#include "sql/derror.h"                        // ER_THD
+#include "sql/gis/geometries.h"
+#include "sql/gis/relops.h"
+#include "sql/gis/srid.h"
+#include "sql/gis/wkb_parser.h"
+#include "sql/item.h"
+#include "sql/item_cmpfunc.h"
+#include "sql/item_func.h"
+#include "sql/item_geofunc.h"
+#include "sql/item_geofunc_internal.h"
+#include "sql/item_geofunc_relchecks_bgwrap.h"
+#include "sql/spatial.h"
+#include "sql/sql_class.h" // THD
+#include "sql/sql_error.h"
+#include "sql/sql_exception_handler.h"
+#include "sql/srs_fetcher.h"
 #include "sql_string.h"
 
 namespace boost {
@@ -49,9 +66,6 @@ struct cartesian;
 }  // namespace cs
 }  // namespace geometry
 }  // namespace boost
-namespace dd {
-class Spatial_reference_system;
-}  // namespace dd
 
 /*
   Functions for spatial relations
@@ -1352,4 +1366,217 @@ int Item_func_spatial_rel::bg_geo_relation_check(Geometry *g1, Geometry *g2,
   }
 
   return result;
+}
+
+
+longlong Item_func_spatial_relation::val_int()
+{
+  DBUG_ENTER("Item_func_spatial_relation::val_int");
+  DBUG_ASSERT(fixed);
+
+  String tmp_value1;
+  String tmp_value2;
+  String *res1= args[0]->val_str(&tmp_value1);
+  String *res2= args[1]->val_str(&tmp_value2);
+
+  if ((null_value= (!res1 || args[0]->null_value ||
+                    !res2 || args[1]->null_value)))
+  {
+    DBUG_ASSERT(maybe_null);
+    DBUG_RETURN(0);
+  }
+
+  if (res1 == nullptr || res2 == nullptr)
+  {
+    DBUG_ASSERT(false);
+    my_error(ER_GIS_INVALID_DATA, MYF(0), func_name());
+    DBUG_RETURN(error_int());
+  }
+
+  const dd::Spatial_reference_system *srs1= nullptr;
+  const dd::Spatial_reference_system *srs2= nullptr;
+  std::unique_ptr<gis::Geometry> g1;
+  std::unique_ptr<gis::Geometry> g2;
+  dd::cache::Dictionary_client::Auto_releaser
+    m_releaser(current_thd->dd_client());
+  if (gis::parse_geometry(current_thd, func_name(), res1, &srs1, &g1) ||
+      gis::parse_geometry(current_thd, func_name(), res2, &srs2, &g2))
+  {
+    DBUG_RETURN(error_int());
+  }
+
+  gis::srid_t srid1= srs1 == nullptr ? 0 : srs1->id();
+  gis::srid_t srid2= srs2 == nullptr ? 0 : srs2->id();
+  if (srid1 != srid2)
+  {
+    my_error(ER_GIS_DIFFERENT_SRIDS, MYF(0), func_name(), srid1, srid2);
+    DBUG_RETURN(error_int());
+  }
+
+  bool result;
+  bool error= eval(srs1, g1.get(), g2.get(), &result, &null_value);
+
+  if (error)
+    DBUG_RETURN(error_int());
+
+  if (null_value)
+  {
+    DBUG_ASSERT(maybe_null);
+    DBUG_RETURN(0);
+  }
+
+  DBUG_RETURN(result);
+}
+
+
+bool Item_func_st_contains::eval(const dd::Spatial_reference_system *srs,
+                                 const gis::Geometry *g1,
+                                 const gis::Geometry *g2,
+                                 bool *result, bool *null)
+{
+  return gis::within(srs, g2, g1, func_name(), result, null);
+}
+
+
+bool Item_func_st_crosses::eval(const dd::Spatial_reference_system *srs,
+                                const gis::Geometry *g1,
+                                const gis::Geometry *g2,
+                                bool *result, bool *null)
+{
+  return gis::crosses(srs, g1, g2, func_name(), result, null);
+}
+
+
+bool Item_func_st_disjoint::eval(const dd::Spatial_reference_system *srs,
+                                 const gis::Geometry *g1,
+                                 const gis::Geometry *g2,
+                                 bool *result, bool *null)
+{
+  return gis::disjoint(srs, g1, g2, func_name(), result, null);
+}
+
+
+bool Item_func_st_equals::eval(const dd::Spatial_reference_system *srs,
+                               const gis::Geometry *g1,
+                               const gis::Geometry *g2,
+                               bool *result, bool *null)
+{
+  return gis::equals(srs, g1, g2, func_name(), result, null);
+}
+
+
+bool Item_func_st_intersects::eval(const dd::Spatial_reference_system *srs,
+                                   const gis::Geometry *g1,
+                                   const gis::Geometry *g2,
+                                   bool *result, bool *null)
+{
+  return gis::intersects(srs, g1, g2, func_name(), result, null);
+}
+
+
+bool Item_func_mbrcontains::eval(const dd::Spatial_reference_system *srs,
+                                 const gis::Geometry *g1,
+                                 const gis::Geometry *g2,
+                                 bool *result, bool *null)
+{
+  return gis::mbr_within(srs, g2, g1, func_name(), result, null);
+}
+
+
+bool Item_func_mbrcoveredby::eval(const dd::Spatial_reference_system *srs,
+                                  const gis::Geometry *g1,
+                                  const gis::Geometry *g2,
+                                  bool *result, bool *null)
+{
+  return gis::mbr_covered_by(srs, g1, g2, func_name(), result, null);
+}
+
+
+bool Item_func_mbrcovers::eval(const dd::Spatial_reference_system *srs,
+                               const gis::Geometry *g1,
+                               const gis::Geometry *g2,
+                               bool *result, bool *null)
+{
+  return gis::mbr_covered_by(srs, g2, g1, func_name(), result, null);
+}
+
+
+bool Item_func_mbrdisjoint::eval(const dd::Spatial_reference_system *srs,
+                                 const gis::Geometry *g1,
+                                 const gis::Geometry *g2,
+                                 bool *result, bool *null)
+{
+  return gis::mbr_disjoint(srs, g1, g2, func_name(), result, null);
+}
+
+
+bool Item_func_mbrequals::eval(const dd::Spatial_reference_system *srs,
+                               const gis::Geometry *g1,
+                               const gis::Geometry *g2,
+                               bool *result, bool *null)
+{
+  return gis::mbr_equals(srs, g1, g2, func_name(), result, null);
+}
+
+
+bool Item_func_mbrintersects::eval(const dd::Spatial_reference_system *srs,
+                                   const gis::Geometry *g1,
+                                   const gis::Geometry *g2,
+                                   bool *result, bool *null)
+{
+  return gis::mbr_intersects(srs, g1, g2, func_name(), result, null);
+}
+
+
+bool Item_func_mbroverlaps::eval(const dd::Spatial_reference_system *srs,
+                                 const gis::Geometry *g1,
+                                 const gis::Geometry *g2,
+                                 bool *result, bool *null)
+{
+  return gis::mbr_overlaps(srs, g1, g2, func_name(), result, null);
+}
+
+
+bool Item_func_mbrtouches::eval(const dd::Spatial_reference_system *srs,
+                                const gis::Geometry *g1,
+                                const gis::Geometry *g2,
+                                bool *result, bool *null)
+{
+  return gis::mbr_touches(srs, g1, g2, func_name(), result, null);
+}
+
+
+bool Item_func_mbrwithin::eval(const dd::Spatial_reference_system *srs,
+                               const gis::Geometry *g1,
+                               const gis::Geometry *g2,
+                               bool *result, bool *null)
+{
+  return gis::mbr_within(srs, g1, g2, func_name(), result, null);
+}
+
+
+bool Item_func_st_overlaps::eval(const dd::Spatial_reference_system *srs,
+                                 const gis::Geometry *g1,
+                                 const gis::Geometry *g2,
+                                 bool *result, bool *null)
+{
+  return gis::overlaps(srs, g1, g2, func_name(), result, null);
+}
+
+
+bool Item_func_st_touches::eval(const dd::Spatial_reference_system *srs,
+                                const gis::Geometry *g1,
+                                const gis::Geometry *g2,
+                                bool *result, bool *null)
+{
+  return gis::touches(srs, g1, g2, func_name(), result, null);
+}
+
+
+bool Item_func_st_within::eval(const dd::Spatial_reference_system *srs,
+                               const gis::Geometry *g1,
+                               const gis::Geometry *g2,
+                               bool *result, bool *null)
+{
+  return gis::within(srs, g1, g2, func_name(), result, null);
 }

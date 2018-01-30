@@ -1,13 +1,20 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -208,15 +215,14 @@
 */
 
 
-#include "protocol_classic.h"
+#include "sql/protocol_classic.h"
 
+#include <openssl/ssl.h>
 #include <string.h>
 #include <algorithm>
+#include <limits>
 
 #include "decimal.h"
-#include "field.h"
-#include "item.h"
-#include "item_func.h"                          // Item_func_set_user_var
 #include "lex_string.h"
 #include "m_ctype.h"
 #include "m_string.h"
@@ -228,15 +234,22 @@
 #include "my_time.h"
 #include "mysql/com_data.h"
 #include "mysql/psi/mysql_socket.h"
-#include "mysqld.h"                             // global_system_variables
+#include "mysql/psi/mysql_statement.h"
 #include "mysqld_error.h"
-#include "session_tracker.h"
-#include "sql_class.h"                          // THD
-#include "sql_error.h"
-#include "sql_lex.h"
-#include "sql_list.h"
-#include "sql_prepare.h"                        // Prepared_statement
-#include "system_variables.h"
+#include "sql/auth/sql_security_ctx.h"
+#include "sql/field.h"
+#include "sql/histograms/value_map.h"
+#include "sql/item.h"
+#include "sql/item_func.h"                      // Item_func_set_user_var
+#include "sql/my_decimal.h"
+#include "sql/mysqld.h"                         // global_system_variables
+#include "sql/session_tracker.h"
+#include "sql/sql_class.h"                      // THD
+#include "sql/sql_error.h"
+#include "sql/sql_lex.h"
+#include "sql/sql_list.h"
+#include "sql/sql_prepare.h"                    // Prepared_statement
+#include "sql/system_variables.h"
 
 
 using std::min;
@@ -248,7 +261,7 @@ static bool net_send_error_packet(NET *, uint, const char *, const char *, bool,
 static bool write_eof_packet(THD *, NET *, uint, uint);
 
 ulong get_ps_param_len(enum enum_field_types type, uchar *packet,
-                       ulong packet_len, ulong *header_len, bool *err);
+                       ulong packet_left_len, ulong *header_len, bool *err);
 bool Protocol_classic::net_store_data(const uchar *from, size_t length)
 {
   size_t packet_length=packet->length();
@@ -528,7 +541,7 @@ bool net_send_error(NET *net, uint sql_errno, const char *err)
   <tr><th>Type</th><th>Name</th><th>Description</th></tr>
   <tr><td>@ref sect_protocol_basic_dt_string_le "string&lt;lenenc&gt;"</td>
       <td>name</td>
-      <td>name of the changed system variable</td></tr>
+      <td>name of the changed schema</td></tr>
   </table>
 
   Example:
@@ -1333,13 +1346,14 @@ bool Protocol_classic::parse_packet(union COM_DATA *data,
     PS_PARAM *params= data->com_stmt_execute.parameters;
 
     /* Then comes the types byte. If set, new types are provided */
+    if (!packet_left)
+      goto malformed;
     bool has_new_types= static_cast<bool>(*read_pos++);
+    --packet_left;
     data->com_stmt_execute.has_new_types= has_new_types;
     if (has_new_types)
     {
       DBUG_PRINT("info", ("Types provided"));
-      --packet_left;
-
       for (uint i= 0; i < param_count; ++i)
       {
         if (packet_left < 2)
@@ -1397,10 +1411,13 @@ bool Protocol_classic::parse_packet(union COM_DATA *data,
       if (buffer_underrun)
         goto malformed;
 
+      read_pos+= header_len;
+      packet_left-= header_len;
+
       // Set parameter value
-      params[i].value= header_len + read_pos;
-      read_pos+= (header_len + params[i].length);
-      packet_left-= (header_len + params[i].length);
+      params[i].value= read_pos;
+      read_pos+= params[i].length;
+      packet_left-= params[i].length;
       data->com_stmt_execute.parameter_count++;
       DBUG_PRINT("info", ("param len %ul", (uint) params[i].length));
     }
@@ -1560,7 +1577,7 @@ bool Protocol_classic::store_ps_status(ulong stmt_id, uint column_count,
 {
   DBUG_ENTER("Protocol_classic::store_ps_status");
 
-  uchar buff[12];
+  uchar buff[13];
   buff[0]= 0;                                   /* OK packet indicator */
   int4store(buff + 1, stmt_id);
   int2store(buff + 5, column_count);
@@ -1569,8 +1586,14 @@ bool Protocol_classic::store_ps_status(ulong stmt_id, uint column_count,
   uint16 tmp= min(static_cast<uint16>(cond_count),
                   std::numeric_limits<uint16>::max());
   int2store(buff + 10, tmp);
+  if (has_client_capability(CLIENT_OPTIONAL_RESULTSET_METADATA))
+  {
+    /* Store resultset metadata flag. */
+    buff[12]= static_cast<uchar>(m_thd->variables.resultset_metadata);
 
-  DBUG_RETURN(my_net_write(&m_thd->net, buff, sizeof(buff)));
+    DBUG_RETURN(my_net_write(&m_thd->net, buff, sizeof(buff)));
+  }
+  DBUG_RETURN(my_net_write(&m_thd->net, buff, sizeof(buff) - 1));
 }
 
 
@@ -1590,14 +1613,33 @@ Protocol_classic::start_result_metadata(uint num_cols, uint flags,
   send_metadata= true;
   field_count= num_cols;
   sending_flags= flags;
+  /*
+    We don't send number of column for PS, as it's sent in a preceding packet.
+  */
   if (flags & Protocol::SEND_NUM_ROWS)
   {
-    ulonglong tmp;
-    uchar *pos = net_store_length((uchar *) &tmp, num_cols);
-    my_net_write(&m_thd->net, (uchar *) &tmp, (size_t) (pos - ((uchar *) &tmp)));
+    uchar tmp[sizeof(ulonglong) + 1];
+    uchar *pos= net_store_length((uchar *) &tmp, num_cols);
+
+    if (has_client_capability(CLIENT_OPTIONAL_RESULTSET_METADATA))
+    {
+      /* Store resultset metadata flag. */
+      *pos= static_cast<uchar>(m_thd->variables.resultset_metadata);
+      pos++;
+    }
+
+    my_net_write(&m_thd->net, (uchar *) &tmp, (size_t) (pos - (uchar *) &tmp));
   }
 #ifndef DBUG_OFF
-  field_types= (enum_field_types*) m_thd->alloc(sizeof(field_types) * num_cols);
+  /*
+    field_types will be filled only if we send metadata.
+    Set it to NULL if we skip resultset metadata to avoid
+    ::storeXXX() method's asserts failures.
+  */
+  if (m_thd->variables.resultset_metadata == RESULTSET_METADATA_FULL)
+    field_types= (enum_field_types*) m_thd->alloc(sizeof(field_types) * num_cols);
+  else
+    field_types= 0;
   count= 0;
 #endif
 
@@ -2500,7 +2542,13 @@ get_param_length(uchar *packet, ulong packet_left_len, ulong *header_len)
     *header_len= 0;
     return 0;
   }
-  *header_len= 9; // Must be 254 when here
+  if (packet_left_len < 9)
+  {
+    *header_len= 0;
+    return 0;
+  }
+  DBUG_ASSERT(*packet == 254);
+  *header_len= 9;
   /*
     In our client-server protocol all numbers bigger than 2^24
     stored as 8 bytes with uint8korr. Here we always know that
@@ -2515,14 +2563,14 @@ get_param_length(uchar *packet, ulong packet_left_len, ulong *header_len)
 /**
   Returns the length of the encoded data
 
-   @param[in]  type          parameter data type
-   @param[in]  packet        network buffer
-   @param[in]  packet_len    number of bytes left in packet
-   @param[out] header_len    the size of the header(bytes to be skiped)
-   @param[out] err           boolean to store if an error occurred
+   @param[in]  type            parameter data type
+   @param[in]  packet          network buffer
+   @param[in]  packet_left_len number of bytes left in packet
+   @param[out] header_len      the size of the header(bytes to be skiped)
+   @param[out] err             boolean to store if an error occurred
 */
 ulong get_ps_param_len(enum enum_field_types type, uchar *packet,
-                       ulong packet_len, ulong *header_len, bool *err)
+                       ulong packet_left_len, ulong *header_len, bool *err)
 {
   DBUG_ENTER("get_ps_param_len");
   *header_len= 0;
@@ -2530,18 +2578,18 @@ ulong get_ps_param_len(enum enum_field_types type, uchar *packet,
   switch (type)
   {
     case MYSQL_TYPE_TINY:
-      *err= (packet_len < 1);
+      *err= (packet_left_len < 1);
       DBUG_RETURN(1);
     case MYSQL_TYPE_SHORT:
-      *err= (packet_len < 2);
+      *err= (packet_left_len < 2);
       DBUG_RETURN(2);
     case MYSQL_TYPE_FLOAT:
     case MYSQL_TYPE_LONG:
-      *err= (packet_len < 4);
+      *err= (packet_left_len < 4);
       DBUG_RETURN(4);
     case MYSQL_TYPE_DOUBLE:
     case MYSQL_TYPE_LONGLONG:
-      *err= (packet_len < 8);
+      *err= (packet_left_len < 8);
       DBUG_RETURN(8);
     case MYSQL_TYPE_DECIMAL:
     case MYSQL_TYPE_NEWDECIMAL:
@@ -2550,10 +2598,10 @@ ulong get_ps_param_len(enum enum_field_types type, uchar *packet,
     case MYSQL_TYPE_DATETIME:
     case MYSQL_TYPE_TIMESTAMP:
     {
-      ulong param_length= get_param_length(packet, packet_len, header_len);
+      ulong param_length= get_param_length(packet, packet_left_len, header_len);
       /* in case of error ret is 0 and header size is 0 */
-      *err= ((!param_length && !*header_len) ||
-          (packet_len < *header_len + param_length));
+      *err= ((param_length == 0 && *header_len == 0) ||
+          (packet_left_len < *header_len + param_length));
       DBUG_PRINT("info", ("ret=%lu ", param_length));
       DBUG_RETURN(param_length);
     }
@@ -2563,11 +2611,11 @@ ulong get_ps_param_len(enum enum_field_types type, uchar *packet,
     case MYSQL_TYPE_BLOB:
     default:
     {
-      ulong param_length= get_param_length(packet, packet_len, header_len);
+      ulong param_length= get_param_length(packet, packet_left_len, header_len);
       /* in case of error ret is 0 and header size is 0 */
-      *err= (!param_length && !*header_len);
-      if (param_length > packet_len - *header_len)
-        param_length= packet_len - *header_len;
+      *err= (param_length == 0 && *header_len == 0);
+      if (param_length > packet_left_len - *header_len)
+        param_length= packet_left_len - *header_len;
       DBUG_PRINT("info", ("ret=%lu", param_length));
       DBUG_RETURN(param_length);
     }

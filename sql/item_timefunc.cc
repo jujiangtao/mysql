@@ -2,13 +2,20 @@
    Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -25,7 +32,7 @@
     Move month and days to language files
 */
 
-#include "item_timefunc.h"
+#include "sql/item_timefunc.h"
 
 #include "my_config.h"
 
@@ -33,32 +40,34 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "mysql_com.h"
+#include "sql/histograms/value_map.h"
 #ifdef HAVE_SYS_TIME_H
 #include <sys/time.h>
 #endif
-#include <time.h>
-
-#include "current_thd.h"
-#include "dd/info_schema/stats.h"
-#include "dd/object_id.h"    // dd::Object_id
 #include "decimal.h"
-#include "derror.h"          // ER_THD
 #include "lex_string.h"
 #include "m_string.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_sys.h"
 #include "mysqld_error.h"
-#include "sql_class.h"       // THD
-#include "sql_error.h"
-#include "sql_lex.h"
-#include "sql_locale.h"      // my_locale_en_US
-#include "sql_security_ctx.h"
-#include "sql_time.h"        // make_truncated_value_warning
-#include "strfunc.h"         // check_word
-#include "table.h"
+#include "sql/auth/sql_security_ctx.h"
+#include "sql/current_thd.h"
+#include "sql/dd/info_schema/table_stats.h"
+#include "sql/dd/object_id.h" // dd::Object_id
+#include "sql/derror.h"      // ER_THD
+#include "sql/sql_class.h"   // THD
+#include "sql/sql_error.h"
+#include "sql/sql_lex.h"
+#include "sql/sql_locale.h"  // my_locale_en_US
+#include "sql/sql_time.h"    // make_truncated_value_warning
+#include "sql/strfunc.h"     // check_word
+#include "sql/system_variables.h"
+#include "sql/table.h"
+#include "sql/tztime.h"      // Time_zone
 #include "template_utils.h"
-#include "tztime.h"          // Time_zone
 
 using std::min;
 using std::max;
@@ -71,21 +80,23 @@ using std::max;
   Check and adjust a time value with a warning.
 
   @param ltime    Time variable.
-  @param decimals Precision. 
+  @param decimals Precision.
   @retval         True on error, false of success.
 */
-static void
+static bool
 adjust_time_range_with_warn(MYSQL_TIME *ltime, uint8 decimals)
 {
   /* Fatally bad value should not come here */
   if (check_time_range_quick(ltime))
   {
     int warning= 0;
-    make_truncated_value_warning(current_thd, Sql_condition::SL_WARNING,
-                                 ErrConvString(ltime, decimals),
-                                 MYSQL_TIMESTAMP_TIME, NullS);
+    if (make_truncated_value_warning(current_thd, Sql_condition::SL_WARNING,
+                                     ErrConvString(ltime, decimals),
+                                     MYSQL_TIMESTAMP_TIME, NullS))
+      return true;
     adjust_time_range(ltime, &warning);
   }
+  return false;
 }
 
 
@@ -503,9 +514,10 @@ static bool extract_date_time(const Date_time_format *format,
       if (!my_isspace(&my_charset_latin1,*val))
       {
         // TS-TODO: extract_date_time is not UCS2 safe
-        make_truncated_value_warning(current_thd, Sql_condition::SL_WARNING,
-                                     ErrConvString(val_begin, length),
-                                     cached_timestamp_type, NullS);
+        if (make_truncated_value_warning(current_thd, Sql_condition::SL_WARNING,
+                                         ErrConvString(val_begin, length),
+                                         cached_timestamp_type, NullS))
+          goto err;
 	break;
       }
     } while (++val != val_end);
@@ -811,7 +823,11 @@ static bool get_interval_info(Item *args,
     longlong value;
     const char *start= str;
     for (value=0; str != end && my_isdigit(cs,*str) ; str++)
+    {
+      if (value > (LLONG_MAX -10) / 10)
+        return true;
       value= value*10LL + (longlong) (*str - '0');
+    }
     msec_length= 6 - (str - start);
     values[i]= value;
     while (str != end && !my_isdigit(cs,*str))
@@ -1060,12 +1076,15 @@ longlong Item_func_period_add::val_int()
   ulong period=(ulong) args[0]->val_int();
   int months=(int) args[1]->val_int();
 
-  if ((null_value=args[0]->null_value || args[1]->null_value) ||
-      period == 0L)
+  if ((null_value=args[0]->null_value || args[1]->null_value))
     return 0; /* purecov: inspected */
+  if (!valid_period(period))
+  {
+    my_error(ER_WRONG_ARGUMENTS, MYF(0), func_name());
+    return error_int();
+  }
   return (longlong)
-    convert_month_to_period((uint) ((int) convert_period_to_month(period)+
-				    months));
+    convert_month_to_period(convert_period_to_month(period) + months);
 }
 
 
@@ -1077,6 +1096,11 @@ longlong Item_func_period_diff::val_int()
 
   if ((null_value=args[0]->null_value || args[1]->null_value))
     return 0; /* purecov: inspected */
+  if (!valid_period(period1) || !valid_period(period2))
+  {
+    my_error(ER_WRONG_ARGUMENTS, MYF(0), func_name());
+    return error_int();
+  }
   return (longlong) ((long) convert_period_to_month(period1)-
 		     (long) convert_period_to_month(period2));
 }
@@ -1412,7 +1436,7 @@ longlong Item_func_weekday::val_int()
 
   return (longlong) calc_weekday(calc_daynr(ltime.year, ltime.month,
                                             ltime.day),
-                                 odbc_type) + MY_TEST(odbc_type);
+                                 odbc_type) + odbc_type;
 }
 
 bool Item_func_dayname::resolve_type(THD *thd)
@@ -1638,10 +1662,12 @@ bool get_interval_value(Item *args, interval_type int_type,
   {
     my_decimal decimal_value, *val;
     lldiv_t tmp;
-    if (!(val= args->val_decimal(&decimal_value)) ||
-        my_decimal2lldiv_t(E_DEC_FATAL_ERROR, val, &tmp))
-      return false;
-    
+    if (!(val= args->val_decimal(&decimal_value)))
+      return true;
+    int lldiv_result= my_decimal2lldiv_t(E_DEC_FATAL_ERROR, val, &tmp);
+    if (lldiv_result == E_DEC_OVERFLOW)
+      return true;
+
     if (tmp.quot >= 0 && tmp.rem >= 0)
     {
       interval->neg= false;
@@ -1661,6 +1687,12 @@ bool get_interval_value(Item *args, interval_type int_type,
     value= args->val_int();
     if (args->null_value)
       return true;
+    /*
+      Large floating-point values will be truncated to LLONG_MIN / LLONG_MAX
+      LLONG_MIN cannot be negated below, so reject it here.
+    */
+    if (value == LLONG_MIN)
+      return true;
     if (value < 0)
     {
       interval->neg= true;
@@ -1673,12 +1705,16 @@ bool get_interval_value(Item *args, interval_type int_type,
     interval->year= (ulong) value;
     break;
   case INTERVAL_QUARTER:
+    if (value >=  UINT_MAX / 3)
+      return true;
     interval->month= (ulong)(value*3);
     break;
   case INTERVAL_MONTH:
     interval->month= (ulong) value;
     break;
   case INTERVAL_WEEK:
+    if (value >= UINT_MAX / 7)
+      return true;
     interval->day= (ulong)(value*7);
     break;
   case INTERVAL_DAY:
@@ -2065,15 +2101,14 @@ bool Item_func_sec_to_time::get_time(MYSQL_TIME *ltime)
   if (my_decimal2lldiv_t(0, val, &seconds))
   {
     set_max_time(ltime, val->sign());
-    make_truncated_value_warning(current_thd, Sql_condition::SL_WARNING,
-                                 ErrConvString(val), MYSQL_TIMESTAMP_TIME,
-                                 NullS);
-    return false;
+    return make_truncated_value_warning(current_thd, Sql_condition::SL_WARNING,
+                                        ErrConvString(val),
+                                        MYSQL_TIMESTAMP_TIME, NullS);
   }
   if (sec_to_time(seconds, ltime))
-    make_truncated_value_warning(current_thd, Sql_condition::SL_WARNING,
-                                 ErrConvString(val),
-                                 MYSQL_TIMESTAMP_TIME, NullS);
+    return make_truncated_value_warning(current_thd, Sql_condition::SL_WARNING,
+                                        ErrConvString(val),
+                                        MYSQL_TIMESTAMP_TIME, NullS);
   return false;
 }
 
@@ -2421,9 +2456,21 @@ bool Item_date_add_interval::get_date_internal(MYSQL_TIME *ltime,
 {
   Interval interval;
 
-  if (args[0]->get_date(ltime, TIME_NO_ZERO_DATE) ||
-      get_interval_value(args[1], int_type, &value, &interval))
+  if (args[0]->get_date(ltime, TIME_NO_ZERO_DATE))
     return (null_value= true);
+
+  if (get_interval_value(args[1], int_type, &value, &interval))
+  {
+    // Do not warn about "overflow" for NULL
+    if (!args[1]->null_value)
+    {
+      push_warning_printf(current_thd, Sql_condition::SL_WARNING,
+                          ER_DATETIME_FUNCTION_OVERFLOW,
+                          ER_THD(current_thd, ER_DATETIME_FUNCTION_OVERFLOW),
+                          func_name());
+    }
+    return (null_value= true);
+  }
 
   if (date_sub_interval)
     interval.neg = !interval.neg;
@@ -2507,7 +2554,7 @@ bool Item_date_add_interval::eq(const Item *item, bool binary_cmp) const
    See item_timefunc.h
  */
 
-static const char *interval_names[]=
+const char *interval_names[]=
 {
   "year", "quarter", "month", "week", "day",  
   "hour", "minute", "second", "microsecond",
@@ -2746,7 +2793,7 @@ bool Item_func_makedate::get_date(MYSQL_TIME *ltime, my_time_flags_t)
   long days;
 
   if (args[0]->null_value || args[1]->null_value ||
-      year < 0 || year > 9999 || daynr <= 0)
+      year < 0 || year > 9999 || daynr <= 0 || daynr > MAX_DAY_NUMBER)
     goto err;
 
   if (year < 100)
@@ -2884,7 +2931,8 @@ bool Item_func_add_time::val_datetime(MYSQL_TIME *time,
   }
   time->time_type= MYSQL_TIMESTAMP_TIME;
   time->hour+= days*24;
-  adjust_time_range_with_warn(time, 0);
+  if (adjust_time_range_with_warn(time, 0))
+    goto null_date;
   return false;
 
 null_date:
@@ -2976,7 +3024,8 @@ bool Item_func_timediff::get_time(MYSQL_TIME *l_time3)
     l_time3->neg= 1 - l_time3->neg;         // Swap sign of result
 
   calc_time_from_sec(l_time3, seconds, microseconds);
-  adjust_time_range_with_warn(l_time3, decimals);
+  if (adjust_time_range_with_warn(l_time3, decimals))
+    goto null_date;
   return false;
 
 null_date:
@@ -3027,7 +3076,8 @@ bool Item_func_maketime::get_time(MYSQL_TIME *ltime)
     ltime->second= (uint) second.quot;
     int warnings= 0;
     ltime->second_part= static_cast<ulong>(second.rem / 1000);
-    adjust_time_range_with_warn(ltime, decimals);
+    if (adjust_time_range_with_warn(ltime, decimals))
+      return true;
     time_add_nanoseconds_adjust_frac(ltime, second.rem % 1000, &warnings,
                                      current_thd->is_fsp_truncate_mode());
 
@@ -3052,10 +3102,9 @@ bool Item_func_maketime::get_time(MYSQL_TIME *ltime)
                   second.rem / (ulong) log_10_int[9 - dec]);
   }
   DBUG_ASSERT(strlen(buf) < sizeof(buf));
-  make_truncated_value_warning(current_thd, Sql_condition::SL_WARNING,
-                               ErrConvString(buf, len), MYSQL_TIMESTAMP_TIME,
-                               NullS);
-  return false;
+  return make_truncated_value_warning(current_thd, Sql_condition::SL_WARNING,
+                                      ErrConvString(buf, len),
+                                      MYSQL_TIMESTAMP_TIME, NullS);
 }
 
 
@@ -3365,7 +3414,7 @@ bool Item_func_str_to_date::resolve_type(THD *thd)
   sql_mode= thd->variables.sql_mode & (MODE_NO_ZERO_DATE |
                                        MODE_NO_ZERO_IN_DATE |
                                        MODE_INVALID_DATES);
-  if ((const_item= args[1]->const_item()))
+  if (args[1]->const_item())
   {
     char format_buff[64];
     String format_str(format_buff, sizeof(format_buff), &my_charset_bin);
@@ -3446,9 +3495,10 @@ bool Item_func_last_day::get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzy_date)
     */
     ltime->time_type= MYSQL_TIMESTAMP_DATE;
     ErrConvString str(ltime, 0);
-    make_truncated_value_warning(current_thd, Sql_condition::SL_WARNING,
-                                 str, MYSQL_TIMESTAMP_ERROR,
-                                 NullS);
+    if (make_truncated_value_warning(current_thd, Sql_condition::SL_WARNING,
+                                     str, MYSQL_TIMESTAMP_ERROR,
+                                     NullS))
+      return true;
     return (null_value= true);
   }
 
@@ -3464,6 +3514,7 @@ bool Item_func_internal_update_time::resolve_type(THD *thd)
 {
   set_data_type_datetime(0);
   maybe_null= true;
+  null_on_null= false;
   thd->time_zone_used= true;
   return false;
 }
@@ -3477,30 +3528,51 @@ bool Item_func_internal_update_time::get_date(MYSQL_TIME *ltime,
   String schema_name;
   String *schema_name_ptr;
   String table_name;
-  String *table_name_ptr;
+  String *table_name_ptr= nullptr;
   String engine_name;
-  String *engine_name_ptr;
+  String *engine_name_ptr= nullptr;
+  bool skip_hidden_table= args[4]->val_int();
+  String ts_se_private_data;
+  String *ts_se_private_data_ptr= args[5]->val_str(&ts_se_private_data);
+  ulonglong stat_data= args[6]->val_uint();
+  ulonglong cached_timestamp= args[7]->val_uint();
   ulonglong unixtime= 0;
 
   if ((schema_name_ptr=args[0]->val_str(&schema_name)) != nullptr &&
       (table_name_ptr=args[1]->val_str(&table_name)) != nullptr &&
       (engine_name_ptr=args[2]->val_str(&engine_name)) != nullptr &&
-      ! is_infoschema_db(schema_name_ptr->c_ptr_safe()))
+      ! is_infoschema_db(schema_name_ptr->c_ptr_safe()) &&
+      ! skip_hidden_table)
   {
     dd::Object_id se_private_id= (dd::Object_id) args[3]->val_uint();
     THD *thd= current_thd;
+
+    MYSQL_TIME time;
+    bool not_used;
+    // Convert longlong time to MYSQL_TIME format
+    my_longlong_to_datetime_with_warn(stat_data, &time, MYF(0));
+
+    // Convert MYSQL_TIME to epoc second according to local time_zone as
+    // cached_timestamp value is with local time_zone
+    my_time_t timestamp;
+    timestamp= thd->variables.time_zone->TIME_to_gmt_sec(&time, &not_used);
 
     // Make sure we have safe string to access.
     schema_name_ptr->c_ptr_safe();
     table_name_ptr->c_ptr_safe();
     engine_name_ptr->c_ptr_safe();
 
-    unixtime= thd->lex->m_IS_dyn_stat_cache.read_stat(thd,
+    unixtime= thd->lex->m_IS_table_stats.read_stat(thd,
                 *schema_name_ptr,
                 *table_name_ptr,
                 *engine_name_ptr,
+                nullptr,
                 se_private_id,
-                dd::info_schema::enum_statistics_type::TABLE_UPDATE_TIME);
+                (ts_se_private_data_ptr ?
+                 ts_se_private_data_ptr->c_ptr_safe() : nullptr),
+                nullptr,
+                static_cast<ulonglong>(timestamp), cached_timestamp,
+                dd::info_schema::enum_table_stats_type::TABLE_UPDATE_TIME);
     if (unixtime)
     {
       null_value= 0;
@@ -3518,6 +3590,7 @@ bool Item_func_internal_check_time::resolve_type(THD *thd)
 {
   set_data_type_datetime(0);
   maybe_null= true;
+  null_on_null= false;
   thd->time_zone_used= true;
   return false;
 }
@@ -3531,15 +3604,21 @@ bool Item_func_internal_check_time::get_date(MYSQL_TIME *ltime,
   String schema_name;
   String *schema_name_ptr;
   String table_name;
-  String *table_name_ptr;
+  String *table_name_ptr= nullptr;
   String engine_name;
-  String *engine_name_ptr;
+  String *engine_name_ptr= nullptr;
+  bool skip_hidden_table= args[4]->val_int();
+  String ts_se_private_data;
+  String *ts_se_private_data_ptr= args[5]->val_str(&ts_se_private_data);
+  ulonglong stat_data= args[6]->val_uint();
+  ulonglong cached_timestamp= args[7]->val_uint();
   ulonglong unixtime= 0;
 
   if ((schema_name_ptr=args[0]->val_str(&schema_name)) != nullptr &&
       (table_name_ptr=args[1]->val_str(&table_name)) != nullptr &&
       (engine_name_ptr=args[2]->val_str(&engine_name)) != nullptr &&
-      ! is_infoschema_db(schema_name_ptr->c_ptr_safe()))
+      ! is_infoschema_db(schema_name_ptr->c_ptr_safe()) &&
+      ! skip_hidden_table)
   {
     dd::Object_id se_private_id= (dd::Object_id) args[3]->val_uint();
     THD *thd= current_thd;
@@ -3549,12 +3628,18 @@ bool Item_func_internal_check_time::get_date(MYSQL_TIME *ltime,
     table_name_ptr->c_ptr_safe();
     engine_name_ptr->c_ptr_safe();
 
-    unixtime= thd->lex->m_IS_dyn_stat_cache.read_stat(thd,
+    unixtime= thd->lex->m_IS_table_stats.read_stat(thd,
                 *schema_name_ptr,
                 *table_name_ptr,
                 *engine_name_ptr,
+                nullptr,
                 se_private_id,
-                dd::info_schema::enum_statistics_type::CHECK_TIME);
+                (ts_se_private_data_ptr ?
+                 ts_se_private_data_ptr->c_ptr_safe() : nullptr),
+                nullptr,
+                stat_data, cached_timestamp,
+                dd::info_schema::enum_table_stats_type::CHECK_TIME);
+
     if (unixtime)
     {
       null_value= 0;

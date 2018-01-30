@@ -1,32 +1,38 @@
-/* Copyright (c) 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include <gtest/gtest.h>
-
-#include "gcs_xcom_interface.h"
-#include "gcs_message_stage_lz4.h"
-
 #include <vector>
 #include <string>
+
+#include "gcs_base_test.h"
+
+#include "gcs_message_stage_lz4.h"
 
 using std::vector;
 
 namespace gcs_parameters_unittest
 {
 
-class GcsParametersTest : public ::testing::Test
+class GcsParametersTest : public GcsBaseTest
 {
 protected:
   GcsParametersTest() : m_gcs(NULL) {};
@@ -48,6 +54,10 @@ protected:
     m_params.add_parameter("compression", "on");
     m_params.add_parameter("compression_threshold", "1024");
     m_params.add_parameter("ip_whitelist", "127.0.0.1,192.168.1.0/24");
+    m_params.add_parameter("suspicions_timeout", "5");
+    m_params.add_parameter("suspicions_processing_period", "25");
+    m_params.add_parameter("join_attempts", "3");
+    m_params.add_parameter("join_sleep_time", "5");
   }
 
   virtual void TearDown()
@@ -250,7 +260,7 @@ TEST_F(GcsParametersTest, InvalidPollSpinLoops)
   std::string *p= (std::string*) m_params.get_parameter("poll_spin_loops");
   std::string save= *p;
 
-  *p= "OLA";
+  *p= "Invalid";
   do_check_params();
   *p= save;
 }
@@ -260,7 +270,7 @@ TEST_F(GcsParametersTest, InvalidCompressionThreshold)
   std::string *p= (std::string*) m_params.get_parameter("compression_threshold");
   std::string save= *p;
 
-  *p= "OLA";
+  *p= "Invalid";
   do_check_params();
   *p= save;
 }
@@ -329,6 +339,54 @@ TEST_F(GcsParametersTest, InvalidLocalNode_IP_not_found)
   *p= "localhost:12345";
   do_check_ok_params();
 
+  *p= save;
+}
+
+
+TEST_F(GcsParametersTest, InvalidSuspicionsTimeout)
+{
+  std::string *p= const_cast<std::string*>(
+    m_params.get_parameter("suspicions_timeout"));
+  std::string save= *p;
+
+  *p= "Invalid";
+  do_check_params();
+  *p= save;
+}
+
+
+TEST_F(GcsParametersTest, InvalidSuspicionsProcessingPeriod)
+{
+  std::string *p= const_cast<std::string*>(
+    m_params.get_parameter("suspicions_processing_period"));
+  std::string save= *p;
+
+  *p= "Invalid";
+  do_check_params();
+  *p= save;
+}
+
+
+TEST_F(GcsParametersTest, InvalidJoinAttempts)
+{
+  std::string *p= const_cast<std::string*>(
+    m_params.get_parameter("join_attempts"));
+  std::string save= *p;
+
+  *p= "Invalid";
+  do_check_params();
+  *p= save;
+}
+
+
+TEST_F(GcsParametersTest, InvalidJoinSleepTime)
+{
+  std::string *p= const_cast<std::string*>(
+    m_params.get_parameter("join_sleep_time"));
+  std::string save= *p;
+
+  *p= "Invalid";
+  do_check_params();
   *p= save;
 }
 

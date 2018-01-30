@@ -1,43 +1,51 @@
 /* Copyright (c) 2011, 2017, Oracle and/or its affiliates. All rights reserved.
 
-   This program is free software; you can redistribute it and/or
-   modify it under the terms of the GNU General Public License as
-   published by the Free Software Foundation; version 2 of the
-   License.
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
 
-   This program is distributed in the hope that it will be useful, but
-   WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
-   General Public License for more details.
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
-   02110-1301 USA */
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include <time.h>
+#include <atomic>
 
 #include "control_events.h"
-#include "current_thd.h"
-#include "debug_sync.h"            // DEBUG_SYNC
-#include "lex_string.h"
-#include "mdl.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_sys.h"
 #include "my_systime.h"
+#include "mysql/components/services/psi_stage_bits.h"
 #include "mysql/psi/mysql_mutex.h"
-#include "mysql/psi/psi_stage.h"
-#include "mysqld.h"                // opt_bin_log
 #include "mysqld_error.h"
-#include "rpl_context.h"
-#include "rpl_gtid.h"
-#include "rpl_gtid_persist.h"      // gtid_table_persistor
-#include "sql_class.h"             // THD
-#include "sql_error.h"
-#include "sql_plugin.h"
-#include "system_variables.h"
+#include "prealloced_array.h"
+#include "sql/binlog.h"
+#include "sql/current_thd.h"
+#include "sql/debug_sync.h"        // DEBUG_SYNC
+#include "sql/key.h"
+#include "sql/mdl.h"
+#include "sql/mysqld.h"            // opt_bin_log
+#include "sql/rpl_context.h"
+#include "sql/rpl_gtid.h"
+#include "sql/rpl_gtid_persist.h"  // gtid_table_persistor
+#include "sql/sql_class.h"         // THD
+#include "sql/sql_error.h"
+#include "sql/system_variables.h"
+#include "sql/thr_malloc.h"
 
 struct TABLE_LIST;
 
@@ -321,10 +329,11 @@ bool Gtid_state::wait_for_gtid(THD *thd, const Gtid &gtid,
                                struct timespec *abstime)
 {
   DBUG_ENTER("Gtid_state::wait_for_gtid");
-  DBUG_PRINT("info", ("SIDNO=%d GNO=%lld owner(sidno,gno)=%u thread_id=%u",
+  DBUG_PRINT("info", ("SIDNO=%d GNO=%lld thread_id=%u",
                       gtid.sidno, gtid.gno,
-                      owned_gtids.get_owner(gtid), thd->thread_id()));
-  DBUG_ASSERT(owned_gtids.get_owner(gtid) != thd->thread_id());
+                      thd->thread_id()));
+  DBUG_ASSERT(!owned_gtids.is_owned_by(gtid, thd->thread_id()));
+  DBUG_ASSERT(!owned_gtids.is_owned_by(gtid, 0));
 
   bool ret= wait_for_sidno(thd, gtid.sidno, abstime);
   DBUG_RETURN(ret);
@@ -419,7 +428,7 @@ bool Gtid_state::wait_for_gtid_set(THD *thd, Gtid_set* wait_for,
 
           if (thd->killed)
           {
-            switch (thd->killed)
+            switch (thd->killed.load())
             {
             case ER_SERVER_SHUTDOWN:
             case ER_QUERY_INTERRUPTED:
@@ -487,7 +496,7 @@ rpl_gno Gtid_state::get_automatic_gno(rpl_sidno sidno) const
            DBUG_EVALUATE_IF("simulate_gno_exhausted", false, true))
     {
       DBUG_PRINT("debug",("Checking availability of gno= %llu", next_candidate.gno));
-      if (owned_gtids.get_owner(next_candidate) == 0)
+      if (owned_gtids.is_owned_by(next_candidate, 0))
         DBUG_RETURN(next_candidate.gno);
       next_candidate.gno++;
     }
@@ -784,7 +793,8 @@ int Gtid_state::save_gtids_of_last_binlog_into_table(bool on_rotation)
   {
     logged_gtids_last_binlog.remove_gtid_set(&previous_gtids_logged);
     logged_gtids_last_binlog.remove_gtid_set(&gtids_only_in_table);
-    if (!logged_gtids_last_binlog.is_empty())
+    if (!logged_gtids_last_binlog.is_empty() ||
+        mysql_bin_log.is_rotating_caused_by_incident)
     {
       /* Prepare previous_gtids_logged for next binlog on binlog rotation */
       if (on_rotation)
@@ -935,11 +945,16 @@ void Gtid_state::update_gtids_impl_lock_sidnos(THD *first_thd)
 void Gtid_state::update_gtids_impl_own_gtid(THD *thd, bool is_commit)
 {
   assert_sidno_lock_owner(thd->owned_gtid.sidno);
-  DBUG_ASSERT(!executed_gtids.contains_gtid(thd->owned_gtid));
-  owned_gtids.remove_gtid(thd->owned_gtid);
+  /*
+    In Group Replication the GTID may additionally be owned by another
+    thread, and we won't remove that ownership (it will be rolled back later)
+  */
+  DBUG_ASSERT(owned_gtids.is_owned_by(thd->owned_gtid, thd->thread_id()));
+  owned_gtids.remove_gtid(thd->owned_gtid, thd->thread_id());
 
   if (is_commit)
   {
+    DBUG_ASSERT(!executed_gtids.contains_gtid(thd->owned_gtid));
     DBUG_EXECUTE_IF(
       "rpl_gtid_update_on_commit_simulate_out_of_memory",
       DBUG_SET("+d,rpl_gtid_get_free_interval_simulate_out_of_memory"););
@@ -1036,7 +1051,7 @@ void Gtid_state::update_gtids_impl_own_anonymous(THD* thd,
   }
 }
 
-void Gtid_state::update_gtids_impl_own_nothing(THD *thd)
+void Gtid_state::update_gtids_impl_own_nothing(THD *thd MY_ATTRIBUTE((unused)))
 {
   DBUG_ASSERT(thd->commit_error != THD::CE_COMMIT_ERROR ||
               thd->has_gtid_consistency_violation);

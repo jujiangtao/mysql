@@ -680,7 +680,7 @@ insert into at(c,_dec) select concat('_dec: ',c),j from t where c='bool';
 insert into at(c,_dec) select concat('_dec: ',c),j from t where c='uint';
 insert into at(c,_dec) select concat('_dec: ',c),j from t where c='int';
 insert into at(c,_dec) select concat('_dec: ',c),j from t where c='double';
---error ER_TRUNCATED_WRONG_VALUE_FOR_FIELD
+--error ER_INVALID_JSON_VALUE_FOR_CAST
 insert into at(c,_dec) select concat('_dec: ',c),j from t where c='stringany';
 insert into at(c,_dec) select concat('_dec: ',c),j from t where c='stringint';
 insert into at(c,_dec) select concat('_dec: ',c),j from t where c='stringdecimal';
@@ -689,9 +689,9 @@ insert into at(c,_dec) select concat('_dec: ',c),j from t where c='object';
 --error ER_INVALID_JSON_VALUE_FOR_CAST
 insert into at(c,_dec) select concat('_dec: ',c),j from t where c='array';
 insert into at(c,_dec) select concat('_dec: ',c),j from t where c='opaque_mysql_type_decimal';
---error ER_TRUNCATED_WRONG_VALUE_FOR_FIELD
+--error ER_INVALID_JSON_VALUE_FOR_CAST
 insert into at(c,_dec) select concat('_dec: ',c),j from t where c='opaque_mysql_type_set';
---error ER_TRUNCATED_WRONG_VALUE_FOR_FIELD
+--error ER_INVALID_JSON_VALUE_FOR_CAST
 insert into at(c,_dec) select concat('_dec: ',c),j from t where c='opaque_mysql_type_enum';
 --error ER_INVALID_JSON_VALUE_FOR_CAST
 insert into at(c,_dec) select concat('_dec: ',c),j from t where c='opaque_mysql_type_date';
@@ -2490,7 +2490,7 @@ insert into at(c,_dec) select concat('_dec: ',c), json_extract(j, '$') from t wh
 insert into at(c,_dec) select concat('_dec: ',c), json_extract(j, '$') from t where c='uint';
 insert into at(c,_dec) select concat('_dec: ',c), json_extract(j, '$') from t where c='int';
 insert into at(c,_dec) select concat('_dec: ',c), json_extract(j, '$') from t where c='double';
---error ER_TRUNCATED_WRONG_VALUE_FOR_FIELD
+--error ER_INVALID_JSON_VALUE_FOR_CAST
 insert into at(c,_dec) select concat('_dec: ',c), json_extract(j, '$') from t where c='stringany';
 insert into at(c,_dec) select concat('_dec: ',c), json_extract(j, '$') from t where c='stringint';
 insert into at(c,_dec) select concat('_dec: ',c), json_extract(j, '$') from t where c='stringdecimal';
@@ -2499,9 +2499,9 @@ insert into at(c,_dec) select concat('_dec: ',c), json_extract(j, '$') from t wh
 --error ER_INVALID_JSON_VALUE_FOR_CAST
 insert into at(c,_dec) select concat('_dec: ',c), json_extract(j, '$') from t where c='array';
 insert into at(c,_dec) select concat('_dec: ',c), json_extract(j, '$') from t where c='opaque_mysql_type_decimal';
---error ER_TRUNCATED_WRONG_VALUE_FOR_FIELD
+--error ER_INVALID_JSON_VALUE_FOR_CAST
 insert into at(c,_dec) select concat('_dec: ',c), json_extract(j, '$') from t where c='opaque_mysql_type_set';
---error ER_TRUNCATED_WRONG_VALUE_FOR_FIELD
+--error ER_INVALID_JSON_VALUE_FOR_CAST
 insert into at(c,_dec) select concat('_dec: ',c), json_extract(j, '$') from t where c='opaque_mysql_type_enum';
 --error ER_INVALID_JSON_VALUE_FOR_CAST
 insert into at(c,_dec) select concat('_dec: ',c), json_extract(j, '$') from t where c='opaque_mysql_type_date';
@@ -4300,7 +4300,7 @@ insert into at(c,_dec) select concat('_dec: ',c), (select j from t where c='bool
 insert into at(c,_dec) select concat('_dec: ',c), (select j from t where c='uint') from t where c='uint';
 insert into at(c,_dec) select concat('_dec: ',c), (select j from t where c='int') from t where c='int';
 insert into at(c,_dec) select concat('_dec: ',c), (select j from t where c='double') from t where c='double';
---error ER_TRUNCATED_WRONG_VALUE_FOR_FIELD
+--error ER_INVALID_JSON_VALUE_FOR_CAST
 insert into at(c,_dec) select concat('_dec: ',c), (select j from t where c='stringany') from t where c='stringany';
 insert into at(c,_dec) select concat('_dec: ',c), (select j from t where c='stringint') from t where c='stringint';
 insert into at(c,_dec) select concat('_dec: ',c), (select j from t where c='stringdecimal') from t where c='stringdecimal';
@@ -4309,9 +4309,9 @@ insert into at(c,_dec) select concat('_dec: ',c), (select j from t where c='obje
 --error ER_INVALID_JSON_VALUE_FOR_CAST
 insert into at(c,_dec) select concat('_dec: ',c), (select j from t where c='array') from t where c='array';
 insert into at(c,_dec) select concat('_dec: ',c), (select j from t where c='opaque_mysql_type_decimal') from t where c='opaque_mysql_type_decimal';
---error ER_TRUNCATED_WRONG_VALUE_FOR_FIELD
+--error ER_INVALID_JSON_VALUE_FOR_CAST
 insert into at(c,_dec) select concat('_dec: ',c), (select j from t where c='opaque_mysql_type_set') from t where c='opaque_mysql_type_set';
---error ER_TRUNCATED_WRONG_VALUE_FOR_FIELD
+--error ER_INVALID_JSON_VALUE_FOR_CAST
 insert into at(c,_dec) select concat('_dec: ',c), (select j from t where c='opaque_mysql_type_enum') from t where c='opaque_mysql_type_enum';
 --error ER_INVALID_JSON_VALUE_FOR_CAST
 insert into at(c,_dec) select concat('_dec: ',c), (select j from t where c='opaque_mysql_type_date') from t where c='opaque_mysql_type_date';
@@ -6659,7 +6659,7 @@ create table t_gco select DISTINCT(_gco) FROM at;
 
 drop table if exists comparison_weight;
 
-create table comparison_weight(rank int, type varchar(100));
+create table comparison_weight(`rank` int, type varchar(100));
 INSERT INTO comparison_weight values ( 10,'OPAQUE');
 INSERT INTO comparison_weight values ( 9,'TIMESTAMP');
 INSERT INTO comparison_weight values ( 9,'DATETIME');
@@ -6683,9 +6683,9 @@ delimiter $;
 CREATE FUNCTION GET_JSON_WEIGHT(json_type varchar(100)) RETURNS INT
 BEGIN
 DECLARE JSON_WEIGHT INT(11);
-SELECT rank into JSON_WEIGHT from  comparison_weight where
+SELECT `rank` into JSON_WEIGHT from  comparison_weight where
 (UPPER(type)=json_type ) OR
-(type is NULL) order by rank desc limit 1;
+(type is NULL) order by `rank` desc limit 1;
 RETURN (JSON_WEIGHT);
 END $
 delimiter ;$

@@ -1,47 +1,57 @@
 /* Copyright (c) 2007, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 
-#include "mdl.h"
+#include "sql/mdl.h"
 
 #include <time.h>
 #include <algorithm>
+#include <atomic>
 #include <functional>
 
-#include "debug_sync.h"
 #include "lf.h"
 #include "m_ctype.h"
-#include "my_atomic.h"
 #include "my_dbug.h"
+#include "my_macros.h"
 #include "my_murmur3.h"
 #include "my_sharedlib.h"
 #include "my_sys.h"
 #include "my_systime.h"
 #include "my_thread.h"
+#include "mysql/components/services/psi_cond_bits.h"
+#include "mysql/components/services/psi_memory_bits.h"
+#include "mysql/components/services/psi_mutex_bits.h"
+#include "mysql/components/services/psi_rwlock_bits.h"
+#include "mysql/psi/mysql_cond.h"
 #include "mysql/psi/mysql_mdl.h"
 #include "mysql/psi/mysql_memory.h"
+#include "mysql/psi/mysql_mutex.h"
 #include "mysql/psi/mysql_stage.h"
-#include "mysql/psi/psi_base.h"
-#include "mysql/psi/psi_cond.h"
-#include "mysql/psi/psi_memory.h"
-#include "mysql/psi/psi_mutex.h"
-#include "mysql/psi/psi_rwlock.h"
+#include "mysql/psi/psi_mdl.h"
 #include "mysql/service_thd_wait.h"
 #include "mysqld_error.h"
 #include "prealloced_array.h"
-#include "thr_malloc.h"
+#include "sql/debug_sync.h"
+#include "sql/thr_malloc.h"
 
 extern "C" MYSQL_PLUGIN_IMPORT CHARSET_INFO *system_charset_info;
 
@@ -52,7 +62,7 @@ static PSI_mutex_key key_MDL_wait_LOCK_wait_status;
 
 static PSI_mutex_info all_mdl_mutexes[]=
 {
-  { &key_MDL_wait_LOCK_wait_status, "MDL_wait::LOCK_wait_status", 0, 0}
+  { &key_MDL_wait_LOCK_wait_status, "MDL_wait::LOCK_wait_status", 0, 0, PSI_DOCUMENT_ME}
 };
 
 static PSI_rwlock_key key_MDL_lock_rwlock;
@@ -60,20 +70,20 @@ static PSI_rwlock_key key_MDL_context_LOCK_waiting_for;
 
 static PSI_rwlock_info all_mdl_rwlocks[]=
 {
-  { &key_MDL_lock_rwlock, "MDL_lock::rwlock", 0},
-  { &key_MDL_context_LOCK_waiting_for, "MDL_context::LOCK_waiting_for", 0}
+  { &key_MDL_lock_rwlock, "MDL_lock::rwlock", 0, 0, PSI_DOCUMENT_ME},
+  { &key_MDL_context_LOCK_waiting_for, "MDL_context::LOCK_waiting_for", 0, 0, PSI_DOCUMENT_ME}
 };
 
 static PSI_cond_key key_MDL_wait_COND_wait_status;
 
 static PSI_cond_info all_mdl_conds[]=
 {
-  { &key_MDL_wait_COND_wait_status, "MDL_context::COND_wait_status", 0}
+  { &key_MDL_wait_COND_wait_status, "MDL_context::COND_wait_status", 0, 0, PSI_DOCUMENT_ME}
 };
 
 static PSI_memory_info all_mdl_memory[]=
 {
-  { &key_memory_MDL_context_acquire_locks, "MDL_context::acquire_locks", 0}
+  { &key_memory_MDL_context_acquire_locks, "MDL_context::acquire_locks", 0, 0, PSI_DOCUMENT_ME}
 };
 
 /**
@@ -108,19 +118,22 @@ static void init_mdl_psi_keys(void)
 
 PSI_stage_info MDL_key::m_namespace_to_wait_state_name[NAMESPACE_END]=
 {
-  {0, "Waiting for global read lock", 0},
-  {0, "Waiting for tablespace metadata lock", 0},
-  {0, "Waiting for schema metadata lock", 0},
-  {0, "Waiting for table metadata lock", 0},
-  {0, "Waiting for stored function metadata lock", 0},
-  {0, "Waiting for stored procedure metadata lock", 0},
-  {0, "Waiting for trigger metadata lock", 0},
-  {0, "Waiting for event metadata lock", 0},
-  {0, "Waiting for commit lock", 0},
-  {0, "User lock", 0}, /* Be compatible with old status. */
-  {0, "Waiting for locking service lock", 0},
-  {0, "Waiting for spatial reference system lock", 0},
-  {0, "Waiting for acl cache lock", 0}
+  {0, "Waiting for global read lock", 0, PSI_DOCUMENT_ME},
+  {0, "Waiting for tablespace metadata lock", 0, PSI_DOCUMENT_ME},
+  {0, "Waiting for schema metadata lock", 0, PSI_DOCUMENT_ME},
+  {0, "Waiting for table metadata lock", 0, PSI_DOCUMENT_ME},
+  {0, "Waiting for stored function metadata lock", 0, PSI_DOCUMENT_ME},
+  {0, "Waiting for stored procedure metadata lock", 0, PSI_DOCUMENT_ME},
+  {0, "Waiting for trigger metadata lock", 0, PSI_DOCUMENT_ME},
+  {0, "Waiting for event metadata lock", 0, PSI_DOCUMENT_ME},
+  {0, "Waiting for commit lock", 0, PSI_DOCUMENT_ME},
+  {0, "User lock", 0, PSI_DOCUMENT_ME}, /* Be compatible with old status. */
+  {0, "Waiting for locking service lock", 0, PSI_DOCUMENT_ME},
+  {0, "Waiting for spatial reference system lock", 0, PSI_DOCUMENT_ME},
+  {0, "Waiting for acl cache lock", 0, PSI_DOCUMENT_ME},
+  {0, "Waiting for column statistics lock", 0, PSI_DOCUMENT_ME},
+  {0, "Waiting for backup lock", 0, PSI_DOCUMENT_ME},
+  {0, "Waiting for resource groups metadata lock", 0, PSI_DOCUMENT_ME}
 };
 
 #ifdef HAVE_PSI_INTERFACE
@@ -163,7 +176,7 @@ public:
   */
   void lock_object_used()
   {
-    my_atomic_add32(&m_unused_lock_objects, -1);
+    --m_unused_lock_objects;
   }
 
   /**
@@ -179,7 +192,7 @@ public:
       attempts to delete unused MDL_lock objects in order to avoid infinite
       loops,
     */
-    int32 unused_locks= my_atomic_add32(&m_unused_lock_objects, 1) + 1;
+    int32 unused_locks= ++m_unused_lock_objects;
 
     while (unused_locks > mdl_locks_unused_locks_low_water &&
            (unused_locks > m_locks.count * MDL_LOCKS_UNUSED_LOCKS_MIN_RATIO))
@@ -222,7 +235,7 @@ public:
   */
   int32 get_unused_locks_count() const
   {
-    return m_unused_lock_objects;
+    return m_unused_lock_objects.load();
   }
 
   /**
@@ -239,7 +252,8 @@ public:
   {
     return (mdl_key->mdl_namespace() == MDL_key::GLOBAL ||
             mdl_key->mdl_namespace() == MDL_key::COMMIT ||
-            mdl_key->mdl_namespace() == MDL_key::ACL_CACHE);
+            mdl_key->mdl_namespace() == MDL_key::ACL_CACHE ||
+            mdl_key->mdl_namespace() == MDL_key::BACKUP_LOCK);
   }
 
 private:
@@ -254,6 +268,9 @@ private:
   MDL_lock *m_commit_lock;
   /** Pre-allocated MDL_lock object for ACL_CACHE namespace. */
   MDL_lock *m_acl_cache_lock;
+  /** Pre-allocated MDL_lock object for BACKUP_LOCK namespace. */
+  MDL_lock *m_backup_lock;
+
   /**
     Number of unused MDL_lock objects in the server.
 
@@ -267,7 +284,7 @@ private:
     for some short period of time. Code which uses its value needs to take
     this into account.
   */
-  volatile int32 m_unused_lock_objects;
+  std::atomic<int32> m_unused_lock_objects;
 };
 
 
@@ -918,14 +935,11 @@ public:
           In order to enforce the above rules and other invariants,
           MDL_lock::m_fast_path_state should not be updated directly.
           Use fast_path_state_cas()/add()/reset() wrapper methods instead.
-
-    @note Needs to be volatile in order to be compatible with our
-          my_atomic_*() API.
   */
-  volatile fast_path_state_t m_fast_path_state;
+  std::atomic<fast_path_state_t> m_fast_path_state;
 
   /**
-    Wrapper for my_atomic_cas64 operation on m_fast_path_state member
+    Wrapper for atomic compare-and-swap operation on m_fast_path_state member
     which enforces locking and other invariants.
   */
   bool fast_path_state_cas(fast_path_state_t *old_state,
@@ -951,11 +965,12 @@ public:
     */
     DBUG_ASSERT(! (*old_state & IS_DESTROYED));
 
-    return my_atomic_cas64(&m_fast_path_state, old_state, new_state);
+    return atomic_compare_exchange_strong(
+      &m_fast_path_state, old_state, new_state);
   }
 
   /**
-    Wrapper for my_atomic_add64 operation on m_fast_path_state member
+    Wrapper for atomic add operation on m_fast_path_state member
     which enforces locking and other invariants.
   */
   fast_path_state_t fast_path_state_add(fast_path_state_t value)
@@ -968,7 +983,7 @@ public:
     */
     mysql_prlock_assert_write_owner(&m_rwlock);
 
-    fast_path_state_t old_state= my_atomic_add64(&m_fast_path_state, value);
+    fast_path_state_t old_state= m_fast_path_state.fetch_add(value);
 
     /*
       We should not change state of destroyed object
@@ -985,7 +1000,7 @@ public:
   {
     /* HAS_DESTROYED flag can be cleared only under protection of m_rwlock. */
     mysql_prlock_assert_write_owner(&m_rwlock);
-    my_atomic_store64(&m_fast_path_state, 0);
+    m_fast_path_state.store(0);
   }
 
   /**
@@ -1173,10 +1188,12 @@ void MDL_map::init()
   MDL_key global_lock_key(MDL_key::GLOBAL, "", "");
   MDL_key commit_lock_key(MDL_key::COMMIT, "", "");
   MDL_key acl_cache_lock_key(MDL_key::ACL_CACHE, "", "");
+  MDL_key backup_lock_key(MDL_key::BACKUP_LOCK, "", "");
 
   m_global_lock= MDL_lock::create(&global_lock_key);
   m_commit_lock= MDL_lock::create(&commit_lock_key);
   m_acl_cache_lock= MDL_lock::create(&acl_cache_lock_key);
+  m_backup_lock= MDL_lock::create(&backup_lock_key);
 
   m_unused_lock_objects= 0;
 
@@ -1196,6 +1213,7 @@ void MDL_map::destroy()
   MDL_lock::destroy(m_global_lock);
   MDL_lock::destroy(m_commit_lock);
   MDL_lock::destroy(m_acl_cache_lock);
+  MDL_lock::destroy(m_backup_lock);
 
   lf_hash_destroy(&m_locks);
 }
@@ -1244,6 +1262,9 @@ MDL_lock* MDL_map::find(LF_PINS *pins, const MDL_key *mdl_key, bool *pinned)
       break;
     case MDL_key::ACL_CACHE:
       lock= m_acl_cache_lock;
+      break;
+    case MDL_key::BACKUP_LOCK:
+      lock= m_backup_lock;
       break;
     default:
       DBUG_ASSERT(false);
@@ -1307,7 +1328,7 @@ MDL_lock* MDL_map::find_or_insert(LF_PINS *pins, const MDL_key *mdl_key,
         New MDL_lock object is not used yet. So we need to
         increment number of unused lock objects.
       */
-      my_atomic_add32(&m_unused_lock_objects, 1);
+      ++m_unused_lock_objects;
     }
   }
   if (lock == MY_LF_ERRPTR)
@@ -1462,7 +1483,7 @@ void MDL_map::remove_random_unused(MDL_context *ctx, LF_PINS *pins,
     else
     {
       /* Success. */
-      *unused_locks= my_atomic_add32(&m_unused_lock_objects, -1) - 1;
+      *unused_locks= --m_unused_lock_objects;
     }
   }
   else
@@ -1516,9 +1537,7 @@ MDL_context::MDL_context()
 
 void MDL_context::destroy()
 {
-  DBUG_ASSERT(m_tickets[MDL_STATEMENT].is_empty());
-  DBUG_ASSERT(m_tickets[MDL_TRANSACTION].is_empty());
-  DBUG_ASSERT(m_tickets[MDL_EXPLICIT].is_empty());
+  DBUG_ASSERT(m_ticket_store.is_empty());
 
   mysql_prlock_destroy(&m_LOCK_waiting_for);
   if (m_pins)
@@ -1614,6 +1633,39 @@ void MDL_request::init_by_key_with_source(const MDL_key *key_arg,
   m_src_line= src_line;
 }
 
+/**
+  Initialize a lock request using partial MDL key.
+
+  @sa MDL_request::init(namespace, db, name, type).
+
+  @remark The partial key must be "<database>\0<name>\0".
+
+  @param  namespace_arg       Id of namespace of object to be locked
+  @param  part_key_arg        Partial key.
+  @param  part_key_length_arg Partial key length
+  @param  db_length_arg       Database name length.
+  @param  mdl_type_arg        The MDL lock type for the request.
+  @param  mdl_duration_arg    The MDL duration for the request.
+  @param  src_file            Source file name issuing the request.
+  @param  src_line            Source line number issuing the request.
+*/
+
+void MDL_request::init_by_part_key_with_source(
+                    MDL_key::enum_mdl_namespace namespace_arg,
+                    const char *part_key_arg, size_t part_key_length_arg,
+                    size_t db_length_arg, enum_mdl_type mdl_type_arg,
+                    enum_mdl_duration mdl_duration_arg,
+                    const char *src_file, uint src_line)
+{
+  key.mdl_key_init(namespace_arg, part_key_arg, part_key_length_arg,
+                   db_length_arg);
+  type= mdl_type_arg;
+  duration= mdl_duration_arg;
+  ticket= NULL;
+  m_src_file= src_file;
+  m_src_line= src_line;
+}
+
 
 /**
   Auxiliary functions needed for creation/destruction of MDL_lock objects.
@@ -1658,6 +1710,8 @@ inline void MDL_lock::reinit(const MDL_key *mdl_key)
     case MDL_key::TABLESPACE:
     case MDL_key::SCHEMA:
     case MDL_key::COMMIT:
+    case MDL_key::BACKUP_LOCK:
+    case MDL_key::RESOURCE_GROUPS:
       m_strategy= &m_scoped_lock_strategy;
       break;
     default:
@@ -1695,6 +1749,7 @@ MDL_lock::get_unobtrusive_lock_increment(const MDL_request *request)
     case MDL_key::TABLESPACE:
     case MDL_key::SCHEMA:
     case MDL_key::COMMIT:
+    case MDL_key::BACKUP_LOCK:
       return m_scoped_lock_strategy.m_unobtrusive_lock_increment[request->type];
     default:
       return m_object_lock_strategy.m_unobtrusive_lock_increment[request->type];
@@ -2178,7 +2233,7 @@ void MDL_lock::reschedule_waiters()
 
 /**
   Strategy instances to be used with scoped metadata locks (i.e. locks
-  from GLOBAL, COMMIT, TABLESPACE and SCHEMA namespaces).
+  from GLOBAL, COMMIT, TABLESPACE, BACKUP_LOCK and SCHEMA namespaces).
   The only locking modes which are supported at the moment are SHARED and
   INTENTION EXCLUSIVE and EXCLUSIVE.
 */
@@ -2796,6 +2851,36 @@ MDL_ticket::is_incompatible_when_waiting(enum_mdl_type type) const
           m_lock->incompatible_waiting_types_bitmap()[type]);
 }
 
+#ifndef DBUG_OFF
+bool equivalent(const MDL_ticket *a, const MDL_ticket *b,
+                enum_mdl_duration target_duration)
+{
+  if (a == b)
+  {
+    // Same pointer (incl. nullptr) are equivalent
+    return true;
+  }
+
+  if (a->get_lock() != b->get_lock())
+  {
+    // If they refer to different locks, they are never equivalent
+    return false;
+  }
+  if (a->get_duration() == target_duration && b->get_duration() == target_duration)
+  {
+    // Different objects, but which has the same lock, AND both refer to the
+    // target duration are equivalent
+    return true;
+  }
+  if (a->get_duration() != target_duration && b->get_duration() != target_duration)
+  {
+    // Different objects with same lock are still equivalent, if neither has
+    // the target duration
+    return true;
+  }
+  return false;
+}
+#endif /* not defined DBUG_OFF */
 
 /**
   Check whether the context already holds a compatible lock ticket
@@ -2816,26 +2901,9 @@ MDL_ticket *
 MDL_context::find_ticket(MDL_request *mdl_request,
                          enum_mdl_duration *result_duration)
 {
-  MDL_ticket *ticket;
-  int i;
-
-  for (i= 0; i < MDL_DURATION_END; i++)
-  {
-    enum_mdl_duration duration= (enum_mdl_duration)((mdl_request->duration+i) %
-                                                    MDL_DURATION_END);
-    Ticket_iterator it(m_tickets[duration]);
-
-    while ((ticket= it++))
-    {
-      if (mdl_request->key.is_equal(&ticket->m_lock->key) &&
-          ticket->has_stronger_or_equal_type(mdl_request->type))
-      {
-        *result_duration= duration;
-        return ticket;
-      }
-    }
-  }
-  return NULL;
+  auto h= m_ticket_store.find(*mdl_request);
+  *result_duration= h.m_dur;
+  return h.m_ticket;
 }
 
 
@@ -2952,10 +3020,10 @@ void MDL_context::materialize_fast_path_locks()
 
   for (i= 0; i < MDL_DURATION_END; i++)
   {
-    Ticket_iterator it(m_tickets[(enum_mdl_duration)i]);
-    MDL_ticket *ticket;
+    MDL_ticket_store::List_iterator it= m_ticket_store.list_iterator(i);
 
-    while ((ticket= it++))
+    MDL_ticket *matf= m_ticket_store.materialized_front(i);
+    for (MDL_ticket *ticket= it++; ticket != matf; ticket= it++)
     {
       if (ticket->m_is_fast_path)
       {
@@ -2980,6 +3048,7 @@ void MDL_context::materialize_fast_path_locks()
       }
     }
   }
+  m_ticket_store.set_materialized();
 }
 
 
@@ -3246,9 +3315,7 @@ retry:
     */
     ticket->m_lock= lock;
     ticket->m_is_fast_path= true;
-
-    m_tickets[mdl_request->duration].push_front(ticket);
-
+    m_ticket_store.push_front(mdl_request->duration, ticket);
     mdl_request->ticket= ticket;
 
     mysql_mdl_set_status(ticket->m_psi, MDL_ticket::GRANTED);
@@ -3369,8 +3436,7 @@ slow_path:
 
     mysql_prlock_unlock(&lock->m_rwlock);
 
-    m_tickets[mdl_request->duration].push_front(ticket);
-
+    m_ticket_store.push_front(mdl_request->duration, ticket);
     mdl_request->ticket= ticket;
 
     mysql_mdl_set_status(ticket->m_psi, MDL_ticket::GRANTED);
@@ -3513,9 +3579,7 @@ MDL_context::clone_ticket(MDL_request *mdl_request)
   }
 
   mdl_request->ticket= ticket;
-
-  m_tickets[mdl_request->duration].push_front(ticket);
-
+  m_ticket_store.push_front(mdl_request->duration, ticket);
   mysql_mdl_set_status(ticket->m_psi, MDL_ticket::GRANTED);
 
   return FALSE;
@@ -3619,6 +3683,34 @@ MDL_context::acquire_lock(MDL_request *mdl_request, ulong lock_wait_timeout)
       accordingly, so we can simply return success.
     */
     return FALSE;
+  }
+
+  /*
+    Return early if we did not get the lock and are not willing to wait.
+    This way we avoid reporting "fake" deadlock for lock_wait_timeout == 0.
+  */
+  if (lock_wait_timeout == 0)
+  {
+    /*
+      Lock acquired inside try_acquire_lock_impl(). Release before
+      leaving scope.
+    */
+    mysql_prlock_unlock(&ticket->m_lock->m_rwlock);
+
+    /*
+      If SEs were notified about impending lock acquisition, the failure
+      to acquire it requires the same notification as lock release.
+    */
+    if (ticket->m_hton_notified)
+    {
+      mysql_mdl_set_status(ticket->m_psi, MDL_ticket::POST_RELEASE_NOTIFY);
+      m_owner->notify_hton_post_release_exclusive(&mdl_request->key);
+    }
+    DEBUG_SYNC(get_thd(), "mdl_acquire_lock_wait");
+
+    MDL_ticket::destroy(ticket);
+    my_error(ER_LOCK_WAIT_TIMEOUT, MYF(0));
+    return true;
   }
 
   /*
@@ -3767,8 +3859,7 @@ MDL_context::acquire_lock(MDL_request *mdl_request, ulong lock_wait_timeout)
   */
   DBUG_ASSERT(wait_status == MDL_wait::GRANTED);
 
-  m_tickets[mdl_request->duration].push_front(ticket);
-
+  m_ticket_store.push_front(mdl_request->duration, ticket);
   mdl_request->ticket= ticket;
 
   mysql_mdl_set_status(ticket->m_psi, MDL_ticket::GRANTED);
@@ -3836,7 +3927,7 @@ bool MDL_context::acquire_locks(MDL_request_list *mdl_requests,
     Remember the first MDL_EXPLICIT ticket so that we can release
     any new such locks taken if acquisition fails.
   */
-  MDL_ticket *explicit_front= m_tickets[MDL_EXPLICIT].front();
+  MDL_ticket *explicit_front= m_ticket_store.front(MDL_EXPLICIT);
   const size_t req_count= mdl_requests->elements();
 
   if (req_count == 0)
@@ -4022,7 +4113,7 @@ MDL_context::upgrade_shared_lock(MDL_ticket *mdl_ticket,
 
   if (is_new_ticket)
   {
-    m_tickets[MDL_TRANSACTION].remove(mdl_new_lock_request.ticket);
+    m_ticket_store.remove(MDL_TRANSACTION, mdl_new_lock_request.ticket);
     MDL_ticket::destroy(mdl_new_lock_request.ticket);
   }
 
@@ -4404,9 +4495,7 @@ end_fast_path:
     */
     lock->remove_ticket(this, m_pins, &MDL_lock::m_granted, ticket);
   }
-
-  m_tickets[duration].remove(ticket);
-
+  m_ticket_store.remove(duration, ticket);
   if (ticket->m_hton_notified)
   {
     mysql_mdl_set_status(ticket->m_psi, MDL_ticket::POST_RELEASE_NOTIFY);
@@ -4450,12 +4539,14 @@ void MDL_context::release_lock(MDL_ticket *ticket)
 void MDL_context::release_locks_stored_before(enum_mdl_duration duration,
                                               MDL_ticket *sentinel)
 {
-  MDL_ticket *ticket;
-  Ticket_iterator it(m_tickets[duration]);
   DBUG_ENTER("MDL_context::release_locks_stored_before");
 
-  if (m_tickets[duration].is_empty())
+  MDL_ticket *ticket;
+  MDL_ticket_store::List_iterator it= m_ticket_store.list_iterator(duration);
+  if (m_ticket_store.is_empty(duration))
+  {
     DBUG_VOID_RETURN;
+  }
 
   while ((ticket= it++) && ticket != sentinel)
   {
@@ -4482,7 +4573,8 @@ void MDL_context::release_all_locks_for_name(MDL_ticket *name)
 
   /* Remove matching lock tickets from the context. */
   MDL_ticket *ticket;
-  Ticket_iterator it_ticket(m_tickets[MDL_EXPLICIT]);
+  MDL_ticket_store::List_iterator it_ticket=
+    m_ticket_store.list_iterator(MDL_EXPLICIT);
 
   while ((ticket= it_ticket++))
   {
@@ -4504,7 +4596,8 @@ void MDL_context::release_locks(MDL_release_locks_visitor *visitor)
 {
   /* Remove matching lock tickets from the context. */
   MDL_ticket *ticket;
-  Ticket_iterator it_ticket(m_tickets[MDL_EXPLICIT]);
+  MDL_ticket_store::List_iterator it_ticket=
+    m_ticket_store.list_iterator(MDL_EXPLICIT);
 
   while ((ticket= it_ticket++))
   {
@@ -4599,6 +4692,35 @@ void MDL_ticket::downgrade_lock(enum_mdl_type new_type)
   a object. Returns TRUE if we have a lock of an equal to given or stronger
   type.
 
+  @param mdl_key       Key to check for ownership
+  @param mdl_type      Lock type. Pass in the weakest type to find
+                       out if there is at least some lock.
+
+  @return TRUE if current context contains satisfied lock for the object,
+          FALSE otherwise.
+*/
+
+bool
+MDL_context::owns_equal_or_stronger_lock(
+               const MDL_key *mdl_key, enum_mdl_type mdl_type)
+{
+  MDL_request mdl_request;
+  enum_mdl_duration not_used;
+  /* We don't care about exact duration of lock here. */
+  MDL_REQUEST_INIT_BY_KEY(&mdl_request, mdl_key, mdl_type, MDL_TRANSACTION);
+  MDL_ticket *ticket= find_ticket(&mdl_request, &not_used);
+
+  DBUG_ASSERT(ticket == NULL || ticket->m_lock);
+
+  return ticket;
+}
+
+
+/**
+  Auxiliary function which allows to check if we have some kind of lock on
+  a object. Returns TRUE if we have a lock of an equal to given or stronger
+  type.
+
   @param mdl_namespace Id of object namespace
   @param db            Name of the database
   @param name          Name of the object
@@ -4616,11 +4738,11 @@ MDL_context::owns_equal_or_stronger_lock(
                enum_mdl_type mdl_type)
 {
   MDL_request mdl_request;
-  enum_mdl_duration not_unused;
+  enum_mdl_duration not_used;
   /* We don't care about exact duration of lock here. */
   MDL_REQUEST_INIT(&mdl_request,
                    mdl_namespace, db, name, mdl_type, MDL_TRANSACTION);
-  MDL_ticket *ticket= find_ticket(&mdl_request, &not_unused);
+  MDL_ticket *ticket= find_ticket(&mdl_request, &not_used);
 
   DBUG_ASSERT(ticket == NULL || ticket->m_lock);
 
@@ -4761,8 +4883,11 @@ bool MDL_context::has_lock(const MDL_savepoint &mdl_savepoint,
 {
   MDL_ticket *ticket;
   /* Start from the beginning, most likely mdl_ticket's been just acquired. */
-  MDL_context::Ticket_iterator s_it(m_tickets[MDL_STATEMENT]);
-  MDL_context::Ticket_iterator t_it(m_tickets[MDL_TRANSACTION]);
+
+  MDL_ticket_store::List_iterator s_it=
+    m_ticket_store.list_iterator(MDL_STATEMENT);
+  MDL_ticket_store::List_iterator t_it=
+    m_ticket_store.list_iterator(MDL_TRANSACTION);
 
   while ((ticket= s_it++) && ticket != mdl_savepoint.m_stmt_ticket)
   {
@@ -4794,7 +4919,8 @@ bool MDL_context::has_locks(MDL_key::enum_mdl_namespace mdl_namespace) const
   {
     enum_mdl_duration duration= static_cast<enum_mdl_duration>(i);
 
-    Ticket_iterator it(m_tickets[duration]);
+    MDL_ticket_store::List_iterator it=
+      m_ticket_store.list_iterator(duration);
     while ((ticket= it++))
     {
       if (ticket->get_key()->mdl_namespace() == mdl_namespace)
@@ -4823,7 +4949,9 @@ bool MDL_context::has_locks_waited_for() const
   for (int i=0; i < MDL_DURATION_END; i++)
   {
     const enum_mdl_duration duration= static_cast<enum_mdl_duration>(i);
-    Ticket_iterator it(m_tickets[duration]);
+
+    MDL_ticket_store::List_iterator it=
+      m_ticket_store.list_iterator(duration);
     while ((ticket= it++))
     {
       MDL_lock *const lock= ticket->m_lock;
@@ -4856,9 +4984,9 @@ void MDL_context::set_lock_duration(MDL_ticket *mdl_ticket,
 {
   DBUG_ASSERT(mdl_ticket->m_duration == MDL_TRANSACTION &&
               duration != MDL_TRANSACTION);
+  m_ticket_store.remove(MDL_TRANSACTION, mdl_ticket);
+  m_ticket_store.push_front(duration, mdl_ticket);
 
-  m_tickets[MDL_TRANSACTION].remove(mdl_ticket);
-  m_tickets[duration].push_front(mdl_ticket);
 #ifndef DBUG_OFF
   mdl_ticket->m_duration= duration;
 #endif
@@ -4871,6 +4999,187 @@ void MDL_context::set_lock_duration(MDL_ticket *mdl_ticket,
 
 void MDL_context::set_explicit_duration_for_all_locks()
 {
+  m_ticket_store.move_all_to_explicit_duration();
+}
+
+
+/**
+  Set transactional duration for all locks in the context.
+*/
+
+void MDL_context::set_transaction_duration_for_all_locks()
+{
+  m_ticket_store.move_explicit_to_transaction_duration();
+}
+
+
+size_t MDL_ticket_store::Hash::operator()(const MDL_key *k) const
+{
+  return static_cast<size_t>(murmur3_32(k->ptr(), k->length(), 0));
+}
+
+MDL_ticket_store::MDL_ticket_handle
+MDL_ticket_store::find_in_lists(const MDL_request &req) const
+{
+  for (int i= 0; i < MDL_DURATION_END; i++)
+  {
+    int di= (req.duration+i) % MDL_DURATION_END;
+
+    List_iterator it(m_durations[di].m_ticket_list);
+
+    for (MDL_ticket *ticket= it++; ticket != nullptr; ticket= it++)
+    {
+      if (req.key.is_equal(ticket->get_key()) &&
+          ticket->has_stronger_or_equal_type(req.type))
+      {
+        return { ticket, static_cast<enum_mdl_duration>(di) };
+      }
+    }
+  }
+  return { nullptr, MDL_DURATION_END };
+}
+
+
+MDL_ticket_store::MDL_ticket_handle
+MDL_ticket_store::find_in_hash(const MDL_request &req) const
+{
+  auto foundrng= m_map->equal_range(&req.key);
+
+  const MDL_ticket_handle *found_handle= nullptr;
+  std::find_if(foundrng.first, foundrng.second,
+                 [&](const Ticket_map::value_type &vt)
+                 {
+                   auto &th= vt.second;
+                   if (!th.m_ticket->has_stronger_or_equal_type(req.type))
+                   {
+                     return false;
+                   }
+                   found_handle= &th;
+                   return (th.m_dur == req.duration);
+                 });
+
+  if (found_handle != nullptr)
+  {
+    return *found_handle;
+  }
+  return {nullptr, MDL_DURATION_END};
+}
+
+
+bool MDL_ticket_store::is_empty() const
+{
+  return
+    (std::all_of(std::begin(m_durations), std::end(m_durations),
+                [] (const Duration &d)
+                {
+                  DBUG_ASSERT(!d.m_ticket_list.is_empty() ||
+                      d.m_mat_front == nullptr);
+                return d.m_ticket_list.is_empty(); }));
+}
+
+bool MDL_ticket_store::is_empty(int di) const
+{
+  return m_durations[di].m_ticket_list.is_empty();
+}
+
+MDL_ticket *MDL_ticket_store::front(int di)
+{
+  return m_durations[di].m_ticket_list.front();
+}
+
+
+void MDL_ticket_store::push_front(enum_mdl_duration dur, MDL_ticket *ticket)
+{
+  ++m_count;
+  m_durations[dur].m_ticket_list.push_front(ticket);
+
+  /*
+    Note that we do not update m_durations[dur].m_mat_front here. That
+    is ok, since it is only to be used as an optimization for
+    MDL_context::materialize_fast_path_locks(). So if the ticket being
+    added is already materialized it does not break an invariant, and
+    m_mat_front will be updated the next time
+    MDL_context::materialize_fast_path_locks() runs.
+  */
+
+  if (m_count < THRESHOLD)
+  {
+    return;
+  }
+
+  if (m_count == THRESHOLD)
+  {
+    // If this is the first time we cross the threshold, the map must
+    // be allocated
+    if (m_map == nullptr)
+    {
+      m_map.reset(new Ticket_map{INITIAL_BUCKET_COUNT, Hash{}, Key_equal{}});
+    }
+    // In any event, it should now be empty
+    DBUG_ASSERT(m_map->empty());
+
+    /*
+       When the THRESHOLD value is reached, the unordered map must be
+       populated with all the tickets added before reaching the
+       threshold.
+    */
+    for_each_ticket_in_ticket_lists
+      (
+       [this] (MDL_ticket *t, enum_mdl_duration da)
+       {
+         m_map->emplace(t->get_key(), MDL_ticket_handle{t, da});
+       });
+    DBUG_ASSERT(m_map->size() == m_count);
+    return;
+  }
+
+  m_map->emplace(ticket->get_key(), MDL_ticket_handle{ticket, dur});
+  DBUG_ASSERT(m_map->size() == m_count);
+}
+
+void MDL_ticket_store::remove(enum_mdl_duration dur, MDL_ticket *ticket)
+{
+  --m_count;
+  m_durations[dur].m_ticket_list.remove(ticket);
+
+  if (m_durations[dur].m_mat_front == ticket)
+  {
+    m_durations[dur].m_mat_front= ticket->next_in_context;
+  }
+
+  if (m_count < THRESHOLD-1)
+  {
+    DBUG_ASSERT(m_map == nullptr || m_map->empty());
+    return;
+  }
+  DBUG_ASSERT(m_map != nullptr && m_map->size() == m_count+1);
+
+  if (m_count == THRESHOLD-1)
+  {
+    // This remove dipped us below threshold
+    m_map->clear();
+    return;
+  }
+  DBUG_ASSERT(m_count >= THRESHOLD);
+
+  auto foundrng= m_map->equal_range(ticket->get_key());
+
+  auto foundit= std::find_if(foundrng.first, foundrng.second,
+                             [dur,ticket] (const Ticket_map::value_type &vt)
+                             {
+                               auto &th= vt.second;
+                               DBUG_ASSERT(th.m_ticket != ticket || th.m_dur == dur);
+                               return (th.m_ticket==ticket);
+                             });
+  DBUG_ASSERT(foundit != foundrng.second);
+  if (foundit != foundrng.second)
+  {
+    m_map->erase(foundit);
+  }
+  DBUG_ASSERT(m_map->size() == m_count);
+}
+
+void MDL_ticket_store::move_all_to_explicit_duration() {
   int i;
   MDL_ticket *ticket;
 
@@ -4883,33 +5192,48 @@ void MDL_context::set_explicit_duration_for_all_locks()
     explicit duration.
   */
 
-  m_tickets[MDL_EXPLICIT].swap(m_tickets[MDL_TRANSACTION]);
+  m_durations[MDL_EXPLICIT].m_ticket_list.swap(m_durations[MDL_TRANSACTION].m_ticket_list);
 
   for (i= 0; i < MDL_EXPLICIT; i++)
   {
-    Ticket_iterator it_ticket(m_tickets[i]);
+    m_durations[i].m_mat_front= nullptr;
+    List_iterator it_ticket(m_durations[i].m_ticket_list);
 
     while ((ticket= it_ticket++))
     {
-      m_tickets[i].remove(ticket);
-      m_tickets[MDL_EXPLICIT].push_front(ticket);
+      m_durations[i].m_ticket_list.remove(ticket);
+      m_durations[MDL_EXPLICIT].m_ticket_list.push_front(ticket);
     }
+  /*
+    Note that we do not update m_durations[MDL_EXPLICIT].m_mat_front
+    here. That is ok, since it is only to be used as an optimization
+    for MDL_context::materialize_fast_path_locks(). So if the tickets
+    being added are already materialized it does not break an
+    invariant, and m_mat_front will be updated the next time
+    MDL_context::materialize_fast_path_locks() runs.
+  */
   }
 
 #ifndef DBUG_OFF
-  Ticket_iterator exp_it(m_tickets[MDL_EXPLICIT]);
+  List_iterator exp_it(m_durations[MDL_EXPLICIT].m_ticket_list);
 
   while ((ticket= exp_it++))
-    ticket->m_duration= MDL_EXPLICIT;
+  {
+    ticket->set_duration(MDL_EXPLICIT);
+  }
 #endif
+
+  // Must also change duration in map
+  if (m_map != nullptr)
+  {
+    for (auto &p : *m_map)
+    {
+      p.second.m_dur= MDL_EXPLICIT;
+    }
+  }
 }
 
-
-/**
-  Set transactional duration for all locks in the context.
-*/
-
-void MDL_context::set_transaction_duration_for_all_locks()
+void MDL_ticket_store::move_explicit_to_transaction_duration()
 {
   MDL_ticket *ticket;
 
@@ -4922,22 +5246,74 @@ void MDL_context::set_transaction_duration_for_all_locks()
     locks with transactional duration.
   */
 
-  DBUG_ASSERT(m_tickets[MDL_STATEMENT].is_empty());
+  DBUG_ASSERT(m_durations[MDL_STATEMENT].m_ticket_list.is_empty());
+  DBUG_ASSERT(m_durations[MDL_STATEMENT].m_mat_front == nullptr);
 
-  m_tickets[MDL_TRANSACTION].swap(m_tickets[MDL_EXPLICIT]);
+  m_durations[MDL_TRANSACTION].m_ticket_list.swap(m_durations[MDL_EXPLICIT].m_ticket_list);
 
-  Ticket_iterator it_ticket(m_tickets[MDL_EXPLICIT]);
+  m_durations[MDL_EXPLICIT].m_mat_front= nullptr;
+  List_iterator it_ticket(m_durations[MDL_EXPLICIT].m_ticket_list);
 
   while ((ticket= it_ticket++))
   {
-    m_tickets[MDL_EXPLICIT].remove(ticket);
-    m_tickets[MDL_TRANSACTION].push_front(ticket);
+    m_durations[MDL_EXPLICIT].m_ticket_list.remove(ticket);
+    m_durations[MDL_TRANSACTION].m_ticket_list.push_front(ticket);
   }
+  /*
+    Note that we do not update
+    m_durations[MDL_TRANSACTION].m_mat_front here. That is ok, since
+    it is only to be used as an optimization for
+    MDL_context::materialize_fast_path_locks(). So if the tickets
+    being added are already materialized it does not break an
+    invariant, and m_mat_front will be updated the next time
+    MDL_context::materialize_fast_path_locks() runs.
+  */
 
 #ifndef DBUG_OFF
-  Ticket_iterator trans_it(m_tickets[MDL_TRANSACTION]);
+  List_iterator trans_it(m_durations[MDL_TRANSACTION].m_ticket_list);
 
   while ((ticket= trans_it++))
-    ticket->m_duration= MDL_TRANSACTION;
+  {
+    ticket->set_duration(MDL_TRANSACTION);
+  }
 #endif
+
+  // Must also change duration in map
+  if (m_map != nullptr)
+  {
+    for (auto &p : *m_map)
+    {
+      p.second.m_dur= MDL_TRANSACTION;
+    }
+  }
+}
+
+MDL_ticket_store::MDL_ticket_handle
+MDL_ticket_store::find(const MDL_request &req) const
+{
+#ifndef DBUG_OFF
+  if (m_count >= THRESHOLD)
+  {
+    MDL_ticket_handle list_h= find_in_lists(req);
+    MDL_ticket_handle hash_h= find_in_hash(req);
+
+    DBUG_ASSERT(equivalent(list_h.m_ticket, hash_h.m_ticket, req.duration));
+  }
+#endif /*! DBUG_OFF */
+  return  (m_map == nullptr || m_count < THRESHOLD) ?
+    find_in_lists(req) : find_in_hash(req);
+}
+
+
+void MDL_ticket_store::set_materialized()
+{
+  for (auto &d : m_durations)
+  {
+    d.m_mat_front= d.m_ticket_list.front();
+  }
+}
+
+MDL_ticket *MDL_ticket_store::materialized_front(int di)
+{
+  return m_durations[di].m_mat_front;
 }

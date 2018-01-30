@@ -6,4 +6,7 @@ default.release
 default.weekly
 default.weekly-valgrind
 default.weekly.basic
+mysql-8.0-stage.push
 mysql-trunk-stage.push
+mysql-trunk-xplugin.push
+mysql-trunk-xplugin.push-valgrind

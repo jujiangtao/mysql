@@ -2,17 +2,24 @@
    Copyright (c) 2013, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef XA_H_INCLUDED
 #define XA_H_INCLUDED
@@ -21,13 +28,13 @@
 #include <sys/types.h>
 
 #include "lex_string.h"
-#include "m_string.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_sqlcommand.h"
-#include "sql_cmd.h"          // Sql_cmd
-#include "sql_plugin_ref.h"   // plugin_ref
-#include "xa_aux.h"           // serialize_xid
+#include "mysql/udf_registration_types.h"
+#include "sql/sql_cmd.h"      // Sql_cmd
+#include "sql/sql_plugin_ref.h" // plugin_ref
+#include "sql/xa_aux.h"       // serialize_xid
 
 class Protocol;
 class THD;
@@ -141,6 +148,7 @@ public:
   virtual bool execute(THD *thd);
 
 private:
+  bool check_xa_recover_privilege(THD *thd) const;
   bool trans_xa_recover(THD *thd);
 
   bool m_print_xid_as_hex;

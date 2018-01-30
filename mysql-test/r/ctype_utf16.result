@@ -1056,7 +1056,6 @@ insert into t1 values('aaa','aba');
 insert into t1 values(null,'abc');
 insert into t1 values('def',null);
 insert into t1 values(null,null);
-insert into t1 values('ghi','ghi[');
 select HIGH_PRIORITY s1 regexp s2 from t1;
 s1 regexp s2
 1
@@ -1072,7 +1071,8 @@ s1 regexp s2
 NULL
 NULL
 NULL
-NULL
+SELECT 'ghi' REGEXP 'ghi[';
+ERROR HY000: The regular expression contains an unclosed bracket expression.
 drop table t1;
 set names latin1;
 SET collation_connection=utf16_general_ci;
@@ -1179,7 +1179,7 @@ SELECT space(date_add(101, INTERVAL CHAR('1' USING utf16) hour_second));
 space(date_add(101, INTERVAL CHAR('1' USING utf16) hour_second))
 NULL
 Warnings:
-Warning	1301	Result of space() was larger than max_allowed_packet (4194304) - truncated
+Warning	1301	Result of space() was larger than max_allowed_packet (67108864) - truncated
 #
 # Bug#11750518 41090: ORDER BY TRUNCATES GROUP_CONCAT RESULT
 #

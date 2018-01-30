@@ -1,18 +1,26 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2016, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1996, 2017, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+the terms of the GNU General Public License, version 2.0, as published by the
+Free Software Foundation.
+
+This program is also distributed with certain software (including but not
+limited to OpenSSL) that is licensed under separate terms, as designated in a
+particular file or component or in included license documentation. The authors
+of MySQL hereby grant you an additional permission to link the program and
+your derivative works with the separately licensed software that they have
+included with MySQL.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+FOR A PARTICULAR PURPOSE. See the GNU General Public License, version 2.0,
+for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 *****************************************************************************/
 
@@ -107,14 +115,13 @@ dict_create(void)
 /*=============*/
 	MY_ATTRIBUTE((warn_unused_result));
 
-/*********************************************************************//**
-Check if a table id belongs to  system table.
+/** Check if a table id belongs to old innodb internal system table.
+@param[in]	id		table id
 @return true if the table id belongs to a system table. */
 UNIV_INLINE
 bool
-dict_is_sys_table(
-/*==============*/
-	table_id_t	id)		/*!< in: table id to check */
+dict_is_old_sys_table(
+	table_id_t	id)
 	MY_ATTRIBUTE((warn_unused_result));
 
 /* Space id and page no where the dictionary header resides */
@@ -355,6 +362,8 @@ two) is assigned, the field DICT_HDR_ROW_ID on the dictionary header page is
 updated */
 #define DICT_HDR_ROW_ID_WRITE_MARGIN	256
 
+#ifndef UNIV_HOTBACKUP
 #include "dict0boot.ic"
+#endif /* !UNIV_HOTBACKUP */
 
 #endif

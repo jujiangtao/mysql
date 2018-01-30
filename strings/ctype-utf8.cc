@@ -2,17 +2,29 @@
 
    This library is free software; you can redistribute it and/or
    modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; version 2
-   of the License.
+   License, version 2.0, as published by the Free Software Foundation.
+
+   This library is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the library and your derivative works with the
+   separately licensed software that they have included with MySQL.
+
+   Without limiting anything contained in the foregoing, this file,
+   which is part of C Driver for MySQL (Connector/C), is also subject to the
+   Universal FOSS Exception, version 1.0, a copy of which can be found at
+   http://oss.oracle.com/licenses/universal-foss-exception.
 
    This library is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
+   Library General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
+   License along with this library; if not, write to the Free
+   Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston,
+   MA 02110-1301  USA */
 
 /* UTF8 according RFC 2279 */
 /* Written by Alexander Barkov <bar@udm.net> */
@@ -26,13 +38,13 @@
 #include <type_traits>
 
 #include "m_ctype.h"
-#include "mb_wc.h"
 #include "my_byteorder.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_macros.h"
 #include "my_uctype.h"  // IWYU pragma: keep
+#include "strings/mb_wc.h"
 
 #ifndef EILSEQ
 #define EILSEQ ENOENT
@@ -5835,7 +5847,8 @@ static
 size_t my_strnxfrmlen_utf8(const CHARSET_INFO *cs MY_ATTRIBUTE((unused)),
                            size_t len)
 {
-  return (len * 2 + 2) / 3;
+  // We really ought to have len % 3 == 0, but not all calling code conforms.
+  return ((len + 2) / 3) * 2;
 }
 } // extern "C"
 
@@ -5887,7 +5900,8 @@ static uint my_mbcharlen_utf8(const CHARSET_INFO *cs  MY_ATTRIBUTE((unused)),
 
 static MY_COLLATION_HANDLER my_collation_utf8_general_ci_handler =
 {
-    NULL,               /* init */
+    nullptr,               /* init */
+    nullptr,
     my_strnncoll_utf8,
     my_strnncollsp_utf8,
     my_strnxfrm_unicode,
@@ -5903,7 +5917,8 @@ static MY_COLLATION_HANDLER my_collation_utf8_general_ci_handler =
 
 static MY_COLLATION_HANDLER my_collation_utf8_bin_handler =
 {
-    NULL,		/* init */
+    nullptr,		/* init */
+    nullptr,
     my_strnncoll_mb_bin,
     my_strnncollsp_mb_bin,
     my_strnxfrm_unicode,
@@ -7318,7 +7333,8 @@ my_wc_mb_filename(const CHARSET_INFO *cs MY_ATTRIBUTE((unused)),
 
 static MY_COLLATION_HANDLER my_collation_filename_handler =
 {
-    NULL,               /* init */
+    nullptr,               /* init */
+    nullptr,
     my_strnncoll_utf8,
     my_strnncollsp_utf8,
     my_strnxfrm_unicode,
@@ -8065,13 +8081,13 @@ static size_t
 my_strnxfrmlen_utf8mb4(const CHARSET_INFO *cs MY_ATTRIBUTE((unused)),
                        size_t len)
 {
-  /* TODO: fix when working on WL "Unicode new version" */
-  return (len * 2 + 2) / 4;
+  // We really ought to have len % 4 == 0, but not all calling code conforms.
+  return ((len + 3) / 4) * 2;
 }
 } // extern "C"
 
 
-static inline int
+static ALWAYS_INLINE int
 my_valid_mbcharlen_utf8mb4(const CHARSET_INFO *cs MY_ATTRIBUTE((unused)),
                            const uchar *s, const uchar *e)
 {
@@ -8104,27 +8120,46 @@ size_t my_well_formed_len_utf8mb4(const CHARSET_INFO *cs,
   return (size_t) (b - b_start);
 }
 
-
-static uint
-my_ismbchar_utf8mb4(const CHARSET_INFO *cs, const char *b, const char *e)
+static uint ALWAYS_INLINE
+my_ismbchar_utf8mb4_inl(const CHARSET_INFO *cs, const char *b, const char *e)
 {
-  int res= my_valid_mbcharlen_utf8mb4(cs, (const uchar*)b, (const uchar*)e);
+  int res = my_valid_mbcharlen_utf8mb4(cs, (const uchar*)b, (const uchar*)e);
   return (res > 1) ? res : 0;
 }
 
 
-size_t my_charpos_mb4(const CHARSET_INFO *cs,
-                      const char *pos, const char *end, size_t length)
+static uint
+my_ismbchar_utf8mb4(const CHARSET_INFO *cs, const char *b, const char *e)
 {
+  return my_ismbchar_utf8mb4_inl(cs, b, e);
+}
+
+
+size_t my_charpos_mb4(const CHARSET_INFO *cs,
+  const char *pos, const char *end, size_t length)
+{
+  // Fast path as long as we see ASCII characters only.
+  size_t min_length= std::min<size_t>(end - pos, length);
+  const char *safe_end= std::min(end, pos + min_length)
+                        - std::min<size_t>(7, min_length);
   const char *start= pos;
+  while (pos < safe_end)
+  {
+    uint64_t data;
+    memcpy(&data, pos, sizeof(data));
+    if (data & 0x8080808080808080ULL)
+      break;
+    pos+= sizeof(data);
+    length-= sizeof(data);
+  }
 
   while (length && pos < end)
   {
     uint mb_len;
-    pos+= (mb_len= my_ismbchar_utf8mb4(cs, pos, end)) ? mb_len : 1;
+    pos+= (mb_len = my_ismbchar_utf8mb4_inl(cs, pos, end)) ? mb_len : 1;
     length--;
   }
-  return (size_t) (length ? end+2-start : pos-start);
+  return (size_t)(length ? end + 2 - start : pos - start);
 }
 
 
@@ -8148,7 +8183,8 @@ my_mbcharlen_utf8mb4(const CHARSET_INFO *cs MY_ATTRIBUTE((unused)), uint c)
 
 static MY_COLLATION_HANDLER my_collation_utf8mb4_general_ci_handler=
 {
-  NULL,               /* init */
+  nullptr,               /* init */
+  nullptr,
   my_strnncoll_utf8mb4,
   my_strnncollsp_utf8mb4,
   my_strnxfrm_unicode,
@@ -8164,7 +8200,8 @@ static MY_COLLATION_HANDLER my_collation_utf8mb4_general_ci_handler=
 
 static MY_COLLATION_HANDLER my_collation_utf8mb4_bin_handler =
 {
-    NULL,		/* init */
+    nullptr,		/* init */
+    nullptr,
     my_strnncoll_mb_bin,
     my_strnncollsp_mb_bin,
     my_strnxfrm_unicode_full_bin,

@@ -1,37 +1,41 @@
 /* Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "dd/info_schema/show.h"
+#include "sql/dd/info_schema/show.h"
 
 #include <string.h>
-#include <string>
 
-#include "dd/info_schema/show_query_builder.h" // Select_lex_builder
-#include "dd/info_schema/stats.h"
 #include "lex_string.h"
 #include "m_string.h"
-#include "mdl.h"
 #include "my_sqlcommand.h"
-#include "mysqld.h"
-#include "session_tracker.h"
-#include "sql_class.h"
-#include "sql_lex.h"
-#include "sql_list.h"
+#include "sql/dd/info_schema/show_query_builder.h" // Select_lex_builder
+#include "sql/dd/info_schema/table_stats.h"
+#include "sql/dd/string_type.h"
+#include "sql/key.h"
+#include "sql/parse_tree_node_base.h"
+#include "sql/sql_class.h"
+#include "sql/sql_lex.h"
+#include "sql/table.h"
 #include "sql_string.h"
-#include "table.h"
-#include "thr_lock.h"
 
 namespace dd {
 namespace info_schema {
@@ -795,45 +799,75 @@ build_show_keys_query(const POS &pos,
 
   // Define field name literal used in query to be built.
 
+  static const LEX_STRING field_database= {
+    C_STRING_WITH_LEN("TABLE_SCHEMA") };
   static const LEX_STRING alias_database= {
     C_STRING_WITH_LEN("Database") };
 
+  static const LEX_STRING field_table= {
+    C_STRING_WITH_LEN("TABLE_NAME") };
   static const LEX_STRING alias_table= { C_STRING_WITH_LEN("Table") };
 
+  static const LEX_STRING field_non_unique= {
+    C_STRING_WITH_LEN("NON_UNIQUE") };
   static const LEX_STRING alias_non_unique= {
     C_STRING_WITH_LEN("Non_unique") };
 
+  static const LEX_STRING field_key= {
+    C_STRING_WITH_LEN("INDEX_NAME") };
   static const LEX_STRING alias_key= { C_STRING_WITH_LEN("Key_name") };
 
+  static const LEX_STRING field_seq_in_index= {
+    C_STRING_WITH_LEN("SEQ_IN_INDEX") };
   static const LEX_STRING alias_seq_in_index= {
     C_STRING_WITH_LEN("Seq_in_index") };
 
+  static const LEX_STRING field_column_name= {
+    C_STRING_WITH_LEN("COLUMN_NAME") };
   static const LEX_STRING alias_column_name= {
     C_STRING_WITH_LEN("Column_name") };
 
+  static const LEX_STRING field_collation= {
+    C_STRING_WITH_LEN("COLLATION") };
   static const LEX_STRING alias_collation= {
     C_STRING_WITH_LEN("Collation") };
 
+  static const LEX_STRING field_cardinality= {
+    C_STRING_WITH_LEN("CARDINALITY") };
   static const LEX_STRING alias_cardinality= {
     C_STRING_WITH_LEN("Cardinality") };
 
+  static const LEX_STRING field_sub_part= {
+    C_STRING_WITH_LEN("SUB_PART") };
   static const LEX_STRING alias_sub_part= {
     C_STRING_WITH_LEN("Sub_part") };
 
+  static const LEX_STRING field_packed= {
+    C_STRING_WITH_LEN("PACKED") };
   static const LEX_STRING alias_packed= {
     C_STRING_WITH_LEN("Packed") };
 
+  static const LEX_STRING field_null= {
+    C_STRING_WITH_LEN("NULLABLE") };
   static const LEX_STRING alias_null= { C_STRING_WITH_LEN("Null") };
 
+  static const LEX_STRING field_type= {
+    C_STRING_WITH_LEN("INDEX_TYPE") };
   static const LEX_STRING alias_type= {
     C_STRING_WITH_LEN("Index_type") };
 
+  static const LEX_STRING field_comment= {
+    C_STRING_WITH_LEN("COMMENT") };
   static const LEX_STRING alias_comment= {
     C_STRING_WITH_LEN("Comment") };
 
+  static const LEX_STRING field_index_comment= {
+    C_STRING_WITH_LEN("INDEX_COMMENT") };
   static const LEX_STRING alias_index_comment= {
     C_STRING_WITH_LEN("Index_comment") };
 
+  static const LEX_STRING field_is_visible= {
+    C_STRING_WITH_LEN("IS_VISIBLE") };
   static const LEX_STRING alias_visible= {
     C_STRING_WITH_LEN("Visible") };
 
@@ -862,21 +896,21 @@ build_show_keys_query(const POS &pos,
      ...
   */
   Select_lex_builder sub_query(&pos, thd);
-  if (sub_query.add_select_item(alias_database, alias_database) ||
-      sub_query.add_select_item(alias_table, alias_table) ||
-      sub_query.add_select_item(alias_non_unique, alias_non_unique) ||
-      sub_query.add_select_item(alias_key, alias_key) ||
-      sub_query.add_select_item(alias_seq_in_index, alias_seq_in_index) ||
-      sub_query.add_select_item(alias_column_name, alias_column_name) ||
-      sub_query.add_select_item(alias_collation, alias_collation) ||
-      sub_query.add_select_item(alias_cardinality, alias_cardinality) ||
-      sub_query.add_select_item(alias_sub_part, alias_sub_part) ||
-      sub_query.add_select_item(alias_packed, alias_packed) ||
-      sub_query.add_select_item(alias_null, alias_null) ||
-      sub_query.add_select_item(alias_type, alias_type) ||
-      sub_query.add_select_item(alias_comment, alias_comment) ||
-      sub_query.add_select_item(alias_index_comment, alias_index_comment) ||
-      sub_query.add_select_item(alias_visible, alias_visible) ||
+  if (sub_query.add_select_item(field_database, alias_database) ||
+      sub_query.add_select_item(field_table, alias_table) ||
+      sub_query.add_select_item(field_non_unique, alias_non_unique) ||
+      sub_query.add_select_item(field_key, alias_key) ||
+      sub_query.add_select_item(field_seq_in_index, alias_seq_in_index) ||
+      sub_query.add_select_item(field_column_name, alias_column_name) ||
+      sub_query.add_select_item(field_collation, alias_collation) ||
+      sub_query.add_select_item(field_cardinality, alias_cardinality) ||
+      sub_query.add_select_item(field_sub_part, alias_sub_part) ||
+      sub_query.add_select_item(field_packed, alias_packed) ||
+      sub_query.add_select_item(field_null, alias_null) ||
+      sub_query.add_select_item(field_type, alias_type) ||
+      sub_query.add_select_item(field_comment, alias_comment) ||
+      sub_query.add_select_item(field_index_comment, alias_index_comment) ||
+      sub_query.add_select_item(field_is_visible, alias_visible) ||
       sub_query.add_select_item(alias_index_pos, alias_index_pos) ||
       sub_query.add_select_item(alias_column_pos, alias_column_pos))
     return nullptr;

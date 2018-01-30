@@ -110,6 +110,7 @@ Ndb_scan_count	#
 Ndb_schema_locks_count	#
 Ndb_slave_max_replicated_epoch	#
 Ndb_sorted_scan_count	#
+Ndb_system_name	#
 SHOW GLOBAL VARIABLES WHERE Variable_name LIKE 'ndb\_%' and 
 Variable_name NOT LIKE 'ndb_dbg\_%';
 Variable_name	Value
@@ -144,6 +145,7 @@ ndb_log_exclusive_reads	#
 ndb_log_orig	#
 ndb_log_transaction_id	#
 ndb_log_update_as_write	#
+ndb_log_update_minimal	#
 ndb_log_updated_only	#
 ndb_mgmd_host	#
 ndb_nodeid	#
@@ -860,6 +862,7 @@ f1	f2	f3
 111111	aaaaaa	1
 222222	bbbbbb	2
 drop table t1;
+Warning: using '--ndb' with 'perror' is deprecated and this functionality may not be available in the future versions, please use 'ndb_perror' instead
 Illegal ndb error code: 123456
 CREATE TABLE t1 (
 a VARBINARY(40) NOT NULL,

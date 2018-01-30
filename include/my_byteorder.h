@@ -4,13 +4,20 @@
 /* Copyright (c) 2001, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -41,10 +48,10 @@
 #include <winsock2.h>
 #endif
 
-#if defined(__i386__) || defined(_WIN32) || defined(__x86_64__)
-#include "byte_order_generic_x86.h"  // IWYU pragma: export
+#ifdef WORDS_BIGENDIAN
+#include "big_endian.h"  // IWYU pragma: export
 #else
-#include "byte_order_generic.h"  // IWYU pragma: export
+#include "little_endian.h"  // IWYU pragma: export
 #endif
 
 #include "my_inttypes.h"
@@ -217,20 +224,11 @@ static inline void int8store(char *pT, ulonglong A)
   int8store(static_cast<uchar*>(static_cast<void*>(pT)), A);
 }
 
-#endif  /* __cplusplus */
-
 /*
   Functions for reading and storing in machine format from/to
   short/long to/from some place in memory V should be a variable
   and M a pointer to byte.
 */
-#ifdef WORDS_BIGENDIAN
-#include "big_endian.h"  // IWYU pragma: export
-#else
-#include "little_endian.h"  // IWYU pragma: export
-#endif
-
-#ifdef __cplusplus
 
 static inline void float4store(char *V, float M)
 {
@@ -246,10 +244,6 @@ static inline void float8store(char *V, double M)
 {
   float8store(static_cast<uchar*>(static_cast<void*>(V)), M);
 }
-
-#endif /* __cplusplus */
-
-#ifdef __cplusplus
 
 /*
  Functions for big-endian loads and stores. These are safe to use
@@ -272,7 +266,7 @@ static inline uint32 load32be(const char *ptr)
   return ntohl(val);
 }
 
-static inline char *store16be(char *ptr, uint16 val)
+static ALWAYS_INLINE char *store16be(char *ptr, uint16 val)
 {
 #if defined(_MSC_VER)
   // _byteswap_ushort is an intrinsic on MSVC, but htons is not.
@@ -303,7 +297,7 @@ static inline uint32 load32be(const uchar *ptr)
   return load32be(pointer_cast<const char *>(ptr));
 }
 
-static inline uchar *store16be(uchar *ptr, uint16 val)
+static ALWAYS_INLINE uchar *store16be(uchar *ptr, uint16 val)
 {
   return pointer_cast<uchar *>(store16be(pointer_cast<char *>(ptr), val));
 }

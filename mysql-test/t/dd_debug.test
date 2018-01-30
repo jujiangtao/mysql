@@ -3,17 +3,11 @@
 #
 
 --source include/have_debug.inc
-
-########################################
-##### WL#7554 Force schema `test` to character set latin1
-##### This test should be migrated to utf8mb4
---disable_query_log
-let $testdbcs60=`select default_character_set_name from information_schema.schemata where schema_name='test'`;
-alter schema test default character set latin1;
---enable_query_log
-########################################
+--source include/have_debug_sync.inc
 
 --source include/count_sessions.inc
+
+let $MYSQLD_DATADIR= `SELECT @@datadir`;
 
 ###########################################################################
 
@@ -50,9 +44,11 @@ DROP TABLE t1;
 --echo ###################################################################
 --echo #
 
-# InnoDB will complain when trying to drop a table which is not
-# present in the SE.
-call mtr.add_suppression("\\[ERROR\\] InnoDB: Table `test`.`t1` .*");
+# These can be removed after WL#9536 is implemented
+call mtr.add_suppression("\\[ERROR\\] \\[[^]]*\\] InnoDB: Operating system error number .* in a file operation");
+call mtr.add_suppression("\\[ERROR\\] \\[[^]]*\\] InnoDB: The error means the system cannot find the path specified");
+call mtr.add_suppression("\\[ERROR\\] \\[[^]]*\\] InnoDB: Cannot open datafile for read-only");
+call mtr.add_suppression("\\[ERROR\\] \\[[^]]*\\] InnoDB: Cannot delete tablespace .* because it is not found in the tablespace memory cache");
 
 --echo # 1. Schemata
 --echo # 1.1 Fail while storing dd object during create.
@@ -103,7 +99,8 @@ SET GLOBAL DEBUG= '-d, fail_while_acquiring_dd_object';
 --echo # 1.3b No schema found during drop.
 
 SET DEBUG= '+d, pretend_no_schema_in_drop_schema';
---error ER_DB_DROP_EXISTS
+--replace_result $MYSQLD_DATADIR ./ \\ /
+--error ER_SCHEMA_DIR_UNKNOWN 
 DROP SCHEMA s1;
 SET DEBUG= '-d, pretend_no_schema_in_drop_schema';
 
@@ -250,7 +247,6 @@ SELECT COUNT(*) FROM mysql.tablespaces WHERE name LIKE 'ts1';
 --echo # Note: The statement below fails, but removes entry for
 --echo #       ts1 from mysql.tablespaces.
 --echo # Do it for real.
---error ER_DROP_FILEGROUP_FAILED
 DROP TABLESPACE ts1;
 SELECT COUNT(*) FROM mysql.tablespaces WHERE name LIKE 'ts1';
 SET SESSION debug= '-d,skip_dd_table_access_check';
@@ -313,16 +309,37 @@ SET SESSION debug= '-d,skip_dd_table_access_check';
 
 DROP TABLE t2, t1;
 
+--echo #
+--echo # Bug#25887335 : TEST CASE INNODB_MYSQL_SYNC CRASH ON PB2 RUN.
+--echo #
+CREATE TABLE t1(a INT) Engine=InnoDB;
+INSERT INTO t1 VALUES (1), (2);
+
+connect (con1, localhost, root);
+let $con1_id= `select connection_id()`;
+SET DEBUG_SYNC= "open_and_process_table SIGNAL kill_truncate WAIT_FOR killed";
+--echo # Sending: (not reaped since connection is killed later)
+--echo # Default connection tries to kill con1 when it is in the kill immune mode
+--echo # In this mode, state of the kill operation state is stored and applied
+--echo # while exiting from the mode.
+--echo # Without fix socket of the con1 was not closed. So the error message
+--echo # was sent to client and cause the assertion.
+--send TRUNCATE t1
+
+connection default;
+SET DEBUG_SYNC= "now WAIT_FOR kill_truncate";
+--replace_result $con1_id con1_id
+eval KILL $con1_id;
+SET DEBUG_SYNC= "now SIGNAL killed";
+
+#Cleanup
+DROP TABLE t1;
+disconnect con1;
+SET DEBUG_SYNC= "RESET";
+
 --echo ###################################################################
 
 --disable_connect_log
 --source include/wait_until_count_sessions.inc
 
 ###########################################################################
-
-########################################
-##### WL#7554 set schema `test` back to what it was
---disable_query_log
---eval alter schema test default character set $testdbcs60;
---enable_query_log
-########################################

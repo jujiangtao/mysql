@@ -1,34 +1,42 @@
 /* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "dd/impl/types/weak_object_impl.h"
+#include "sql/dd/impl/types/weak_object_impl.h"
 
 #include <memory>
-#include <string>
 
-#include "dd/impl/object_key.h"           // Needed for destructor
-#include "dd/impl/raw/raw_record.h"       // Raw_record
-#include "dd/impl/raw/raw_table.h"        // Raw_table
-#include "dd/impl/transaction_impl.h"     // Open_dictionary_tables_ctx
-#include "dd/types/entity_object.h"       // Entity_object
-#include "dd/types/object_table.h"        // Object_table
-#include "log.h"                          // sql_print_error
 #include "my_dbug.h"
 #include "my_inttypes.h"
+#include "my_loglevel.h"
 #include "my_sys.h"
 #include "mysqld_error.h"                 // ER_*
+#include "sql/dd/impl/object_key.h"       // Needed for destructor
+#include "sql/dd/impl/raw/raw_record.h"   // Raw_record
+#include "sql/dd/impl/raw/raw_table.h"    // Raw_table
+#include "sql/dd/impl/transaction_impl.h" // Open_dictionary_tables_ctx
+#include "sql/dd/impl/types/entity_object_impl.h"
+#include "sql/dd/string_type.h"
+#include "sql/dd/types/object_table.h"    // Object_table
+#include "sql/log.h"
 
 namespace dd {
 
@@ -83,7 +91,7 @@ bool Weak_object_impl::store(Open_dictionary_tables_ctx *otx)
     if (!obj_key.get())
     {
       /* purecov: begin deadcode */
-      sql_print_error("Error: Unable to create primary object key");
+      LogErr(ERROR_LEVEL, ER_DD_CANT_GET_OBJECT_KEY);
       DBUG_ASSERT(false);
       DBUG_RETURN(true);
       /* purecov: end */
@@ -137,6 +145,20 @@ bool Weak_object_impl::store(Open_dictionary_tables_ctx *otx)
                   });
 
   this->set_primary_key_value(*r);
+
+  /*
+    It is necessary to destroy the Raw_new_record() object after
+    inserting the parent DD object and before creating children
+    DD object. The reason is that, the parent DD object may
+    insert a row in the same DD table (E.g., when storing parent
+    partition metadata in mysql.partitions), in which even the
+    child DD table would end-up inserting a row. (e.g., where
+    storing sub partition metadata in mysql.partitions)
+    Destroying Raw_new_record() enable accurate computation of
+    the auto increment values, for the child partition entry
+    being stored.
+  */
+  r.reset();
 
   if (store_children(otx))
     DBUG_RETURN(true);
@@ -193,7 +215,7 @@ bool Weak_object_impl::drop(Open_dictionary_tables_ctx *otx) const
   if (!r.get())
   {
     /* purecov: begin deadcode */
-    sql_print_error("Error: Unable to create object key");
+    LogErr(ERROR_LEVEL, ER_DD_CANT_CREATE_OBJECT_KEY);
     DBUG_ASSERT(false);
     DBUG_RETURN(true);
     /* purecov: end */
@@ -215,7 +237,7 @@ bool Weak_object_impl::drop(Open_dictionary_tables_ctx *otx) const
 
 ///////////////////////////////////////////////////////////////////////////
 
-bool Weak_object_impl::check_parent_consistency(Entity_object *parent,
+bool Weak_object_impl::check_parent_consistency(Entity_object_impl *parent,
                                                 Object_id parent_id) const
 {
   DBUG_ASSERT(parent);

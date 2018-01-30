@@ -1,13 +1,20 @@
 /* Copyright (c) 2011, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -28,37 +35,36 @@
 #include <string.h>
 #include <sys/types.h>
 
-#include "auth_acls.h"
-#include "auth_common.h" // check_table_access
 #include "binary_log_types.h"
-#include "enum_query_type.h"
-#include "field.h"
 #include "lex_string.h"
 #include "m_ctype.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_sqlcommand.h"
-#include "mysql/psi/mysql_statement.h"
-#include "opt_trace.h"
-#include "opt_trace_context.h"
-#include "set_var.h"
-#include "sp_head.h"     // sp_head
-#include "sp_instr.h"    // sp_printable
-#include "sql_class.h"
-#include "sql_lex.h"
-#include "sql_list.h"
-#include "sql_parse.h"   // sql_command_flags
-#include "sql_plugin.h"
-#include "sql_profile.h"
-#include "sql_security_ctx.h"
-#include "sql_show.h"    // schema_table_stored_record
+#include "sql/auth/auth_acls.h"
+#include "sql/auth/auth_common.h" // check_table_access
+#include "sql/auth/sql_security_ctx.h"
+#include "sql/enum_query_type.h"
+#include "sql/field.h"
+#include "sql/key.h"
+#include "sql/opt_trace.h"
+#include "sql/opt_trace_context.h"
+#include "sql/session_tracker.h"
+#include "sql/set_var.h"
+#include "sql/sp_head.h" // sp_head
+#include "sql/sp_instr.h" // sp_printable
+#include "sql/sql_class.h"
+#include "sql/sql_lex.h"
+#include "sql/sql_list.h"
+#include "sql/sql_parse.h" // sql_command_flags
+#include "sql/sql_profile.h"
+#include "sql/sql_show.h" // schema_table_stored_record
+#include "sql/system_variables.h"
+#include "sql/table.h"
 #include "sql_string.h"
-#include "system_variables.h"
-#include "table.h"
 
 class Item;
-class sp_head;
 
 #ifdef OPTIMIZER_TRACE
 

@@ -1,24 +1,32 @@
 /*
-  Copyright (c) 2015, 2016, Oracle and/or its affiliates. All rights reserved.
+  Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
   along with this program; if not, write to the Free Software
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 */
 
-#include <functional>
+#include "client/dump/mysqldump_tool_chain_maker_options.h"
 
-#include "mysqldump_tool_chain_maker_options.h"
-#include <boost/algorithm/string.hpp>
+#include <functional>
+#include <sstream>
+#include <string>
 
 using namespace Mysql::Tools::Dump;
 using std::placeholders::_1;
@@ -26,8 +34,9 @@ using std::placeholders::_1;
 void Mysqldump_tool_chain_maker_options::parallel_schemas_callback(char*)
 {
   std::vector<std::string> schemas;
-  boost::split(schemas, m_parallel_schemas_string.value(),
-    boost::is_any_of(","), boost::token_compress_on);
+  std::istringstream schema_stream(m_parallel_schemas_string.value());
+  for (std::string schema; std::getline(schema_stream, schema, ','); )
+    schemas.push_back(schema);
   if (schemas.size() == 0)
     return;
   int threads= 0;
@@ -177,6 +186,10 @@ void Mysqldump_tool_chain_maker_options::process_positional_options(
       "mysql", "general_log"));
     m_object_filter.m_tables_excluded.push_back(std::make_pair(
       "mysql", "slow_log"));
+    m_object_filter.m_tables_excluded.push_back(std::make_pair(
+      "mysql", "slave_master_info"));
+    m_object_filter.m_tables_excluded.push_back(std::make_pair(
+      "mysql", "slave_relay_log_info"));
     /*
       We filter out all the tables which store account and privilge
       information. ex: mysql.user, mysql.db, mysql.tables_priv,

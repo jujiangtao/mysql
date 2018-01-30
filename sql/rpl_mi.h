@@ -1,43 +1,54 @@
 /* Copyright (c) 2006, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef RPL_MI_H
 #define RPL_MI_H
 
 #include <sys/types.h>
 #include <time.h>
+#include <atomic>
 
+#include "binlog_event.h"            // enum_binlog_checksum_alg
 #include "m_string.h"
 #include "my_inttypes.h"
 #include "my_io.h"
 #include "my_psi_config.h"
+#include "mysql/components/services/psi_mutex_bits.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/psi/psi_base.h"
+#include "mysql/udf_registration_types.h"
 #include "mysql_com.h"
-#include "sql_const.h"
+#include "sql/binlog.h"
+#include "sql/log_event.h"           // Format_description_log_event
+#include "sql/rpl_gtid.h"            // Gtid
+#include "sql/rpl_info.h"            // Rpl_info
+#include "sql/rpl_rli.h"             // rli->get_log_lock()
+#include "sql/rpl_trx_boundary_parser.h" // Transaction_boundary_parser
+#include "sql/sql_const.h"
 
 class Relay_log_info;
 class Rpl_info_handler;
 class Server_ids;
 class THD;
-
-#include "binlog_event.h"            // enum_binlog_checksum_alg
-#include "log_event.h"               // Format_description_log_event
-#include "rpl_gtid.h"                // Gtid
-#include "rpl_info.h"                // Rpl_info
-#include "rpl_trx_boundary_parser.h" // Transaction_boundary_parser
 
 typedef struct st_mysql MYSQL;
 
@@ -129,10 +140,8 @@ private:
   */
   char start_plugin_dir[FN_REFLEN + 1];
 
-  /// Information on the last queued transaction
-  trx_monitoring_info *last_queued_trx;
-  /// Information on the currently queueing transaction
-  trx_monitoring_info *queueing_trx;
+  /// Information on the current and last queued transactions
+  Gtid_monitoring_info *gtid_monitoring_info;
 
 public:
   /**
@@ -272,7 +281,9 @@ public:
   char ssl_ca[FN_REFLEN], ssl_capath[FN_REFLEN], ssl_cert[FN_REFLEN];
   char ssl_cipher[FN_REFLEN], ssl_key[FN_REFLEN], tls_version[FN_REFLEN];
   char ssl_crl[FN_REFLEN], ssl_crlpath[FN_REFLEN];
+  char public_key_path[FN_REFLEN];
   bool ssl_verify_server_cert;
+  bool get_public_key;
 
   MYSQL* mysql;
   uint32 file_id;				/* for 3.23 load data infile */
@@ -322,24 +333,16 @@ public:
   char for_channel_uppercase_str[CHANNEL_NAME_LENGTH+15];
 
   /**
-   @return the queueing transaction information
-   */
-  trx_monitoring_info* get_queueing_trx()
-  {
-    return queueing_trx;
-  }
-
-  /**
-   @return the last queued transaction information
+    @return The pointer to the Gtid_monitoring_info
   */
-  trx_monitoring_info* get_last_queued_trx()
+  Gtid_monitoring_info* get_gtid_monitoring_info()
   {
-    return last_queued_trx;
+    return gtid_monitoring_info;
   }
 
   /**
     Stores the details of the transaction the receiver thread has just started
-    queueing in queueing_trx.
+    queueing.
 
     @param  gtid_arg         the gtid of the trx
     @param  original_ts_arg  the original commit timestamp of the transaction
@@ -348,8 +351,7 @@ public:
   void started_queueing(Gtid gtid_arg, ulonglong original_ts_arg,
                         ulonglong immediate_ts_arg)
   {
-    queueing_trx->set(gtid_arg, original_ts_arg, immediate_ts_arg,
-                      my_getsystime() /*start_time*/);
+    gtid_monitoring_info->start(gtid_arg, original_ts_arg, immediate_ts_arg);
   }
 
   /**
@@ -359,45 +361,50 @@ public:
   */
   void finished_queueing()
   {
-    queueing_trx->end_time= my_getsystime();
-    last_queued_trx->copy(queueing_trx);
-    queueing_trx->clear();
+    gtid_monitoring_info->finish();
   }
 
   /**
-   @return True if there is a transaction currently being queued
+    @return True if there is a transaction currently being queued
   */
   bool is_queueing_trx()
   {
-    return queueing_trx->is_set();
+    return gtid_monitoring_info->is_processing_trx_set();
   }
 
   /**
-   Clears the queueing_trx structure fields. Normally called when there is an
-   error while queueing the transaction.
-   @param need_lock if false then the lock has already been acquired before the
-                    method was called; if true then the lock must be acquired
-                    before modifying queueing_trx.
+    @return The pointer to the GTID of the processing_trx of
+            Gtid_monitoring_info.
   */
-  void clear_queueing_trx(bool need_lock)
+  const Gtid* get_queueing_trx_gtid()
+  {
+    return gtid_monitoring_info->get_processing_trx_gtid();
+  }
+
+  /**
+    Clears the processing_trx monitoring info.
+
+    Normally called when there is an error while queueing the transaction.
+  */
+  void clear_queueing_trx(bool need_lock=false)
   {
     if (need_lock)
-    {
       mysql_mutex_lock(&data_lock);
-    }
-    queueing_trx->clear();
+    gtid_monitoring_info->clear_processing_trx();
     if (need_lock)
-    {
       mysql_mutex_unlock(&data_lock);
-    }
   }
 
   /**
-   Clears the last_queued_trx structure fields.
+    Clears all GTID monitoring info.
   */
-  void clear_last_queued_trx()
+  void clear_gtid_monitoring_info(bool need_lock=false)
   {
-    last_queued_trx->clear();
+    if (need_lock)
+      mysql_mutex_lock(&data_lock);
+    gtid_monitoring_info->clear();
+    if (need_lock)
+      mysql_mutex_unlock(&data_lock);
   }
 
 
@@ -412,7 +419,7 @@ public:
   inline ulonglong get_master_log_pos() { return master_log_pos; }
   inline void set_master_log_name(const char *log_file_name)
   {
-     strmake(master_log_name, log_file_name, sizeof(master_log_name) - 1);
+    strmake(master_log_name, log_file_name, sizeof(master_log_name) - 1);
   }
   inline void set_master_log_pos(ulonglong log_pos)
   {
@@ -453,6 +460,15 @@ public:
     auto_position= auto_position_param;
   }
 
+  /**
+    This member function shall return true if there are server
+    ids configured to be ignored.
+
+    @return true if there are server ids to be ignored,
+            false otherwise.
+  */
+  bool is_ignore_server_ids_configured();
+
 private:
   /**
     Format_description_log_event for events received from the master
@@ -470,18 +486,18 @@ private:
        log on every rotation.
 
     Locks:
-    All access is protected by Master_info::data_lock.
+    All access is protected by Relay_log::LOCK_log.
   */
   Format_description_log_event *mi_description_event;
 public:
   Format_description_log_event *get_mi_description_event()
   {
-    mysql_mutex_assert_owner(&data_lock);
+    mysql_mutex_assert_owner(rli->relay_log.get_log_lock());
     return mi_description_event;
   }
   void set_mi_description_event(Format_description_log_event *fdle)
   {
-    mysql_mutex_assert_owner(&data_lock);
+    mysql_mutex_assert_owner(rli->relay_log.get_log_lock());
     delete mi_description_event;
     mi_description_event= fdle;
   }

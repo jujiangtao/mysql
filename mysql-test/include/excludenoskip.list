@@ -14,9 +14,9 @@
 # where conditions are met and skip on others.
 have_32bit.inc
 have_64bit.inc
+have_little_endian.inc
 have_case_insensitive_file_system.inc
 have_case_sensitive_file_system.inc
-have_crypt.inc
 have_lowercase0.inc
 have_lowercase1.inc
 have_lowercase2.inc
@@ -58,19 +58,21 @@ have_nodebug.inc
 mysql_have_debug.inc
 have_ibd2sdi_debug.inc
 
+# 3.37 Compile options
+# Test checking existence of features in the build causing the test to be skipped
+have_ndb_error_insert.inc
+have_ndbapi_examples.inc
+have_ndb_debug.inc
+have_ndb_rqg.inc
+# Generated in var/tmp/ by run_ndbapitest.inc and then sourced
+run_ndbapitest_result.inc
+
 # 4.0 Miscellaneous
 
 # 4.1 Reason for inclusion: If not included, this will cause the same tests
 # to run again when --log-bin option will be used to run the suites. This
 # will cause duplicate test runs leading to increased test execution time.
 not_log_bin.inc
-
-# 4.2 Reason for inclusion: Tests should run only with supported tablespace
-# value and skip on others. However, this can be handled using a custom
-# bootstrap file, and below files can be removed from the excluded list once
-# the same is implemented.
-have_undo_tablespaces.inc
-have_no_undo_tablespaces.inc
 
 # 4.3 Tests are run only on Dev builds compiled with -DWITH_DEBUG=1 option
 # Additional references for more details:
@@ -106,6 +108,7 @@ not_have_innodb_4k.inc
 
 # 4.6 IP versions
 have_ipv4_mapped.inc
+have_lo0_local_scope.inc
 
 # 4.7 System variable which checks whether server has statement_timeout feature or
 # not.The value can be NO if the background thread used by this feature could
@@ -128,16 +131,12 @@ no_explain_protocol.inc
 no_cursor_protocol.inc
 
 # 6.0 Different builds
-is_embedded.inc
-not_embedded.inc
-not_windows_embedded.inc
 have_valgrind.inc
 not_valgrind.inc
 not_ubsan.inc
 not_asan.inc
 
 # 7.0 Few skipped test-cases
-mysql_embedded.test
 mysql_tzinfo_to_sql_sys.test
 wrapper.test
 
@@ -180,14 +179,9 @@ only_mts_slave_parallel_type_logical_clock.inc
 only_mts_slave_parallel_type_database.inc
 not_mts_slave_parallel_workers.inc
 # 14.2 rpl misc files
-not_master_info_table.inc
-not_relay_log_info_table.inc
-have_slave_repository_type_file.inc
-
-# 15.0 With QC enabled additional code paths are activated which will change
-# performance schema output.
-have_QC_Disabled.inc
-have_query_cache_disabled.inc
+have_slave_repository_type_table.inc
+not_relay_log_info_file.inc
+not_master_info_file.inc
 
 # 16.0 Thread stack overrun on debug/sparc when built with Developer Studio
 not_sparc_debug.inc
@@ -195,3 +189,24 @@ not_sparc_debug.inc
 statement_digest_long_query.test
 # few test cannot run on Solaris discover
 not_discover.inc
+
+# 17.0 Reason for inclusion: the extra JSON cause on ndb builds is hard to
+# separate. see innodb.sdi test
+have_no_ndb.inc
+
+# 18.0 Test to be run on local machine
+# This file is used by test scenarios that depend on time and it isn't possible
+# to test it in other way. Time based tests are unstable on PB2.
+# Waiting for some kind of in test time simulation functionality.
+is_local_machine.inc
+
+# 19.0 Resource group test exclusion.
+have_thread_prio.inc
+have_not_thread_prio.inc
+resource_group_init.inc
+have_mac_os.inc
+
+# 20.0 Library dependent tests
+# This file skips test for certain features in versions of the library where
+# the feature is missing.
+require_icu_version.inc

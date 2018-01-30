@@ -2,13 +2,20 @@
    Copyright (c) 2013, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -20,35 +27,39 @@
 #include <list>
 #include <new>
 
-#include "channel_info.h"                // Channel_info
-#include "connection_handler_impl.h"
-#include "connection_handler_manager.h"  // Connection_handler_manager
-#include "log.h"                         // Error_log_throttle
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
+#include "my_loglevel.h"
+#include "my_macros.h"
 #include "my_psi_config.h"
 #include "my_thread.h"
+#include "mysql/components/services/mysql_cond_bits.h"
+#include "mysql/components/services/mysql_mutex_bits.h"
+#include "mysql/components/services/psi_cond_bits.h"
+#include "mysql/components/services/psi_mutex_bits.h"
+#include "mysql/components/services/psi_thread_bits.h"
 #include "mysql/psi/mysql_cond.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/psi/mysql_socket.h"
 #include "mysql/psi/mysql_thread.h"
 #include "mysql/psi/psi_base.h"
-#include "mysql/psi/psi_cond.h"
-#include "mysql/psi/psi_mutex.h"
-#include "mysql/psi/psi_thread.h"
-#include "mysql_com.h"
-#include "mysqld.h"                      // max_connections
+#include "mysql/udf_registration_types.h"
 #include "mysqld_error.h"                // ER_*
-#include "mysqld_thd_manager.h"          // Global_THD_manager
-#include "protocol_classic.h"
-#include "sql_class.h"                   // THD
-#include "sql_connect.h"                 // close_connection
-#include "sql_error.h"
-#include "sql_parse.h"                   // do_command
-#include "sql_thd_internal_api.h"        // thd_set_thread_stack
+#include "pfs_thread_provider.h"
+#include "sql/conn_handler/channel_info.h" // Channel_info
+#include "sql/conn_handler/connection_handler_impl.h"
+#include "sql/conn_handler/connection_handler_manager.h" // Connection_handler_manager
+#include "sql/log.h"                     // Error_log_throttle
+#include "sql/mysqld.h"                  // max_connections
+#include "sql/mysqld_thd_manager.h"      // Global_THD_manager
+#include "sql/protocol_classic.h"
+#include "sql/sql_class.h"               // THD
+#include "sql/sql_connect.h"             // close_connection
+#include "sql/sql_error.h"
+#include "sql/sql_parse.h"               // do_command
+#include "sql/sql_thd_internal_api.h"    // thd_set_thread_stack
 #include "thr_mutex.h"
-#include "violite.h"
 
 
 // Initialize static members
@@ -65,7 +76,9 @@ mysql_cond_t Per_thread_connection_handler::COND_flush_thread_cache;
 static
 Error_log_throttle create_thd_err_log_throttle(Log_throttle
                                                ::LOG_THROTTLE_WINDOW_SIZE,
-                                               sql_print_error,
+                                               ERROR_LEVEL,
+                                               0,
+                                               "connection_handler",
                                                "Error log throttle: %10lu"
                                                " 'Can't create thread to"
                                                " handle new connection'"
@@ -88,7 +101,7 @@ static PSI_mutex_key key_LOCK_thread_cache;
 
 static PSI_mutex_info all_per_thread_mutexes[]=
 {
-  { &key_LOCK_thread_cache, "LOCK_thread_cache", PSI_FLAG_GLOBAL, 0}
+  { &key_LOCK_thread_cache, "LOCK_thread_cache", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME}
 };
 
 static PSI_cond_key key_COND_thread_cache;
@@ -96,8 +109,8 @@ static PSI_cond_key key_COND_flush_thread_cache;
 
 static PSI_cond_info all_per_thread_conds[]=
 {
-  { &key_COND_thread_cache, "COND_thread_cache", PSI_FLAG_GLOBAL},
-  { &key_COND_flush_thread_cache, "COND_flush_thread_cache", PSI_FLAG_GLOBAL}
+  { &key_COND_thread_cache, "COND_thread_cache", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME},
+  { &key_COND_flush_thread_cache, "COND_flush_thread_cache", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME}
 };
 #endif
 
@@ -330,7 +343,9 @@ static void *handle_connection(void *arg)
     thd->release_resources();
 
     // Clean up errors now, before possibly waiting for a new connection.
-    ERR_remove_state(0);
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+    ERR_remove_thread_state(0);
+#endif /* OPENSSL_VERSION_NUMBER < 0x10100000L */
 
     thd_manager->remove_thd(thd);
     Connection_handler_manager::dec_connection_count();
@@ -436,8 +451,7 @@ handle_error:
   {
     connection_errors_internal++;
     if (!create_thd_err_log_throttle.log())
-      sql_print_error("Can't create thread to handle new connection(errno= %d)",
-                      error);
+      LogErr(ERROR_LEVEL, ER_CONN_PER_THREAD_NO_THREAD, error);
     channel_info->send_error_and_close_channel(ER_CANT_CREATE_THREAD,
                                                error, true);
     Connection_handler_manager::dec_connection_count();

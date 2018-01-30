@@ -2,13 +2,20 @@
    Copyright (c) 2011, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -18,22 +25,16 @@
 #ifndef NDB_THD_NDB_H
 #define NDB_THD_NDB_H
 
-#include "hash.h"             // HASH
-#include "kernel/ndb_limits.h" // MAX_NDB_NODES
+#include "map_helpers.h"
 #include "my_base.h"          // ha_rows
-#include "ndb_share.h"
-#include "sql_list.h"         // List<>
+#include "sql/ndb_share.h"
+#include "storage/ndb/include/kernel/ndb_limits.h" // MAX_NDB_NODES
 
 /*
   Place holder for ha_ndbcluster thread specific data
 */
 
-enum THD_NDB_TRANS_OPTIONS
-{
-  TNTO_INJECTED_APPLY_STATUS= 1 << 0
-  ,TNTO_NO_LOGGING=           1 << 1
-  ,TNTO_TRANSACTIONS_OFF=     1 << 2
-};
+struct THD_NDB_SHARE;
 
 class Thd_ndb 
 {
@@ -44,6 +45,7 @@ class Thd_ndb
   const bool m_slave_thread; // cached value of thd->slave_thread
 
   uint32 options;
+  uint32 trans_options;
 public:
   static Thd_ndb* seize(THD*);
   static void release(Thd_ndb* thd_ndb);
@@ -78,10 +80,7 @@ public:
       Gives special priorites to this Thd_ndb, allowing it to create
       schema distribution event ops before ndb_schema_dist_is_ready()
      */
-    ALLOW_BINLOG_SETUP= 1 << 2,
-
-    /* Skip binlog setup in ndbcluster_find_files() */
-    SKIP_BINLOG_SETUP_IN_FIND_FILES = 1 << 3
+    ALLOW_BINLOG_SETUP= 1 << 2
   };
 
   // Check if given option is set
@@ -113,10 +112,39 @@ public:
     }
   };
 
-  uint32 trans_options;
+  enum Trans_options
+  {
+    /*
+       Remember that statement has written to ndb_apply_status and subsequent
+       writes need to do updates
+    */
+    TRANS_INJECTED_APPLY_STATUS = 1 << 0,
+
+    /*
+       Indicator that no looging is performd by this MySQL Server ans thus
+       the anyvalue should have the nologging bit turned on
+    */
+    TRANS_NO_LOGGING =            1 << 1,
+
+    /*
+       Turn off transactional behaviour for the duration
+       of this transaction/statement
+    */
+    TRANS_TRANSACTIONS_OFF =      1 << 2
+  };
+
+  // Check if given trans option is set
+  bool check_trans_option(Trans_options trans_option) const;
+  // Set given trans option
+  void set_trans_option(Trans_options trans_option);
+  // Reset all trans_options
+  void reset_trans_options(void);
+
+  // Start of transaction check, to automatically detect which
+  // trans options shoudl be enabled
   void transaction_checks(void);
-  List<NDB_SHARE> changed_tables;
-  HASH open_tables;
+  malloc_unordered_map<const void *, THD_NDB_SHARE *>
+    open_tables{PSI_INSTRUMENT_ME};
   /*
     This is a memroot used to buffer rows for batched execution.
     It is reset after every execute().

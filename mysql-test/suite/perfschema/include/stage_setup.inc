@@ -22,7 +22,6 @@
 # HELPER include/stage_setup.inc
 # ==============================
 
---source include/not_embedded.inc
 # Test requires: sp-protocol/ps-protocol/view-protocol/cursor-protocol disabled
 --source include/no_protocol.inc
 
@@ -53,18 +52,24 @@ create table test.setup_actors as
 # Only instrument the user connections
 truncate table performance_schema.setup_actors;
 insert into performance_schema.setup_actors
-  set host= 'localhost', user= 'user1', `role`= '%';
+  set host= 'localhost', user= 'user1', `role`= '%',
+  enabled='YES', history='YES';
 insert into performance_schema.setup_actors
-  set host= 'localhost', user= 'user2', `role`= '%';
+  set host= 'localhost', user= 'user2', `role`= '%',
+  enabled='YES', history='YES';
 insert into performance_schema.setup_actors
-  set host= 'localhost', user= 'user3', `role`= '%';
+  set host= 'localhost', user= 'user3', `role`= '%',
+  enabled='YES', history='YES';
 insert into performance_schema.setup_actors
-  set host= 'localhost', user= 'user4', `role`= '%';
+  set host= 'localhost', user= 'user4', `role`= '%',
+  enabled='YES', history='YES';
 
 update performance_schema.threads set instrumented='NO';
 
 # Only instrument a few events of each kind
 update performance_schema.setup_instruments set enabled='YES', timed='YES';
+
+update performance_schema.setup_consumers set enabled='YES';
 
 # Start from a known clean state, to avoid noise from previous tests
 flush tables;

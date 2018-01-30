@@ -2,17 +2,24 @@
 /* Copyright (c) 2010, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #define BINLOG_H_INCLUDED
 
@@ -24,25 +31,30 @@
 
 #include "binlog_event.h"              // enum_binlog_checksum_alg
 #include "m_string.h"                  // llstr
-#include "my_atomic.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_io.h"
 #include "my_psi_config.h"
 #include "my_sharedlib.h"
 #include "my_sys.h"
+#include "mysql/components/services/mysql_cond_bits.h"
+#include "mysql/components/services/mysql_mutex_bits.h"
+#include "mysql/components/services/psi_cond_bits.h"
+#include "mysql/components/services/psi_file_bits.h"
+#include "mysql/components/services/psi_mutex_bits.h"
 #include "mysql/psi/mysql_cond.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/psi/psi_base.h"
+#include "mysql/udf_registration_types.h"
 #include "mysql_com.h"                 // Item_result
-#include "rpl_gtid.h"                  // Gtid_set, Sid_map
+#include "sql/rpl_gtid.h"              // Gtid_set, Sid_map
+#include "sql/rpl_trx_tracking.h"
+#include "sql/tc_log.h"                // TC_LOG
 #include "sql_string.h"
-#include "tc_log.h"                    // TC_LOG
 #include "thr_mutex.h"
-#include "rpl_gtid.h"                  // Gtid_set, Sid_map
-#include "rpl_trx_tracking.h"
 
 class Format_description_log_event;
+class Gtid_monitoring_info;
 class Gtid_set;
 class Ha_trx_info;
 class Incident_log_event;
@@ -89,11 +101,7 @@ public:
     {
     }
 
-    void init(
-#ifdef HAVE_PSI_MUTEX_INTERFACE
-              PSI_mutex_key key_LOCK_queue
-#endif
-              ) {
+    void init(PSI_mutex_key key_LOCK_queue) {
       mysql_mutex_init(key_LOCK_queue, &m_lock, MY_MUTEX_INIT_FAST);
     }
 
@@ -123,7 +131,7 @@ public:
 
     inline int32 get_size()
     {
-      return my_atomic_load32(&m_size);
+      return m_size.load();
     }
 
   private:
@@ -145,7 +153,7 @@ public:
     THD **m_last;
 
     /** size of the queue */
-    int32 m_size;
+    std::atomic<int32> m_size;
 
     /** Lock for protecting the queue. */
     mysql_mutex_t m_lock;
@@ -175,15 +183,11 @@ public:
     STAGE_COUNTER
   };
 
-  void init(
-#ifdef HAVE_PSI_MUTEX_INTERFACE
-            PSI_mutex_key key_LOCK_flush_queue,
+  void init(PSI_mutex_key key_LOCK_flush_queue,
             PSI_mutex_key key_LOCK_sync_queue,
             PSI_mutex_key key_LOCK_commit_queue,
             PSI_mutex_key key_LOCK_done,
-            PSI_cond_key key_COND_done
-#endif
-            )
+            PSI_cond_key key_COND_done)
   {
     mysql_mutex_init(key_LOCK_done, &m_lock_done, MY_MUTEX_INIT_FAST);
     mysql_cond_init(key_COND_done, &m_cond_done);
@@ -191,21 +195,9 @@ public:
     /* reuse key_COND_done 'cos a new PSI object would be wasteful in !DBUG_OFF */
     mysql_cond_init(key_COND_done, &m_cond_preempt);
 #endif
-    m_queue[FLUSH_STAGE].init(
-#ifdef HAVE_PSI_MUTEX_INTERFACE
-                              key_LOCK_flush_queue
-#endif
-                              );
-    m_queue[SYNC_STAGE].init(
-#ifdef HAVE_PSI_MUTEX_INTERFACE
-                             key_LOCK_sync_queue
-#endif
-                             );
-    m_queue[COMMIT_STAGE].init(
-#ifdef HAVE_PSI_MUTEX_INTERFACE
-                               key_LOCK_commit_queue
-#endif
-                               );
+    m_queue[FLUSH_STAGE].init(key_LOCK_flush_queue);
+    m_queue[SYNC_STAGE].init(key_LOCK_sync_queue);
+    m_queue[COMMIT_STAGE].init(key_LOCK_commit_queue);
   }
 
   void deinit()
@@ -470,21 +462,20 @@ class MYSQL_BIN_LOG: public TC_LOG
     return *sync_period_ptr;
   }
 
+public:
   /*
     This is used to start writing to a new log file. The difference from
     new_file() is locking. new_file_without_locking() does not acquire
     LOCK_log.
   */
   int new_file_without_locking(Format_description_log_event *extra_description_event);
+private:
   int new_file_impl(bool need_lock, Format_description_log_event *extra_description_event);
 
   /** Manage the stages in ordered_commit. */
   Stage_manager stage_manager;
 
-  bool open(
-#ifdef HAVE_PSI_INTERFACE
-            PSI_file_key log_file_key,
-#endif
+  bool open(PSI_file_key log_file_key,
             const char *log_name,
             const char *new_name,
             uint32 new_index_number);
@@ -545,7 +536,6 @@ public:
     on exit() - but only during the correct shutdown process
   */
 
-#ifdef HAVE_PSI_INTERFACE
   void set_psi_keys(PSI_mutex_key key_LOCK_index,
                     PSI_mutex_key key_LOCK_commit,
                     PSI_mutex_key key_LOCK_commit_queue,
@@ -584,7 +574,6 @@ public:
     m_key_file_log_cache= key_file_log_cache;
     m_key_file_log_index_cache= key_file_log_index_cache;
   }
-#endif
 
 public:
   /** Manage the MTS dependency tracking */
@@ -636,7 +625,7 @@ public:
                       bool verify_checksum,
                       bool need_lock,
                       Transaction_boundary_parser *trx_parser,
-                      trx_monitoring_info *partial_trx,
+                      Gtid_monitoring_info *partial_trx,
                       bool is_server_starting= false);
 
   void set_previous_gtid_set_relaylog(Gtid_set *previous_gtid_set_param)
@@ -705,6 +694,7 @@ public:
   void close();
   enum_result commit(THD *thd, bool all);
   int rollback(THD *thd, bool all);
+  bool truncate_relaylog_file(Master_info *mi, my_off_t valid_pos);
   int prepare(THD *thd, bool all);
   int recover(IO_CACHE *log, Format_description_log_event *fdle,
               my_off_t *valid_pos);
@@ -838,7 +828,8 @@ public:
   bool write_incident(THD *thd, bool need_lock_log,
                       const char* err_msg,
                       bool do_flush_and_sync= true);
-  bool write_incident(Incident_log_event *ev, bool need_lock_log,
+  bool write_incident(Incident_log_event *ev, THD *thd,
+                      bool need_lock_log,
                       const char* err_msg,
                       bool do_flush_and_sync= true);
 
@@ -943,6 +934,12 @@ public:
       @retval !=0    Error
   */
   int get_gtid_executed(Sid_map *sid_map, Gtid_set *gtid_set);
+
+  /*
+    True while rotating binlog, which is caused by logging Incident_log_event.
+  */
+  bool is_rotating_caused_by_incident;
+  static const int MAX_RETRIES_BY_OOM= 10;
 };
 
 typedef struct st_load_file_info
@@ -954,6 +951,19 @@ typedef struct st_load_file_info
 
 extern MYSQL_PLUGIN_IMPORT MYSQL_BIN_LOG mysql_bin_log;
 
+/**
+  Check if at least one of transacaction and statement binlog caches contains
+  an empty transaction, other one is empty or contains an empty transaction,
+  which has two binlog events "BEGIN" and "COMMIT".
+
+  @param thd The client thread that executed the current statement.
+
+  @retval true  At least one of transacaction and statement binlog caches
+                contains an empty transaction, other one is empty or
+                contains an empty transaction.
+  @retval false Otherwise.
+*/
+bool is_empty_transaction_in_binlog_cache(const THD* thd);
 bool trans_has_updated_trans_table(const THD* thd);
 bool stmt_has_updated_trans_table(Ha_trx_info* ha_list);
 bool ending_trans(THD* thd, const bool all);

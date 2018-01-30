@@ -15,12 +15,13 @@ insert into t1 values(1);
 # test non-utf8 chars in the SELECT list
 
 set names latin1;
+--character_set latin1
 # The 5 'A's below are, in this file's bytes, written in latin1
 # encoding: xC1C2C4C4C5. We send them as latin1; the server interprets
 # them as characters using latin1, then encodes those characters in
 # utf8 in the trace; sends back the trace but re-encodes it in latin1
 # (as this is how we want it, see "set names latin1".
-explain extended select 'ÁÂÃÄÅ', _latin1'ÁÂÃÄÅ' from t1 limit 1;
+explain select 'ÁÂÃÄÅ', _latin1'ÁÂÃÄÅ' from t1 limit 1;
 select (@query:=QUERY)+NULL, (@trace:=TRACE)+NULL from information_schema.OPTIMIZER_TRACE;
 select @query, @trace;
 # The trace above is not valid JSON because the client asked to

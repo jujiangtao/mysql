@@ -1,39 +1,50 @@
 /* Copyright (c) 2013, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "sql/rpl_group_replication.h"
 
 #include <stdlib.h>
 #include <sys/types.h>
 
-#include "log.h"                  // sql_print_error
+#include "m_string.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
+#include "my_loglevel.h"
 #include "my_sys.h"
+#include "mysql/components/services/log_shared.h"
 #include "mysql/plugin.h"
-#include "mysql/psi/mysql_mutex.h"
 #include "mysql/service_mysql_alloc.h"
-#include "mysqld.h"               // mysqld_port
-#include "mysqld_thd_manager.h"   // Global_THD_manager
-#include "replication.h"          // Trans_context_info
-#include "rpl_channel_service_interface.h"
-#include "rpl_gtid.h"             // gtid_mode_lock
-#include "rpl_slave.h"            // report_host
-#include "sql_plugin.h"           // plugin_unlock
-#include "sql_string.h"           // to_lex_cstring
-#include "system_variables.h"     // System_variables
+#include "mysql/udf_registration_types.h"
+#include "mysqld_error.h"         // ER_*
+#include "sql/log.h"
+#include "sql/mysqld.h"           // mysqld_port
+#include "sql/mysqld_thd_manager.h" // Global_THD_manager
+#include "sql/replication.h"      // Trans_context_info
+#include "sql/rpl_channel_service_interface.h"
+#include "sql/rpl_gtid.h"         // gtid_mode_lock
+#include "sql/rpl_slave.h"        // report_host
+#include "sql/sql_plugin.h"       // plugin_unlock
+#include "sql/sql_plugin_ref.h"
+#include "sql/system_variables.h" // System_variables
 
 class THD;
 
@@ -41,175 +52,51 @@ class THD;
 extern ulong opt_mi_repository_id;
 extern ulong opt_rli_repository_id;
 
-/*
-  Group Replication plugin handler.
+
+namespace {
+/**
+  Static name of Group Replication plugin.
 */
-Group_replication_handler::
-Group_replication_handler(const char* plugin_name_arg)
-  :plugin(NULL), plugin_handle(NULL)
-{
-  plugin_name.assign(plugin_name_arg);
-}
-
-Group_replication_handler::~Group_replication_handler()
-{
-  if (plugin_handle)
-    plugin_handle->stop();
-}
-
-int Group_replication_handler::init()
-{
-  int error= 0;
-  if (!plugin_handle)
-    if ((error = plugin_init()))
-      return error;
-  return 0;
-}
-
-int Group_replication_handler::start()
-{
-  if (plugin_handle)
-    return plugin_handle->start();
-  return 1;
-}
-
-int Group_replication_handler::stop()
-{
-  if (plugin_handle)
-    return plugin_handle->stop();
-  return 1;
-}
-
-bool Group_replication_handler::is_running()
-{
-  if (plugin_handle)
-    return plugin_handle->is_running();
-  return false;
-}
-
-int
-Group_replication_handler::
-set_retrieved_certification_info(View_change_log_event* view_change_event)
-{
-  if (plugin_handle)
-    return plugin_handle->set_retrieved_certification_info(view_change_event);
-  return 1;
-}
-
-bool
-Group_replication_handler::
-get_connection_status_info(
-    const GROUP_REPLICATION_CONNECTION_STATUS_CALLBACKS& callbacks)
-{
-  if (plugin_handle)
-    return plugin_handle->get_connection_status_info(callbacks);
-  return true;
-}
-
-bool
-Group_replication_handler::
-get_group_members_info(
-    unsigned int index,
-    const GROUP_REPLICATION_GROUP_MEMBERS_CALLBACKS& callbacks)
-{
-  if (plugin_handle)
-    return plugin_handle->get_group_members_info(index, callbacks);
-  return true;
-}
-
-bool
-Group_replication_handler::
-get_group_member_stats_info(
-    const GROUP_REPLICATION_GROUP_MEMBER_STATS_CALLBACKS& callbacks)
-{
-  if (plugin_handle)
-    return plugin_handle->get_group_member_stats_info(callbacks);
-  return true;
-}
-
-unsigned int Group_replication_handler::get_members_number_info()
-{
-  if (plugin_handle)
-    return plugin_handle->get_members_number_info();
-  return 0;
-}
-
-int Group_replication_handler::plugin_init()
-{
-  plugin= my_plugin_lock_by_name(0, to_lex_cstring(plugin_name.c_str()),
-                                 MYSQL_GROUP_REPLICATION_PLUGIN);
-  if (plugin)
-  {
-    plugin_handle= (st_mysql_group_replication*) plugin_decl(plugin)->info;
-    plugin_unlock(0, plugin);
-  }
-  else
-  {
-    plugin_handle= NULL;
-    return 1;
-  }
-  return 0;
-}
-
-Group_replication_handler* group_replication_handler= NULL;
+LEX_CSTRING group_replication_plugin_name= {
+  C_STRING_WITH_LEN("group_replication")
+};
+} // namespace
 
 
 /*
   Group Replication plugin handler function accessors.
 */
-int group_replication_init(const char* plugin_name)
+int group_replication_init()
 {
-  if (initialize_channel_service_interface())
-  {
-    return 1;
-  }
-
-  mysql_mutex_lock(&LOCK_group_replication_handler);
-  if (group_replication_handler == NULL)
-  {
-    group_replication_handler= new Group_replication_handler(plugin_name);
-
-    if (group_replication_handler)
-    {
-      int ret= group_replication_handler->init();
-      mysql_mutex_unlock(&LOCK_group_replication_handler);
-      return ret;
-    }
-  }
-  mysql_mutex_unlock(&LOCK_group_replication_handler);
-
-  return 1;
+  return initialize_channel_service_interface();
 }
 
-int group_replication_cleanup()
-{
-  mysql_mutex_lock(&LOCK_group_replication_handler);
-  if (group_replication_handler != NULL)
-  {
-    delete group_replication_handler;
-    group_replication_handler= NULL;
-  }
-  else
-  {
-    mysql_mutex_unlock(&LOCK_group_replication_handler);
-    return 1;
-  }
-  mysql_mutex_unlock(&LOCK_group_replication_handler);
-
-  return 0;
-}
 
 bool is_group_replication_plugin_loaded()
 {
-  if (group_replication_handler)
-    return true;
-  return false;
+  bool result= false;
+
+  plugin_ref plugin= my_plugin_lock_by_name(0,
+                                            group_replication_plugin_name,
+                                            MYSQL_GROUP_REPLICATION_PLUGIN);
+  if (plugin != NULL)
+  {
+    plugin_unlock(0, plugin);
+    result= true;
+  }
+
+  return result;
 }
 
-int group_replication_start()
+
+int group_replication_start(char **error_message)
 {
-  mysql_mutex_lock(&LOCK_group_replication_handler);
-  if (is_group_replication_plugin_loaded())
+  int result= 1;
+
+  plugin_ref plugin= my_plugin_lock_by_name(0,
+                                            group_replication_plugin_name,
+                                            MYSQL_GROUP_REPLICATION_PLUGIN);
+  if (plugin != NULL)
   {
     /*
       We need to take global_sid_lock because
@@ -225,122 +112,180 @@ int group_replication_start()
       gtid_mode_lock.
     */
     gtid_mode_lock->rdlock();
-    int ret= group_replication_handler->start();
+    st_mysql_group_replication *plugin_handle=
+        (st_mysql_group_replication*) plugin_decl(plugin)->info;
+    result= plugin_handle->start(error_message);
     gtid_mode_lock->unlock();
-    mysql_mutex_unlock(&LOCK_group_replication_handler);
-    return ret;
-  }
-  mysql_mutex_unlock(&LOCK_group_replication_handler);
-  sql_print_error("Group Replication plugin is not installed.");
-  return 1;
-}
 
-int group_replication_stop()
-{
-  mysql_mutex_lock(&LOCK_group_replication_handler);
-  if (is_group_replication_plugin_loaded())
+    plugin_unlock(0, plugin);
+  }
+  else
   {
-    int ret= group_replication_handler->stop();
-    mysql_mutex_unlock(&LOCK_group_replication_handler);
-    return ret;
+    LogErr(ERROR_LEVEL, ER_GROUP_REPLICATION_PLUGIN_NOT_INSTALLED);
   }
-  mysql_mutex_unlock(&LOCK_group_replication_handler);
 
-  sql_print_error("Group Replication plugin is not installed.");
-  return 1;
+  return result;
 }
+
+
+int group_replication_stop(char **error_message)
+{
+  int result= 1;
+
+  plugin_ref plugin= my_plugin_lock_by_name(0,
+                                            group_replication_plugin_name,
+                                            MYSQL_GROUP_REPLICATION_PLUGIN);
+  if (plugin != NULL)
+  {
+    st_mysql_group_replication *plugin_handle=
+        (st_mysql_group_replication*) plugin_decl(plugin)->info;
+    result= plugin_handle->stop(error_message);
+
+    plugin_unlock(0, plugin);
+  }
+  else
+  {
+    LogErr(ERROR_LEVEL, ER_GROUP_REPLICATION_PLUGIN_NOT_INSTALLED);
+  }
+
+  return result;
+}
+
 
 bool is_group_replication_running()
 {
-  mysql_mutex_lock(&LOCK_group_replication_handler);
-  if (is_group_replication_plugin_loaded())
-  {
-    bool ret= group_replication_handler->is_running();
-    mysql_mutex_unlock(&LOCK_group_replication_handler);
-    return ret;
-  }
-  mysql_mutex_unlock(&LOCK_group_replication_handler);
+  bool result= false;
 
-  return false;
+  plugin_ref plugin= my_plugin_lock_by_name(0,
+                                            group_replication_plugin_name,
+                                            MYSQL_GROUP_REPLICATION_PLUGIN);
+  if (plugin != NULL)
+  {
+    st_mysql_group_replication *plugin_handle=
+        (st_mysql_group_replication*) plugin_decl(plugin)->info;
+    result= plugin_handle->is_running();
+
+    plugin_unlock(0, plugin);
+  }
+
+  return result;
 }
+
 
 int set_group_replication_retrieved_certification_info(View_change_log_event *view_change_event)
 {
-  if (is_group_replication_plugin_loaded())
-    return group_replication_handler->set_retrieved_certification_info(view_change_event);
-  return 1;
+  int result= 1;
+
+  plugin_ref plugin= my_plugin_lock_by_name(0,
+                                            group_replication_plugin_name,
+                                            MYSQL_GROUP_REPLICATION_PLUGIN);
+  if (plugin != NULL)
+  {
+    st_mysql_group_replication *plugin_handle=
+        (st_mysql_group_replication*) plugin_decl(plugin)->info;
+    result= plugin_handle->set_retrieved_certification_info(view_change_event);
+
+    plugin_unlock(0, plugin);
+  }
+
+  return result;
 }
+
 
 bool get_group_replication_connection_status_info(
     const GROUP_REPLICATION_CONNECTION_STATUS_CALLBACKS& callbacks)
 {
-  mysql_mutex_lock(&LOCK_group_replication_handler);
-  if (is_group_replication_plugin_loaded())
-  {
-    int ret= group_replication_handler->get_connection_status_info(callbacks);
-    mysql_mutex_unlock(&LOCK_group_replication_handler);
-    return ret;
-  }
-  mysql_mutex_unlock(&LOCK_group_replication_handler);
+  bool result= true;
 
-  return true;
+  plugin_ref plugin= my_plugin_lock_by_name(0,
+                                            group_replication_plugin_name,
+                                            MYSQL_GROUP_REPLICATION_PLUGIN);
+  if (plugin != NULL)
+  {
+    st_mysql_group_replication *plugin_handle=
+        (st_mysql_group_replication*) plugin_decl(plugin)->info;
+    result= plugin_handle->get_connection_status_info(callbacks);
+
+    plugin_unlock(0, plugin);
+  }
+
+  return result;
 }
+
 
 bool get_group_replication_group_members_info(
     unsigned int index,
     const GROUP_REPLICATION_GROUP_MEMBERS_CALLBACKS& callbacks)
 {
-  mysql_mutex_lock(&LOCK_group_replication_handler);
-  if (is_group_replication_plugin_loaded())
-  {
-    bool ret=
-      group_replication_handler->get_group_members_info(index, callbacks);
-    mysql_mutex_unlock(&LOCK_group_replication_handler);
-    return ret;
-  }
-  mysql_mutex_unlock(&LOCK_group_replication_handler);
+  bool result= true;
 
-  return true;
+  plugin_ref plugin= my_plugin_lock_by_name(0,
+                                            group_replication_plugin_name,
+                                            MYSQL_GROUP_REPLICATION_PLUGIN);
+  if (plugin != NULL)
+  {
+    st_mysql_group_replication *plugin_handle=
+        (st_mysql_group_replication*) plugin_decl(plugin)->info;
+    result= plugin_handle->get_group_members_info(index, callbacks);
+
+    plugin_unlock(0, plugin);
+  }
+
+  return result;
 }
+
 
 bool get_group_replication_group_member_stats_info(
+    unsigned int index,
     const GROUP_REPLICATION_GROUP_MEMBER_STATS_CALLBACKS& callbacks)
 {
-  mysql_mutex_lock(&LOCK_group_replication_handler);
-  if (is_group_replication_plugin_loaded())
-  {
-    bool ret= group_replication_handler->get_group_member_stats_info(callbacks);
-    mysql_mutex_unlock(&LOCK_group_replication_handler);
-    return ret;
-  }
-  mysql_mutex_unlock(&LOCK_group_replication_handler);
+  bool result= true;
 
-  return true;
+  plugin_ref plugin= my_plugin_lock_by_name(0,
+                                            group_replication_plugin_name,
+                                            MYSQL_GROUP_REPLICATION_PLUGIN);
+  if (plugin != NULL)
+  {
+    st_mysql_group_replication *plugin_handle=
+        (st_mysql_group_replication*) plugin_decl(plugin)->info;
+    result= plugin_handle->get_group_member_stats_info(index, callbacks);
+
+    plugin_unlock(0, plugin);
+  }
+
+  return result;
 }
+
 
 unsigned int get_group_replication_members_number_info()
 {
-  mysql_mutex_lock(&LOCK_group_replication_handler);
-  if (is_group_replication_plugin_loaded())
-  {
-    unsigned int ret= group_replication_handler->get_members_number_info();
-    mysql_mutex_unlock(&LOCK_group_replication_handler);
-    return ret;
-  }
-  mysql_mutex_unlock(&LOCK_group_replication_handler);
+  unsigned int result= 0;
 
-  return 0;
+  plugin_ref plugin= my_plugin_lock_by_name(0,
+                                            group_replication_plugin_name,
+                                            MYSQL_GROUP_REPLICATION_PLUGIN);
+  if (plugin != NULL)
+  {
+    st_mysql_group_replication *plugin_handle=
+        (st_mysql_group_replication*) plugin_decl(plugin)->info;
+    result= plugin_handle->get_members_number_info();
+
+    plugin_unlock(0, plugin);
+  }
+
+  return result;
 }
+
 
 
 /*
   Server methods exported to plugin through
   include/mysql/group_replication_priv.h
 */
-
 void get_server_parameters(char **hostname, uint *port, char** uuid,
-                           unsigned int *out_server_version)
-{
+                           unsigned int *out_server_version,
+                           st_server_ssl_variables* server_ssl_variables)
+  {
   /*
     use startup option report-host and report-port when provided,
     as value provided by glob_hostname, which used gethostname() function
@@ -381,6 +326,20 @@ void get_server_parameters(char **hostname, uint *port, char** uuid,
   int v4= major - v5 * 10;
 
   *out_server_version= v0 + v1 * 16 + v2 * 256 + v3 * 4096 + v4 * 65536 + v5 * 1048576;
+
+#ifdef HAVE_OPENSSL
+  server_ssl_variables->have_ssl_opt= true;
+#else
+  server_ssl_variables->have_ssl_opt= false;
+#endif
+  server_ssl_variables->ssl_ca= opt_ssl_ca;
+  server_ssl_variables->ssl_capath= opt_ssl_capath;
+  server_ssl_variables->tls_version= opt_tls_version;
+  server_ssl_variables->ssl_cert= opt_ssl_cert;
+  server_ssl_variables->ssl_cipher= opt_ssl_cipher;
+  server_ssl_variables->ssl_key= opt_ssl_key;
+  server_ssl_variables->ssl_crl= opt_ssl_crl;
+  server_ssl_variables->ssl_crlpath= opt_ssl_crlpath;
 
   return;
 }

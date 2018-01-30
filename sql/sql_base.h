@@ -1,35 +1,50 @@
 /* Copyright (c) 2010, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA */
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef SQL_BASE_INCLUDED
 #define SQL_BASE_INCLUDED
 
 #include <stddef.h>
 #include <sys/types.h>
+#include <memory>
+#include <string>
+#include <unordered_map>
 
-#include "hash.h"                   // my_hash_value_type
 #include "lex_string.h"
 #include "m_string.h"
-#include "mdl.h"                    // MDL_savepoint
+#include "map_helpers.h"
 #include "my_base.h"                // ha_extra_function
 #include "my_inttypes.h"
+#include "mysql/components/services/mysql_mutex_bits.h"
 #include "mysql/psi/mysql_mutex.h"
-#include "sql_array.h"              // Bounds_checked_array
+#include "mysql/udf_registration_types.h"
+#include "sql/malloc_allocator.h"
+#include "sql/mdl.h"                // MDL_savepoint
+#include "sql/sql_array.h"          // Bounds_checked_array
+#include "sql/sql_const.h"          // enum_resolution_type
+#include "sql/trigger_def.h"        // enum_trigger_event_type
 #include "thr_lock.h"               // thr_lock_type
-#include "trigger_def.h"            // enum_trigger_event_type
 
+class COPY_INFO;
 class Field;
 class Item;
 class Item_ident;
@@ -66,9 +81,6 @@ class Table;
 #define READ_ALL		1	/* openfrm: Read all parameters */
 #define EXTRA_RECORD		8	/* Reservera plats f|r extra record */
 #define DELAYED_OPEN	        4096    /* Open table later */
-#define OPEN_VIEW		8196    /* Allow open on view */
-#define OPEN_VIEW_NO_PARSE     16384    /* Open frm only if it's a view,
-                                           but do not parse view itself */
 /**
   This flag is used in function get_all_tables() which fills
   I_S tables with data which are retrieved from frm files and storage engine
@@ -84,63 +96,17 @@ class Table;
 #define OPEN_TABLE_ONLY        OPEN_FRM_FILE_ONLY*2
 /**
   This flag is used in function get_all_tables() which fills
-  I_S tables with data which are retrieved from frm files and storage engine
-  The flag means that we need to process views only to get necessary data.
-  Tables are not processed.
-*/
-#define OPEN_VIEW_ONLY         OPEN_TABLE_ONLY*2
-/**
-  This flag is used in function get_all_tables() which fills
-  I_S tables with data which are retrieved from frm files and storage engine.
-  The flag means that we need to open a view.
-*/
-#define OPEN_VIEW_FULL         OPEN_VIEW_ONLY*2
-/**
-  This flag is used in function get_all_tables() which fills
   I_S tables with data which are retrieved from frm files and storage engine.
   The flag means that I_S table uses optimization algorithm.
 */
-#define OPTIMIZE_I_S_TABLE     OPEN_VIEW_FULL*2
-/**
-  The flag means that we need to process trigger files only.
-*/
-#define OPEN_TRIGGER_ONLY      OPTIMIZE_I_S_TABLE*2
-/**
-  This flag is used to instruct tdc_open_view() to check metadata version.
-*/
-#define CHECK_METADATA_VERSION OPEN_TRIGGER_ONLY*2
-/**
-  This flag is used to instruct open_table() to open
-  TMP_TABLE_COLUMNS/KEYS I_S table only for the SHOW commands.
-*/
-#define OPEN_FOR_SHOW_ONLY     CHECK_METADATA_VERSION*2
+#define OPTIMIZE_I_S_TABLE     OPEN_TABLE_ONLY*2
 /**
   Avoid dd::Table lookup in open_table_from_share() call.
   Temporary workaround used by upgrade code until we start
   reading info from InnoDB SYS tables directly.
 */
-#define OPEN_NO_DD_TABLE       OPEN_FOR_SHOW_ONLY*2
+#define OPEN_NO_DD_TABLE       OPTIMIZE_I_S_TABLE*2
 
-
-/*
-  This enumeration type is used only by the function find_item_in_list
-  to return the info on how an item has been resolved against a list
-  of possibly aliased items.
-  The item can be resolved:
-   - against an alias name of the list's element (RESOLVED_AGAINST_ALIAS)
-   - against non-aliased field name of the list  (RESOLVED_WITH_NO_ALIAS)
-   - against an aliased field name of the list   (RESOLVED_BEHIND_ALIAS)
-   - ignoring the alias name in cases when SQL requires to ignore aliases
-     (e.g. when the resolved field reference contains a table name or
-     when the resolved item is an expression)   (RESOLVED_IGNORING_ALIAS)
-*/
-enum enum_resolution_type {
-  NOT_RESOLVED=0,
-  RESOLVED_IGNORING_ALIAS,
-  RESOLVED_BEHIND_ALIAS,
-  RESOLVED_WITH_NO_ALIAS,
-  RESOLVED_AGAINST_ALIAS
-};
 
 enum find_item_error_report_type {REPORT_ALL_ERRORS, REPORT_EXCEPT_NOT_FOUND,
 				  IGNORE_ERRORS, REPORT_EXCEPT_NON_UNIQUE,
@@ -157,9 +123,9 @@ void table_def_start_shutdown(void);
 void assign_new_table_id(TABLE_SHARE *share);
 uint cached_table_definitions(void);
 size_t get_table_def_key(const TABLE_LIST *table_list, const char **key);
-TABLE_SHARE *get_table_share(THD *thd, TABLE_LIST *table_list,
+TABLE_SHARE *get_table_share(THD *thd, const char *db, const char *table_name,
                              const char *key, size_t key_length,
-                             bool open_view, my_hash_value_type hash_value);
+                             bool open_view);
 void release_table_share(TABLE_SHARE *share);
 
 TABLE *open_ltable(THD *thd, TABLE_LIST *table_list, thr_lock_type update,
@@ -233,7 +199,7 @@ TABLE *open_table_uncached(THD *thd, const char *path, const char *db,
 			   const char *table_name,
                            bool add_to_temporary_tables_list,
                            bool open_in_engine,
-                           const dd::Table *table_def);
+                           const dd::Table &table_def);
 TABLE *find_locked_table(TABLE *list, const char *db, const char *table_name);
 thr_lock_type read_lock_type_for_table(THD *thd,
                                        Query_tables_list *prelocking_ctx,
@@ -248,7 +214,8 @@ void close_tables_for_reopen(THD *thd, TABLE_LIST **tables,
 TABLE *find_temporary_table(THD *thd, const char *db, const char *table_name);
 TABLE *find_temporary_table(THD *thd, const TABLE_LIST *tl);
 void close_thread_tables(THD *thd);
-bool fill_record_n_invoke_before_triggers(THD *thd, List<Item> &fields,
+bool fill_record_n_invoke_before_triggers(THD *thd, COPY_INFO *optype_info,
+                                          List<Item> &fields,
                                           List<Item> &values,
                                           TABLE *table,
                                           enum enum_trigger_event_type event,
@@ -304,9 +271,14 @@ bool wait_while_table_is_used(THD *thd, TABLE *table,
 void update_non_unique_table_error(TABLE_LIST *update,
                                    const char *operation,
                                    TABLE_LIST *duplicate);
-int setup_ftfuncs(SELECT_LEX* select);
+int setup_ftfuncs(const THD *thd, SELECT_LEX* select);
 bool init_ftfuncs(THD *thd, SELECT_LEX* select);
 int run_before_dml_hook(THD *thd);
+bool get_and_lock_tablespace_names(THD *thd,
+                                   TABLE_LIST *tables_start,
+                                   TABLE_LIST *tables_end,
+                                   ulong lock_wait_timeout,
+                                   uint flags);
 bool lock_table_names(THD *thd, TABLE_LIST *table_list,
                       TABLE_LIST *table_list_end, ulong lock_wait_timeout,
                       uint flags);
@@ -346,26 +318,70 @@ void close_log_table(THD *thd, Open_tables_backup *backup);
 
 bool close_cached_tables(THD *thd, TABLE_LIST *tables,
                          bool wait_for_refresh, ulong timeout);
+
+
+/**
+  Close all open instances of the table but keep the MDL lock.
+
+  Works both under LOCK TABLES and in the normal mode.
+  Removes all closed instances of the table from the table cache.
+
+  @param  thd         Thread context.
+  @param  share       Table share, but is just a handy way to
+                      access the table cache key.
+  @param  remove_from_locked_tables
+                      True if the table is being dropped.
+                      In that case the documented behaviour is to
+                      implicitly remove the table from LOCK TABLES list.
+  @param  skip_table  TABLE instance that should be kept open.
+
+  @pre Must be called with an X MDL lock on the table.
+*/
 void close_all_tables_for_name(THD *thd, TABLE_SHARE *share,
                                bool remove_from_locked_tables,
                                TABLE *skip_table);
+
+
+/**
+  Close all open instances of the table but keep the MDL lock.
+
+  Works both under LOCK TABLES and in the normal mode.
+  Removes all closed instances of the table from the table cache.
+
+  @param  thd         Thread context.
+  @param  db          Database name.
+  @param  table_name  Table name.
+  @param  remove_from_locked_tables
+                      True if the table is being dropped.
+                      In that case the documented behaviour is to
+                      implicitly remove the table from LOCK TABLES list.
+
+  @pre Must be called with an X MDL lock on the table.
+*/
+void
+close_all_tables_for_name(THD *thd, const char *db, const char *table_name,
+                          bool remove_from_locked_tables);
+
 OPEN_TABLE_LIST *list_open_tables(THD *thd, const char *db, const char *wild);
 void tdc_remove_table(THD *thd, enum_tdc_remove_table_type remove_type,
                       const char *db, const char *table_name,
                       bool has_lock);
-bool tdc_open_view(THD *thd, TABLE_LIST *table_list,
-                   const char *cache_key, size_t cache_key_length, uint flags);
 void tdc_flush_unused_tables();
 TABLE *find_table_for_mdl_upgrade(THD *thd, const char *db,
                                   const char *table_name,
                                   bool no_error);
 void mark_tmp_table_for_reuse(TABLE *table);
-bool check_if_table_exists(THD *thd, TABLE_LIST *table, bool *exists);
 
 extern Item **not_found_item;
 extern Field *not_found_field;
 extern Field *view_ref_found;
-extern HASH table_def_cache;
+
+struct Table_share_deleter {
+  void operator() (TABLE_SHARE *share) const;
+};
+extern malloc_unordered_map<
+  std::string, std::unique_ptr<TABLE_SHARE, Table_share_deleter>>
+    *table_def_cache;
 
 TABLE_LIST *find_table_in_global_list(TABLE_LIST *table,
                                       const char *db_name,

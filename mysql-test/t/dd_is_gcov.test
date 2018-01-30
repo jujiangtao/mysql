@@ -1,4 +1,3 @@
---source include/not_embedded.inc
 --source include/not_windows.inc
 
 # This test case are added in order to test code that is not covered by
@@ -49,7 +48,7 @@ CREATE TEMPORARY TABLE t1 (
   b INTEGER NOT NULL AUTO_INCREMENT PRIMARY KEY,
   c INTEGER,
   d INTEGER GENERATED ALWAYS AS (a * 2) STORED,
-  e POINT NOT NULL,
+  e POINT NOT NULL SRID 0,
   f CHAR(30),
   g INT,
   h TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

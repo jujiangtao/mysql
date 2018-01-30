@@ -9,16 +9,24 @@ incorporated with their permission, and subject to the conditions contained in
 the file COPYING.Google.
 
 This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+the terms of the GNU General Public License, version 2.0, as published by the
+Free Software Foundation.
+
+This program is also distributed with certain software (including but not
+limited to OpenSSL) that is licensed under separate terms, as designated in a
+particular file or component or in included license documentation. The authors
+of MySQL hereby grant you an additional permission to link the program and
+your derivative works with the separately licensed software that they have
+included with MySQL.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+FOR A PARTICULAR PURPOSE. See the GNU General Public License, version 2.0,
+for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 *****************************************************************************/
 
@@ -472,6 +480,7 @@ LatchDebug::LatchDebug()
 	LEVEL_MAP_INSERT(SYNC_LOCK_FREE_HASH);
 	LEVEL_MAP_INSERT(SYNC_MONITOR_MUTEX);
 	LEVEL_MAP_INSERT(SYNC_ANY_LATCH);
+	LEVEL_MAP_INSERT(SYNC_FIL_SHARD);
 	LEVEL_MAP_INSERT(SYNC_DOUBLEWRITE);
 	LEVEL_MAP_INSERT(SYNC_BUF_FLUSH_LIST);
 	LEVEL_MAP_INSERT(SYNC_BUF_FLUSH_STATE);
@@ -493,6 +502,9 @@ LatchDebug::LatchDebug()
 	LEVEL_MAP_INSERT(SYNC_LOG_FLUSH_ORDER);
 	LEVEL_MAP_INSERT(SYNC_LOG);
 	LEVEL_MAP_INSERT(SYNC_LOG_WRITE);
+	LEVEL_MAP_INSERT(SYNC_LOG_ARCH);
+	LEVEL_MAP_INSERT(SYNC_PAGE_ARCH);
+	LEVEL_MAP_INSERT(SYNC_PAGE_ARCH_OPER);
 	LEVEL_MAP_INSERT(SYNC_PAGE_CLEANER);
 	LEVEL_MAP_INSERT(SYNC_PURGE_QUEUE);
 	LEVEL_MAP_INSERT(SYNC_TRX_SYS_HEADER);
@@ -512,18 +524,21 @@ LatchDebug::LatchDebug()
 	LEVEL_MAP_INSERT(SYNC_FSP_PAGE);
 	LEVEL_MAP_INSERT(SYNC_FSP);
 	LEVEL_MAP_INSERT(SYNC_EXTERN_STORAGE);
+	LEVEL_MAP_INSERT(SYNC_RSEG_ARRAY_HEADER);
 	LEVEL_MAP_INSERT(SYNC_TRX_UNDO_PAGE);
 	LEVEL_MAP_INSERT(SYNC_RSEG_HEADER);
 	LEVEL_MAP_INSERT(SYNC_RSEG_HEADER_NEW);
 	LEVEL_MAP_INSERT(SYNC_TEMP_SPACE_RSEG);
+	LEVEL_MAP_INSERT(SYNC_UNDO_SPACE_RSEG);
 	LEVEL_MAP_INSERT(SYNC_TRX_SYS_RSEG);
+	LEVEL_MAP_INSERT(SYNC_RSEGS);
+	LEVEL_MAP_INSERT(SYNC_UNDO_SPACES);
 	LEVEL_MAP_INSERT(SYNC_TRX_UNDO);
 	LEVEL_MAP_INSERT(SYNC_PURGE_LATCH);
 	LEVEL_MAP_INSERT(SYNC_TREE_NODE);
 	LEVEL_MAP_INSERT(SYNC_TREE_NODE_FROM_HASH);
 	LEVEL_MAP_INSERT(SYNC_TREE_NODE_NEW);
 	LEVEL_MAP_INSERT(SYNC_INDEX_TREE);
-	LEVEL_MAP_INSERT(SYNC_PERSIST_METADATA_BUFFER);
 	LEVEL_MAP_INSERT(SYNC_PERSIST_DIRTY_TABLES);
 	LEVEL_MAP_INSERT(SYNC_PERSIST_AUTOINC);
 	LEVEL_MAP_INSERT(SYNC_PERSIST_CHECKPOINT);
@@ -533,6 +548,7 @@ LatchDebug::LatchDebug()
 	LEVEL_MAP_INSERT(SYNC_STATS_AUTO_RECALC);
 	LEVEL_MAP_INSERT(SYNC_DICT_AUTOINC_MUTEX);
 	LEVEL_MAP_INSERT(SYNC_DICT);
+	LEVEL_MAP_INSERT(SYNC_PARSER);
 	LEVEL_MAP_INSERT(SYNC_FTS_CACHE);
 	LEVEL_MAP_INSERT(SYNC_DICT_OPERATION);
 	LEVEL_MAP_INSERT(SYNC_TRX_I_S_LAST_READ);
@@ -757,15 +773,6 @@ LatchDebug::check_order(
 		break;
 
 	case SYNC_TRX_SYS_HEADER:
-
-		if (srv_is_being_started) {
-			/* This is violated during single-threaded srv_start()
-			by trx_sys_create_additional_rsegs(). */
-			break;
-		}
-
-		/* Fall through */
-
 	case SYNC_LOCK_FREE_HASH:
 	case SYNC_MONITOR_MUTEX:
 	case SYNC_RECV:
@@ -779,6 +786,9 @@ LatchDebug::check_order(
 	case SYNC_LOG:
 	case SYNC_LOG_WRITE:
 	case SYNC_LOG_FLUSH_ORDER:
+	case SYNC_LOG_ARCH:
+	case SYNC_PAGE_ARCH:
+	case SYNC_PAGE_ARCH_OPER:
 	case SYNC_DOUBLEWRITE:
 	case SYNC_SEARCH_SYS:
 	case SYNC_THREADS:
@@ -787,7 +797,10 @@ LatchDebug::check_order(
 	case SYNC_TRX_SYS:
 	case SYNC_IBUF_BITMAP_MUTEX:
 	case SYNC_TEMP_SPACE_RSEG:
+	case SYNC_UNDO_SPACE_RSEG:
 	case SYNC_TRX_SYS_RSEG:
+	case SYNC_RSEGS:
+	case SYNC_UNDO_SPACES:
 	case SYNC_TRX_UNDO:
 	case SYNC_PURGE_LATCH:
 	case SYNC_PURGE_QUEUE:
@@ -802,6 +815,8 @@ LatchDebug::check_order(
 	case SYNC_POOL:
 	case SYNC_POOL_MANAGER:
 	case SYNC_RECV_WRITER:
+	case SYNC_PARSER:
+	case SYNC_DICT:
 
 		basic_check(latches, level, level);
 		break;
@@ -841,12 +856,14 @@ LatchDebug::check_order(
 		}
 		break;
 
+	case SYNC_FIL_SHARD:
 	case SYNC_BUF_FLUSH_LIST:
 	case SYNC_BUF_LRU_LIST:
 	case SYNC_BUF_FREE_LIST:
 	case SYNC_BUF_ZIP_FREE:
 	case SYNC_BUF_ZIP_HASH:
 	case SYNC_BUF_FLUSH_STATE:
+	case SYNC_RSEG_ARRAY_HEADER:
 
 		/* We can have multiple mutexes of this type therefore we
 		can only check whether the greater than condition holds. */
@@ -879,14 +896,8 @@ LatchDebug::check_order(
 		bitmap page. */
 
 		if (find(latches, SYNC_IBUF_BITMAP_MUTEX) != 0) {
-
 			basic_check(latches, level, SYNC_IBUF_BITMAP - 1);
-
-		} else if (!srv_is_being_started) {
-
-			/* This is violated during single-threaded srv_start()
-			by trx_sys_create_additional_rsegs(). */
-
+		} else {
 			basic_check(latches, level, SYNC_IBUF_BITMAP);
 		}
 		break;
@@ -909,6 +920,7 @@ LatchDebug::check_order(
 
 		ut_a(find(latches, SYNC_TRX_UNDO) != 0
 		     || find(latches, SYNC_TEMP_SPACE_RSEG) != 0
+		     || find(latches, SYNC_UNDO_SPACE_RSEG) != 0
 		     || find(latches, SYNC_TRX_SYS_RSEG) != 0
 		     || basic_check(latches, level, level - 1));
 		break;
@@ -916,6 +928,7 @@ LatchDebug::check_order(
 	case SYNC_RSEG_HEADER:
 
 		ut_a(find(latches, SYNC_TEMP_SPACE_RSEG) != 0
+		     || find(latches, SYNC_UNDO_SPACE_RSEG) != 0
 		     || find(latches, SYNC_TRX_SYS_RSEG) != 0);
 		break;
 
@@ -990,34 +1003,22 @@ LatchDebug::check_order(
 		ut_a(find(latches, SYNC_IBUF_PESS_INSERT_MUTEX) == NULL);
 		break;
 
-	case SYNC_PERSIST_METADATA_BUFFER:
-
-		basic_check(latches, level, SYNC_LOG);
-		ut_a(find(latches, SYNC_PERSIST_DIRTY_TABLES) != NULL);
-		break;
-
 	case SYNC_PERSIST_DIRTY_TABLES:
 
 		basic_check(latches, level, SYNC_LOG);
-		ut_a(find(latches, SYNC_PERSIST_METADATA_BUFFER) == NULL);
 		break;
 
 	case SYNC_PERSIST_AUTOINC:
 
 		basic_check(latches, level, SYNC_LOG);
-		ut_a(find(latches, SYNC_PERSIST_METADATA_BUFFER) == NULL);
 		ut_a(find(latches, SYNC_PERSIST_DIRTY_TABLES) == NULL);
+		break;
 
 	case SYNC_PERSIST_CHECKPOINT:
 
 		basic_check(latches, level, SYNC_LOG);
-		ut_a(find(latches, SYNC_PERSIST_METADATA_BUFFER) == NULL);
 		ut_a(find(latches, SYNC_PERSIST_DIRTY_TABLES) == NULL);
 		ut_a(find(latches, SYNC_PERSIST_AUTOINC) == NULL);
-		break;
-
-	case SYNC_DICT:
-		basic_check(latches, level, SYNC_DICT);
 		break;
 
 	case SYNC_MUTEX:
@@ -1402,10 +1403,6 @@ sync_latch_meta_init()
 	LATCH_ADD_MUTEX(DICT_FOREIGN_ERR, SYNC_NO_ORDER_CHECK,
 			dict_foreign_err_mutex_key);
 
-	LATCH_ADD_RWLOCK(PERSIST_METADATA_BUFFER,
-			 SYNC_PERSIST_METADATA_BUFFER,
-			 index_tree_rw_lock_key);
-
 	LATCH_ADD_MUTEX(DICT_PERSIST_DIRTY_TABLES,
 			SYNC_PERSIST_DIRTY_TABLES,
 			dict_persist_dirty_tables_mutex_key);
@@ -1418,7 +1415,9 @@ sync_latch_meta_init()
 
 	LATCH_ADD_MUTEX(DICT_SYS, SYNC_DICT, dict_sys_mutex_key);
 
-	LATCH_ADD_MUTEX(FIL_SYSTEM, SYNC_ANY_LATCH, fil_system_mutex_key);
+	LATCH_ADD_MUTEX(PARSER, SYNC_PARSER, parser_mutex_key);
+
+	LATCH_ADD_MUTEX(FIL_SHARD, SYNC_FIL_SHARD, fil_system_mutex_key);
 
 	LATCH_ADD_MUTEX(FLUSH_LIST, SYNC_BUF_FLUSH_LIST, flush_list_mutex_key);
 
@@ -1453,6 +1452,13 @@ sync_latch_meta_init()
 	LATCH_ADD_MUTEX(LOG_FLUSH_ORDER, SYNC_LOG_FLUSH_ORDER,
 			log_flush_order_mutex_key);
 
+	LATCH_ADD_MUTEX(LOG_ARCH, SYNC_LOG_ARCH, log_sys_arch_mutex_key);
+
+	LATCH_ADD_MUTEX(PAGE_ARCH, SYNC_PAGE_ARCH, page_sys_arch_mutex_key);
+
+	LATCH_ADD_MUTEX(PAGE_ARCH_OPER, SYNC_PAGE_ARCH_OPER,
+		page_sys_arch_oper_mutex_key);
+
 	LATCH_ADD_MUTEX(PAGE_CLEANER, SYNC_PAGE_CLEANER,
 			page_cleaner_mutex_key);
 
@@ -1468,6 +1474,9 @@ sync_latch_meta_init()
 
 	LATCH_ADD_MUTEX(TEMP_SPACE_RSEG, SYNC_TEMP_SPACE_RSEG,
 			temp_space_rseg_mutex_key);
+
+	LATCH_ADD_MUTEX(UNDO_SPACE_RSEG, SYNC_UNDO_SPACE_RSEG,
+			undo_space_rseg_mutex_key);
 
 	LATCH_ADD_MUTEX(TRX_SYS_RSEG, SYNC_TRX_SYS_RSEG,
 			trx_sys_rseg_mutex_key);
@@ -1601,6 +1610,10 @@ sync_latch_meta_init()
 
 	LATCH_ADD_RWLOCK(CHECKPOINT, SYNC_NO_ORDER_CHECK, checkpoint_lock_key);
 
+	LATCH_ADD_RWLOCK(RSEGS, SYNC_RSEGS, rsegs_lock_key);
+
+	LATCH_ADD_RWLOCK(UNDO_SPACES, SYNC_UNDO_SPACES, undo_spaces_lock_key);
+
 	LATCH_ADD_RWLOCK(FIL_SPACE, SYNC_FSP, fil_space_latch_key);
 
 	LATCH_ADD_RWLOCK(FTS_CACHE, SYNC_FTS_CACHE, fts_cache_rw_lock_key);
@@ -1627,8 +1640,18 @@ sync_latch_meta_init()
 	LATCH_ADD_RWLOCK(SYNC_DEBUG_MUTEX, SYNC_NO_ORDER_CHECK,
 			 PFS_NOT_INSTRUMENTED);
 
+	LATCH_ADD_MUTEX(FILE_OPEN, SYNC_NO_ORDER_CHECK, file_open_mutex_key);
+
 	LATCH_ADD_MUTEX(MASTER_KEY_ID_MUTEX, SYNC_NO_ORDER_CHECK,
 			master_key_id_mutex_key);
+
+	LATCH_ADD_MUTEX(CLONE_SYS, SYNC_NO_ORDER_CHECK, clone_sys_mutex_key);
+
+	LATCH_ADD_MUTEX(CLONE_TASK, SYNC_NO_ORDER_CHECK,
+			clone_task_mutex_key);
+
+	LATCH_ADD_MUTEX(CLONE_SNAPSHOT, SYNC_NO_ORDER_CHECK,
+			clone_snapshot_mutex_key);
 
 	latch_id_t	id = LATCH_ID_NONE;
 

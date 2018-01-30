@@ -2,13 +2,20 @@
    Copyright (c) 2013, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -42,22 +49,21 @@
 #include <new>
 #include <utility>
 
-#include "channel_info.h"               // Channel_info
-#include "derror.h"                     // ER_DEFAULT
-#include "init_net_server_extension.h"  // init_net_server_extension
-#include "log.h"                        // sql_print_error
 #include "m_string.h"
 #include "my_dbug.h"
 #include "my_io.h"
+#include "my_loglevel.h"
 #include "my_sys.h"
 #include "my_thread.h"
 #include "mysql/service_my_snprintf.h"
-#include "mysql_com.h"
-#include "mysqld.h"                     // key_socket_tcpip
 #include "mysqld_error.h"
-#include "sql_class.h"                  // THD
-#include "sql_const.h"
-#include "sql_security_ctx.h"
+#include "sql/auth/sql_security_ctx.h"
+#include "sql/conn_handler/channel_info.h" // Channel_info
+#include "sql/conn_handler/init_net_server_extension.h" // init_net_server_extension
+#include "sql/log.h"
+#include "sql/mysqld.h"                 // key_socket_tcpip
+#include "sql/sql_class.h"              // THD
+#include "sql/sql_const.h"
 #include "violite.h"                    // Vio
 #ifdef HAVE_SYS_UN_H
 #include <sys/un.h>
@@ -80,7 +86,7 @@ ulong Mysqld_socket_listener::connection_errors_accept= 0;
 ulong Mysqld_socket_listener::connection_errors_tcpwrap= 0;
 
 ///////////////////////////////////////////////////////////////////////////
-// Channel_info_local_socket implementation
+//Channel_info_local_socket implementation
 ///////////////////////////////////////////////////////////////////////////
 
 /**
@@ -248,15 +254,15 @@ class TCP_socket
 
       if (mysql_socket_getfd(sock) == INVALID_SOCKET)
       {
-        sql_print_error("Failed to create a socket for %s '%s': errno: %d.",
-                        (addr_family == AF_INET) ? "IPv4" : "IPv6",
-                        (const char *) ip_addr,
-                        (int) socket_errno);
+        LogErr(ERROR_LEVEL, ER_CONN_TCP_NO_SOCKET,
+               (addr_family == AF_INET) ? "IPv4" : "IPv6",
+               (const char *) ip_addr,
+               (int) socket_errno);
       }
       else
       {
-        sql_print_information("Server socket created on IP: '%s'.",
-                              (const char *) ip_addr);
+        LogErr(INFORMATION_LEVEL, ER_CONN_TCP_CREATED,
+               (const char *) ip_addr);
 
         *use_addrinfo= (struct addrinfo *)cur_ai;
         return sock;
@@ -297,8 +303,8 @@ public:
     struct addrinfo *ai;
     const char *bind_address_str= NULL;
 
-    sql_print_information("Server hostname (bind-address): '%s'; port: %d",
-                          m_bind_addr_str.c_str(), m_tcp_port);
+    LogErr(INFORMATION_LEVEL, ER_CONN_TCP_ADDRESS,
+           m_bind_addr_str.c_str(), m_tcp_port);
 
     // Get list of IP-addresses associated with the bind-address.
 
@@ -337,7 +343,7 @@ public:
       }
       if (ipv6_available)
       {
-        sql_print_information("IPv6 is available.");
+        LogErr(INFORMATION_LEVEL, ER_CONN_TCP_IPV6_AVAILABLE);
 
         // Address info (ai) for IPv6 address is already set.
 
@@ -345,16 +351,16 @@ public:
       }
       else
       {
-        sql_print_information("IPv6 is not available.");
+        LogErr(INFORMATION_LEVEL, ER_CONN_TCP_IPV6_UNAVAILABLE);
 
         // Retrieve address info (ai) for IPv4 address.
 
         const char *ipv4_all_addresses= "0.0.0.0";
         if (getaddrinfo(ipv4_all_addresses, port_buf, &hints, &ai))
         {
-          sql_print_error("%s: %s", ER_DEFAULT(ER_IPSOCK_ERROR), strerror(errno));
-
-          sql_print_error("Can't start server: cannot resolve hostname!");
+          LogErr(ERROR_LEVEL, ER_CONN_TCP_ERROR_WITH_STRERROR,
+                 strerror(errno));
+          LogErr(ERROR_LEVEL, ER_CONN_TCP_CANT_RESOLVE_HOSTNAME);
           return MYSQL_INVALID_SOCKET;
         }
 
@@ -365,8 +371,9 @@ public:
     {
       if (getaddrinfo(m_bind_addr_str.c_str(), port_buf, &hints, &ai))
       {
-        sql_print_error("%s: %s", ER_DEFAULT(ER_IPSOCK_ERROR), strerror(errno));
-        sql_print_error("Can't start server: cannot resolve hostname!");
+        LogErr(ERROR_LEVEL, ER_CONN_TCP_ERROR_WITH_STRERROR,
+               strerror(errno));
+        LogErr(ERROR_LEVEL, ER_CONN_TCP_CANT_RESOLVE_HOSTNAME);
         return MYSQL_INVALID_SOCKET;
       }
 
@@ -381,12 +388,12 @@ public:
       if (vio_getnameinfo(cur_ai->ai_addr, ip_addr, sizeof (ip_addr),
                           NULL, 0, NI_NUMERICHOST))
       {
-        sql_print_error("Fails to print out IP-address.");
+        LogErr(ERROR_LEVEL, ER_CONN_TCP_IP_NOT_LOGGED);
         continue;
       }
 
-      sql_print_information("  - '%s' resolves to '%s';",
-                            bind_address_str, ip_addr);
+      LogErr(INFORMATION_LEVEL, ER_CONN_TCP_RESOLVE_INFO,
+             bind_address_str, ip_addr);
     }
 
     /*
@@ -398,7 +405,7 @@ public:
       returned by getaddrinfo();
     */
 
-    struct addrinfo *a;
+    struct addrinfo *a= nullptr;
     MYSQL_SOCKET listener_socket= create_socket(ai, AF_INET, &a);
 
     if (mysql_socket_getfd(listener_socket) == INVALID_SOCKET)
@@ -407,7 +414,7 @@ public:
     // Report user-error if we failed to create a socket.
     if (mysql_socket_getfd(listener_socket) == INVALID_SOCKET)
     {
-      sql_print_error("%s: %s", ER_DEFAULT(ER_IPSOCK_ERROR), strerror(errno));
+      LogErr(ERROR_LEVEL, ER_CONN_TCP_ERROR_WITH_STRERROR, strerror(errno));
       return MYSQL_INVALID_SOCKET;
     }
 
@@ -441,9 +448,8 @@ public:
       if (mysql_socket_setsockopt(listener_socket, IPPROTO_IPV6, IPV6_V6ONLY,
                                   (char *) &option_flag, sizeof (option_flag)))
       {
-        sql_print_warning("Failed to reset IPV6_V6ONLY flag (error: %d). "
-                          "The server will listen to IPv6 addresses only.",
-                          (int) socket_errno);
+        LogErr(WARNING_LEVEL, ER_CONN_TCP_CANT_RESET_V6ONLY,
+               (int) socket_errno);
       }
     }
 #endif
@@ -463,7 +469,7 @@ public:
           (socket_errno != SOCKET_EADDRINUSE) ||
           (waited >= m_port_timeout))
         break;
-      sql_print_information("Retrying bind on TCP/IP port %u", mysqld_port);
+      LogErr(INFORMATION_LEVEL, ER_CONN_TCP_BIND_RETRY, mysqld_port);
       this_wait= retry * retry / 3 + 1;
       sleep(this_wait);
     }
@@ -471,19 +477,17 @@ public:
     if (ret < 0)
     {
       DBUG_PRINT("error",("Got error: %d from bind",socket_errno));
-      sql_print_error("Can't start server: Bind on TCP/IP port: %s",
-                      strerror(errno));
-      sql_print_error("Do you already have another mysqld server running on port: %d ?",m_tcp_port);
+      LogErr(ERROR_LEVEL, ER_CONN_TPC_BIND_FAIL, strerror(errno));
+      LogErr(ERROR_LEVEL, ER_CONN_TCP_IS_THERE_ANOTHER_USING_PORT,
+             m_tcp_port);
       mysql_socket_close(listener_socket);
       return MYSQL_INVALID_SOCKET;
     }
 
     if (mysql_socket_listen(listener_socket, static_cast<int>(m_backlog)) < 0)
     {
-      sql_print_error("Can't start server: listen() on TCP/IP port: %s",
-                      strerror(errno));
-      sql_print_error("listen() on TCP/IP failed with error %d",
-          socket_errno);
+      LogErr(ERROR_LEVEL, ER_CONN_TCP_START_FAIL, strerror(errno));
+      LogErr(ERROR_LEVEL, ER_CONN_TCP_LISTEN_FAIL, socket_errno);
       mysql_socket_close(listener_socket);
       return MYSQL_INVALID_SOCKET;
     }
@@ -547,15 +551,15 @@ public:
     // Check path length, probably move to set unix port?
     if (m_unix_sockname.length() > (sizeof(UNIXaddr.sun_path) - 1))
     {
-      sql_print_error("The socket file path is too long (> %u): %s",
-                      (uint) sizeof(UNIXaddr.sun_path) - 1,
-                      m_unix_sockname.c_str());
+      LogErr(ERROR_LEVEL, ER_CONN_UNIX_PATH_TOO_LONG,
+             (uint) sizeof(UNIXaddr.sun_path) - 1,
+             m_unix_sockname.c_str());
       return MYSQL_INVALID_SOCKET;
     }
 
     if (create_lockfile())
     {
-      sql_print_error("Unable to setup unix socket lock file.");
+      LogErr(ERROR_LEVEL, ER_CONN_UNIX_LOCK_FILE_FAIL);
       return MYSQL_INVALID_SOCKET;
     }
 
@@ -564,7 +568,7 @@ public:
 
     if (mysql_socket_getfd(listener_socket) < 0)
     {
-      sql_print_error("Can't start server: UNIX Socket : %s", strerror(errno));
+      LogErr(ERROR_LEVEL, ER_CONN_UNIX_NO_FD, strerror(errno));
       return MYSQL_INVALID_SOCKET;
     }
 
@@ -585,10 +589,9 @@ public:
                           reinterpret_cast<struct sockaddr *> (&UNIXaddr),
                           sizeof(UNIXaddr)) < 0)
     {
-      sql_print_error("Can't start server : Bind on unix socket: %s",
-                      strerror(errno));
-      sql_print_error("Do you already have another mysqld server running on socket: %s ?",
-                      m_unix_sockname.c_str());
+      LogErr(ERROR_LEVEL, ER_CONN_UNIX_NO_BIND_NO_START, strerror(errno));
+      LogErr(ERROR_LEVEL, ER_CONN_UNIX_IS_THERE_ANOTHER_USING_SOCKET,
+             m_unix_sockname.c_str());
       mysql_socket_close(listener_socket);
       return MYSQL_INVALID_SOCKET;
     }
@@ -596,7 +599,7 @@ public:
 
     // listen
     if (mysql_socket_listen(listener_socket, (int)m_backlog) < 0)
-      sql_print_warning("listen() on Unix socket failed with error %d", socket_errno);
+      LogErr(WARNING_LEVEL, ER_CONN_UNIX_LISTEN_FAILED, socket_errno);
 
     // set sock fd non blocking.
 #if !defined(NO_FCNTL_NONBLOCK)
@@ -621,8 +624,8 @@ bool Unix_socket::create_lockfile()
   {
     if (!retries--)
     {
-      sql_print_error("Unable to create unix socket lock file %s after retries."
-                      ,lock_filename.c_str());
+      LogErr(ERROR_LEVEL, ER_CONN_UNIX_LOCK_FILE_GIVING_UP,
+             lock_filename.c_str());
       return true;
     }
 
@@ -633,24 +636,24 @@ bool Unix_socket::create_lockfile()
 
     if (errno != EEXIST)
     {
-      sql_print_error("Could not create unix socket lock file %s.",
-                      lock_filename.c_str());
+      LogErr(ERROR_LEVEL, ER_CONN_UNIX_LOCK_FILE_CANT_CREATE,
+             lock_filename.c_str());
       return true;
     }
 
     fd= open(lock_filename.c_str(), O_RDONLY, 0600);
     if (fd < 0)
     {
-      sql_print_error("Could not open unix socket lock file %s.",
-                      lock_filename.c_str());
+      LogErr(ERROR_LEVEL, ER_CONN_UNIX_LOCK_FILE_CANT_OPEN,
+             lock_filename.c_str());
       return true;
     }
 
     ssize_t len;
     if ((len= read(fd, buffer, sizeof(buffer)-1)) < 0)
     {
-      sql_print_error("Could not read unix socket lock file %s.",
-                       lock_filename.c_str());
+      LogErr(ERROR_LEVEL, ER_CONN_UNIX_LOCK_FILE_CANT_READ,
+             lock_filename.c_str());
       close(fd);
       return true;
     }
@@ -659,8 +662,7 @@ bool Unix_socket::create_lockfile()
 
     if (len == 0)
     {
-      sql_print_error("Unix socket lock file is empty %s.",
-                       lock_filename.c_str());
+      LogErr(ERROR_LEVEL, ER_CONN_UNIX_LOCK_FILE_EMPTY, lock_filename.c_str());
       return true;
     }
     buffer[len]= '\0';
@@ -670,8 +672,8 @@ bool Unix_socket::create_lockfile()
 
     if (read_pid <= 0)
     {
-      sql_print_error("Invalid pid in unix socket lock file %s.",
-                      lock_filename.c_str());
+      LogErr(ERROR_LEVEL, ER_CONN_UNIX_LOCK_FILE_PIDLESS,
+             lock_filename.c_str());
       return true;
     }
 
@@ -679,8 +681,8 @@ bool Unix_socket::create_lockfile()
     {
       if (kill(read_pid, 0) == 0)
       {
-        sql_print_error("Another process with pid %d is using "
-                        "unix socket file.", static_cast<int>(read_pid));
+        LogErr(ERROR_LEVEL, ER_CONN_UNIX_PID_CLAIMED_SOCKET_FILE,
+               static_cast<int>(read_pid));
         return true;
       }
     }
@@ -691,8 +693,8 @@ bool Unix_socket::create_lockfile()
     */
     if (unlink(lock_filename.c_str()) < 0)
     {
-      sql_print_error("Could not remove unix socket lock file %s.",
-                      lock_filename.c_str());
+      LogErr(ERROR_LEVEL, ER_CONN_UNIX_LOCK_FILE_CANT_DELETE,
+             lock_filename.c_str(), errno);
       return true;
     }
   }
@@ -702,12 +704,12 @@ bool Unix_socket::create_lockfile()
       static_cast<signed>(strlen(buffer)))
   {
     close(fd);
-    sql_print_error("Could not write unix socket lock file %s errno %d.",
-                    lock_filename.c_str(), errno);
+    LogErr(ERROR_LEVEL, ER_CONN_UNIX_LOCK_FILE_CANT_WRITE,
+           lock_filename.c_str(), errno);
 
     if (unlink(lock_filename.c_str()) == -1)
-      sql_print_error("Could not remove unix socket lock file %s errno %d.",
-                      lock_filename.c_str(), errno);
+      LogErr(ERROR_LEVEL, ER_CONN_UNIX_LOCK_FILE_CANT_DELETE,
+             lock_filename.c_str(), errno);
 
     return true;
   }
@@ -715,24 +717,24 @@ bool Unix_socket::create_lockfile()
   if (fsync(fd) != 0)
   {
     close(fd);
-    sql_print_error("Could not sync unix socket lock file %s errno %d.",
-                    lock_filename.c_str(), errno);
+    LogErr(ERROR_LEVEL, ER_CONN_UNIX_LOCK_FILE_CANT_SYNC,
+           lock_filename.c_str(), errno);
 
     if (unlink(lock_filename.c_str()) == -1)
-      sql_print_error("Could not remove unix socket lock file %s errno %d.",
-                      lock_filename.c_str(), errno);
+      LogErr(ERROR_LEVEL, ER_CONN_UNIX_LOCK_FILE_CANT_DELETE,
+             lock_filename.c_str(), errno);
 
     return true;
   }
 
   if (close(fd) != 0)
   {
-    sql_print_error("Could not close unix socket lock file %s errno %d.",
-                    lock_filename.c_str(), errno);
+    LogErr(ERROR_LEVEL, ER_CONN_UNIX_LOCK_FILE_CANT_CLOSE,
+           lock_filename.c_str(), errno);
 
     if (unlink(lock_filename.c_str()) == -1)
-      sql_print_error("Could not remove unix socket lock file %s errno %d.",
-                      lock_filename.c_str(), errno);
+      LogErr(ERROR_LEVEL, ER_CONN_UNIX_LOCK_FILE_CANT_DELETE,
+             lock_filename.c_str(), errno);
 
     return true;
   }
@@ -840,7 +842,7 @@ Channel_info* Mysqld_socket_listener::listen_for_connection_event()
     */
     connection_errors_select++;
     if (!select_errors++ && !connection_events_loop_aborted())
-      sql_print_error("mysqld: Got error %d from select",socket_errno);
+      LogErr(ERROR_LEVEL, ER_CONN_SOCKET_SELECT_FAILED, socket_errno);
   }
 
   if (retval < 0 || connection_events_loop_aborted())
@@ -894,7 +896,7 @@ Channel_info* Mysqld_socket_listener::listen_for_connection_event()
     */
     connection_errors_accept++;
     if ((m_error_count++ & 255) == 0) // This can happen often
-      sql_print_error("Error in accept: %s", strerror(errno));
+      LogErr(ERROR_LEVEL, ER_CONN_SOCKET_ACCEPT_FAILED, strerror(errno));
     if (socket_errno == SOCKET_ENFILE || socket_errno == SOCKET_EMFILE)
       sleep(1);             // Give other threads some time
     return NULL;
@@ -928,12 +930,13 @@ Channel_info* Mysqld_socket_listener::listen_for_connection_event()
       if (req.sink)
         ((void (*)(int))req.sink)(req.fd);
 #endif
-      mysql_socket_shutdown(listen_sock, SHUT_RDWR);
-      mysql_socket_close(listen_sock);
       /*
         The connection was refused by TCP wrappers.
         There are no details (by client IP) available to update the host_cache.
       */
+      mysql_socket_shutdown(connect_sock, SHUT_RDWR);
+      mysql_socket_close(connect_sock);
+
       connection_errors_tcpwrap++;
       return NULL;
     }

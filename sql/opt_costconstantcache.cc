@@ -2,41 +2,49 @@
    Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "opt_costconstantcache.h"
+#include "sql/opt_costconstantcache.h"
 
-#include "current_thd.h"                  // current_thd
-#include "field.h"                        // Field
-#include "lex_string.h"
-#include "log.h"                          // sql_print_warning
 #include "m_ctype.h"
 #include "m_string.h"
 #include "my_dbug.h"
-#include "mysqld.h"                       // key_LOCK_cost_const
-#include "records.h"                      // READ_RECORD
-#include "sql_base.h"                     // open_and_lock_tables
-#include "sql_class.h"                    // THD
-#include "sql_const.h"
-#include "sql_lex.h"                      // lex_start/lex_end
-#include "sql_plugin.h"
+#include "my_loglevel.h"
+#include "mysql/components/services/log_shared.h"
+#include "mysqld_error.h"
+#include "sql/current_thd.h"              // current_thd
+#include "sql/field.h"                    // Field
+#include "sql/log.h"
+#include "sql/mysqld.h"                   // key_LOCK_cost_const
+#include "sql/records.h"                  // READ_RECORD
+#include "sql/sql_base.h"                 // open_and_lock_tables
+#include "sql/sql_class.h"                // THD
+#include "sql/sql_const.h"
+#include "sql/sql_lex.h"                  // lex_start/lex_end
+#include "sql/sql_tmp_table.h"            // init_cache_tmp_engine_properties
+#include "sql/table.h"                    // TABLE
+#include "sql/transaction.h"              // trans_commit_stmt
 #include "sql_string.h"
-#include "sql_tmp_table.h"                // init_cache_tmp_engine_properties
-#include "table.h"                        // TABLE
 #include "template_utils.h"               // pointer_cast
 #include "thr_lock.h"
 #include "thr_mutex.h"
-#include "transaction.h"                  // trans_commit_stmt
 
 
 Cost_constant_cache *cost_constant_cache= NULL;
@@ -193,12 +201,11 @@ static void report_server_cost_warnings(const LEX_CSTRING &cost_name,
   switch(error)
   {
   case UNKNOWN_COST_NAME:
-    sql_print_warning("Unknown cost constant \"%s\" in mysql.server_cost table\n",
-                      cost_name.str);
+    LogErr(WARNING_LEVEL, ER_SERVER_COST_UNKNOWN_COST_CONSTANT, cost_name.str);
     break;
   case INVALID_COST_VALUE:
-    sql_print_warning("Invalid value for cost constant \"%s\" in mysql.server_cost table: %.1f\n",
-                      cost_name.str, value);
+    LogErr(WARNING_LEVEL, ER_SERVER_COST_INVALID_COST_CONSTANT,
+           cost_name.str, value);
     break;
   default:
     DBUG_ASSERT(false);                         /* purecov: inspected */
@@ -227,20 +234,19 @@ static void report_engine_cost_warnings(const LEX_CSTRING &se_name,
   switch(error)
   {
   case UNKNOWN_COST_NAME:
-    sql_print_warning("Unknown cost constant \"%s\" in mysql.engine_cost table\n",
-                      cost_name.str);
+    LogErr(WARNING_LEVEL, ER_ENGINE_COST_UNKNOWN_COST_CONSTANT, cost_name.str);
     break;
   case UNKNOWN_ENGINE_NAME:
-    sql_print_warning("Unknown storage engine \"%s\" in mysql.engine_cost table\n",
-                      se_name.str);
+    LogErr(WARNING_LEVEL, ER_ENGINE_COST_UNKNOWN_STORAGE_ENGINE, se_name.str);
     break;
   case INVALID_DEVICE_TYPE:
-    sql_print_warning("Invalid device type %d for \"%s\" storage engine for cost constant \"%s\" in mysql.engine_cost table\n",
-                      storage_category, se_name.str, cost_name.str);
+    LogErr(WARNING_LEVEL, ER_ENGINE_COST_INVALID_DEVICE_TYPE_FOR_SE,
+           storage_category, se_name.str, cost_name.str);
     break;
   case INVALID_COST_VALUE:
-    sql_print_warning("Invalid value for cost constant \"%s\" for \"%s\" storage engine and device type %d in mysql.engine_cost table: %.1f\n",
-                      cost_name.str, se_name.str, storage_category, value);
+    LogErr(WARNING_LEVEL,
+           ER_ENGINE_COST_INVALID_CONST_CONSTANT_FOR_SE_AND_DEVICE,
+           cost_name.str, se_name.str, storage_category, value);
     break;
   default:
     DBUG_ASSERT(false);                         /* purecov: inspected */
@@ -316,7 +322,7 @@ static void read_server_cost_constants(THD *thd, TABLE *table,
   }
   else
   {
-    sql_print_warning("init_read_record returned error when reading from mysql.server_cost table.\n");
+    LogErr(WARNING_LEVEL, ER_SERVER_COST_FAILED_TO_READ);
   }
 
   DBUG_VOID_RETURN;
@@ -406,9 +412,9 @@ static void read_engine_cost_constants(THD *thd, TABLE *table,
   }
   else
   {
-    sql_print_warning("init_read_record returned error when reading from mysql.engine_cost table.\n");
+    LogErr(WARNING_LEVEL, ER_ENGINE_COST_FAILED_TO_READ);
   }
-    
+
   DBUG_VOID_RETURN;
 }
 
@@ -463,7 +469,7 @@ static void read_cost_constants(Cost_model_constants* cost_constants)
   }
   else
   {
-    sql_print_warning("Failed to open optimizer cost constant tables\n");
+    LogErr(WARNING_LEVEL, ER_FAILED_TO_OPEN_COST_CONSTANT_TABLES);
   }
 
   trans_commit_stmt(thd);

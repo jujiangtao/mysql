@@ -10,16 +10,24 @@ incorporated with their permission, and subject to the conditions contained in
 the file COPYING.Google.
 
 This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+the terms of the GNU General Public License, version 2.0, as published by the
+Free Software Foundation.
+
+This program is also distributed with certain software (including but not
+limited to OpenSSL) that is licensed under separate terms, as designated in a
+particular file or component or in included license documentation. The authors
+of MySQL hereby grant you an additional permission to link the program and
+your derivative works with the separately licensed software that they have
+included with MySQL.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+FOR A PARTICULAR PURPOSE. See the GNU General Public License, version 2.0,
+for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 *****************************************************************************/
 
@@ -34,8 +42,10 @@ Created 9/5/1995 Heikki Tuuri
 #include "sync0rw.h"
 #include "sync0sync.h"
 
-/** Keeps count of number of Performance Schema keys defined. */
-unsigned int mysql_pfs_key_t::s_count;
+#ifdef HAVE_PSI_INTERFACE
+/** To keep count of number of PS keys defined. */
+unsigned int mysql_pfs_key_t::s_count = 0;
+#endif /* HAVE_PSI_INTERFACE */
 
 #ifdef UNIV_PFS_MUTEX
 /* Key to register autoinc_mutex with performance schema */
@@ -54,6 +64,7 @@ mysql_pfs_key_t	cache_last_read_mutex_key;
 mysql_pfs_key_t	dict_foreign_err_mutex_key;
 mysql_pfs_key_t	dict_persist_dirty_tables_mutex_key;
 mysql_pfs_key_t	dict_sys_mutex_key;
+mysql_pfs_key_t	parser_mutex_key;
 mysql_pfs_key_t	fil_system_mutex_key;
 mysql_pfs_key_t	flush_list_mutex_key;
 mysql_pfs_key_t	fts_bg_threads_mutex_key;
@@ -70,6 +81,9 @@ mysql_pfs_key_t	log_sys_mutex_key;
 mysql_pfs_key_t	log_sys_write_mutex_key;
 mysql_pfs_key_t	log_cmdq_mutex_key;
 mysql_pfs_key_t	log_flush_order_mutex_key;
+mysql_pfs_key_t	log_sys_arch_mutex_key;
+mysql_pfs_key_t	page_sys_arch_mutex_key;
+mysql_pfs_key_t	page_sys_arch_oper_mutex_key;
 mysql_pfs_key_t	mutex_list_mutex_key;
 mysql_pfs_key_t	recalc_pool_mutex_key;
 mysql_pfs_key_t	page_cleaner_mutex_key;
@@ -77,6 +91,7 @@ mysql_pfs_key_t	purge_sys_pq_mutex_key;
 mysql_pfs_key_t	recv_sys_mutex_key;
 mysql_pfs_key_t	recv_writer_mutex_key;
 mysql_pfs_key_t	temp_space_rseg_mutex_key;
+mysql_pfs_key_t	undo_space_rseg_mutex_key;
 mysql_pfs_key_t	trx_sys_rseg_mutex_key;
 mysql_pfs_key_t page_zip_stat_per_index_mutex_key;
 # ifdef UNIV_DEBUG
@@ -113,7 +128,11 @@ mysql_pfs_key_t	sync_array_mutex_key;
 mysql_pfs_key_t	thread_mutex_key;
 mysql_pfs_key_t zip_pad_mutex_key;
 mysql_pfs_key_t row_drop_list_mutex_key;
+mysql_pfs_key_t file_open_mutex_key;
 mysql_pfs_key_t	master_key_id_mutex_key;
+mysql_pfs_key_t clone_sys_mutex_key;
+mysql_pfs_key_t clone_task_mutex_key;
+mysql_pfs_key_t clone_snapshot_mutex_key;
 
 #endif /* UNIV_PFS_MUTEX */
 
@@ -126,6 +145,8 @@ mysql_pfs_key_t	buf_block_lock_key;
 mysql_pfs_key_t	buf_block_debug_latch_key;
 # endif /* UNIV_DEBUG */
 mysql_pfs_key_t	checkpoint_lock_key;
+mysql_pfs_key_t	undo_spaces_lock_key;
+mysql_pfs_key_t	rsegs_lock_key;
 mysql_pfs_key_t	dict_operation_lock_key;
 mysql_pfs_key_t	dict_persist_checkpoint_key;
 mysql_pfs_key_t	dict_table_stats_key;

@@ -3,16 +3,24 @@
 Copyright (c) 1995, 2017, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+the terms of the GNU General Public License, version 2.0, as published by the
+Free Software Foundation.
+
+This program is also distributed with certain software (including but not
+limited to OpenSSL) that is licensed under separate terms, as designated in a
+particular file or component or in included license documentation. The authors
+of MySQL hereby grant you an additional permission to link the program and
+your derivative works with the separately licensed software that they have
+included with MySQL.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+FOR A PARTICULAR PURPOSE. See the GNU General Public License, version 2.0,
+for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 *****************************************************************************/
 
@@ -29,38 +37,41 @@ Created 11/11/1995 Heikki Tuuri
 #include <sys/types.h>
 #include <time.h>
 
-#include "buf0buf.h"
-#include "buf0checksum.h"
-#include "buf0flu.h"
-#include "ha_prototypes.h"
-#include "my_inttypes.h"
-#include "page0zip.h"
-#include "srv0srv.h"
-#include "srv0start.h"
 #ifndef UNIV_HOTBACKUP
-#include "buf0lru.h"
-#include "buf0rea.h"
-#include "fil0fil.h"
-#include "fsp0sysspace.h"
-#include "ibuf0ibuf.h"
-#include "log0log.h"
-#include "os0file.h"
-#include "os0thread-create.h"
-#include "page0page.h"
-#include "srv0mon.h"
-#include "trx0sys.h"
-#include "ut0byte.h"
-#include "ut0stage.h"
+# include "buf0buf.h"
+# include "buf0checksum.h"
+# include "buf0flu.h"
+# include "ha_prototypes.h"
+# include "my_inttypes.h"
+#endif /* !UNIV_HOTBACKUP */
+#include "page0zip.h"
+#ifndef UNIV_HOTBACKUP
+# include "srv0srv.h"
+# include "srv0start.h"
+# include "buf0lru.h"
+# include "buf0rea.h"
+# include "fil0fil.h"
+# include "fsp0sysspace.h"
+# include "ibuf0ibuf.h"
+# include "log0log.h"
+# include "os0file.h"
+# include "os0thread-create.h"
+# include "page0page.h"
+# include "srv0mon.h"
+# include "trx0sys.h"
+# include "ut0byte.h"
+# include "ut0stage.h"
+#include "arch0arch.h"
 
-#ifdef UNIV_LINUX
+# ifdef UNIV_LINUX
 /* include defs for CPU time priority settings */
-#include <sys/resource.h>
-#include <sys/syscall.h>
-#include <sys/time.h>
-#include <unistd.h>
+#  include <sys/resource.h>
+#  include <sys/syscall.h>
+#  include <sys/time.h>
+#  include <unistd.h>
 
 static const int buf_flush_page_cleaner_priority = -20;
-#endif /* UNIV_LINUX */
+# endif /* UNIV_LINUX */
 
 /** Sleep time in microseconds for loop waiting for the oldest
 modification lsn */
@@ -68,6 +79,7 @@ static const ulint buf_flush_wait_flushed_sleep_time = 10000;
 
 /** Number of pages flushed through non flush_list flushes. */
 static ulint buf_lru_flush_page_count = 0;
+#endif /* !UNIV_HOTBACKUP */
 
 /** Flag indicating if the page_cleaner is in active state. This flag
 is set to TRUE by the page_cleaner thread when it is spawned and is set
@@ -76,6 +88,7 @@ need to protect it by a mutex. It is only ever read by the thread
 doing the shutdown */
 bool buf_page_cleaner_is_active = false;
 
+#ifndef UNIV_HOTBACKUP
 /** Factor for scan length to determine n_pages for intended oldest LSN
 progress */
 static ulint buf_flush_lsn_scan_factor = 3;
@@ -884,12 +897,16 @@ buf_flush_init_for_writing(
 		case FIL_PAGE_IBUF_BITMAP:
 		case FIL_PAGE_TYPE_FSP_HDR:
 		case FIL_PAGE_TYPE_XDES:
+		case FIL_PAGE_TYPE_ZLOB_FIRST:
+		case FIL_PAGE_TYPE_ZLOB_DATA:
+		case FIL_PAGE_TYPE_ZLOB_INDEX:
+		case FIL_PAGE_TYPE_ZLOB_FRAG:
+		case FIL_PAGE_TYPE_ZLOB_FRAG_ENTRY:
 			/* These are essentially uncompressed pages. */
 			memcpy(page_zip->data, page, size);
 			/* fall through */
 		case FIL_PAGE_TYPE_ZBLOB:
 		case FIL_PAGE_TYPE_ZBLOB2:
-		case FIL_PAGE_TYPE_ZBLOB3:
 		case FIL_PAGE_SDI_ZBLOB:
 		case FIL_PAGE_INDEX:
 		case FIL_PAGE_SDI:
@@ -949,9 +966,17 @@ buf_flush_init_for_writing(
 				case FIL_PAGE_TYPE_BLOB:
 				case FIL_PAGE_TYPE_ZBLOB:
 				case FIL_PAGE_TYPE_ZBLOB2:
-				case FIL_PAGE_TYPE_ZBLOB3:
 				case FIL_PAGE_SDI_BLOB:
 				case FIL_PAGE_SDI_ZBLOB:
+				case FIL_PAGE_TYPE_LOB_INDEX:
+				case FIL_PAGE_TYPE_LOB_DATA:
+				case FIL_PAGE_TYPE_LOB_FIRST:
+				case FIL_PAGE_TYPE_ZLOB_FIRST:
+				case FIL_PAGE_TYPE_ZLOB_DATA:
+				case FIL_PAGE_TYPE_ZLOB_INDEX:
+				case FIL_PAGE_TYPE_ZLOB_FRAG:
+				case FIL_PAGE_TYPE_ZLOB_FRAG_ENTRY:
+				case FIL_PAGE_TYPE_RSEG_ARRAY:
 					break;
 				case FIL_PAGE_TYPE_FSP_HDR:
 				case FIL_PAGE_TYPE_XDES:
@@ -1116,11 +1141,15 @@ buf_flush_write_block_low(
 
 		ulint	type = IORequest::WRITE | IORequest::DO_NOT_WAKE;
 
+                dberr_t         err;
 		IORequest	request(type);
 
-		fil_io(request,
-		       sync, bpage->id, bpage->size, 0, bpage->size.physical(),
-		       frame, bpage);
+		err = fil_io(
+                        request,
+                        sync, bpage->id, bpage->size, 0, bpage->size.physical(),
+                        frame, bpage);
+
+                ut_a(err == DB_SUCCESS);
 
 	} else if (flush_type == BUF_FLUSH_SINGLE_PAGE) {
 		buf_dblwr_write_single_page(bpage, sync);
@@ -1230,6 +1259,30 @@ buf_flush_page(
 		}
 
 		++buf_pool->n_flush[flush_type];
+
+		if (bpage->oldest_modification > buf_pool->max_lsn_io) {
+
+			buf_pool->max_lsn_io =
+				bpage->oldest_modification;
+		}
+
+		if (!fsp_is_system_temporary(bpage->id.space())
+		    && buf_pool->track_page_lsn != LSN_MAX) {
+
+			page_t*	frame;
+			lsn_t	frame_lsn;
+
+			frame = bpage->zip.data;
+
+			if (!frame) {
+
+				frame = ((buf_block_t*) bpage)->frame;
+			}
+			frame_lsn = mach_read_from_8(frame + FIL_PAGE_LSN);
+
+			arch_page_sys->track_page(bpage,
+				buf_pool->track_page_lsn, frame_lsn, false);
+                }
 
 		mutex_exit(&buf_pool->flush_state_mutex);
 
@@ -3184,7 +3237,8 @@ buf_flush_page_coordinator_thread(size_t n_page_cleaners)
 
 	while (!srv_read_only_mode
 	       && srv_shutdown_state == SRV_SHUTDOWN_NONE
-	       && recv_sys->heap != NULL) {
+	       && recv_sys->spaces != NULL) {
+
 		/* treat flushing requests during recovery. */
 		ulint	n_flushed_lru = 0;
 		ulint	n_flushed_list = 0;
@@ -3192,7 +3246,8 @@ buf_flush_page_coordinator_thread(size_t n_page_cleaners)
 		os_event_wait(recv_sys->flush_start);
 
 		if (srv_shutdown_state != SRV_SHUTDOWN_NONE
-		    || recv_sys->heap == NULL) {
+		    || recv_sys->spaces == NULL) {
+
 			break;
 		}
 
@@ -3258,16 +3313,17 @@ buf_flush_page_coordinator_thread(size_t n_page_cleaners)
 
 			if (curr_time > next_loop_time + 3000) {
 				if (warn_count == 0) {
-					ib::info() << "page_cleaner: 1000ms"
-						" intended loop took "
-						<< 1000 + curr_time
-						   - next_loop_time
-						<< "ms. The settings might not"
-						" be optimal. (flushed="
+					ulint	us;
+
+					us = 1000 + curr_time - next_loop_time;
+
+					ib::info()
+						<< "Page cleaner took "
+						<< us << "ms to flush"
 						<< n_flushed_last
-						<< " and evicted="
-						<< n_evicted
-						<< ", during the time.)";
+						<< " and evict "
+						<< n_evicted << " pages";
+
 					if (warn_interval > 300) {
 						warn_interval = 600;
 					} else {
@@ -3678,7 +3734,6 @@ buf_flush_validate(
 	return(ret);
 }
 #endif /* UNIV_DEBUG || UNIV_BUF_DEBUG */
-#endif /* !UNIV_HOTBACKUP */
 
 /******************************************************************//**
 Check if there are any dirty pages that belong to a space id in the flush
@@ -3856,3 +3911,4 @@ FlushObserver::flush()
 		}
 	}
 }
+#endif /* UNIV_HOTBACKUP */

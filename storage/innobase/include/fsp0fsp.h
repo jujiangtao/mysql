@@ -3,16 +3,24 @@
 Copyright (c) 1995, 2017, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+the terms of the GNU General Public License, version 2.0, as published by the
+Free Software Foundation.
+
+This program is also distributed with certain software (including but not
+limited to OpenSSL) that is licensed under separate terms, as designated in a
+particular file or component or in included license documentation. The authors
+of MySQL hereby grant you an additional permission to link the program and
+your derivative works with the separately licensed software that they have
+included with MySQL.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+FOR A PARTICULAR PURPOSE. See the GNU General Public License, version 2.0,
+for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 *****************************************************************************/
 
@@ -37,10 +45,18 @@ Created 12/18/1995 Heikki Tuuri
 
 #include "fsp0types.h"
 
+#ifdef UNIV_HOTBACKUP
+# include "buf0buf.h"
+#endif /* UNIV_HOTBACKUP */
+
 /* @defgroup Tablespace Header Constants (moved from fsp0fsp.c) @{ */
 
 /** Offset of the space header within a file page */
 #define FSP_HEADER_OFFSET	FIL_PAGE_DATA
+
+/** The number of bytes required to store SDI root page number(4)
+and SDI version(4) at Page 0 */
+#define FSP_SDI_HEADER_LEN	8
 
 /* The data structures in files are defined just as byte strings in C */
 typedef	byte	fsp_header_t;
@@ -395,17 +411,6 @@ page_size_t
 fsp_header_get_page_size(
 	const page_t*	page);
 
-/** Decoding the encryption info from the first page of a tablespace.
-@param[in,out]	key		key
-@param[in,out]	iv		iv
-@param[in]	encryption_info	encrytion info.
-@return true if success */
-bool
-fsp_header_decode_encryption_info(
-	byte*		key,
-	byte*		iv,
-	byte*		encryption_info);
-
 /** Reads the encryption key from the first page of a tablespace.
 @param[in]	fsp_flags	tablespace flags
 @param[in,out]	key		tablespace key
@@ -462,7 +467,7 @@ fsp_header_get_encryption_offset(
 @return true if success. */
 bool
 fsp_header_write_encryption(
-	ulint			space_id,
+	space_id_t		space_id,
 	ulint			space_flags,
 	byte*			encrypt_info,
 	bool			update_fsp_flags,
@@ -739,6 +744,12 @@ fseg_print(
 	mtr_t*		mtr);	/*!< in/out: mini-transaction */
 #endif /* UNIV_BTR_PRINT */
 
+/** Check whether a space id is an undo tablespace ID
+@param[in]	space_id	space id to check
+@return true if it is undo tablespace else false. */
+bool
+fsp_is_undo_tablespace(space_id_t space_id);
+
 /** Check if the space_id is for a system-tablespace (shared + temp).
 @param[in]	space_id	tablespace ID
 @return true if id is a system tablespace, false if not. */
@@ -747,7 +758,7 @@ bool
 fsp_is_system_or_temp_tablespace(space_id_t space_id)
 {
 	return(space_id == TRX_SYS_SPACE
-		|| fsp_is_system_temporary(space_id));
+	       || fsp_is_system_temporary(space_id));
 }
 
 /** Determine if the space ID is an IBD tablespace, either file_per_table
@@ -774,7 +785,7 @@ fsp_is_file_per_table(
 	ulint		fsp_flags)
 {
 	return(!fsp_is_shared_tablespace(fsp_flags)
-		&& fsp_is_ibd_tablespace(space_id));
+	       && fsp_is_ibd_tablespace(space_id));
 }
 
 /** Determine if the tablespace is compressed from tablespace flags.
@@ -873,36 +884,46 @@ fsp_get_space_header(
 	mtr_t*			mtr);
 
 /** Retrieve tablespace dictionary index root page number stored in the
-page 1.
+page 0
 @param[in]	space		tablespace id
-@param[in]	copy_num	sdi index copy number
 @param[in]	page_size	page size
 @param[in,out]	mtr		mini-transaction
 @return root page num of the tablespace dictionary index copy */
 page_no_t
 fsp_sdi_get_root_page_num(
 	space_id_t		space,
-	uint32_t		copy_num,
 	const page_size_t&	page_size,
 	mtr_t*			mtr);
 
-/** Write SDI Index root page num to page 1 or 2 of tablespace
-@param[in]	space		tablespace id
-@param[in]	page_num	page number in tablespace.
+/** Write SDI Index root page num to page 0 of tablespace.
+@param[in,out]	page		page 0 frame
 @param[in]	page_size	size of page
-@param[in]	root_page_num_0	root page number of SDI copy 0
-@param[in]	root_page_num_1	root page number of SDI copy 1
+@param[in]	root_page_num	root page number of SDI
 @param[in,out]	mtr		mini-transaction */
 void
 fsp_sdi_write_root_to_page(
-	space_id_t		space,
-	page_no_t		page_num,
+	page_t*			page,
 	const page_size_t&	page_size,
-	page_no_t		root_page_num_0,
-	page_no_t		root_page_num_1,
+	page_no_t		root_page_num,
 	mtr_t*			mtr);
 
 #include "fsp0fsp.ic"
+
+/** Reads the server version from the first page of a tablespace.
+@param[in]	page	first page of a tablespace
+@return space server version */
+inline
+uint32
+fsp_header_get_server_version(
+	const page_t*	page);
+
+/** Reads the server space version from the first page of a tablespace.
+@param[in]	page	first page of a tablespace
+@return space server version */
+inline
+uint32
+fsp_header_get_space_version(
+	const page_t*	page);
 
 /** Get the state of an xdes.
 @param[in]	descr	extent descriptor
@@ -992,5 +1013,30 @@ fsp_header_size_update(
 
 	DBUG_VOID_RETURN;
 }
+
+/** Check if a specified page is inode page or not. This is used for
+index root pages of core DD table, we can safely assume that the passed in
+page number is in the range of pages which are only either index root page
+or inode page
+@param[in]	page	Page number to check
+@return true if it's inode page, otherwise false */
+inline
+bool
+fsp_is_inode_page(page_no_t page);
+
+/** Get the offset of SDI root page number in page 0
+@param[in]	page_size	page size
+@return offset on success, else 0 */
+inline
+ulint
+fsp_header_get_sdi_offset(
+	const page_size_t&	page_size);
+
+/** Determine if the tablespace has SDI.
+@param[in]	space_id	Tablespace id
+@return DB_SUCCESS if SDI is present else DB_ERROR
+or DB_TABLESPACE_NOT_FOUND */
+dberr_t
+fsp_has_sdi(space_id_t space_id);
 
 #endif

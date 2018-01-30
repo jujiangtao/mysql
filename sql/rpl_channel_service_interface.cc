@@ -1,52 +1,84 @@
 /* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "sql/rpl_channel_service_interface.h"
 
 #include <string.h>
-#include <sys/types.h>
+#include <atomic>
+#include <map>
+#include <utility>
 
-#include "binlog_event.h"
-#include "current_thd.h"
-#include "log.h"
-#include "log_event.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
+#include "my_loglevel.h"
 #include "my_sys.h"
+#include "my_thread.h"
+#include "mysql/components/services/psi_stage_bits.h"
 #include "mysql/psi/mysql_cond.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/psi/psi_base.h"
-#include "mysql/psi/psi_stage.h"
 #include "mysql/service_mysql_alloc.h"
-#include "mysql_com.h"
-#include "mysqld.h"          // opt_mts_slave_parallel_workers
+#include "mysql/udf_registration_types.h"
 #include "mysqld_error.h"
-#include "mysqld_thd_manager.h" // Global_THD_manager
-#include "rpl_gtid.h"
-#include "rpl_info_factory.h"
-#include "rpl_info_handler.h"
-#include "rpl_mi.h"
-#include "rpl_msr.h"         /* Multisource replication */
-#include "rpl_mts_submode.h"
-#include "rpl_rli.h"
-#include "rpl_rli_pdb.h"
-#include "rpl_slave.h"
-#include "sql_class.h"
-#include "sql_lex.h"
-#include "sql_security_ctx.h"
+#include "sql/auth/sql_security_ctx.h"
+#include "sql/binlog.h"
+#include "sql/current_thd.h"
+#include "sql/log.h"
+#include "sql/log_event.h"
+#include "sql/mysqld.h"      // opt_mts_slave_parallel_workers
+#include "sql/mysqld_thd_manager.h" // Global_THD_manager
+#include "sql/rpl_gtid.h"
+#include "sql/rpl_info_factory.h"
+#include "sql/rpl_info_handler.h"
+#include "sql/rpl_mi.h"
+#include "sql/rpl_msr.h"     /* Multisource replication */
+#include "sql/rpl_mts_submode.h"
+#include "sql/rpl_rli.h"
+#include "sql/rpl_rli_pdb.h"
+#include "sql/rpl_slave.h"
+#include "sql/rpl_trx_boundary_parser.h"
+#include "sql/sql_class.h"
+#include "sql/sql_lex.h"
+
+
+/**
+  Auxiliary function to stop all the running channel threads according to the
+  given mask.
+
+  @note: The caller shall possess channel_map lock before calling this function,
+         and unlock after returning from this function.
+
+  @param mi                   The pointer to Master_info instance
+  @param threads_to_stop      The types of threads to be stopped
+  @param timeout              The expected time in which the thread should stop
+
+  @return the operation status
+    @retval 0      OK
+    @retval !=0    Error
+*/
+int channel_stop(Master_info *mi,
+                 int threads_to_stop,
+                 long timeout);
 
 int initialize_channel_service_interface()
 {
@@ -56,16 +88,14 @@ int initialize_channel_service_interface()
   if (opt_mi_repository_id != INFO_REPOSITORY_TABLE ||
       opt_rli_repository_id != INFO_REPOSITORY_TABLE)
   {
-    sql_print_error("For the creation of replication channels the master info"
-                    " and relay log info repositories must be set to TABLE");
+    LogErr(ERROR_LEVEL, ER_RPL_CHANNELS_REQUIRE_TABLES_AS_INFO_REPOSITORIES);
     DBUG_RETURN(1);
   }
 
   //server id must be different from 0
   if (server_id == 0)
   {
-    sql_print_error("For the creation of replication channels the server id"
-                    " must be different from 0");
+    LogErr(ERROR_LEVEL, ER_RPL_CHANNELS_REQUIRE_NON_ZERO_SERVER_ID);
     DBUG_RETURN(1);
   }
 
@@ -75,6 +105,7 @@ int initialize_channel_service_interface()
 
 static void set_mi_settings(Master_info *mi, Channel_creation_info* channel_info)
 {
+  mysql_mutex_lock(mi->rli->relay_log.get_log_lock());
   mysql_mutex_lock(&mi->data_lock);
 
   mi->rli->set_thd_tx_priority(channel_info->thd_tx_priority);
@@ -106,9 +137,10 @@ static void set_mi_settings(Master_info *mi, Channel_creation_info* channel_info
     (channel_info->channel_mts_checkpoint_group == RPL_SERVICE_SERVER_DEFAULT) ?
     opt_mts_checkpoint_group : channel_info->channel_mts_checkpoint_group;
 
-  mi->set_mi_description_event(new Format_description_log_event(BINLOG_VERSION));
+  mi->set_mi_description_event(new Format_description_log_event());
 
   mysql_mutex_unlock(&mi->data_lock);
+  mysql_mutex_unlock(mi->rli->relay_log.get_log_lock());
 }
 
 static bool init_thread_context()
@@ -136,7 +168,7 @@ static void delete_surrogate_thread(THD *thd)
 {
   thd->release_resources();
   delete thd;
-  my_thread_set_THR_THD(NULL);
+  current_thd= nullptr;
 }
 
 void
@@ -158,6 +190,8 @@ initialize_channel_creation_info(Channel_creation_info* channel_info)
   channel_info->preserve_relay_logs= false;
   channel_info->retry_count= 0;
   channel_info->connect_retry= 0;
+  channel_info->public_key_path= 0;
+  channel_info->get_public_key= 0;
 }
 
 void initialize_channel_ssl_info(Channel_ssl_info* channel_ssl_info)
@@ -185,10 +219,9 @@ initialize_channel_connection_info(Channel_connection_info* channel_info)
 static void set_mi_ssl_options(LEX_MASTER_INFO* lex_mi, Channel_ssl_info* channel_ssl_info)
 {
 
-  if (channel_ssl_info->use_ssl)
-  {
-    lex_mi->ssl= LEX_MASTER_INFO::LEX_MI_ENABLE;
-  }
+  lex_mi->ssl= (channel_ssl_info->use_ssl) ?
+    LEX_MASTER_INFO::LEX_MI_ENABLE :
+    LEX_MASTER_INFO::LEX_MI_DISABLE;
 
   if (channel_ssl_info->ssl_ca_file_name != NULL)
   {
@@ -230,10 +263,9 @@ static void set_mi_ssl_options(LEX_MASTER_INFO* lex_mi, Channel_ssl_info* channe
     lex_mi->ssl_cipher= channel_ssl_info->ssl_cipher;
   }
 
-  if (channel_ssl_info->ssl_verify_server_cert)
-  {
-    lex_mi->ssl_verify_server_cert= LEX_MASTER_INFO::LEX_MI_ENABLE;
-  }
+  lex_mi->ssl_verify_server_cert= (channel_ssl_info->ssl_verify_server_cert) ?
+    LEX_MASTER_INFO::LEX_MI_ENABLE :
+    LEX_MASTER_INFO::LEX_MI_DISABLE;
 }
 
 int channel_create(const char* channel,
@@ -303,6 +335,30 @@ int channel_create(const char* channel,
     }
   }
 
+  if (channel_info->public_key_path)
+  {
+    lex_mi->public_key_path= channel_info->public_key_path;
+  }
+
+  if (channel_info->get_public_key)
+  {
+    lex_mi->get_public_key= LEX_MASTER_INFO::LEX_MI_ENABLE;
+    if (mi && mi->get_public_key)
+    {
+      //So change master allows new configurations with a running SQL thread
+      lex_mi->get_public_key= LEX_MASTER_INFO::LEX_MI_UNCHANGED;
+    }
+  }
+  else
+  {
+    lex_mi->get_public_key= LEX_MASTER_INFO::LEX_MI_DISABLE;
+    if (mi && !mi->get_public_key)
+    {
+      //So change master allows new configurations with a running SQL thread
+      lex_mi->get_public_key= LEX_MASTER_INFO::LEX_MI_UNCHANGED;
+    }
+  }
+
   if (channel_info->ssl_info != NULL)
   {
     set_mi_ssl_options(lex_mi, channel_info->ssl_info);
@@ -324,6 +380,14 @@ int channel_create(const char* channel,
   }
 
   set_mi_settings(mi, channel_info);
+
+  if (channel_map.is_group_replication_channel_name(mi->get_channel()))
+  {
+    thd->variables.max_allowed_packet= slave_max_allowed_packet;
+    thd->get_protocol_classic()->set_max_packet_size(
+        slave_max_allowed_packet + MAX_LOG_EVENT_HEADER);
+  }
+
 
 err:
   channel_map.unlock();
@@ -457,19 +521,19 @@ err:
   DBUG_RETURN(error);
 }
 
-int channel_stop(const char* channel,
+int channel_stop(Master_info *mi,
                  int threads_to_stop,
                  long timeout)
 {
-  DBUG_ENTER("channel_stop(channel, stop_receiver, stop_applier, timeout");
+  DBUG_ENTER("channel_stop(master_info, stop_receiver, stop_applier, timeout");
 
-  channel_map.rdlock();
 
-  Master_info *mi= channel_map.get_mi(channel);
+
+  channel_map.assert_some_lock();
 
   if (mi == NULL)
   {
-    channel_map.unlock();
+
     DBUG_RETURN(RPL_CHANNEL_SERVICE_CHANNEL_DOES_NOT_EXISTS_ERROR);
   }
 
@@ -506,13 +570,120 @@ int channel_stop(const char* channel,
 end:
   unlock_slave_threads(mi);
   mi->channel_unlock();
-  channel_map.unlock();
+
 
   if (thd_init)
   {
     clean_thread_context();
   }
 
+  DBUG_RETURN(error);
+}
+
+int channel_stop(const char* channel,
+                 int threads_to_stop,
+                 long timeout)
+{
+  DBUG_ENTER("channel_stop(channel, stop_receiver, stop_applier, timeout");
+
+  channel_map.rdlock();
+
+  Master_info *mi= channel_map.get_mi(channel);
+
+  int error= channel_stop(mi, threads_to_stop, timeout);
+
+  channel_map.unlock();
+
+  DBUG_RETURN(error);
+}
+
+int channel_stop_all(int threads_to_stop, long timeout,
+                     char **error_message)
+{
+  DBUG_ENTER("channel_stop_all");
+
+  Master_info *mi= 0;
+
+  /* Error related varaiables */
+  int error= 0;
+  char buf[MYSQL_ERRMSG_SIZE];
+  char *ptr= buf;
+  size_t error_length= 0;
+
+  if (error_message)
+  {
+    error_length= my_snprintf(ptr, sizeof(buf), "Error stopping channel(s): ");
+    ptr+= (int)error_length;
+  }
+
+  channel_map.rdlock();
+
+  for (mi_map::iterator it= channel_map.begin(); it != channel_map.end(); it++)
+  {
+    mi= it->second;
+
+    if (mi)
+    {
+      DBUG_PRINT("info", ("stopping channel_name: %s",
+                          mi->get_channel()));
+
+      int channel_error= channel_stop(mi, threads_to_stop, timeout);
+
+      DBUG_EXECUTE_IF("group_replication_stop_all_channels_failure",
+                      {
+                        channel_error=1;
+                      });
+
+      if (channel_error &&
+          channel_error != RPL_CHANNEL_SERVICE_CHANNEL_DOES_NOT_EXISTS_ERROR)
+      {
+        error= channel_error;
+
+        mi->report(ERROR_LEVEL, error,
+                   "Error stopping channel: %s. Got error: %d",
+                   mi->get_channel(), error);
+
+        if (error_message)
+        {
+          size_t curr_len= my_snprintf(ptr, sizeof(buf) - error_length, " '%s' [error number: %d],",
+                                       mi->get_channel(), error);
+
+          if (error_length + curr_len < sizeof(buf))
+          {
+            ptr+= (int)curr_len;
+            error_length+=curr_len;
+          }
+        }
+      }
+    }
+  }
+
+  if (error_message && error)
+  {
+    char append_str[]= " Please check the error log for additional details.";
+    int append_len= strlen(append_str);
+    size_t total_length= error_length;
+    error_length-=1; // remove comma at the end
+
+    /* append append_str if buffer has space */
+    if (error_length + append_len < sizeof(buf))
+    {
+      total_length+=append_len;
+      *error_message= (char *)my_malloc(PSI_NOT_INSTRUMENTED,
+                                        total_length + 1, MYF(0));
+      my_snprintf(*error_message, total_length + 1, "%.*s.%s",
+                  error_length, buf, append_str);
+    }
+    else
+    {
+      *error_message= (char *)my_malloc(PSI_NOT_INSTRUMENTED,
+                                        total_length + 1, MYF(0));
+      my_snprintf(*error_message, total_length + 1, "%.*s.",
+                  error_length, buf);
+    }
+  }
+
+  channel_map.unlock();
   DBUG_RETURN(error);
 }
 
@@ -881,7 +1052,7 @@ end:
 int channel_is_applier_thread_waiting(unsigned long thread_id, bool worker)
 {
   DBUG_ENTER("channel_is_applier_thread_waiting(thread_id, worker)");
-  bool result= -1;
+  int result= -1;
 
   Find_thd_with_id find_thd_with_id(thread_id);
   THD *thd= Global_THD_manager::get_instance()->find_thd(&find_thd_with_id);
@@ -1006,4 +1177,48 @@ bool is_partial_transaction_on_channel_relay_log(const char *channel)
   mi->channel_unlock();
   channel_map.unlock();
   DBUG_RETURN(ret);
+}
+
+bool is_any_slave_channel_running(int thread_mask)
+{
+  DBUG_ENTER("is_any_slave_channel_running");
+  Master_info *mi= 0;
+  bool is_running;
+
+  channel_map.rdlock();
+
+  for (mi_map::iterator it= channel_map.begin(); it != channel_map.end(); it++)
+  {
+    mi= it->second;
+
+    if (mi)
+    {
+      if ((thread_mask & SLAVE_IO) != 0)
+      {
+        mysql_mutex_lock(&mi->run_lock);
+        is_running= mi->slave_running;
+        mysql_mutex_unlock(&mi->run_lock);
+        if (is_running)
+        {
+          channel_map.unlock();
+          DBUG_RETURN(true);
+        }
+      }
+
+      if ((thread_mask & SLAVE_SQL) != 0)
+      {
+        mysql_mutex_lock(&mi->rli->run_lock);
+        is_running= mi->rli->slave_running;
+        mysql_mutex_unlock(&mi->rli->run_lock);
+        if (is_running)
+        {
+          channel_map.unlock();
+          DBUG_RETURN(true);
+        }
+      }
+    }
+  }
+
+  channel_map.unlock();
+  DBUG_RETURN(false);
 }

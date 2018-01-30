@@ -1,47 +1,55 @@
 /* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef DD__FOREIGN_KEY_IMPL_INCLUDED
 #define DD__FOREIGN_KEY_IMPL_INCLUDED
 
 #include <sys/types.h>
-#include <memory>     // std::unique_ptr
 #include <new>
-#include <string>
 
-#include "dd/impl/types/entity_object_impl.h" // dd::Entity_object_impl
-#include "dd/impl/types/weak_object_impl.h"
-#include "dd/object_id.h"
-#include "dd/sdi_fwd.h"
-#include "dd/types/foreign_key.h"             // dd::Foreign_key
-#include "dd/types/foreign_key_element.h"     // dd::Foreign_key_element
-#include "dd/types/object_type.h"             // dd::Object_type
+#include "m_ctype.h"                          // my_strcasecmp
+#include "my_sharedlib.h"
+#include "sql/dd/impl/types/entity_object_impl.h" // dd::Entity_object_impl
+#include "sql/dd/impl/types/weak_object_impl.h"
+#include "sql/dd/object_id.h"
+#include "sql/dd/sdi_fwd.h"
+#include "sql/dd/string_type.h"
+#include "sql/dd/types/foreign_key.h"         // dd::Foreign_key
+#include "sql/dd/types/foreign_key_element.h" // IWYU pragma: keep
+
+extern "C" MYSQL_PLUGIN_IMPORT CHARSET_INFO *system_charset_info;
 
 namespace dd {
 
 ///////////////////////////////////////////////////////////////////////////
 
-class Open_dictionary_tables_ctx;
-class Raw_record;
-class Table;
-class Table_impl;
-class Foreign_key_element;
 class Index;
 class Object_table;
+class Open_dictionary_tables_ctx;
+class Raw_record;
 class Sdi_rcontext;
 class Sdi_wcontext;
+class Table;
+class Table_impl;
 class Weak_object;
 
 ///////////////////////////////////////////////////////////////////////////
@@ -55,15 +63,15 @@ public:
   Foreign_key_impl(Table_impl *table);
 
   Foreign_key_impl(const Foreign_key_impl &src,
-                   Table_impl *parent,
-                   const Index *unique_constraint);
+                   Table_impl *parent);
 
   virtual ~Foreign_key_impl()
   { }
 
 public:
-  virtual const Object_table &object_table() const
-  { return Foreign_key::OBJECT_TABLE(); }
+  virtual const Object_table &object_table() const;
+
+  static void register_tables(Open_dictionary_tables_ctx *otx);
 
   virtual bool validate() const;
 
@@ -111,11 +119,11 @@ public:
   // unique_constraint
   /////////////////////////////////////////////////////////////////////////
 
-  virtual const Index &unique_constraint() const
-  { return *m_unique_constraint; }
+  virtual const String_type &unique_constraint_name() const
+  { return m_unique_constraint_name; }
 
-  virtual void set_unique_constraint(const Index *unique_constraint)
-  { m_unique_constraint= unique_constraint; }
+  virtual void set_unique_constraint_name(const String_type &name)
+  { m_unique_constraint_name= name; }
 
   /////////////////////////////////////////////////////////////////////////
   // match_option.
@@ -154,7 +162,7 @@ public:
   virtual const String_type &referenced_table_catalog_name() const
   { return m_referenced_table_catalog_name; }
 
-  virtual void referenced_table_catalog_name(const String_type &name)
+  virtual void set_referenced_table_catalog_name(const String_type &name)
   { m_referenced_table_catalog_name= name; }
 
   /////////////////////////////////////////////////////////////////////////
@@ -164,7 +172,7 @@ public:
   virtual const String_type &referenced_table_schema_name() const
   { return m_referenced_table_schema_name; }
 
-  virtual void referenced_table_schema_name(const String_type &name)
+  virtual void set_referenced_table_schema_name(const String_type &name)
   { m_referenced_table_schema_name= name; }
 
   /////////////////////////////////////////////////////////////////////////
@@ -174,7 +182,7 @@ public:
   virtual const String_type &referenced_table_name() const
   { return m_referenced_table_name; }
 
-  virtual void referenced_table_name(const String_type &name)
+  virtual void set_referenced_table_name(const String_type &name)
   { m_referenced_table_name= name; }
 
   /////////////////////////////////////////////////////////////////////////
@@ -186,11 +194,14 @@ public:
   virtual const Foreign_key_elements &elements() const
   { return m_elements; }
 
+  virtual Foreign_key_elements *elements()
+  { return &m_elements; }
+
   // Fix "inherits ... via dominance" warnings
-  virtual Weak_object_impl *impl()
-  { return Weak_object_impl::impl(); }
-  virtual const Weak_object_impl *impl() const
-  { return Weak_object_impl::impl(); }
+  virtual Entity_object_impl *impl()
+  { return Entity_object_impl::impl(); }
+  virtual const Entity_object_impl *impl() const
+  { return Entity_object_impl::impl(); }
   virtual Object_id id() const
   { return Entity_object_impl::id(); }
   virtual bool is_persistent() const
@@ -207,14 +218,17 @@ public:
   }
 
   static Foreign_key_impl *clone(const Foreign_key_impl &other,
-                                 Table_impl *table);
+                                 Table_impl *table)
+  {
+    return new (std::nothrow) Foreign_key_impl(other, table);
+  }
 
 private:
   enum_match_option m_match_option;
   enum_rule         m_update_rule;
   enum_rule         m_delete_rule;
 
-  const Index *m_unique_constraint;
+  String_type m_unique_constraint_name;
 
   String_type m_referenced_table_catalog_name;
   String_type m_referenced_table_schema_name;
@@ -227,26 +241,25 @@ private:
   Foreign_key_elements m_elements;
 
 public:
-  Foreign_key_impl *clone(Table_impl *parent,
-                          const Index *unique_constraint) const
+  Foreign_key_impl *clone(Table_impl *parent) const
   {
-    return new Foreign_key_impl(*this, parent, unique_constraint);
+    return new Foreign_key_impl(*this, parent);
   }
 };
 
 ///////////////////////////////////////////////////////////////////////////
 
-class Foreign_key_type : public Object_type
+/** Class used to sort Foreign key's by name for the same table. */
+struct Foreign_key_order_comparator
 {
-public:
-  virtual void register_tables(Open_dictionary_tables_ctx *otx) const;
-
-  virtual Weak_object *create_object() const
-  { return new (std::nothrow) Foreign_key_impl(); }
+  bool operator()(const dd::Foreign_key* fk1, const dd::Foreign_key* fk2) const
+  {
+    return (my_strcasecmp(system_charset_info, fk1->name().c_str(),
+                          fk2->name().c_str()) < 0);
+  }
 };
 
 ///////////////////////////////////////////////////////////////////////////
-
 }
 
 #endif // DD__FOREIGN_KEY_IMPL_INCLUDED

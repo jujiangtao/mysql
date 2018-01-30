@@ -1,36 +1,43 @@
 /* Copyright (c) 2011, 2017, Oracle and/or its affiliates. All rights reserved.
 
-   This program is free software; you can redistribute it and/or
-   modify it under the terms of the GNU General Public License as
-   published by the Free Software Foundation; version 2 of the
-   License.
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
 
-   This program is distributed in the hope that it will be useful, but
-   WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
-   General Public License for more details.
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
-   02110-1301 USA */
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include <string.h>
+#include <memory>
+#include <unordered_map>
+#include <utility>
 
 #include "control_events.h"
-#include "hash.h"
-#include "m_ctype.h"
+#include "map_helpers.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_sys.h"
-#include "mysql/psi/psi_memory.h"
 #include "mysql/service_mysql_alloc.h"
-#include "mysqld_error.h"    // ER_*
+#include "mysqld_error.h"  // IWYU pragma: keep
 #include "prealloced_array.h"
-#include "rpl_gtid.h"
+#include "sql/rpl_gtid.h"
+#include "sql/thr_malloc.h"
 
 #ifndef MYSQL_SERVER
-#include "mysqlbinlog.h"
+#include "client/mysqlbinlog.h" // IWYU pragma: keep
 #endif
 
 extern "C" {
@@ -42,10 +49,6 @@ Sid_map::Sid_map(Checkable_rwlock *_sid_lock)
     _sidno_to_sid(key_memory_Sid_map_Node), _sorted(key_memory_Sid_map_Node)
 {
   DBUG_ENTER("Sid_map::Sid_map");
-  my_hash_init(&_sid_to_sidno, &my_charset_bin, 20, 0,
-               sid_map_get_key,
-               my_free, 0,
-               key_memory_Sid_map_Node);
   DBUG_VOID_RETURN;
 }
 
@@ -53,7 +56,6 @@ Sid_map::Sid_map(Checkable_rwlock *_sid_lock)
 Sid_map::~Sid_map()
 {
   DBUG_ENTER("Sid_map::~Sid_map");
-  my_hash_free(&_sid_to_sidno);
   DBUG_VOID_RETURN;
 }
 
@@ -61,10 +63,7 @@ Sid_map::~Sid_map()
 enum_return_status Sid_map::clear()
 {
   DBUG_ENTER("Sid_map::clear");
-  my_hash_free(&_sid_to_sidno);
-  my_hash_init(&_sid_to_sidno, &my_charset_bin, 20, 0,
-               sid_map_get_key,
-               my_free, 0, PSI_INSTRUMENT_ME);
+  _sid_to_sidno.clear();
   _sidno_to_sid.clear();
   _sorted.clear();
   RETURN_OK;
@@ -80,12 +79,11 @@ rpl_sidno Sid_map::add_sid(const rpl_sid &sid)
 #endif
   if (sid_lock)
     sid_lock->assert_some_lock();
-  Node *node= (Node *)my_hash_search(&_sid_to_sidno, sid.bytes,
-                                     binary_log::Uuid::BYTE_LENGTH);
-  if (node != NULL)
+  auto it= _sid_to_sidno.find(sid);
+  if (it != _sid_to_sidno.end())
   {
-    DBUG_PRINT("info", ("existed as sidno=%d", node->sidno));
-    DBUG_RETURN(node->sidno);
+    DBUG_PRINT("info", ("existed as sidno=%d", it->second->sidno));
+    DBUG_RETURN(it->second->sidno);
   }
 
   bool is_wrlock= false;
@@ -100,10 +98,9 @@ rpl_sidno Sid_map::add_sid(const rpl_sid &sid)
   }
   DBUG_PRINT("info", ("is_wrlock=%d sid_lock=%p", is_wrlock, sid_lock));
   rpl_sidno sidno;
-  node= (Node *)my_hash_search(&_sid_to_sidno, sid.bytes,
-                               binary_log::Uuid::BYTE_LENGTH);
-  if (node != NULL)
-    sidno= node->sidno;
+  it= _sid_to_sidno.find(sid);
+  if (it != _sid_to_sidno.end())
+    sidno= it->second->sidno;
   else
   {
     sidno= get_max_sidno() + 1;
@@ -127,18 +124,18 @@ enum_return_status Sid_map::add_node(rpl_sidno sidno, const rpl_sid &sid)
   DBUG_ENTER("Sid_map::add_node(rpl_sidno, const rpl_sid *)");
   if (sid_lock)
     sid_lock->assert_some_wrlock();
-  Node *node= (Node *)my_malloc(key_memory_Sid_map_Node,
-                                sizeof(Node), MYF(MY_WME));
-  if (node == NULL)
+  unique_ptr_my_free<Node> node
+    ((Node *)my_malloc(key_memory_Sid_map_Node, sizeof(Node), MYF(MY_WME)));
+  if (node == nullptr)
     RETURN_REPORTED_ERROR;
 
   node->sidno= sidno;
   node->sid= sid;
-  if (!_sidno_to_sid.push_back(node))
+  if (!_sidno_to_sid.push_back(node.get()))
   {
     if (!_sorted.push_back(sidno))
     {
-      if (my_hash_insert(&_sid_to_sidno, (uchar *)node) == 0)
+      if (_sid_to_sidno.emplace(node->sid, std::move(node)).second)
       {
 #ifdef MYSQL_SERVER
         /*
@@ -173,7 +170,6 @@ enum_return_status Sid_map::add_node(rpl_sidno sidno, const rpl_sid &sid)
     }
     _sidno_to_sid.pop_back();
   }
-  my_free(node);
 
   BINLOG_ERROR(("Out of memory."), (ER_OUT_OF_RESOURCES, MYF(0)));
   RETURN_REPORTED_ERROR;

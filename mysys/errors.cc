@@ -1,13 +1,25 @@
-/* Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
+
+   Without limiting anything contained in the foregoing, this file,
+   which is part of C Driver for MySQL (Connector/C), is also subject to the
+   Universal FOSS Exception, version 1.0, a copy of which can be found at
+   http://oss.oracle.com/licenses/universal-foss-exception.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -67,7 +79,6 @@ const char *globerrs[GLOBERRS]=
   "Memory capacity exceeded (capacity %llu bytes)"
 };
 
-
 /*
  We cannot call my_error/my_printf_error here in this function.
   Those functions will set status variable in diagnostic area
@@ -78,6 +89,8 @@ const char *globerrs[GLOBERRS]=
 */
 void wait_for_free_space(const char *filename, int errors)
 {
+  size_t time_to_sleep= MY_WAIT_FOR_USER_TO_FIX_PANIC;
+
   if (!(errors % MY_WAIT_GIVE_USER_A_MESSAGE))
   {
     char errbuf[MYSYS_STRERROR_SIZE];
@@ -91,10 +104,26 @@ void wait_for_free_space(const char *filename, int errors)
   }
   DBUG_EXECUTE_IF("simulate_no_free_space_error",
                  {
-                   (void) sleep(1);
-                   return;
+                   time_to_sleep= 1;
                  });
-  (void) sleep(MY_WAIT_FOR_USER_TO_FIX_PANIC);
+  DBUG_EXECUTE_IF("force_wait_for_disk_space",
+                 {
+                   time_to_sleep= 1;
+                 });
+  DBUG_EXECUTE_IF("simulate_io_thd_wait_for_disk_space",
+                 {
+                   time_to_sleep= 1;
+                 });
+  DBUG_EXECUTE_IF("simulate_random_io_thd_wait_for_disk_space",
+                 {
+                   time_to_sleep= 1;
+                 });
+  // Answer more promptly to a KILL signal
+  do
+  {
+    (void) sleep(1);
+  }
+  while (--time_to_sleep > 0 && !is_killed_hook(NULL));
 }
 
 const char *get_global_errmsg(int nr)

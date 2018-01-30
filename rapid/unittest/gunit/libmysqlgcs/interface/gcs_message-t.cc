@@ -1,24 +1,30 @@
-/* Copyright (c) 2015, 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include <gtest/gtest.h>
+#include "gcs_base_test.h"
 
 #include "mysql/gcs/gcs_message.h"
 #include "mysql/gcs/gcs_group_identifier.h"
 #include "mysql/gcs/gcs_member_identifier.h"
-#include "mysql/gcs/gcs_log_system.h"
 
 #include <vector>
 #include <string>
@@ -28,27 +34,9 @@ using std::vector;
 namespace gcs_message_unittest
 {
 
-class MessageEncodingDecodingTest : public ::testing::Test
+class MessageEncodingDecodingTest : public GcsBaseTest
 {
-protected:
-  MessageEncodingDecodingTest() {}
-
-  virtual void SetUp()
-  {
-    logger= new Gcs_simple_ext_logger_impl();
-    Gcs_logger::initialize(logger);
-  }
-
-  virtual void TearDown()
-  {
-    Gcs_logger::finalize();
-    logger->finalize();
-    delete logger;
-  }
-
-  Gcs_simple_ext_logger_impl *logger;
 };
-
 
 TEST_F(MessageEncodingDecodingTest, EncodeDecodeTest)
 {
@@ -126,25 +114,8 @@ TEST_F(MessageEncodingDecodingTest, EncodeDecodeTest)
 }
 
 
-class MessageDataTest : public ::testing::Test
+class MessageDataTest : public GcsBaseTest
 {
-protected:
-  MessageDataTest() {}
-
-  virtual void SetUp()
-  {
-    logger= new Gcs_simple_ext_logger_impl();
-    Gcs_logger::initialize(logger);
-  }
-
-  virtual void TearDown()
-  {
-    Gcs_logger::finalize();
-    logger->finalize();
-    delete logger;
-  }
-
-  Gcs_simple_ext_logger_impl *logger;
 };
 
 
@@ -204,6 +175,50 @@ TEST_F(MessageDataTest, EncodeTest)
 }
 
 
+TEST_F(MessageDataTest, EncodeNullTest)
+{
+  std::string test_header("header");
+  std::string test_payload("payload");
+  Gcs_message_data *message_data=
+    new Gcs_message_data(test_header.length(), test_payload.length());
+
+  message_data->append_to_header((uchar *)test_header.c_str(),
+                                 test_header.length());
+
+  message_data->append_to_payload((uchar *)test_payload.c_str(),
+                                  test_payload.length());
+
+  uchar *buffer= NULL;
+  uint64_t buffer_len= 0;
+
+  EXPECT_TRUE(message_data->encode(
+    static_cast<uchar **>(NULL), static_cast<uint64_t *>(NULL))
+  );
+
+  EXPECT_TRUE(
+    message_data->encode(&buffer, static_cast<uint64_t *>(NULL))
+  );
+
+  EXPECT_TRUE(
+    message_data->encode(static_cast<uchar **>(NULL), &buffer_len)
+  );
+
+  EXPECT_TRUE(message_data->encode(
+    static_cast<uchar *>(NULL), static_cast<uint64_t *>(NULL))
+  );
+
+  buffer= static_cast<uchar *>(malloc(1));
+  EXPECT_TRUE(
+    message_data->encode(buffer, static_cast<uint64_t *>(NULL))
+  );
+
+  EXPECT_TRUE(message_data->encode(buffer, &buffer_len));
+
+  free(buffer);
+  delete message_data;
+}
+
+
 TEST_F(MessageDataTest, DecodeTest)
 {
   std::string test_header("header");
@@ -238,6 +253,34 @@ TEST_F(MessageDataTest, DecodeTest)
 
   std::string returned_payload((const char *)to_decode.get_payload());
   EXPECT_EQ(test_payload, returned_payload);
+
+  free(buffer);
+  delete message_data;
+}
+
+
+TEST_F(MessageDataTest, DecodeNullTest)
+{
+  std::string test_header("header");
+  std::string test_payload("payload");
+  Gcs_message_data *message_data=
+    new Gcs_message_data(test_header.length(), test_payload.length());
+
+  message_data->append_to_header((uchar *)test_header.c_str(),
+                                 test_header.length());
+  message_data->append_to_payload((uchar *)test_payload.c_str(),
+                                  test_payload.length());
+
+  uchar *buffer= NULL;
+  uint64_t buffer_len= 0;
+
+  EXPECT_TRUE(message_data->decode(buffer, buffer_len));
+
+  buffer= static_cast<uchar *>(malloc(1));
+  EXPECT_TRUE(message_data->decode(buffer, buffer_len));
+
+  buffer_len= 1024;
+  EXPECT_TRUE(message_data->decode(buffer, buffer_len));
 
   free(buffer);
   delete message_data;

@@ -1,43 +1,49 @@
 /* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include <stddef.h>
 #include <algorithm>
 #include <string>
+#include <sstream>
 #include <vector>
 
-#include "gcs_event_handlers.h"
 #include "my_dbug.h"
-#include "pipeline_stats.h"
-#include "plugin.h"
-#include "single_primary_message.h"
-#include "sql_service_gr_user.h"
+#include "plugin/group_replication/include/gcs_event_handlers.h"
+#include "plugin/group_replication/include/pipeline_stats.h"
+#include "plugin/group_replication/include/plugin.h"
+#include "plugin/group_replication/include/single_primary_message.h"
 
 using std::vector;
-
 
 Plugin_gcs_events_handler::
 Plugin_gcs_events_handler(Applier_module_interface* applier_module,
                           Recovery_module* recovery_module,
                           Plugin_gcs_view_modification_notifier* vc_notifier,
                           Compatibility_module* compatibility_module,
-                          Read_mode_handler* read_mode_handler)
+                          ulong components_stop_timeout)
 : applier_module(applier_module), recovery_module(recovery_module),
   view_change_notifier(vc_notifier),
   compatibility_manager(compatibility_module),
-  read_mode_handler(read_mode_handler)
+  stop_wait_timeout(components_stop_timeout)
 {
   this->temporary_states= new std::set<Group_member_info*,
                                        Group_member_info_pointer_comparator>();
@@ -88,10 +94,18 @@ Plugin_gcs_events_handler::on_message_received(const Gcs_message& message) const
   default:
     break; /* purecov: inspected */
   }
+
+  /*
+   We need to see if a notification should be sent at this
+   point in time because we may have received a recovery
+   message that has updated our state.
+  */
+  notify_and_reset_ctx(m_notification_ctx);
 }
 
 void
-Plugin_gcs_events_handler::handle_transactional_message(const Gcs_message& message) const
+Plugin_gcs_events_handler::
+handle_transactional_message(const Gcs_message& message) const
 {
   if ( (local_member_info->get_recovery_status() == Group_member_info::MEMBER_IN_RECOVERY ||
         local_member_info->get_recovery_status() == Group_member_info::MEMBER_ONLINE) &&
@@ -165,28 +179,36 @@ Plugin_gcs_events_handler::handle_recovery_message(const Gcs_message& message) c
     log_message(MY_INFORMATION_LEVEL,
                 "This server was declared online within the replication group");
 
+    /*
+     The member is declared as online upon receiving this message
+
+     A notification may be flagged and eventually triggered when
+     the on_message handle is finished.
+    */
+    group_member_mgr->update_member_status(
+      member_uuid,
+      Group_member_info::MEMBER_ONLINE,
+      m_notification_ctx);
+
     /**
-    Reset the read mode in the server if the member is:
-    - joining
-    - doesn't have a higher possible incompatible version
-    - We are not on Primary mode.
+      Disable the read mode in the server if the member is:
+      - joining
+      - doesn't have a higher possible incompatible version
+      - We are not on Primary mode.
     */
     if (*joiner_compatibility_status != READ_COMPATIBLE &&
         (local_member_info->get_role() == Group_member_info::MEMBER_ROLE_PRIMARY ||
          !local_member_info->in_primary_mode()))
     {
-      if (reset_server_read_mode(true))
+      if (disable_server_read_mode(PSESSION_DEDICATED_THREAD))
       {
         log_message(MY_WARNING_LEVEL,
                     "When declaring the plugin online it was not possible to "
-                    "reset the server read mode settings. "
-                    "Try to reset it manually."); /* purecov: inspected */
+                      "disable the server read mode settings. "
+                      "Try to disable it manually."); /* purecov: inspected */
       }
     }
 
-    // The member is declared as online upon receiving this message
-    group_member_mgr->update_member_status(member_uuid,
-                                           Group_member_info::MEMBER_ONLINE);
   }
   else
   {
@@ -199,10 +221,17 @@ Plugin_gcs_events_handler::handle_recovery_message(const Gcs_message& message) c
                   member_info->get_hostname().c_str(), member_info->get_port());
       delete member_info;
 
-      // The member is declared as online upon receiving this message
-      // We need to run this before running update_recovery_process
-      group_member_mgr->update_member_status(member_uuid,
-                                             Group_member_info::MEMBER_ONLINE);
+      /*
+       The member is declared as online upon receiving this message
+       We need to run this before running update_recovery_process
+
+       A notification may be flagged and eventually triggered when
+       the on_message handle is finished.
+      */
+      group_member_mgr->update_member_status(
+        member_uuid,
+        Group_member_info::MEMBER_ONLINE,
+        m_notification_ctx);
 
       if (local_member_info->get_recovery_status() ==
               Group_member_info::MEMBER_IN_RECOVERY)
@@ -292,17 +321,161 @@ Plugin_gcs_events_handler::on_suspicions(const std::vector<Gcs_member_identifier
       uit= std::find(tmp_unreachable.begin(), tmp_unreachable.end(), member);
       if (uit != tmp_unreachable.end())
       {
-        member_info->set_unreachable();
-
+        if (!member_info->is_unreachable())
+        {
+          log_message(MY_WARNING_LEVEL,
+                      "Member with address %s:%u has become unreachable.",
+                      member_info->get_hostname().c_str(), member_info->get_port());
+          // flag as a member having changed state
+          m_notification_ctx.set_member_state_changed();
+          member_info->set_unreachable();
+        }
         // remove to not check again against this one
         tmp_unreachable.erase(uit);
       }
       else
       {
-        member_info->set_reachable();
+        if (member_info->is_unreachable())
+        {
+          log_message(MY_WARNING_LEVEL,
+                      "Member with address %s:%u is reachable again.",
+                      member_info->get_hostname().c_str(), member_info->get_port());
+          /* purecov: begin inspected */
+          // flag as a member having changed state
+          m_notification_ctx.set_member_state_changed();
+          member_info->set_reachable();
+          /* purecov: end */
+        }
       }
     }
   }
+
+  if ((members.size() - unreachable.size()) <= (members.size() / 2))
+  {
+    if (!group_partition_handler->get_timeout_on_unreachable())
+      log_message(MY_ERROR_LEVEL,
+                  "This server is not able to reach a majority of members "
+                  "in the group. This server will now block all updates. "
+                  "The server will remain blocked until contact with the "
+                  "majority is restored. "
+                  "It is possible to use group_replication_force_members "
+                  "to force a new group membership.");
+    else
+      log_message(MY_ERROR_LEVEL,
+                  "This server is not able to reach a majority of members "
+                  "in the group. This server will now block all updates. "
+                  "The server will remain blocked for the next %lu seconds. "
+                  "Unless contact with the majority is restored, after this "
+                  "time the member will error out and leave the group. "
+                  "It is possible to use group_replication_force_members "
+                  "to force a new group membership.",
+                  group_partition_handler->get_timeout_on_unreachable());
+
+    if (!group_partition_handler->is_partition_handler_running() &&
+        !group_partition_handler->is_partition_handling_terminated())
+      group_partition_handler->launch_partition_handler_thread();
+
+    // flag as having lost quorum
+    m_notification_ctx.set_quorum_lost();
+  }
+  else
+  {
+    /*
+      This code is present on on_view_changed and on_suspicions as no assumption
+      can be made about the order in which these methods are invoked.
+    */
+    if (group_partition_handler->is_member_on_partition())
+    {
+      if (group_partition_handler->abort_partition_handler_if_running())
+      {
+        log_message(MY_WARNING_LEVEL,
+                    "A group membership change was received but the plugin is "
+                    "already leaving due to the configured timeout on "
+                    "group_replication_unreachable_majority_timeout option.");
+      }
+      else
+      {
+        /* If it was not running or we canceled it in time */
+        log_message(MY_WARNING_LEVEL,
+                    "The member has resumed contact with a majority of the "
+                    "members in the group. Regular operation is restored and "
+                    "transactions are unblocked.");
+      }
+    }
+  }
+  notify_and_reset_ctx(m_notification_ctx);
+}
+
+void
+Plugin_gcs_events_handler::log_members_leaving_message(const Gcs_view& new_view) const
+{
+  std::string members_leaving;
+  std::string primary_member_host;
+
+  get_hosts_from_view(new_view.get_leaving_members(), members_leaving, primary_member_host);
+
+  log_message(MY_WARNING_LEVEL,
+              "Members removed from the group: %s",
+              members_leaving.c_str());
+
+  if (!primary_member_host.empty())
+    log_message(MY_INFORMATION_LEVEL,
+                "Primary server with address %s left the group. "
+                "Electing new Primary.",
+                primary_member_host.c_str());
+}
+
+void
+Plugin_gcs_events_handler::log_members_joining_message(const Gcs_view& new_view) const
+{
+  std::string members_joining;
+  std::string primary_member_host;
+
+  get_hosts_from_view(new_view.get_joined_members(), members_joining, primary_member_host);
+
+  log_message(MY_INFORMATION_LEVEL,
+              "Members joined the group: %s",
+              members_joining.c_str());
+}
+
+void
+Plugin_gcs_events_handler::get_hosts_from_view(const std::vector<Gcs_member_identifier> &members,
+                         std::string& all_hosts, std::string& primary_host) const
+{
+  std::stringstream hosts_string;
+  std::stringstream primary_string;
+  std::vector<Gcs_member_identifier>::const_iterator all_members_it= members.begin();
+
+  while (all_members_it != members.end())
+  {
+    Group_member_info* member_info= group_member_mgr->
+                                     get_group_member_info_by_member_id((*all_members_it));
+    all_members_it++;
+
+    if (member_info == NULL)
+      continue;
+
+    hosts_string << member_info->get_hostname() << ":" << member_info->get_port();
+
+    /**
+     Check in_primary_mode has been added for safety.
+     Since primary role is in single-primary mode.
+    */
+    if (member_info->in_primary_mode() &&
+        member_info->get_role() == Group_member_info::MEMBER_ROLE_PRIMARY)
+    {
+      if (primary_string.rdbuf()->in_avail() != 0)
+        primary_string << ", ";
+      primary_string << member_info->get_hostname() << ":" << member_info->get_port();
+    }
+
+    if (all_members_it != members.end())
+    {
+      hosts_string << ", ";
+    }
+  }
+  all_hosts.assign (hosts_string.str());
+  primary_host.assign (primary_string.str());
 }
 
 void
@@ -313,12 +486,19 @@ Plugin_gcs_events_handler::on_view_changed(const Gcs_view& new_view,
   bool is_leaving= is_member_on_vector(new_view.get_leaving_members(),
                                        local_member_info->get_gcs_member_id());
 
+  bool is_primary= (local_member_info->in_primary_mode() &&
+                    local_member_info->get_role() ==
+                      Group_member_info::MEMBER_ROLE_PRIMARY);
+
   bool is_joining= is_member_on_vector(new_view.get_joined_members(),
                                        local_member_info->get_gcs_member_id());
 
   // Was member expelled from the group due to network failures?
   if (this->was_member_expelled_from_group(new_view))
-    return;
+  {
+    DBUG_ASSERT(is_leaving);
+    goto end;
+  }
 
   //An early error on the applier can render the join invalid
   if (is_joining &&
@@ -328,43 +508,133 @@ Plugin_gcs_events_handler::on_view_changed(const Gcs_view& new_view,
                 "There was a previous plugin error while the member joined the group. "
                 "The member will now exit the group.");
     view_change_notifier->cancel_view_modification(GROUP_REPLICATION_CONFIGURATION_ERROR);
-    return;
   }
-
-  //update the Group Manager with all the received states
-  this->update_group_info_manager(new_view, exchanged_data, is_leaving);
-
-  //enable conflict detection if someone on group have it enabled
-  if (local_member_info->in_primary_mode() &&
-      group_member_mgr->is_conflict_detection_enabled())
+  else
   {
-    Certifier_interface *certifier=
-        this->applier_module->get_certification_handler()->get_certifier();
-    certifier->enable_conflict_detection();
+    /*
+      This code is present on on_view_changed and on_suspicions as no assumption
+      can be made about the order in which these methods are invoked.
+    */
+    if (!is_leaving && group_partition_handler->is_member_on_partition())
+    {
+      if (group_partition_handler->abort_partition_handler_if_running())
+      {
+        log_message(MY_WARNING_LEVEL,
+                    "A group membership change was received but the plugin is "
+                    "already leaving due to the configured timeout on "
+                    "group_replication_unreachable_majority_timeout option.");
+        goto end;
+      }
+      else
+      {
+        /* If it was not running or we canceled it in time */
+        log_message(MY_WARNING_LEVEL,
+                    "The member has resumed contact with a majority of the "
+                    "members in the group. Regular operation is restored and "
+                    "transactions are unblocked.");
+      }
+    }
+
+    /*
+      Maybe on_suspicions we already executed the above block but it was too late.
+      No point in repeating the message, but we need to break the view install.
+    */
+    if (!is_leaving &&
+        group_partition_handler->is_partition_handling_terminated())
+      goto end;
+
+    if (!is_leaving && new_view.get_leaving_members().size() > 0)
+      log_members_leaving_message(new_view);
+
+    //update the Group Manager with all the received states
+    if (update_group_info_manager(new_view, exchanged_data, is_joining, is_leaving) &&
+        is_joining)
+    {
+      view_change_notifier->cancel_view_modification();
+      return;
+    }
+
+    if (!is_joining && new_view.get_joined_members().size() > 0)
+      log_members_joining_message(new_view);
+
+    //enable conflict detection if someone on group have it enabled
+    if (local_member_info->in_primary_mode() &&
+        group_member_mgr->is_conflict_detection_enabled())
+    {
+      Certifier_interface *certifier=
+          this->applier_module->get_certification_handler()->get_certifier();
+      certifier->enable_conflict_detection();
+    }
+
+    //Inform any interested handler that the view changed
+    View_change_pipeline_action *vc_action=
+      new View_change_pipeline_action(is_leaving);
+
+    applier_module->handle_pipeline_action(vc_action);
+    delete vc_action;
+
+    //Update any recovery running process and handle state changes
+    this->handle_leaving_members(new_view, is_joining, is_leaving);
+
+    //Handle joining members
+    this->handle_joining_members(new_view, is_joining, is_leaving);
+
+    if (is_leaving)
+      gcs_module->leave_coordination_member_left();
+
+    // Handle leader election if needed
+    this->handle_leader_election_if_needed();
+
+    //Signal that the injected view was delivered
+    if (view_change_notifier->is_injected_view_modification())
+      view_change_notifier->end_view_modification();
   }
 
-  //Inform any interested handler that the view changed
-  View_change_pipeline_action *vc_action=
-    new View_change_pipeline_action(is_leaving);
+  if (!is_leaving)
+  {
+    std::string view_id_representation= "";
+    Gcs_view *view= gcs_module->get_current_view();
+    if (view != NULL)
+    {
+      view_id_representation= view->get_view_id().get_representation();
+      delete view;
+    }
 
-  applier_module->handle_pipeline_action(vc_action);
-  delete vc_action;
+    log_message(MY_INFORMATION_LEVEL,
+                "Group membership changed to %s on view %s.",
+                group_member_mgr->get_string_current_view_active_hosts().c_str(),
+                view_id_representation.c_str());
+  }
+  else
+  {
+    log_message(MY_INFORMATION_LEVEL,
+                "Group membership changed: This member has left the group.");
+  }
 
-  //Update any recovery running process and handle state changes
-  this->handle_leaving_members(new_view, is_joining, is_leaving);
+end:
+  /* if I am the primary and I am leaving, notify about role change */
+  if (is_leaving && is_primary)
+  {
+    group_member_mgr->update_member_role(
+      local_member_info->get_uuid(),
+      Group_member_info::MEMBER_ROLE_SECONDARY,
+      m_notification_ctx);
+  }
 
-  //Handle joining members
-  this->handle_joining_members(new_view, is_joining, is_leaving);
-
+  /* flag view change */
+  m_notification_ctx.set_view_changed();
   if (is_leaving)
-    gcs_module->leave_coordination_member_left();
+    /*
+      The leave view is an optimistic and local view.
+      Therefore its ID is not meaningful, since it is not
+      a global one.
+     */
+    m_notification_ctx.set_view_id("");
+  else
+    m_notification_ctx.set_view_id(new_view.get_view_id().get_representation());
 
-  // Handle leader election if needed
-  this->handle_leader_election_if_needed();
-
-  //Signal that the injected view was delivered
-  if (view_change_notifier->is_injected_view_modification())
-    view_change_notifier->end_view_modification();
+  /* trigger notification */
+  notify_and_reset_ctx(m_notification_ctx);
 }
 
 bool
@@ -379,14 +649,24 @@ Plugin_gcs_events_handler::was_member_expelled_from_group(const Gcs_view& view) 
     log_message(MY_ERROR_LEVEL,
                 "Member was expelled from the group due to network failures, "
                 "changing member status to ERROR.");
+    /*
+      Delete all members from group info except the local one.
 
-    // Delete all members from group info except the local one.
+      Regarding the notifications, these are not triggered here, but
+      rather at the end of the handle function that calls this one:
+      on_view_changed.
+     */
     std::vector<Group_member_info*> to_update;
     group_member_mgr->update(&to_update);
-    group_member_mgr->update_member_status(local_member_info->get_uuid(),
-                                           Group_member_info::MEMBER_ERROR);
-    group_member_mgr->update_member_role(local_member_info->get_uuid(),
-                                         Group_member_info::MEMBER_ROLE_SECONDARY);
+    group_member_mgr->update_member_status(
+      local_member_info->get_uuid(),
+      Group_member_info::MEMBER_ERROR,
+      m_notification_ctx);
+
+    group_member_mgr->update_member_role(
+      local_member_info->get_uuid(),
+      Group_member_info::MEMBER_ROLE_SECONDARY,
+      m_notification_ctx);
 
     bool aborted= false;
     applier_module->add_suspension_packet();
@@ -400,6 +680,73 @@ Plugin_gcs_events_handler::was_member_expelled_from_group(const Gcs_view& view) 
   }
 
   DBUG_RETURN(result);
+}
+
+std::vector<Group_member_info*>::iterator
+Plugin_gcs_events_handler::sort_and_get_lowest_version_member_position(
+  std::vector<Group_member_info*>* all_members_info) const
+{
+  std::vector<Group_member_info*>::iterator it;
+
+  // sort in ascending order of lower member version
+  std::sort(all_members_info->begin(), all_members_info->end(),
+            Group_member_info::comparator_group_member_version);
+
+  /* if vector contains only single version then leader should be picked from
+     all members
+   */
+  std::vector<Group_member_info*>::iterator lowest_version_end=
+    all_members_info->end();
+
+  /* first member will have lowest version as members are already
+     sorted above using member_version.
+   */
+  it= all_members_info->begin();
+  Group_member_info* first_member= *it;
+  uint32 lowest_major_version=
+    first_member->get_member_version().get_major_version();
+
+  /* to avoid read compatibility issue leader should be picked only from lowest
+     version members so save position where member version differs.
+
+     set lowest_version_end when major version changes
+
+     eg: for a list: 5.7.18, 5.7.18, 5.7.19, 5.7.20, 5.7.21, 8.0.2
+         the members to be considered for election will be:
+            5.7.18, 5.7.18, 5.7.19, 5.7.20, 5.7.21
+         and server_uuid based algorithm will be used to elect primary
+
+     eg: for a list: 5.7.20, 5.7.21, 8.0.2, 8.0.2
+         the members to be considered for election will be:
+            5.7.20, 5.7.21
+         and member weight based algorithm will be used to elect primary
+  */
+  for(it= all_members_info->begin() + 1; it != all_members_info->end(); it++)
+  {
+    if (lowest_major_version != (*it)->get_member_version().get_major_version())
+    {
+      lowest_version_end= it;
+      break;
+    }
+  }
+
+  return lowest_version_end;
+}
+
+void Plugin_gcs_events_handler::sort_members_for_election(
+       std::vector<Group_member_info*>* all_members_info,
+       std::vector<Group_member_info*>::iterator lowest_version_end) const
+{
+  Group_member_info* first_member= *(all_members_info->begin());
+  Member_version lowest_version= first_member->get_member_version();
+
+  // sort only lower version members as they only will be needed to pick leader
+  if (lowest_version >= PRIMARY_ELECTION_MEMBER_WEIGHT_VERSION)
+    std::sort(all_members_info->begin(), lowest_version_end,
+              Group_member_info::comparator_group_member_weight);
+  else
+    std::sort(all_members_info->begin(), lowest_version_end,
+              Group_member_info::comparator_group_member_uuid);
 }
 
 void Plugin_gcs_events_handler::handle_leader_election_if_needed() const
@@ -417,8 +764,18 @@ void Plugin_gcs_events_handler::handle_leader_election_if_needed() const
     group_member_mgr->get_all_members();
 
   std::vector<Group_member_info*>::iterator it;
-  std::sort(all_members_info->begin(), all_members_info->end(),
-            Group_member_info::comparator_group_member_info);
+  std::vector<Group_member_info*>::iterator lowest_version_end;
+
+  /* sort members based on member_version and get first iterator position
+     where member version differs
+   */
+  lowest_version_end=
+    sort_and_get_lowest_version_member_position(all_members_info);
+
+  /*  Sort lower version members based on member weight if member version
+      is greater than equal to PRIMARY_ELECTION_MEMBER_WEIGHT_VERSION or uuid.
+   */
+  sort_members_for_election(all_members_info, lowest_version_end);
 
   /*
    1. Iterate over the list of all members and check if there is a primary
@@ -451,11 +808,14 @@ void Plugin_gcs_events_handler::handle_leader_election_if_needed() const
   /* If I am not leaving, then run election. Otherwise do nothing. */
   if (!am_i_leaving)
   {
-    Sql_service_command *sql_command_interface= new Sql_service_command();
+    Sql_service_command_interface *sql_command_interface=
+        new Sql_service_command_interface();
     bool skip_set_super_readonly= false;
     if (sql_command_interface == NULL ||
-        sql_command_interface->establish_session_connection(true, get_plugin_pointer()) ||
-        sql_command_interface->set_interface_user(GROUPREPL_USER))
+        sql_command_interface->
+            establish_session_connection(PSESSION_DEDICATED_THREAD,
+                                         GROUPREPL_USER,
+                                         get_plugin_pointer()))
     {
       log_message(MY_WARNING_LEVEL,
                   "Unable to open session to (re)set read only mode. Skipping."); /* purecov: inspected */
@@ -469,20 +829,20 @@ void Plugin_gcs_events_handler::handle_leader_election_if_needed() const
 
     /*
      There is no primary in the member list. Pick one from
-     the list of ONLINE members. The one we are picking is
-     the one with the lowest index in the list of servers
-     ordered lexicographycally.
-
-     We have ordered all_members_info at the beginning of
-     this function.
+     the list of ONLINE members. The picked one is the first
+     viable on in the list that was sorted at the beginning
+     of this function.
 
      The assumption is that std::sort(...) is deterministic
      on all members.
+
+     To pick leaders from only lowest version members loop
+     till lowest_version_end.
     */
     if (the_primary == NULL)
     {
       for (it= all_members_info->begin();
-           it != all_members_info->end() && the_primary == NULL;
+           it != lowest_version_end && the_primary == NULL;
            it++)
       {
         Group_member_info* mi= *it;
@@ -499,7 +859,8 @@ void Plugin_gcs_events_handler::handle_leader_election_if_needed() const
     {
       std::string primary_uuid= the_primary->get_uuid();
       const bool is_primary_local= !primary_uuid.compare(local_member_info->get_uuid());
-      const bool has_primary_changed = Group_member_info::MEMBER_ROLE_PRIMARY != the_primary->get_role();
+      const bool has_primary_changed=
+          Group_member_info::MEMBER_ROLE_PRIMARY != the_primary->get_role();
 
       if (has_primary_changed)
       {
@@ -512,33 +873,49 @@ void Plugin_gcs_events_handler::handle_leader_election_if_needed() const
         applier_module->add_single_primary_action_packet(single_primary_action);
 
         // declare this as the new primary
-        group_member_mgr->update_member_role(primary_uuid,
-                                             Group_member_info::MEMBER_ROLE_PRIMARY);
+        group_member_mgr->update_member_role(
+          primary_uuid,
+          Group_member_info::MEMBER_ROLE_PRIMARY,
+          m_notification_ctx);
+
+        log_message(MY_INFORMATION_LEVEL, "A new primary with address %s:%u "
+                    "was elected, enabling conflict detection until the new "
+                    "primary applies all relay logs.",
+                    the_primary->get_hostname().c_str(),
+                    the_primary->get_port());
 
         // Check if the session was established, it can (re)set read only mode.
         if (!skip_set_super_readonly)
         {
           if (is_primary_local)
           {
-            log_message(MY_INFORMATION_LEVEL, "Unsetting super_read_only.");
-            if (read_mode_handler->reset_super_read_only_mode(sql_command_interface, true))
+            if (disable_super_read_only_mode(sql_command_interface))
             {
               log_message(MY_WARNING_LEVEL,
-                          "Unable to reset super read only flag. "
-                          "Try to reset it manually."); /* purecov: inspected */
+                          "Unable to disable super read only flag. "
+                          "Try to disable it manually."); /* purecov: inspected */
             }
           }
           else
           {
-            log_message(MY_INFORMATION_LEVEL, "Setting super_read_only.");
-            if (read_mode_handler->set_super_read_only_mode(sql_command_interface))
+            if (enable_super_read_only_mode(sql_command_interface))
             {
               log_message(MY_WARNING_LEVEL,
                           "Unable to set super read only flag. "
-                          "Try to reset it manually."); /* purecov: inspected */
+                          "Try to set it manually."); /* purecov: inspected */
             }
           }
         }
+        /* code position limits messaging to primary change */
+        if (is_primary_local)
+          log_message(MY_INFORMATION_LEVEL,
+                      "This server is working as primary member.");
+        else
+          log_message(MY_INFORMATION_LEVEL,
+                      "This server is working as secondary member with primary "
+                      "member address %s:%u.",
+                      the_primary->get_hostname().c_str(),
+                      the_primary->get_port());
       }
     }
     else if (!skip_set_super_readonly)
@@ -555,11 +932,11 @@ void Plugin_gcs_events_handler::handle_leader_election_if_needed() const
                     "Unable to set any member as primary. No suitable candidate."); /* purecov: inspected */
       }
 
-      if(read_mode_handler->set_super_read_only_mode(sql_command_interface))
+      if(enable_super_read_only_mode(sql_command_interface))
       {
         log_message(MY_WARNING_LEVEL,
                     "Unable to set super read only flag. "
-                    "Try to reset it manually."); /* purecov: inspected */
+                    "Try to set it manually."); /* purecov: inspected */
       }
     }
     delete sql_command_interface;
@@ -573,18 +950,22 @@ void Plugin_gcs_events_handler::handle_leader_election_if_needed() const
   delete all_members_info;
 }
 
-void Plugin_gcs_events_handler::update_group_info_manager(const Gcs_view& new_view,
-                                                          const Exchanged_data &exchanged_data,
-                                                          bool is_leaving)
-                                                          const
+int Plugin_gcs_events_handler::
+update_group_info_manager(const Gcs_view& new_view,
+                          const Exchanged_data &exchanged_data,
+                          bool is_joining,
+                          bool is_leaving) const
 {
+  int error= 0;
+
   //update the Group Manager with all the received states
   vector<Group_member_info*> to_update;
 
   if(!is_leaving)
   {
     //Process local state of exchanged data.
-    process_local_exchanged_data(exchanged_data);
+    if ((error= process_local_exchanged_data(exchanged_data, is_joining)))
+      goto err;
 
     to_update.insert(to_update.end(),
                      temporary_states->begin(),
@@ -613,6 +994,10 @@ void Plugin_gcs_events_handler::update_group_info_manager(const Gcs_view& new_vi
   }
   group_member_mgr->update(&to_update);
   temporary_states->clear();
+
+err:
+  DBUG_ASSERT(temporary_states->size() == 0);
+  return error;
 }
 
 void Plugin_gcs_events_handler::handle_joining_members(const Gcs_view& new_view,
@@ -657,21 +1042,23 @@ void Plugin_gcs_events_handler::handle_joining_members(const Gcs_view& new_view,
                          Group_member_info::MEMBER_IN_RECOVERY,
                          Group_member_info::MEMBER_OFFLINE,
                          Group_member_info::MEMBER_END);
-
-    log_message(MY_INFORMATION_LEVEL,
-                "Starting group replication recovery with view_id %s",
-                new_view.get_view_id().get_representation().c_str());
-
     /**
       Set the read mode if not set during start (auto-start)
     */
-    if (set_server_read_mode(true))
+    if (enable_server_read_mode(PSESSION_DEDICATED_THREAD))
     {
       log_message(MY_ERROR_LEVEL,
                   "Error when activating super_read_only mode on start. "
                   "The member will now exit the group.");
-      group_member_mgr->update_member_status(local_member_info->get_uuid(),
-                                             Group_member_info::MEMBER_ERROR);
+
+      /*
+        The notification will be triggered in the top level handle function
+        that calls this one. In this case, the on_view_changed handle.
+      */
+      group_member_mgr->update_member_status(
+        local_member_info->get_uuid(),
+        Group_member_info::MEMBER_ERROR,
+        m_notification_ctx);
       this->leave_group_on_error();
       return;
     }
@@ -682,7 +1069,8 @@ void Plugin_gcs_events_handler::handle_joining_members(const Gcs_view& new_view,
     */
     ulong auto_increment_increment= get_auto_increment_increment();
 
-    if (new_view.get_members().size() > auto_increment_increment)
+    if (!local_member_info->in_primary_mode() &&
+        new_view.get_members().size() > auto_increment_increment)
     {
       log_message(MY_ERROR_LEVEL,
                   "Group contains %lu members which is greater than"
@@ -754,10 +1142,6 @@ void Plugin_gcs_events_handler::handle_joining_members(const Gcs_view& new_view,
                          Group_member_info::MEMBER_IN_RECOVERY,
                          Group_member_info::MEMBER_OFFLINE,
                          Group_member_info::MEMBER_END);
-
-    log_message(MY_INFORMATION_LEVEL,
-                "Marking group replication view change with view_id %s",
-                new_view.get_view_id().get_representation().c_str());
     /**
      If not a joining member, all members should record on their own binlogs a
      marking event that identifies the frontier between the data the joining
@@ -833,9 +1217,12 @@ is_member_on_vector(const vector<Gcs_member_identifier>& members,
 
 int
 Plugin_gcs_events_handler::
-process_local_exchanged_data(const Exchanged_data &exchanged_data)
+process_local_exchanged_data(const Exchanged_data &exchanged_data,
+                             bool is_joining)
                              const
 {
+  uint local_uuid_found= 0;
+
   /*
   For now, we are only carrying Group Member Info on Exchangeable data
   Since we are receiving the state from all Group members, one shall
@@ -877,11 +1264,17 @@ process_local_exchanged_data(const Exchanged_data &exchanged_data)
         member_infos_it != member_infos->end();
         member_infos_it++)
     {
+      if (local_member_info->get_uuid() == (*member_infos_it)->get_uuid())
+      {
+        local_uuid_found++;
+      }
+
       /*
         Accept only the information the member has about himself
         Information received about other members is probably outdated
       */
-      if ((*member_infos_it)->get_gcs_member_id() == *member_id)
+      if (local_uuid_found < 2 &&
+          (*member_infos_it)->get_gcs_member_id() == *member_id)
       {
         this->temporary_states->insert((*member_infos_it));
       }
@@ -893,6 +1286,30 @@ process_local_exchanged_data(const Exchanged_data &exchanged_data)
 
     member_infos->clear();
     delete member_infos;
+
+    if (local_uuid_found > 1)
+    {
+      if (is_joining)
+      {
+        log_message(MY_ERROR_LEVEL,
+                    "There is already a member with server_uuid %s. "
+                    "The member will now exit the group.",
+                    local_member_info->get_uuid().c_str());
+      }
+
+      // Clean up temporary states.
+      std::set<Group_member_info*,Group_member_info_pointer_comparator>::iterator
+          temporary_states_it;
+      for (temporary_states_it= temporary_states->begin();
+           temporary_states_it != temporary_states->end();
+           temporary_states_it++)
+      {
+        delete (*temporary_states_it);
+      }
+      temporary_states->clear();
+
+      return 1;
+    }
   }
 
   return 0;
@@ -905,12 +1322,14 @@ Plugin_gcs_events_handler::get_exchangeable_data() const
   std::string applier_retrieved_gtids;
   Replication_thread_api applier_channel("group_replication_applier");
 
-  Sql_service_command *sql_command_interface= new Sql_service_command();
+  Sql_service_command_interface *sql_command_interface=
+      new Sql_service_command_interface();
 
-  if(sql_command_interface->
-      establish_session_connection(true, get_plugin_pointer()) ||
-     sql_command_interface->set_interface_user(GROUPREPL_USER)
-    )
+  if (sql_command_interface->
+          establish_session_connection(PSESSION_DEDICATED_THREAD,
+                                       GROUPREPL_USER,
+                                       get_plugin_pointer())
+     )
   {
     log_message(MY_WARNING_LEVEL,
                 "Error when extracting information for group change. "
@@ -985,7 +1404,14 @@ update_member_status(const vector<Gcs_member_identifier>& members,
        (old_status_different_from == Group_member_info::MEMBER_END ||
         member_info->get_recovery_status() != old_status_different_from))
     {
-      group_member_mgr->update_member_status(member_info->get_uuid(), status);
+      /*
+        The notification will be handled on the top level handle
+        function that calls this one down the stack.
+      */
+      group_member_mgr->update_member_status(
+        member_info->get_uuid(),
+        status,
+        m_notification_ctx);
     }
   }
 }
@@ -1058,44 +1484,19 @@ Plugin_gcs_events_handler::check_group_compatibility(size_t number_of_members) c
   {
     if (group_data_compatibility > 0)
     {
-      if(get_allow_local_disjoint_gtids_join())
-      {
-        log_message(MY_WARNING_LEVEL,
-                    "The member contains transactions not present in the group. "
-                    "It is only allowed to join due to "
-                    "group_replication_allow_local_disjoint_gtids_join option");
-      }
-      else {
-        log_message(MY_ERROR_LEVEL,
-                    "The member contains transactions not present in the group. "
-                    "The member will now exit the group.");
-        log_message(MY_INFORMATION_LEVEL,
-                    "To force this member into the group you can use the "
-                    "group_replication_allow_local_disjoint_gtids_join option");
-        return GROUP_REPLICATION_CONFIGURATION_ERROR;
-      }
+      log_message(MY_ERROR_LEVEL,
+                  "The member contains transactions not present in the group. "
+                  "The member will now exit the group.");
+      return GROUP_REPLICATION_CONFIGURATION_ERROR;
     }
     else //error
     {
       /* purecov: begin inspected */
-      if(get_allow_local_disjoint_gtids_join())
-      {
-        log_message(MY_WARNING_LEVEL,
-                    "It was not possible to assess if the member has more "
-                    "transactions than the group. "
-                    "It is only allowed to join due to the "
-                    "group_replication_allow_local_disjoint_gtids_join option");
-      }
-      else {
-        log_message(MY_ERROR_LEVEL,
-                    "It was not possible to assess if the member has more "
-                    "transactions than the group. "
-                    "The member will now exit the group.");
-        log_message(MY_INFORMATION_LEVEL,
-                    "To force this member into the group you can use the "
-                    "group_replication_allow_local_disjoint_gtids_join option");
-        return GROUP_REPLICATION_CONFIGURATION_ERROR;
-      }
+      log_message(MY_ERROR_LEVEL,
+                  "It was not possible to assess if the member has more "
+                  "transactions than the group. "
+                  "The member will now exit the group.");
+      return GROUP_REPLICATION_CONFIGURATION_ERROR;
       /* purecov: end */
     }
   }
@@ -1374,6 +1775,28 @@ void
 Plugin_gcs_events_handler::leave_group_on_error() const
 {
   Gcs_operations::enum_leave_state state= gcs_module->leave();
+  char **error_message= NULL;
+
+  int error= channel_stop_all(CHANNEL_APPLIER_THREAD|CHANNEL_RECEIVER_THREAD,
+                              stop_wait_timeout, error_message);
+  if (error)
+  {
+    if (error_message != NULL && *error_message != NULL)
+    {
+      log_message(MY_ERROR_LEVEL,
+                  "Error stopping all replication channels while server was"
+                  " leaving the group. %s", *error_message);
+      my_free(error_message);
+    }
+    else
+    {
+      log_message(MY_ERROR_LEVEL,
+                  "Error stopping all replication channels while server was"
+                  " leaving the group. Got error: %d. Please check the error"
+                  " log for more details.", error);
+    }
+  }
+
   std::stringstream ss;
   plugin_log_level log_severity= MY_WARNING_LEVEL;
   switch (state)

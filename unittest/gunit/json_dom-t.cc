@@ -1,31 +1,43 @@
 /* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA */
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include <gtest/gtest.h>
 #include <cstring>
 #include <memory>
 
 #include "base64.h"
-#include "json_binary.h"
-#include "json_dom.h"
-#include "my_decimal.h"
 #include "my_inttypes.h"
+#include "sql/json_binary.h"
+#include "sql/json_diff.h"
+#include "sql/json_dom.h"
+#include "sql/json_path.h"
+#include "sql/my_decimal.h"
+#include "sql/sql_time.h"
 #include "sql_string.h"
-#include "sql_time.h"
 #include "template_utils.h"     // down_cast
-#include "test_utils.h"
+#include "unittest/gunit/base_mock_field.h"
+#include "unittest/gunit/benchmark.h"
+#include "unittest/gunit/fake_table.h"
+#include "unittest/gunit/test_utils.h"
 
 /**
  Test Json_dom class hierarchy API, cf. json_dom.h
@@ -35,8 +47,20 @@ namespace json_dom_unittest {
 class JsonDomTest : public ::testing::Test
 {
 protected:
-  virtual void SetUp() { initializer.SetUp(); }
-  virtual void TearDown() { initializer.TearDown(); }
+  Base_mock_field_json m_field{};
+  Fake_TABLE m_table{&m_field};
+  virtual void SetUp()
+  {
+    initializer.SetUp();
+    m_field.make_writable();
+    m_table.in_use= thd();
+    init_alloc_root(PSI_NOT_INSTRUMENTED, &m_table.mem_root, 256, 0);
+  }
+  virtual void TearDown()
+  {
+    m_table.cleanup_partial_update();
+    initializer.TearDown();
+  }
   my_testing::Server_initializer initializer;
   THD *thd() const { return initializer.thd(); }
 };
@@ -47,7 +71,7 @@ protected:
 
    @param d The DOM object to be formatted
 */
-std::string format(const Json_dom &d)
+static std::string format(const Json_dom &d)
 {
   String buffer;
   Json_wrapper w(d.clone());
@@ -56,9 +80,41 @@ std::string format(const Json_dom &d)
   return std::string(buffer.ptr(), buffer.length());
 }
 
-std::string format(const Json_dom *ptr)
+static std::string format(const Json_dom *ptr)
 {
   return format(*ptr);
+}
+
+static std::string format(const Json_dom_ptr &ptr)
+{
+  return format(*ptr);
+}
+
+/**
+  Parse a JSON text and return its DOM representation.
+  @param json_text null-terminated string of JSON text
+  @return a DOM representing the JSON document
+*/
+static Json_dom_ptr parse_json(const char *json_text)
+{
+  auto dom= Json_dom::parse(json_text, std::strlen(json_text),
+                            nullptr, nullptr);
+  EXPECT_FALSE(dom == nullptr);
+  return dom;
+}
+
+/**
+  Parse a JSON path.
+  @param json_path  the JSON path text to parse
+  @return the parsed path
+*/
+static Json_path parse_path(const char *json_path)
+{
+  Json_path path;
+  size_t bad_index;
+  EXPECT_FALSE(parse_path(false, std::strlen(json_path), json_path,
+                          &path, &bad_index)) << "bad index: " << bad_index;
+  return path;
 }
 
 TEST_F(JsonDomTest, BasicTest)
@@ -166,12 +222,15 @@ TEST_F(JsonDomTest, BasicTest)
   }
 
   /* Test uniqueness of keys */
-  Json_string js6(std::string("should be discarded"));
-  o.add_clone(std::string("key1"), &js6);
+  Json_string js6(std::string("js6"));
+  o.add_clone("key1", &js6);
   EXPECT_EQ(2U, o.cardinality());
-  EXPECT_EQ(std::string("{\"key1\": null, \"key2\": [\"val1\", \"val2\"]}"),
+  EXPECT_EQ(std::string("{\"key1\": \"js6\", \"key2\": [\"val1\", \"val2\"]}"),
             format(o));
   EXPECT_EQ(3U, o.depth());
+  o.add_clone("key1", &null);
+  EXPECT_EQ(std::string("{\"key1\": null, \"key2\": [\"val1\", \"val2\"]}"),
+            format(o));
 
   /* Nested array inside object and object inside array,
    * and object cloning
@@ -225,18 +284,17 @@ TEST_F(JsonDomTest, BasicTest)
   EXPECT_EQ(m_d, m_out_d);
 
   a.append_clone(&jd);
-  std::unique_ptr<Json_array> b(static_cast<Json_array *>(a.clone()));
   EXPECT_EQ(std::string("[\"val1\", \"val2\", 3.14]"), format(a));
-  EXPECT_EQ(std::string("[\"val1\", \"val2\", 3.14]"), format(b.get()));
+  EXPECT_EQ(std::string("[\"val1\", \"val2\", 3.14]"), format(a.clone()));
 
   /* Array insert beyond end appends at end */
   a.clear();
-  a.insert_alias(0, new (std::nothrow) Json_int(0));
-  a.insert_alias(2, new (std::nothrow) Json_int(2));
+  a.insert_alias(0, create_dom_ptr<Json_int>(0));
+  a.insert_alias(2, create_dom_ptr<Json_int>(2));
   EXPECT_EQ(std::string("[0, 2]"), format(a));
   a.clear();
-  a.insert_alias(0, new (std::nothrow) Json_int(0));
-  a.insert_alias(1, new (std::nothrow) Json_int(1));
+  a.insert_alias(0, create_dom_ptr<Json_int>(0));
+  a.insert_alias(1, create_dom_ptr<Json_int>(1));
   EXPECT_EQ(std::string("[0, 1]"), format(a));
 
   /* Array clear, null type, boolean literals, including cloning */
@@ -247,9 +305,8 @@ TEST_F(JsonDomTest, BasicTest)
   a.append_clone(&jn);
   a.append_clone(&jbf);
   a.append_clone(&jbt);
-  std::unique_ptr<const Json_dom> c(a.clone());
   EXPECT_EQ(std::string("[null, false, true]"), format(a));
-  EXPECT_EQ(std::string("[null, false, true]"), format(c.get()));
+  EXPECT_EQ(std::string("[null, false, true]"), format(a.clone()));
 
   /* DATETIME scalar */
   MYSQL_TIME dt;
@@ -304,35 +361,25 @@ TEST_F(JsonDomTest, BasicTest)
   delete[] buff;
 
   /* Build DOM from JSON text using rapdjson */
-  const char *msg;
-  size_t msg_offset;
   const char *sample_doc=
     "{\"abc\": 3, \"foo\": [1, 2, {\"foo\": 3.24}, null]}";
-  std::unique_ptr<Json_dom> dom(Json_dom::parse(sample_doc,
-                                                std::strlen(sample_doc),
-                                                &msg, &msg_offset));
-  EXPECT_TRUE(dom.get() != NULL);
+  auto dom= parse_json(sample_doc);
   EXPECT_EQ(4U, dom->depth());
-  EXPECT_EQ(std::string(sample_doc), format(dom.get()));
+  EXPECT_EQ(std::string(sample_doc), format(dom));
 
   const char *sample_array=
     "[3, {\"abc\": \"\\u0000inTheText\"}]";
-  dom.reset(Json_dom::parse(sample_array, std::strlen(sample_array),
-                            &msg, &msg_offset));
-  EXPECT_TRUE(dom.get() != NULL);
+  dom= parse_json(sample_array);
   EXPECT_EQ(3U, dom->depth());
-  EXPECT_EQ(std::string(sample_array), format(dom.get()));
+  EXPECT_EQ(std::string(sample_array), format(dom));
 
   const char *sample_scalar_doc= "2";
-  dom.reset(Json_dom::parse(sample_scalar_doc, std::strlen(sample_scalar_doc),
-                            &msg, &msg_offset));
-  EXPECT_TRUE(dom.get() != NULL);
-  EXPECT_EQ(std::string(sample_scalar_doc), format(dom.get()));
+  dom= parse_json(sample_scalar_doc);
+  EXPECT_EQ(std::string(sample_scalar_doc), format(dom));
 
   const char *max_uint_scalar= "18446744073709551615";
-  dom.reset(Json_dom::parse(max_uint_scalar, std::strlen(max_uint_scalar),
-                            &msg, &msg_offset));
-  EXPECT_EQ(std::string(max_uint_scalar), format(dom.get()));
+  dom= parse_json(max_uint_scalar);
+  EXPECT_EQ(std::string(max_uint_scalar), format(dom));
 
   /*
     Test that duplicate keys are eliminated, and that the returned
@@ -344,18 +391,16 @@ TEST_F(JsonDomTest, BasicTest)
     "\"\":9, \"\":10}";
   const std::string expected[8][2]=
     {
-      { "",        "9" },
+      { "",        "10" },
       { "a",       "6" },
       { "b",       "8" },
       { "ab",      "7" },
-      { "key1",    "1" },
+      { "key1",    "3" },
       { "key2",    "2" },
       { std::string("key1\0x", 6), "4" },
       { std::string("key1\0y", 6), "5" },
     };
-  dom.reset(Json_dom::parse(sample_object, std::strlen(sample_object),
-                            &msg, &msg_offset));
-  EXPECT_TRUE(dom.get() != NULL);
+  dom= parse_json(sample_object);
   const Json_object *obj= down_cast<const Json_object *>(dom.get());
   EXPECT_EQ(8U, obj->cardinality());
   idx= 0;
@@ -373,30 +418,51 @@ TEST_F(JsonDomTest, BasicTest)
      Included so we test error recovery
   */
   const char *half_object_item= "{\"label\": ";
-  dom.reset(Json_dom::parse(half_object_item, std::strlen(half_object_item),
-                            &msg, &msg_offset));
-  const Json_dom *null_dom= NULL;
-  EXPECT_EQ(null_dom, dom.get());
+  dom= Json_dom::parse(half_object_item, std::strlen(half_object_item),
+                       nullptr, nullptr);
+  EXPECT_EQ(nullptr, dom);
 
   const char *half_array_item= "[1,";
-  dom.reset(Json_dom::parse(half_array_item, std::strlen(half_array_item),
-                            &msg, &msg_offset));
-  EXPECT_EQ(null_dom, dom.get());
+  dom= Json_dom::parse(half_array_item, std::strlen(half_array_item),
+                       nullptr, nullptr);
+  EXPECT_EQ(nullptr, dom);
+}
+
+/*
+  Test that special characters are escaped when a Json_string is
+  converted to text, so that it is possible to parse the resulting
+  string. The JSON parser requires all characters in the range [0x00,
+  0x1F] and the characters " (double-quote) and \ (backslash) to be
+  escaped.
+*/
+TEST_F(JsonDomTest, EscapeSpecialChars)
+{
+  // Create a JSON string with all characters in the range [0, 127].
+  char input[128];
+  for (size_t i= 0; i < sizeof(input); ++i)
+    input[i]= static_cast<char>(i);
+  const Json_string str(input, sizeof(input));
+
+  // Now convert that value from JSON to text and back to JSON.
+  Json_dom_ptr dom= parse_json(format(str).c_str());
+  EXPECT_EQ(enum_json_type::J_STRING, dom->json_type());
+
+  // Expect to get the same string back, including all the special characters.
+  const Json_string *str2= down_cast<const Json_string *>(dom.get());
+  EXPECT_EQ(str.value(), str2->value());
 }
 
 void vet_wrapper_length(const THD *thd, const char *text,
                         size_t expected_length)
 {
-  const char *msg;
-  size_t msg_offset;
-  Json_dom *dom= Json_dom::parse(text, std::strlen(text), &msg, &msg_offset);
-  Json_wrapper dom_wrapper(dom);
+  Json_wrapper dom_wrapper(parse_json(text));
 
   EXPECT_EQ(expected_length, dom_wrapper.length())
     << "Wrapped DOM: " << text << "\n";
 
   String  serialized_form;
-  EXPECT_FALSE(json_binary::serialize(thd, dom, &serialized_form));
+  EXPECT_FALSE(json_binary::serialize(thd, dom_wrapper.to_dom(thd),
+                                      &serialized_form));
   json_binary::Value binary=
     json_binary::parse_binary(serialized_form.ptr(),
                               serialized_form.length());
@@ -442,8 +508,9 @@ TEST_F(JsonDomTest, WrapperTest)
 
   Json_wrapper w_6;
   EXPECT_EQ(enum_json_type::J_ERROR, w_6.type());
+  EXPECT_EQ(nullptr, w_6.to_dom(thd));
+  EXPECT_EQ(nullptr, w_6.clone_dom(thd));
   EXPECT_EQ(0U, w_6.length());
-  EXPECT_EQ(0U, w_6.depth(thd));
 
   Json_dom *i= new (std::nothrow) Json_int(1);
   Json_wrapper w_7(i);
@@ -475,17 +542,9 @@ TEST_F(JsonDomTest, WrapperTest)
 
 void vet_merge(char * left_text, char * right_text, std::string expected )
 {
-  const char *msg;
-  size_t msg_offset;
-  Json_dom *left_dom= Json_dom::parse(left_text, std::strlen(left_text),
-                                      &msg, &msg_offset);
-  Json_dom *right_dom= Json_dom::parse(right_text, std::strlen(right_text),
-                                       &msg, &msg_offset);
-  Json_dom *result_dom= merge_doms(left_dom, right_dom);
-
+  Json_dom_ptr result_dom= merge_doms(parse_json(left_text),
+                                      parse_json(right_text));
   EXPECT_EQ(expected, format(*result_dom));
-
-  delete result_dom;
 }
 
 TEST_F(JsonDomTest, MergeTest)
@@ -623,5 +682,887 @@ TEST_F(JsonDomTest, MergeTest)
               "\"d\": 4}");
   }
 }
+
+/// Create a JSON path for accessing an array element at the given position.
+static Json_path array_accessor(size_t idx)
+{
+  Json_path path;
+  path.append(Json_path_leg(idx));
+  return path;
+}
+
+/**
+  Verify that applying the given binary diffs on the original binary
+  value produces a binary string identical to the updated binary value.
+
+  @param field     the column that is updated
+  @param diffs     the binary diffs to apply
+  @param original  the original binary data
+  @param updated   the updated binary data
+*/
+static void verify_binary_diffs(Field_json *field,
+                                const Binary_diff_vector *diffs,
+                                const String &original,
+                                const String &updated)
+{
+  SCOPED_TRACE("verify_binary_diffs");
+  EXPECT_EQ(original.length(), updated.length());
+  std::unique_ptr<char[]> buffer(new char[original.length()]);
+  std::memcpy(buffer.get(), original.ptr(), original.length());
+  const Binary_diff *prev= nullptr;
+  for (const auto &diff : *diffs)
+  {
+    EXPECT_LE(diff.offset(), original.length());
+    EXPECT_LE(diff.offset() + diff.length(), original.length());
+    std::memcpy(buffer.get() + diff.offset(),
+                diff.new_data(field), diff.length());
+    /*
+      The diff vector should be ordered on offset and not have any overlapping
+      or adjacent areas.
+    */
+    if (prev != nullptr)
+    {
+      EXPECT_LT(prev->offset() + prev->length(), diff.offset());
+    }
+    prev= &diff;
+  }
+  EXPECT_EQ(0, std::memcmp(buffer.get(), updated.ptr(), updated.length()));
+}
+
+/**
+  Tests for Json_wrapper::attempt_binary_update().
+*/
+TEST_F(JsonDomTest, AttemptBinaryUpdate)
+{
+  auto dom= parse_json("[\"abc\", 123, \"def\", -70000]");
+
+  String buffer;
+  EXPECT_FALSE(json_binary::serialize(thd(), dom.get(), &buffer));
+
+  json_binary::Value binary=
+    json_binary::parse_binary(buffer.ptr(), buffer.length());
+
+  EXPECT_FALSE(m_table.mark_column_for_partial_update(&m_field));
+  EXPECT_FALSE(m_table.setup_partial_update(true));
+
+  // Verify that the table interface for partial update works.
+  EXPECT_TRUE(m_table.has_binary_diff_columns());
+  EXPECT_TRUE(m_table.is_marked_for_partial_update(&m_field));
+  EXPECT_TRUE(m_table.is_binary_diff_enabled(&m_field));
+  EXPECT_NE(nullptr, m_table.get_binary_diffs(&m_field));
+  m_table.disable_binary_diffs_for_current_row(&m_field);
+  EXPECT_FALSE(m_table.has_binary_diff_columns());
+  EXPECT_TRUE(m_table.is_marked_for_partial_update(&m_field));
+  EXPECT_FALSE(m_table.is_binary_diff_enabled(&m_field));
+  EXPECT_EQ(nullptr, m_table.get_binary_diffs(&m_field));
+  m_table.clear_partial_update_diffs();
+  EXPECT_TRUE(m_table.has_binary_diff_columns());
+  EXPECT_TRUE(m_table.is_marked_for_partial_update(&m_field));
+  EXPECT_TRUE(m_table.is_binary_diff_enabled(&m_field));
+  EXPECT_NE(nullptr, m_table.get_binary_diffs(&m_field));
+
+  const Binary_diff_vector *diffs= m_table.get_binary_diffs(&m_field);
+  EXPECT_TRUE(diffs != nullptr);
+  EXPECT_EQ(0U, diffs->size());
+
+  // Not enough space for a four-character string anywhere in the array.
+  for (size_t i= 0; i < 4; ++i)
+  {
+    SCOPED_TRACE("");
+    Json_wrapper doc(binary);
+    EXPECT_EQ(TYPE_OK, m_field.store_json(&doc));
+    Json_wrapper jstr(new (std::nothrow) Json_string("abcd"));
+    m_table.clear_partial_update_diffs();
+    auto path= array_accessor(i);
+    String shadow;
+    bool success= true;
+    bool replaced= true;
+    EXPECT_FALSE(doc.attempt_binary_update(&m_field, path, &jstr, true,
+                                           &shadow, &success, &replaced));
+    EXPECT_FALSE(success);
+    EXPECT_FALSE(replaced);
+    EXPECT_EQ(0U, diffs->size());
+    EXPECT_EQ(0, doc.compare(Json_wrapper(binary)));
+    EXPECT_EQ(0U, m_table.get_logical_diffs(&m_field)->size());
+  }
+
+  // Enough space for an inlinable value anywhere in the array.
+  for (size_t i= 0; i < 4; ++i)
+  {
+    SCOPED_TRACE("");
+    Json_wrapper doc(binary);
+    EXPECT_EQ(TYPE_OK, m_field.store_json(&doc));
+    EXPECT_FALSE(m_field.val_json(&doc));
+    Json_wrapper jint(new (std::nothrow) Json_int(456));
+    m_table.clear_partial_update_diffs();
+    auto path= array_accessor(i);
+    String shadow;
+    bool success= false;
+    bool replaced= false;
+    EXPECT_FALSE(doc.attempt_binary_update(&m_field, path, &jint, true,
+                                           &shadow, &success, &replaced));
+    EXPECT_TRUE(success);
+    EXPECT_TRUE(replaced);
+    EXPECT_EQ(1U, diffs->size());
+
+    Json_array_ptr array(down_cast<Json_array*>(dom->clone().release()));
+    array->remove(i);
+    array->insert_clone(i, jint.to_dom(thd()));
+    EXPECT_EQ(0, doc.compare(Json_wrapper(std::move(array))));
+
+    EXPECT_EQ(TYPE_OK, m_field.store_json(&doc));
+    verify_binary_diffs(&m_field, diffs, buffer, shadow);
+  }
+
+  // Enough space for a four-byte integer only on $[0], $[2] and $[3].
+  for (size_t i= 0; i < 4; ++i)
+  {
+    SCOPED_TRACE("");
+    Json_wrapper doc(binary);
+    EXPECT_EQ(TYPE_OK, m_field.store_json(&doc));
+    EXPECT_FALSE(m_field.val_json(&doc));
+    Json_wrapper jint(new (std::nothrow) Json_uint(80000));
+    m_table.clear_partial_update_diffs();
+    auto path= array_accessor(i);
+    String shadow;
+    bool success= false;
+    bool replaced= false;
+    EXPECT_FALSE(doc.attempt_binary_update(&m_field, path, &jint, true,
+                                           &shadow, &success, &replaced));
+    EXPECT_EQ(i != 1, success);
+    if (!success)
+    {
+      EXPECT_FALSE(replaced);
+      EXPECT_EQ(0U, diffs->size());
+      EXPECT_EQ(0U, m_table.get_logical_diffs(&m_field)->size());
+      continue;
+    }
+    EXPECT_TRUE(replaced);
+    EXPECT_EQ(2U, diffs->size()) << i;
+
+    Json_array_ptr array(down_cast<Json_array*>(dom->clone().release()));
+    array->remove(i);
+    array->insert_clone(i, jint.to_dom(thd()));
+    EXPECT_EQ(0, doc.compare(Json_wrapper(std::move(array))));
+
+    EXPECT_EQ(TYPE_OK, m_field.store_json(&doc));
+    verify_binary_diffs(&m_field, diffs, buffer, shadow);
+  }
+
+  {
+    SCOPED_TRACE("");
+    Json_wrapper doc(binary);
+    EXPECT_EQ(TYPE_OK, m_field.store_json(&doc));
+    EXPECT_FALSE(m_field.val_json(&doc));
+    Json_wrapper jint(new (std::nothrow) Json_int(456));
+    m_table.clear_partial_update_diffs();
+    String shadow;
+    auto path= array_accessor(100);
+
+    /*
+      Partial update is not performed with a non-existing path when JSON_SET
+      semantics are used.
+    */
+    bool success= false;
+    bool replaced= false;
+    EXPECT_FALSE(doc.attempt_binary_update(&m_field, path, &jint, false,
+                                           &shadow, &success, &replaced));
+    EXPECT_FALSE(success);
+    EXPECT_FALSE(replaced);
+    EXPECT_EQ(0U, diffs->size());
+    EXPECT_EQ(0U, m_table.get_logical_diffs(&m_field)->size());
+
+    /*
+      JSON_REPLACE is a no-op if a non-existing path is given, so expect
+      partial update to be successful.
+    */
+    EXPECT_FALSE(doc.attempt_binary_update(&m_field, path, &jint, true,
+                                           &shadow, &success, &replaced));
+    EXPECT_TRUE(success);
+    EXPECT_FALSE(replaced);
+    EXPECT_EQ(0U, diffs->size());
+    EXPECT_EQ(0, doc.compare(Json_wrapper(binary)));
+    EXPECT_EQ(0U, m_table.get_logical_diffs(&m_field)->size());
+
+    /*
+      If we replace the top-level document (empty path), we do a full update.
+      Expect the attempt to do partial update to fail.
+    */
+    EXPECT_FALSE(doc.attempt_binary_update(&m_field, Json_path(), &jint, false,
+                                           &shadow, &success, &replaced));
+    EXPECT_FALSE(success);
+    EXPECT_FALSE(replaced);
+  }
+
+  {
+    SCOPED_TRACE("");
+    m_table.clear_partial_update_diffs();
+    Json_wrapper doc(binary);
+    EXPECT_EQ(TYPE_OK, m_field.store_json(&doc));
+    EXPECT_FALSE(m_field.val_json(&doc));
+    auto array= down_cast<Json_array*>(dom->clone().release());
+    Json_wrapper array_wrapper(array);
+    String shadow;
+    // Replace all elements with short strings which fit at the old location.
+    Json_wrapper jstr(new (std::nothrow) Json_string("x"));
+    for (size_t i= 0; i < 4; ++i)
+    {
+      auto path= array_accessor(i);
+      bool success= false;
+      bool replaced= false;
+      EXPECT_FALSE(doc.attempt_binary_update(&m_field, path, &jstr, false,
+                                             &shadow, &success, &replaced));
+      EXPECT_TRUE(success);
+      EXPECT_TRUE(replaced);
+      array->remove(i);
+      array->insert_clone(i, jstr.to_dom(thd()));
+      EXPECT_EQ(0, doc.compare(array_wrapper));
+
+      EXPECT_EQ(TYPE_OK, m_field.store_json(&doc));
+      verify_binary_diffs(&m_field, diffs, buffer, shadow);
+    }
+    /*
+      We expect one diff for the first element (type/offset unchanged, data
+      changed), two diffs for the second element (type/offset changed, data
+      changed), one diff for the third element (type/offset unchanged, data
+      changed), and two diffs for the fourth element (type/offset changed, data
+      changed).
+
+      However, the first, third, fourth and fifth diff are touching adjacent
+      areas and are merged into a single diff. So there are three diffs.
+    */
+    EXPECT_EQ(3U, diffs->size());
+  }
+}
+
+/**
+  Test attempt_binary_update() with all types.
+*/
+TEST_F(JsonDomTest, AttemptBinaryUpdate_AllTypes)
+{
+  // Make the table ready for partial update.
+  EXPECT_FALSE(m_table.mark_column_for_partial_update(&m_field));
+  EXPECT_FALSE(m_table.setup_partial_update(true));
+
+  my_decimal decimal;
+  EXPECT_FALSE(double2my_decimal(0, 3.14, &decimal));
+
+  MYSQL_TIME dt;
+  std::memset(&dt, 0, sizeof(dt));
+  MYSQL_TIME_STATUS status;
+  EXPECT_FALSE(str_to_datetime(&my_charset_utf8mb4_bin,
+                               "20170223", 8, &dt,
+                               static_cast<my_time_flags_t>(0),
+                               &status));
+
+  MYSQL_TIME tm;
+  std::memset(&dt, 0, sizeof(tm));
+  EXPECT_FALSE(str_to_time(&my_charset_utf8mb4_bin,
+                           "17:28:25", 8, &tm,
+                           static_cast<my_time_flags_t>(0),
+                           &status));
+
+  Json_dom *doms[]= {
+    new (std::nothrow) Json_null,
+    new (std::nothrow) Json_boolean(true),
+    new (std::nothrow) Json_boolean(false),
+    new (std::nothrow) Json_int(0),
+    new (std::nothrow) Json_int(1000),
+    new (std::nothrow) Json_int(100000),
+    new (std::nothrow) Json_int(100000000),
+    new (std::nothrow) Json_uint(0),
+    new (std::nothrow) Json_uint(1000),
+    new (std::nothrow) Json_uint(100000),
+    new (std::nothrow) Json_uint(100000000),
+    new (std::nothrow) Json_double(3.14),
+    new (std::nothrow) Json_string(""),
+    new (std::nothrow) Json_string("xyz"),
+    new (std::nothrow) Json_decimal(decimal),
+    new (std::nothrow) Json_datetime(dt, MYSQL_TYPE_DATETIME),
+    new (std::nothrow) Json_datetime(dt, MYSQL_TYPE_DATE),
+    new (std::nothrow) Json_datetime(dt, MYSQL_TYPE_TIMESTAMP),
+    new (std::nothrow) Json_datetime(tm, MYSQL_TYPE_TIME),
+    new (std::nothrow) Json_opaque(MYSQL_TYPE_BLOB, 5, 'x'),
+    new (std::nothrow) Json_array(),
+    parse_json("[1,2,3]").release(),
+    new (std::nothrow) Json_object(),
+    parse_json("{\"a\":\"b\"}").release(),
+  };
+
+  for (auto dom : doms)
+  {
+    m_table.clear_partial_update_diffs();
+
+    Json_array_ptr original_dom(new (std::nothrow) Json_array);
+    original_dom->append_alias(new (std::nothrow) Json_string(20, 'x'));
+
+    /*
+      Write an array with one element into the JSON column. Make sure the
+      element is large enough to allow partial update with all the values in
+      the doms array.
+    */
+    Json_wrapper doc(original_dom->clone());
+    EXPECT_EQ(TYPE_OK, m_field.store_json(&doc));
+    EXPECT_FALSE(m_field.val_json(&doc));
+
+    StringBuffer<STRING_BUFFER_USUAL_SIZE> original;
+    EXPECT_FALSE(doc.to_binary(thd(), &original));
+
+    Json_wrapper new_value(dom->clone());
+
+    StringBuffer<STRING_BUFFER_USUAL_SIZE> buffer;
+    bool success= false;
+    bool replaced= false;
+
+    // First try with non-existing path and replace logic. Should be a no-op.
+    EXPECT_FALSE(doc.attempt_binary_update(&m_field,
+                                           array_accessor(100),
+                                           &new_value, true,
+                                           &buffer, &success, &replaced));
+    EXPECT_TRUE(success);
+    EXPECT_FALSE(replaced);
+    EXPECT_EQ(0U, m_table.get_binary_diffs(&m_field)->size());
+    EXPECT_EQ(0U, m_table.get_logical_diffs(&m_field)->size());
+    m_table.clear_partial_update_diffs();
+
+    // Try with non-existing path and JSON_SET logic. Requires full update.
+    EXPECT_FALSE(doc.attempt_binary_update(&m_field,
+                                           array_accessor(100),
+                                           &new_value, false,
+                                           &buffer, &success, &replaced));
+    EXPECT_FALSE(success);
+    EXPECT_FALSE(replaced);
+    EXPECT_EQ(0U, m_table.get_binary_diffs(&m_field)->size());
+    m_table.clear_partial_update_diffs();
+
+    // Try with a valid path. Expect success.
+    EXPECT_FALSE(doc.attempt_binary_update(&m_field,
+                                           array_accessor(0),
+                                           &new_value, true,
+                                           &buffer, &success, &replaced));
+    EXPECT_TRUE(success);
+    EXPECT_TRUE(replaced);
+    EXPECT_NE(0U, m_table.get_binary_diffs(&m_field)->size());
+
+    String str;
+    new_value.to_string(&str, true, "test");
+    // Verify the updated document.
+    {
+      Json_array_ptr a(new (std::nothrow) Json_array);
+      a->append_clone(dom);
+      EXPECT_EQ(0, doc.compare(Json_wrapper(std::move(a))));
+    }
+
+    // Verify the binary diffs.
+    EXPECT_EQ(TYPE_OK, m_field.store_json(&doc));
+    verify_binary_diffs(&m_field, m_table.get_binary_diffs(&m_field),
+                        original, buffer);
+
+    delete dom;
+  }
+}
+
+/**
+  Test attempt_binary_update() with invalid input.
+*/
+TEST_F(JsonDomTest, AttemptBinaryUpdate_Error)
+{
+  EXPECT_FALSE(m_table.mark_column_for_partial_update(&m_field));
+  EXPECT_FALSE(m_table.setup_partial_update(true));
+  Json_wrapper doc(parse_json("[1,2,3,4]"));
+  EXPECT_EQ(TYPE_OK, m_field.store_json(&doc));
+  EXPECT_FALSE(m_field.val_json(&doc));
+
+  /*
+    Create an invalid JSON value, which we will attempt to add to the document.
+  */
+  Json_wrapper error;
+  EXPECT_TRUE(error.empty());
+  EXPECT_EQ(enum_json_type::J_ERROR, error.type());
+
+  // Expect the calls to attempt_binary_update() to fail.
+  const auto old_error_handler_hook= error_handler_hook;
+  error_handler_hook= my_message_sql;
+  String buffer;
+  bool success;
+  bool replaced;
+  {
+    my_testing::Mock_error_handler handler(thd(), ER_INVALID_JSON_BINARY_DATA);
+    EXPECT_TRUE(doc.attempt_binary_update(&m_field, array_accessor(0),
+                                          &error, true, &buffer,
+                                          &success, &replaced));
+    EXPECT_EQ(1, handler.handle_called());
+  }
+  {
+    my_testing::Mock_error_handler handler(thd(), ER_INVALID_JSON_BINARY_DATA);
+    EXPECT_TRUE(doc.attempt_binary_update(&m_field, array_accessor(0),
+                                          &error, false, &buffer,
+                                          &success, &replaced));
+    EXPECT_EQ(1, handler.handle_called());
+  }
+  error_handler_hook= old_error_handler_hook;
+}
+
+/**
+  Test that applying a set of diffs on a JSON document gives the expected
+  return status.
+*/
+void test_apply_json_diffs(Field_json *field,
+                           const Json_diff_vector &diffs,
+                           const char *orig_json,
+                           enum_json_diff_status expected_status)
+{
+  SCOPED_TRACE("test_apply_json_diffs");
+  field->table->clear_partial_update_diffs();
+  if (orig_json == nullptr)
+  {
+    EXPECT_EQ(TYPE_OK, set_field_to_null(field));
+  }
+  else
+  {
+    field->set_notnull();
+    Json_wrapper doc(parse_json(orig_json).release());
+    EXPECT_FALSE(field->store_json(&doc));
+  }
+  EXPECT_EQ(orig_json == nullptr, field->is_null());
+  EXPECT_EQ(expected_status, apply_json_diffs(field, &diffs));
+}
+
+/**
+  Test that applying a set of diffs on a JSON document is successful and gives
+  the expected results.
+*/
+void test_apply_json_diffs(Field_json *field,
+                           const Json_diff_vector &diffs,
+                           const char *orig_json,
+                           const char *new_json)
+{
+  SCOPED_TRACE("test_apply_json_diffs");
+  test_apply_json_diffs(field, diffs, orig_json,
+                        enum_json_diff_status::SUCCESS);
+  Json_wrapper doc;
+  EXPECT_FALSE(field->val_json(&doc));
+  EXPECT_EQ(0, doc.compare(Json_wrapper(parse_json(new_json).release())));
+
+  TABLE *table= field->table;
+  if (table->is_binary_diff_enabled(field))
+  {
+    StringBuffer<STRING_BUFFER_USUAL_SIZE> original;
+    EXPECT_FALSE(json_binary::serialize(table->in_use,
+                                        parse_json(orig_json).get(),
+                                        &original));
+    StringBuffer<STRING_BUFFER_USUAL_SIZE> updated;
+    EXPECT_FALSE(doc.to_binary(table->in_use, &updated));
+    verify_binary_diffs(field, table->get_binary_diffs(field),
+                        original, updated);
+  }
+}
+
+static void do_apply_json_diffs_tests(Field_json *field)
+{
+  Json_diff_vector
+    diffs(Json_diff_vector::allocator_type(field->table->in_use->mem_root));
+
+  const auto expect_rejected= [field, &diffs](const char *json_text)
+  {
+    SCOPED_TRACE("");
+    test_apply_json_diffs(field, diffs, json_text,
+                          enum_json_diff_status::REJECTED);
+  };
+
+  const auto expect_success= [field, &diffs](const char *orig_json,
+                                              const char *new_json)
+  {
+    SCOPED_TRACE("");
+    test_apply_json_diffs(field, diffs, orig_json, new_json);
+  };
+
+  {
+    SCOPED_TRACE("");
+    diffs.clear();
+    expect_success("[1,2,3]", "[1,2,3]");
+    expect_rejected(nullptr);
+  }
+
+  {
+    SCOPED_TRACE("");
+    diffs.clear();
+    Json_int *int_ptr= new (std::nothrow) Json_int(3);
+    Json_dom_ptr dom_ptr= int_ptr->clone();
+    diffs.add_diff(parse_path("$.a"), enum_json_diff_operation::REPLACE,
+                   dom_ptr);
+    expect_success("{\"a\": 1, \"b\": 2}", "{\"a\": 3, \"b\": 2}");
+    expect_rejected("{\"b\": 2}");
+    expect_rejected("[1,2,3]");
+    expect_rejected("123");
+    expect_rejected(nullptr);
+    delete int_ptr;
+  }
+
+  {
+    SCOPED_TRACE("");
+    diffs.clear();
+    Json_int *int_ptr= new (std::nothrow) Json_int(3);
+    Json_dom_ptr dom_ptr= int_ptr->clone();
+    diffs.add_diff(parse_path("$.a[1]"), enum_json_diff_operation::REPLACE,
+                   dom_ptr);
+    expect_success("{\"a\": [1,2], \"b\": 2}", "{\"a\":[1,3], \"b\": 2}");
+    expect_rejected("{\"a\": 2}");
+    expect_rejected("{\"b\": 2}");
+    expect_rejected("{\"a\": {\"b\":2}}");
+    expect_rejected("[1,2,3]");
+    expect_rejected("123");
+    expect_rejected(nullptr);
+    delete int_ptr;
+  }
+
+  {
+    SCOPED_TRACE("");
+    diffs.clear();
+    Json_int *int_ptr= new (std::nothrow) Json_int(3);
+    Json_dom_ptr dom_ptr= int_ptr->clone();
+    diffs.add_diff(parse_path("$.a[2]"), enum_json_diff_operation::INSERT,
+                   dom_ptr);
+    expect_success("{\"a\":[]}", "{\"a\":[3]}");
+    expect_success("{\"a\":[1]}", "{\"a\":[1,3]}");
+    expect_success("{\"a\":[1,2]}", "{\"a\":[1,2,3]}");
+    expect_success("{\"a\":[1,2,4]}", "{\"a\":[1,2,3,4]}");
+    expect_rejected("{\"a\": 1, \"b\": 2}");
+    expect_rejected("[]");
+    expect_rejected(nullptr);
+    delete int_ptr;
+  }
+
+  {
+    SCOPED_TRACE("");
+    diffs.clear();
+    Json_int *int_ptr= new (std::nothrow) Json_int(3);
+    Json_dom_ptr dom_ptr= int_ptr->clone();
+    diffs.add_diff(parse_path("$.a.b"), enum_json_diff_operation::INSERT,
+                   dom_ptr);
+    expect_success("{\"a\":{\"c\":1}}", "{\"a\":{\"b\":3,\"c\":1}}");
+    expect_rejected("{}");
+    expect_rejected("[]");
+    expect_rejected("{\"a\":{\"b\":1}}");
+    expect_rejected(nullptr);
+    delete int_ptr;
+  }
+
+  {
+    SCOPED_TRACE("");
+    diffs.clear();
+    diffs.add_diff(parse_path("$.a.b"),
+                   enum_json_diff_operation::REMOVE);
+    expect_success("{\"a\":{\"b\":3,\"c\":1}}", "{\"a\":{\"c\":1}}");
+    expect_rejected("{}");
+    expect_rejected("[]");
+    expect_rejected(nullptr);
+  }
+
+  {
+    SCOPED_TRACE("");
+    diffs.clear();
+    diffs.add_diff(parse_path("$[2]"),
+                   enum_json_diff_operation::REMOVE);
+    expect_success("[1,2,3,4]", "[1,2,4]");
+    expect_success("[1,2,3]", "[1,2]");
+    expect_rejected("[1,2]");
+    expect_rejected("[]");
+    expect_rejected("{}");
+    expect_rejected(nullptr);
+  }
+
+  {
+    SCOPED_TRACE("");
+    diffs.clear();
+    diffs.add_diff(parse_path("$[2]"),
+                   enum_json_diff_operation::REMOVE);
+    diffs.add_diff(parse_path("$[3]"),
+                   enum_json_diff_operation::REMOVE);
+    expect_success("[1,2,3,4,5,6]", "[1,2,4,6]");
+    expect_rejected("[1,2,3,4]");
+    expect_rejected("[]");
+    expect_rejected(nullptr);
+  }
+
+  {
+    SCOPED_TRACE("");
+    diffs.clear();
+    diffs.add_diff(parse_path("$[2][3]"),
+                   enum_json_diff_operation::REMOVE);
+    expect_success("[1,2,[3,4,5,6,7]]", "[1,2,[3,4,5,7]]");
+    expect_rejected("[]");
+    expect_rejected("[1,2,3,4,5,6]");
+    expect_rejected(nullptr);
+  }
+
+  {
+    SCOPED_TRACE("");
+    diffs.clear();
+    diffs.add_diff(parse_path("$[0][0]"),
+                   enum_json_diff_operation::REMOVE);
+    expect_success("[[1]]", "[[]]");
+    expect_success("[[1,2,3],4,5]", "[[2,3],4,5]");
+    expect_rejected("[1]");
+    expect_rejected("{\"a\":1}");
+    expect_rejected("[{\"a\":1}]");
+    expect_rejected(nullptr);
+  }
+
+  {
+    SCOPED_TRACE("");
+    for (auto op : { enum_json_diff_operation::REPLACE,
+                     enum_json_diff_operation::INSERT,
+                     enum_json_diff_operation::REMOVE })
+    {
+      diffs.clear();
+      Json_int *int_ptr= new (std::nothrow) Json_int(1);
+      Json_dom_ptr dom_ptr= int_ptr->clone();
+      diffs.add_diff(parse_path("$"), op, dom_ptr);
+      expect_rejected("[1,2,3]");
+      expect_rejected(nullptr);
+      delete int_ptr;
+    }
+  }
+}
+
+TEST_F(JsonDomTest, ApplyJsonDiffs)
+{
+  do_apply_json_diffs_tests(&m_field);
+}
+
+TEST_F(JsonDomTest, ApplyJsonDiffs_CollectBinaryDiffs)
+{
+  EXPECT_FALSE(m_table.mark_column_for_partial_update(&m_field));
+  EXPECT_FALSE(m_table.setup_partial_update(true));
+  do_apply_json_diffs_tests(&m_field);
+}
+
+/**
+  Run a microbenchmarks that tests how fast Json_wrapper::seek() is on
+  a wrapper that wraps a Json_dom.
+
+  @param num_iterations  the number of iterations to run
+  @param path            the JSON path to search for
+  @param need_only_one   true if the search should stop after the first match
+  @param expected_hits   the number of expected matches
+*/
+static void benchmark_dom_seek(size_t num_iterations, const Json_path &path,
+                               bool need_only_one, size_t expected_matches)
+{
+  StopBenchmarkTiming();
+
+  Json_object o;
+  for (size_t i= 0; i < 1000; ++i)
+    o.add_alias(std::to_string(i), new (std::nothrow) Json_object());
+
+  Json_wrapper wr(&o);
+  wr.set_alias();
+
+  StartBenchmarkTiming();
+
+  for (size_t i= 0; i < num_iterations; ++i)
+  {
+    Json_wrapper_vector hits(PSI_NOT_INSTRUMENTED);
+    wr.seek(path, path.leg_count(), &hits, true, need_only_one);
+    EXPECT_EQ(expected_matches, hits.size());
+  }
+
+  StopBenchmarkTiming();
+}
+
+/**
+  Microbenchmark which tests how fast a lookup with an ellipsis is in
+  a wrapper that wraps a Json_dom.
+*/
+static void BM_JsonDomSearchEllipsis(size_t num_iterations)
+{
+  benchmark_dom_seek(num_iterations, parse_path("$**.\"432\""), false, 1);
+}
+BENCHMARK(BM_JsonDomSearchEllipsis);
+
+/**
+  Microbenchmark which tests how fast a lookup with an ellipsis is in
+  a wrapper that wraps a Json_dom, with the `need_only_one` flag set.
+*/
+static void BM_JsonDomSearchEllipsis_OnlyOne(size_t num_iterations)
+{
+  benchmark_dom_seek(num_iterations, parse_path("$**.\"432\""), true, 1);
+}
+BENCHMARK(BM_JsonDomSearchEllipsis_OnlyOne);
+
+/**
+  Microbenchmark which tests how fast a lookup of a JSON object member
+  is in a wrapper that wraps a Json_dom.
+*/
+static void BM_JsonDomSearchKey(size_t num_iterations)
+{
+  benchmark_dom_seek(num_iterations, parse_path("$.\"432\""), false, 1);
+}
+BENCHMARK(BM_JsonDomSearchKey);
+
+/**
+  Run a microbenchmarks that tests how fast Json_wrapper::seek() is on
+  a wrapper that wraps a binary JSON value.
+
+  @param num_iterations  the number of iterations to run
+  @param path            the JSON path to search for
+  @param need_only_one   true if the search should stop after the first match
+  @param expected_hits   the number of expected matches
+*/
+static void benchmark_binary_seek(size_t num_iterations, const Json_path &path,
+                                  bool need_only_one, size_t expected_matches)
+{
+  StopBenchmarkTiming();
+
+  Json_object o;
+  for (size_t i= 0; i < 1000; ++i)
+    o.add_alias(std::to_string(i), new (std::nothrow) Json_object());
+
+  my_testing::Server_initializer initializer;
+  initializer.SetUp();
+
+  String buffer;
+  EXPECT_FALSE(json_binary::serialize(initializer.thd(), &o, &buffer));
+  json_binary::Value val=
+    json_binary::parse_binary(buffer.ptr(), buffer.length());
+
+  StartBenchmarkTiming();
+
+  for (size_t i= 0; i < num_iterations; ++i)
+  {
+    Json_wrapper wr(val);
+    Json_wrapper_vector hits(PSI_NOT_INSTRUMENTED);
+    wr.seek(path, path.leg_count(), &hits, true, need_only_one);
+    EXPECT_EQ(expected_matches, hits.size());
+  }
+
+  StopBenchmarkTiming();
+
+  initializer.TearDown();
+}
+
+/**
+  Microbenchmark which tests how fast a lookup with an ellipsis is in
+  a Json_wrapper which wraps a binary JSON value.
+*/
+static void BM_JsonBinarySearchEllipsis(size_t num_iterations)
+{
+  benchmark_binary_seek(num_iterations, parse_path("$**.\"432\""), false, 1);
+}
+BENCHMARK(BM_JsonBinarySearchEllipsis);
+
+/**
+  Microbenchmark which tests how fast a lookup with an ellipsis is in
+  a Json_wrapper which wraps a binary JSON value, with the `need_only_one`
+  flag set.
+*/
+static void BM_JsonBinarySearchEllipsis_OnlyOne(size_t num_iterations)
+{
+  benchmark_binary_seek(num_iterations, parse_path("$**.\"432\""), true, 1);
+}
+BENCHMARK(BM_JsonBinarySearchEllipsis_OnlyOne);
+
+/**
+  Microbenchmark which tests how fast a lookup of a JSON object member
+  is in a Json_wrapper which wraps a binary JSON value.
+*/
+static void BM_JsonBinarySearchKey(size_t num_iterations)
+{
+  benchmark_binary_seek(num_iterations, parse_path("$.\"432\""), false, 1);
+}
+BENCHMARK(BM_JsonBinarySearchKey);
+
+/**
+  Microbenchmark which tests the performance of
+  Json_wrapper::to_string() when it's called on a JSON string value
+  with no special characters that need quoting.
+*/
+static void BM_JsonStringToString_Plain(size_t num_iterations)
+{
+  StopBenchmarkTiming();
+
+  my_testing::Server_initializer initializer;
+  initializer.SetUp();
+
+  const Json_string str("This is a plain string with no special characters!");
+  const Json_wrapper wr(str.clone());
+  const size_t quoted_length= str.size() + 2;
+
+  StartBenchmarkTiming();
+
+  for (size_t i= 0; i < num_iterations; ++i)
+  {
+    String buf;
+    wr.to_string(&buf, true, "test");
+    EXPECT_EQ(quoted_length, buf.length());
+  }
+
+  StopBenchmarkTiming();
+
+  initializer.TearDown();
+}
+BENCHMARK(BM_JsonStringToString_Plain);
+
+/**
+  Microbenchmark which tests the performance of
+  Json_wrapper::to_string() when it's called on a JSON string value
+  which contains some special characters that need quoting.
+*/
+static void BM_JsonStringToString_SpecialChars(size_t num_iterations)
+{
+  StopBenchmarkTiming();
+
+  my_testing::Server_initializer initializer;
+  initializer.SetUp();
+
+  const Json_string str("This\nstring\nspans\nmultiple\nlines.\f\nabc\x1Dxyz");
+  const Json_wrapper wr(str.clone());
+
+  StartBenchmarkTiming();
+
+  for (size_t i= 0; i < num_iterations; ++i)
+  {
+    String buf;
+    wr.to_string(&buf, true, "test");
+    EXPECT_LT(str.size(), buf.length());
+  }
+
+  StopBenchmarkTiming();
+
+  initializer.TearDown();
+}
+BENCHMARK(BM_JsonStringToString_SpecialChars);
+
+/**
+  Microbenchmark which tests the performance of
+  Json_wrapper::to_string() when it's called on a JSON object with
+  nested values.
+*/
+static void BM_JsonObjectToString(size_t num_iterations)
+{
+  StopBenchmarkTiming();
+
+  my_testing::Server_initializer initializer;
+  initializer.SetUp();
+
+  const Json_wrapper wr(parse_json("{\"name\": \"John Doe\", \"age\": 42, "
+                                   "\"points\": [1, 3.14e0, 2.7, null], "
+                                   "\"id\": \"xyzxyzxyzxyz\"}"));
+
+  StartBenchmarkTiming();
+
+  for (size_t i= 0; i < num_iterations; ++i)
+  {
+    String buf;
+    wr.to_string(&buf, true, "test");
+    EXPECT_LT(0U, buf.length());
+  }
+
+  StopBenchmarkTiming();
+
+  initializer.TearDown();
+}
+BENCHMARK(BM_JsonObjectToString);
 
 }  // namespace

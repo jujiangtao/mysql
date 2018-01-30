@@ -1,17 +1,23 @@
 #ifndef SQL_EXECUTOR_INCLUDED
 #define SQL_EXECUTOR_INCLUDED
 
-/* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights
- * reserved.
+/* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -25,24 +31,28 @@
 #include <string.h>
 #include <sys/types.h>
 
-#include "item.h"
 #include "my_base.h"
 #include "my_compiler.h"
 #include "my_inttypes.h"
-#include "records.h"               // READ_RECORD
-#include "sql_alloc.h"
-#include "sql_class.h"             // THD
-#include "sql_lex.h"
-#include "sql_opt_exec_shared.h"   // QEP_shared_owner
-#include "sql_select.h"
-#include "table.h"
-#include "temp_table_param.h"      // Temp_table_param
+#include "mysql/udf_registration_types.h"
+#include "sql/item.h"
+#include "sql/opt_trace.h"
+#include "sql/records.h"           // READ_RECORD
+#include "sql/sql_alloc.h"
+#include "sql/sql_class.h"         // THD
+#include "sql/sql_lex.h"
+#include "sql/sql_opt_exec_shared.h" // QEP_shared_owner
+#include "sql/sql_select.h"
+#include "sql/table.h"
+#include "sql/temp_table_param.h"  // Temp_table_param
 
 class Field;
 class Field_longlong;
 class Filesort;
 class Item_sum;
 class JOIN;
+class Opt_trace_context;
+class Opt_trace_object;
 class QEP_TAB;
 class QUICK_SELECT_I;
 struct st_cache_field;
@@ -186,7 +196,6 @@ public:
 };
 
 
-
 /**
   QEP_operation is an interface class for operations in query execution plan.
 
@@ -294,7 +303,8 @@ private:
 };
 
 
-void setup_tmptable_write_func(QEP_TAB *tab);
+void setup_tmptable_write_func(QEP_TAB *tab, uint phase,
+                               Opt_trace_object *trace);
 enum_nested_loop_state sub_select_op(JOIN *join, QEP_TAB *qep_tab, bool
                                         end_of_records);
 enum_nested_loop_state end_send_group(JOIN *join, QEP_TAB *qep_tab,
@@ -311,7 +321,43 @@ evaluate_join_record(JOIN *join, QEP_TAB *qep_tab, int error);
 MY_ATTRIBUTE((warn_unused_result))
 bool copy_fields(Temp_table_param *param, const THD *thd);
 
-bool copy_funcs(Func_ptr_array*, const THD *thd);
+enum Copy_func_type
+{
+  /**
+    In non-windowing step, copies functions
+  */
+  CFT_ALL,
+  /**
+    In windowing step, copies framing window function, including
+    all grouping aggregates, e.g. SUM, AVG and FIRST_VALUE, LAST_VALUE.
+  */
+  CFT_WF_FRAMING,
+  /**
+    In windowing step, copies non framing window function, e.g.
+    ROW_NUMBER, RANK, DENSE_RANK, except those that are two_pass cf.
+    copy_two_pass_window_functions which are treated separately.
+   */
+  CFT_WF_NON_FRAMING,
+  /**
+    In windowing step, copies window functions that need frame cardinality,
+    that is we need to read all rows of a partition before we can compute the
+    wf's value for the the first row in the partition.
+  */
+  CFT_WF_NEEDS_CARD,
+  /**
+    In final windowing step, copies all non-wf functions. Must be called after
+    all wfs have been evaluated. gbtodo, Really? so it's forbidden to use
+    CFT_NON_WF and then CFT_WF_something? Is it for the case of 1+WF?
+  */
+  CFT_NON_WF,
+  /**
+    Copies all window functions.
+  */
+  CFT_WF
+};
+
+bool copy_funcs(Temp_table_param *, const THD *thd,
+                Copy_func_type type= CFT_ALL);
 
 /**
   Copy the lookup key into the table ref's key buffer.
@@ -339,6 +385,7 @@ int join_read_first(QEP_TAB *tab);
 int join_read_last(QEP_TAB *tab);
 int join_read_last_key(QEP_TAB *tab);
 int join_materialize_derived(QEP_TAB *tab);
+int join_materialize_table_function(QEP_TAB *tab);
 int join_materialize_semijoin(QEP_TAB *tab);
 int join_read_prev_same(READ_RECORD *info);
 
@@ -383,6 +430,7 @@ public:
     found(false),
     not_null_compl(false),
     first_unmatched(NO_PLAN_IDX),
+    rematerialize(false),
     materialize_table(NULL),
     read_first_record(NULL),
     next_select(NULL),
@@ -400,9 +448,7 @@ public:
     op(NULL),
     tmp_table_param(NULL),
     filesort(NULL),
-    fields(NULL),
-    all_fields(NULL),
-    ref_item_slice(0),
+    ref_item_slice(REF_SLICE_SAVE),
     send_records(0),
     quick_traced_before(false),
     m_condition_optim(NULL),
@@ -578,6 +624,9 @@ public:
 
   plan_idx first_unmatched; /**< used for optimization purposes only   */
 
+  /// Dependent table functions have to be materialized on each new scan
+  bool rematerialize;
+
   READ_RECORD::Setup_func materialize_table;
   /**
      Initialize table for reading and fetch the first row from the table. If
@@ -627,20 +676,8 @@ public:
   Filesort *filesort;
 
   /**
-    List of topmost expressions in the select list. The *next* JOIN TAB
-    in the plan should use it to obtain correct values. Same applicable to
-    all_fields. These lists are needed because after tmp tables functions
-    will be turned to fields. These variables are pointing to
-    tmp_fields_list[123]. Valid only for tmp tables and the last non-tmp
-    table in the query plan.
-    @see JOIN::make_tmp_tables_info()
-  */
-  List<Item> *fields;
-  /** List of all expressions in the select list */
-  List<Item> *all_fields;
-  /**
-    Slice number of the ref items array to switch to before sending rows.
-    Valid only for tmp tables.
+    Slice number of the ref items array to switch to before reading rows from
+    this table.
   */
   uint ref_item_slice;
 

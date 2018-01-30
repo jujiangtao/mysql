@@ -1,20 +1,27 @@
 /***********************************************************************
 
-Copyright (c) 2010, 2016, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2010, 2017, Oracle and/or its affiliates. All Rights Reserved.
 Copyright (c) 2012, Facebook Inc.
 
-This program is free software; you can redistribute it and/or modify it
-under the terms of the GNU General Public License as published by the
-Free Software Foundation; version 2 of the License.
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License, version 2.0,
+as published by the Free Software Foundation.
 
-This program is distributed in the hope that it will be useful, but
-WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
-Public License for more details.
+This program is also distributed with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have included with MySQL.
 
-You should have received a copy of the GNU General Public License along with
-this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License, version 2.0, for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 ***********************************************************************/
 
@@ -36,8 +43,6 @@ Created 12/15/2009	Jimmy Yang
 #endif /* __STDC_LIMIT_MACROS */
 
 #include <stdint.h>
-
-#ifndef UNIV_HOTBACKUP
 
 
 /** Possible status values for "mon_status" in "struct monitor_value" */
@@ -253,6 +258,7 @@ enum monitor_id_t {
 	MONITOR_BLOB_PAGE_READ,
 	MONITOR_ZBLOB_PAGE_READ,
 	MONITOR_ZBLOB2_PAGE_READ,
+	MONITOR_RSEG_ARRAY_PAGE_READ,
 	MONITOR_OTHER_PAGE_READ,
 	MONITOR_INDEX_LEAF_PAGE_WRITTEN,
 	MONITOR_INDEX_NON_LEAF_PAGE_WRITTEN,
@@ -269,6 +275,7 @@ enum monitor_id_t {
 	MONITOR_BLOB_PAGE_WRITTEN,
 	MONITOR_ZBLOB_PAGE_WRITTEN,
 	MONITOR_ZBLOB2_PAGE_WRITTEN,
+	MONITOR_RSEG_ARRAY_PAGE_WRITTEN,
 	MONITOR_OTHER_PAGE_WRITTEN,
 
 	/* OS level counters (I/O) */
@@ -404,7 +411,6 @@ enum monitor_id_t {
 
 	/* Data DDL related counters */
 	MONITOR_MODULE_DDL_STATS,
-	MONITOR_BACKGROUND_DROP_INDEX,
 	MONITOR_BACKGROUND_DROP_TABLE,
 	MONITOR_ONLINE_CREATE_INDEX,
 	MONITOR_PENDING_ALTER_TABLE,
@@ -465,6 +471,7 @@ enum mon_option_t {
 					function */
 };
 
+#ifndef UNIV_HOTBACKUP
 /** Number of bit in a ulint datatype */
 #define	NUM_BITS_ULINT	(sizeof(ulint) * CHAR_BIT)
 

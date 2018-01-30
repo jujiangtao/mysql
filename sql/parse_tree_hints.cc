@@ -1,13 +1,20 @@
 /* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -17,19 +24,20 @@
 
 #include <stddef.h>
 
-#include "derror.h"
-#include "item_subselect.h"
-#include "lex_string.h"
 #include "m_string.h"
 #include "my_dbug.h"
 #include "my_sqlcommand.h"
-#include "mysqld.h"        // table_alias_charset
 #include "mysqld_error.h"
-#include "query_options.h"
-#include "sql_class.h"
-#include "sql_const.h"
-#include "sql_error.h"
-#include "sql_lex.h"
+#include "sql/auth/sql_security_ctx.h"
+#include "sql/derror.h"
+#include "sql/item_subselect.h"
+#include "sql/mysqld.h"    // table_alias_charset
+#include "sql/query_options.h"
+#include "sql/resourcegroups/resource_group_mgr.h"
+#include "sql/sql_class.h"
+#include "sql/sql_const.h"
+#include "sql/sql_error.h"
+#include "sql/sql_lex.h"
 
 
 extern struct st_opt_hint_info opt_hint_info[];
@@ -50,7 +58,7 @@ static Opt_hints_global *get_global_hints(Parse_context *pc)
   LEX *lex= pc->thd->lex;
 
   if (!lex->opt_hints_global)
-    lex->opt_hints_global= new Opt_hints_global(pc->thd->mem_root);
+    lex->opt_hints_global= new (*THR_MALLOC) Opt_hints_global(pc->thd->mem_root);
   if (lex->opt_hints_global)
     lex->opt_hints_global->set_resolved();
   return lex->opt_hints_global;
@@ -78,8 +86,9 @@ static Opt_hints_qb *get_qb_hints(Parse_context *pc)
   if (global_hints == NULL)
     return NULL;
 
-  Opt_hints_qb *qb= new Opt_hints_qb(global_hints, pc->thd->mem_root,
-                                     pc->select->select_number);
+  Opt_hints_qb *qb= new (*THR_MALLOC) Opt_hints_qb(global_hints,
+                                                   pc->thd->mem_root,
+                                                   pc->select->select_number);
   if (qb)
   {
     global_hints->register_child(qb);
@@ -142,7 +151,7 @@ static Opt_hints_table *get_table_hints(Parse_context *pc,
                                                      table_alias_charset));
   if (!tab)
   {
-    tab= new Opt_hints_table(&table_name->table, qb, pc->thd->mem_root);
+    tab= new (*THR_MALLOC) Opt_hints_table(&table_name->table, qb, pc->thd->mem_root);
     qb->register_child(tab);
   }
 
@@ -462,7 +471,7 @@ bool PT_key_level_hint::contextualize(Parse_context *pc)
 
     if (!key)
     {
-      key= new Opt_hints_key(key_name, tab, pc->thd->mem_root);
+      key= new (*THR_MALLOC) Opt_hints_key(key_name, tab, pc->thd->mem_root);
       tab->register_child(key);
     }
 
@@ -546,3 +555,77 @@ bool PT_hint_max_execution_time::contextualize(Parse_context *pc)
   return false;
 }
 
+
+bool PT_hint_sys_var::contextualize(Parse_context *pc)
+{
+  if (!sys_var_value)
+  {
+    // No warning here, warning is issued by parser.
+    return false;
+  }
+
+  sys_var *sys_var= find_sys_var_ex(pc->thd, sys_var_name.str,
+                                    sys_var_name.length, true, false);
+  if (!sys_var)
+  {
+    String str;
+    str.append(STRING_WITH_LEN("'"));
+    str.append(sys_var_name.str, sys_var_name.length);
+    str.append(STRING_WITH_LEN("'"));
+    push_warning_printf(pc->thd, Sql_condition::SL_WARNING,
+                        ER_UNRESOLVED_HINT_NAME,
+                        ER_THD(pc->thd, ER_UNRESOLVED_HINT_NAME),
+                        str.c_ptr_safe(), "SET_VAR");
+    return false;
+  }
+
+  if (!sys_var->is_hint_updateable())
+  {
+    String str;
+    str.append(STRING_WITH_LEN("'"));
+    str.append(sys_var_name.str, sys_var_name.length);
+    str.append(STRING_WITH_LEN("'"));
+    push_warning_printf(pc->thd, Sql_condition::SL_WARNING,
+                        ER_NOT_HINT_UPDATABLE_VARIABLE,
+                        ER_THD(pc->thd, ER_NOT_HINT_UPDATABLE_VARIABLE),
+                        str.c_ptr_safe());
+    return false;
+  }
+
+  Opt_hints_global *global_hint= get_global_hints(pc);
+  if (!global_hint)
+    return true;
+  if (!global_hint->sys_var_hint)
+    global_hint->sys_var_hint= new (pc->thd->mem_root) Sys_var_hint(pc->thd->mem_root);
+  if (!global_hint->sys_var_hint)
+    return true;
+
+  return global_hint->sys_var_hint->add_var(pc->thd, sys_var, sys_var_value);
+}
+
+
+bool PT_hint_resource_group::contextualize(Parse_context *pc)
+{
+  if (super::contextualize(pc))
+    return true;
+
+  auto res_grp_mgr= resourcegroups::Resource_group_mgr::instance();
+  if (!res_grp_mgr->resource_group_support())
+  {
+    pc->thd->resource_group_ctx()->m_warn= WARN_RESOURCE_GROUP_UNSUPPORTED;
+    return false;
+  }
+
+  if (pc->thd->lex->sphead ||
+      pc->select != pc->thd->lex->select_lex)
+  {
+    pc->thd->resource_group_ctx()->m_warn= WARN_RESOURCE_GROUP_UNSUPPORTED_HINT;
+    return false;
+  }
+
+  memcpy(pc->thd->resource_group_ctx()->m_switch_resource_group_str,
+         m_resource_group_name.str, m_resource_group_name.length);
+  pc->thd->resource_group_ctx()->
+    m_switch_resource_group_str[m_resource_group_name.length]= '\0';
+  return false;
+}

@@ -1,45 +1,54 @@
 /* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA */
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "default_values.h"
+#include "sql/default_values.h"
 
 #include <string.h>
 #include <sys/types.h>
 #include <algorithm>
 
 #include "binary_log_types.h"
-#include "dd/properties.h"     // dd::Properties
-#include "dd/string_type.h"
-#include "dd/types/column.h"   // dd::Column
-#include "dd/types/table.h"    // dd::Table
-#include "dd_table_share.h"    // dd_get_old_field_type
-#include "field.h"             // calc_pack_length
-#include "handler.h"           // handler
-#include "item.h"              // Item
+#include "my_alloc.h"
 #include "my_base.h"
 #include "my_compare.h"
 #include "my_dbug.h"
-#include "my_decimal.h"        // DECIMAL_MAX_SCALE
 #include "my_macros.h"
 #include "my_pointer_arithmetic.h"
 #include "my_sys.h"
+#include "mysql/udf_registration_types.h"
 #include "mysql_com.h"
 #include "mysqld_error.h"
-#include "sql_class.h"         // THD
-#include "sql_list.h"          // List
-#include "table.h"
+#include "sql/dd/properties.h" // dd::Properties
+#include "sql/dd/string_type.h"
+#include "sql/dd/types/column.h" // dd::Column
+#include "sql/dd/types/table.h" // dd::Table
+#include "sql/dd_table_share.h" // dd_get_old_field_type
+#include "sql/field.h"         // calc_pack_length
+#include "sql/handler.h"       // handler
+#include "sql/item.h"          // Item
+#include "sql/my_decimal.h"    // DECIMAL_MAX_SCALE
+#include "sql/sql_class.h"     // THD
+#include "sql/sql_list.h"      // List
+#include "sql/table.h"
 
 /**
   Calculate the length of the in-memory representation of the column.
@@ -253,7 +262,8 @@ bool prepare_default_value(THD *thd, uchar *buf, const TABLE &table,
                               field.is_unsigned,
                               field.decimals,
                               field.treat_bit_as_char,
-                              field.pack_length_override);
+                              field.pack_length_override,
+                              {field.m_srid});
   bool retval= true;
   if (!regfield)
     goto err;
@@ -321,9 +331,9 @@ bool prepare_default_value(THD *thd, uchar *buf, const TABLE &table,
   retval= false;
 
 err:
-  // Delete the field, despite being MEM_ROOT allocated, to avoid memory
+  // Destroy the field, despite being MEM_ROOT allocated, to avoid memory
   // leak for fields that allocate extra memory (e.g Field_blob::value).
-  delete regfield;
+  destroy(regfield);
   return retval;
 }
 
@@ -350,7 +360,7 @@ bool prepare_default_value_buffer_and_table_share(THD *thd,
   size_t extra_length= file->extra_rec_buf_length();
   size_t min_length= static_cast<size_t>(file->min_record_length(
           share->db_create_options));
-  delete file;
+  destroy(file);
 
   // Get the number of columns, record length etc.
   if (find_record_length(table, min_length, share))

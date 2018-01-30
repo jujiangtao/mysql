@@ -1,22 +1,27 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 
 /* Write some debug info */
-
-#include "sql/sql_test.h"
 
 #include "my_config.h"
 
@@ -26,13 +31,6 @@
 #include <algorithm>
 #include <functional>
 
-#include "events.h"
-#include "field.h"
-#include "hash.h"
-#include "item.h"
-#include "key.h"
-#include "keycache.h"
-#include "keycaches.h"
 #include "lex_string.h"
 #include "m_string.h"
 #include "my_compiler.h"
@@ -44,27 +42,35 @@
 #include "my_sys.h"
 #include "my_thread_local.h"
 #include "mysql/psi/mysql_mutex.h"
-#include "mysqld.h"         // LOCK_status
-#include "mysqld_thd_manager.h"  // Global_THD_manager
-#include "opt_explain.h"    // join_type_str
-#include "opt_range.h"      // QUICK_SELECT_I
-#include "opt_trace.h"
-#include "opt_trace_context.h"
+#include "mysql/udf_registration_types.h"
 #include "prealloced_array.h"
-#include "psi_memory_key.h"
-#include "sql_base.h" // table_def_cache, table_cache_count, unused_tables
-#include "sql_bitmap.h"
-#include "sql_class.h"
-#include "sql_const.h"
-#include "sql_executor.h"
-#include "sql_opt_exec_shared.h"
-#include "sql_optimizer.h"  // JOIN
-#include "sql_select.h"
-#include "sql_show.h" // calc_sum_of_all_status
+#include "sql/auth/sql_security_ctx.h"
+#include "sql/events.h"
+#include "sql/field.h"
+#include "sql/item.h"
+#include "sql/key.h"
+#include "sql/keycaches.h"
+#include "sql/mysqld.h"     // LOCK_status
+#include "sql/mysqld_thd_manager.h" // Global_THD_manager
+#include "sql/opt_explain.h" // join_type_str
+#include "sql/opt_range.h"  // QUICK_SELECT_I
+#include "sql/opt_trace.h"
+#include "sql/opt_trace_context.h"
+#include "sql/psi_memory_key.h"
+#include "sql/sql_admin.h"
+#include "sql/sql_bitmap.h"
+#include "sql/sql_class.h"
+#include "sql/sql_const.h"
+#include "sql/sql_executor.h"
+#include "sql/sql_opt_exec_shared.h"
+#include "sql/sql_optimizer.h" // JOIN
+#include "sql/sql_select.h"
+#include "sql/sql_show.h" // calc_sum_of_all_status
+#include "sql/sql_test.h"
+#include "sql/system_variables.h"
+#include "sql/table.h"
+#include "sql/table_cache.h" // table_cache_manager
 #include "sql_string.h"
-#include "system_variables.h"
-#include "table.h"
-#include "table_cache.h" // table_cache_manager
 
 #if defined(HAVE_MALLOC_INFO) && defined(HAVE_MALLOC_H)
 #include <malloc.h>
@@ -117,8 +123,6 @@ static void print_cached_tables(void)
   table_cache_manager.print_tables();
 
   printf("\nCurrent refresh version: %ld\n",refresh_version);
-  if (my_hash_check(&table_def_cache))
-    printf("Error: Table definition hash table is corrupted\n");
   fflush(stdout);
   table_cache_manager.unlock_all_and_tdc();
   /* purecov: end */

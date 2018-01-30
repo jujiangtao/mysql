@@ -1725,7 +1725,7 @@ CREATE TABLE t3 (i3 integer);
 INSERT INTO t1 VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9), (10), (11), (12);
 INSERT INTO t2 SELECT * FROM t1;
 
-EXPLAIN EXTENDED
+EXPLAIN
 SELECT t1.*, t2.* FROM t1 JOIN t2 ON t1.i1 = t2.i2 
                      LEFT JOIN t3 ON t2.i2 = t3.i3
   ORDER BY t1.i1 LIMIT 5;
@@ -1867,3 +1867,19 @@ SELECT
  )
 FROM t3;
 DROP TABLE t1,t2,t3;
+
+--echo #
+--echo # Bug#16833464: Presence of ORDER BY changes data type of column in
+--echo #               CREATE TABLE SELECT
+
+CREATE TABLE z1 (c05 TIME);
+(SELECT * FROM z1 ORDER BY '1') ORDER BY '1';
+
+CREATE TABLE z2 (SELECT * FROM z1 ORDER BY '1') ORDER BY '1';
+CREATE TABLE z3 (SELECT * FROM z1) ORDER BY '1';
+
+#Column in z2 and z3 should be of same type.
+SHOW CREATE TABLE z2;
+SHOW CREATE TABLE z3;
+
+DROP TABLE z1, z2, z3;

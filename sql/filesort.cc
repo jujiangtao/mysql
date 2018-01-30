@@ -2,13 +2,20 @@
    Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -20,75 +27,77 @@
   Sorts a database.
 */
 
-#include "filesort.h"
+#include "sql/filesort.h"
 
-#include <float.h>
 #include <limits.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
 #include <algorithm>
+#include <atomic>
 #include <new>
 #include <vector>
 
 #include "binary_log_types.h"
 #include "binlog_config.h"
-#include "bounded_queue.h"
-#include "cmp_varlen_keys.h"
-#include "debug_sync.h"
 #include "decimal.h"
-#include "derror.h"
-#include "error_handler.h"
-#include "field.h"
-#include "filesort_utils.h"
-#include "handler.h"
-#include "item.h"
-#include "item_subselect.h"
-#include "json_dom.h"                   // Json_wrapper
-#include "lex_string.h"
-#include "log.h"
 #include "m_ctype.h"
-#include "malloc_allocator.h"
-#include "merge_many_buff.h"
 #include "my_bitmap.h"
 #include "my_byteorder.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
-#include "my_decimal.h"
+#include "my_inttypes.h"
+#include "my_loglevel.h"
 #include "my_macros.h"
 #include "my_pointer_arithmetic.h"
 #include "my_sys.h"
-#include "myisampack.h"
+#include "mysql/components/services/log_shared.h"
 #include "mysql/psi/mysql_file.h"
 #include "mysql/service_mysql_alloc.h"
 #include "mysql_com.h"
-#include "mysqld.h"                             // mysql_tmpdir
 #include "mysqld_error.h"
-#include "opt_costmodel.h"
-#include "opt_range.h"                          // QUICK
-#include "opt_trace.h"
-#include "opt_trace_context.h"
 #include "priority_queue.h"
-#include "psi_memory_key.h"
-#include "session_tracker.h"
-#include "sort_param.h"
-#include "sql_array.h"
-#include "sql_base.h"
-#include "sql_bitmap.h"
-#include "sql_class.h"
-#include "sql_const.h"
-#include "sql_error.h"
-#include "sql_executor.h"               // QEP_TAB
-#include "sql_lex.h"
-#include "sql_optimizer.h"              // JOIN
-#include "sql_plugin.h"
-#include "sql_security_ctx.h"
-#include "sql_sort.h"
+#include "sql/auth/sql_security_ctx.h"
+#include "sql/bounded_queue.h"
+#include "sql/cmp_varlen_keys.h"
+#include "sql/debug_sync.h"
+#include "sql/derror.h"
+#include "sql/error_handler.h"
+#include "sql/field.h"
+#include "sql/filesort_utils.h"
+#include "sql/handler.h"
+#include "sql/item.h"
+#include "sql/item_subselect.h"
+#include "sql/json_dom.h"               // Json_wrapper
+#include "sql/key_spec.h"
+#include "sql/log.h"
+#include "sql/malloc_allocator.h"
+#include "sql/merge_many_buff.h"
+#include "sql/my_decimal.h"
+#include "sql/mysqld.h"                         // mysql_tmpdir
+#include "sql/opt_costmodel.h"
+#include "sql/opt_range.h"                      // QUICK
+#include "sql/opt_trace.h"
+#include "sql/opt_trace_context.h"
+#include "sql/psi_memory_key.h"
+#include "sql/session_tracker.h"
+#include "sql/sort_param.h"
+#include "sql/sql_array.h"
+#include "sql/sql_base.h"
+#include "sql/sql_bitmap.h"
+#include "sql/sql_class.h"
+#include "sql/sql_const.h"
+#include "sql/sql_error.h"
+#include "sql/sql_executor.h"           // QEP_TAB
+#include "sql/sql_lex.h"
+#include "sql/sql_optimizer.h"          // JOIN
+#include "sql/sql_sort.h"
+#include "sql/sql_tmp_table.h"
+#include "sql/system_variables.h"
+#include "sql/table.h"
+#include "sql/thr_malloc.h"
 #include "sql_string.h"
-#include "system_variables.h"
-#include "table.h"
 #include "template_utils.h"
-#include "thr_malloc.h"
 
 using std::max;
 using std::min;
@@ -108,7 +117,7 @@ struct Mem_compare_queue_key
   {
     if (m_param)
       return
-        cmp_varlen_keys(m_param->local_sortorder, s1, s2);
+        cmp_varlen_keys(m_param->local_sortorder, m_param->use_hash, s1, s2);
 
     // memcmp(s1, s2, 0) is guaranteed to return zero.
     return memcmp(s1, s2, m_compare_length) < 0;
@@ -140,7 +149,6 @@ static int merge_index(THD *thd,
                        IO_CACHE *outfile);
 static bool save_index(Sort_param *param, uint count,
                        Filesort_info *table_sort);
-static uint suffix_length(ulong string_length);
 
 static bool check_if_pq_applicable(Opt_trace_context *trace,
                                    Sort_param *param, Filesort_info *info,
@@ -157,6 +165,7 @@ void Sort_param::init_for_filesort(Filesort *file_sort,
 {
   DBUG_ASSERT(max_rows == 0);   // function should not be called twice
   m_fixed_sort_length= sortlen;
+  m_force_stable_sort= file_sort->m_force_stable_sort;
   ref_length= table->file->ref_length;
 
   local_sortorder= sf_array;
@@ -195,17 +204,20 @@ void Sort_param::init_for_filesort(Filesort *file_sort,
   }
 
   m_num_varlen_keys= count_varlen_keys();
+  m_num_json_keys= count_json_keys();
   if (using_varlen_keys())
   {
-    use_hash= true;
     m_fixed_sort_length+= size_of_varlength_field;
   }
   /*
     Add hash at the end of sort key to order cut values correctly.
     Needed for GROUPing, rather than for ORDERing.
   */
-  if (use_hash)
+  if (using_json_keys())
+  {
+    use_hash= true;
     m_fixed_sort_length+= sizeof(ulonglong);
+  }
 
   m_fixed_rec_length= m_fixed_sort_length + m_addon_length;
   max_rows= maxrows;
@@ -266,6 +278,20 @@ int Sort_param::count_varlen_keys() const
 }
 
 
+int Sort_param::count_json_keys() const
+{
+  int retval= 0;
+  for (const auto &sf : local_sortorder)
+  {
+    if (sf.field_type == MYSQL_TYPE_JSON)
+    {
+      ++retval;
+    }
+  }
+  return retval;
+}
+
+
 size_t Sort_param::get_record_length(uchar *p) const
 {
   uchar *start_of_payload= get_start_of_payload(p);
@@ -309,8 +335,9 @@ static void trace_filesort_information(Opt_trace_context *trace,
 
     if (sortorder->field)
     {
-      if (strlen(sortorder->field->table->alias) != 0)
-        oto.add_utf8_table(sortorder->field->table->pos_in_table_list);
+      TABLE *t= sortorder->field->table;
+      if (strlen(t->alias) != 0)
+        oto.add_utf8_table(t->pos_in_table_list);
       else
         oto.add_alnum("table", "intermediate_tmp_table");
       oto.add_alnum("field", sortorder->field->field_name ?
@@ -361,14 +388,13 @@ bool filesort(THD *thd, Filesort *filesort, bool sort_positions,
 {
   int error;
   ulong memory_available= thd->variables.sortbuff_size;
-  size_t num_chunks;
+  size_t num_chunks, num_initial_chunks;
   ha_rows num_rows_found= HA_POS_ERROR;
   ha_rows num_rows_estimate= HA_POS_ERROR;
   IO_CACHE tempfile;   // Temporary file for storing intermediate results.
   IO_CACHE chunk_file; // For saving Merge_chunk structs.
   IO_CACHE *outfile;   // Contains the final, sorted result.
   Sort_param param;
-  bool multi_byte_charset;
   Bounded_queue<uchar *, uchar *, Sort_param, Mem_compare_queue_key>
     pq((Malloc_allocator<uchar*>
         (key_memory_Filesort_info_record_pointers)));
@@ -388,11 +414,13 @@ bool filesort(THD *thd, Filesort *filesort, bool sort_positions,
     "join_execution".
   */
   Opt_trace_object trace_wrapper(trace);
+  if (tab->join())
+    trace_wrapper.add("sorting_table_in_plan_at_position", tab->idx());
   trace_filesort_information(trace, filesort->sortorder, s_length);
 
   DBUG_ASSERT(!table->reginfo.join_tab);
   DBUG_ASSERT(tab == table->reginfo.qep_tab);
-  Item_subselect *const subselect= tab && tab->join() ?
+  Item_subselect *const subselect= tab->join() ?
     tab->join()->select_lex->master_unit()->item : NULL;
 
   DEBUG_SYNC(thd, "filesort_start");
@@ -414,8 +442,7 @@ bool filesort(THD *thd, Filesort *filesort, bool sort_positions,
 
   param.init_for_filesort(filesort,
                           make_array(filesort->sortorder, s_length),
-                          sortlength(thd, filesort->sortorder, s_length,
-                                     &multi_byte_charset),
+                          sortlength(thd, filesort->sortorder, s_length),
                           table,
                           thd->variables.max_length_for_sort_data,
                           max_rows, sort_positions);
@@ -430,8 +457,7 @@ bool filesort(THD *thd, Filesort *filesort, bool sort_positions,
   // If number of rows is not known, use as much of sort buffer as possible. 
   num_rows_estimate= table->file->estimate_rows_upper_bound();
 
-  if (multi_byte_charset &&
-      !(param.tmp_buffer= (char*)
+  if (!(param.tmp_buffer= (char*)
         my_malloc(key_memory_Sort_param_tmp_buffer,
                   param.max_compare_length(), MYF(MY_WME))))
     goto err;
@@ -543,6 +569,7 @@ bool filesort(THD *thd, Filesort *filesort, bool sort_positions,
 
   num_chunks= static_cast<size_t>(my_b_tell(&chunk_file)) /
     sizeof(Merge_chunk);
+  num_initial_chunks= num_chunks;
 
   if (num_chunks == 0)                   // The whole set is in memory
   {
@@ -614,7 +641,7 @@ bool filesort(THD *thd, Filesort *filesort, bool sort_positions,
     sort_mode.append(">");
 
     const char *algo_text[]= {
-      "none", "radix", "std::sort", "std::stable_sort"
+      "none", "std::sort", "std::stable_sort"
     };
 
     Opt_trace_object filesort_summary(trace, "filesort_summary");
@@ -626,7 +653,7 @@ bool filesort(THD *thd, Filesort *filesort, bool sort_positions,
       .add("num_rows_estimate", num_rows_estimate)
       .add("num_rows_found", num_rows_found)
       .add("num_examined_rows", param.num_examined_rows)
-      .add("num_tmp_files", num_chunks)
+      .add("num_initial_chunks_spilled_to_disk", num_initial_chunks)
       .add("sort_buffer_size", table_sort.sort_buffer_size())
       .add_alnum("sort_algorithm", algo_text[param.m_sort_algorithm]);
     if (!param.using_packed_addons())
@@ -688,7 +715,7 @@ bool filesort(THD *thd, Filesort *filesort, bool sort_positions,
                           ? ER_THD(thd, THD::KILL_QUERY)
                           : ER_THD(thd, thd->killed))
                        : thd->get_stmt_da()->message_text();
-    const char *msg=   ER_THD(thd, ER_FILSORT_ABORT);
+    const char *msg=   ER_THD(thd, ER_FILESORT_TERMINATED);
 
     my_printf_error(ER_FILSORT_ABORT,
                     "%s: %s",
@@ -697,14 +724,22 @@ bool filesort(THD *thd, Filesort *filesort, bool sort_positions,
                     cause);
 
     if (thd->is_fatal_error)
-      sql_print_information("%s, host: %s, user: %s, "
-                            "thread: %u, error: %s, query: %-.4096s",
-                            msg,
-                            thd->security_context()->host_or_ip().str,
-                            thd->security_context()->priv_user().str,
-                            thd->thread_id(),
-                            cause,
-                            thd->query().str);
+    {
+      LogEvent().type(LOG_TYPE_ERROR)
+                .prio(INFORMATION_LEVEL)
+                .errcode(ER_FILESORT_TERMINATED)
+                .user(thd->security_context()->priv_user())
+                .host(thd->security_context()->host_or_ip())
+                .thread_id(thd->thread_id())
+                .message("%s, host: %s, user: %s, thread: %u, error: %s, "
+                         "query: %-.4096s",
+                         msg,
+                         thd->security_context()->host_or_ip().str,
+                         thd->security_context()->priv_user().str,
+                         thd->thread_id(),
+                         cause,
+                         thd->query().str);
+    }
   }
   else
     thd->inc_status_sort_rows(num_rows_found);
@@ -750,7 +785,7 @@ uint Filesort::make_sortorder()
   uint count;
   st_sort_field *sort,*pos;
   ORDER *ord;
-  DBUG_ENTER("make_sortorder");
+  DBUG_ENTER("Filesort::make_sortorder");
 
   count=0;
   for (ord = order; ord; ord= ord->next)
@@ -771,7 +806,7 @@ uint Filesort::make_sortorder()
     if (real_item->type() == Item::FIELD_ITEM)
     {
       /*
-        Could be a field, or Item_direct_view_ref/Item_ref wrapping a field
+        Could be a field, or Item_view_ref/Item_ref wrapping a field
         If it is an Item_outer_ref, only_full_group_by has been switched off.
       */
       DBUG_ASSERT
@@ -801,6 +836,9 @@ uint Filesort::make_sortorder()
       pos->item= item;
     pos->reverse= (ord->direction == ORDER_DESC);
     DBUG_ASSERT(pos->field != NULL || pos->item != NULL);
+    DBUG_PRINT("info", ("sorting on %s: %s",
+                        (pos->field ? "field" : "item"),
+                        (pos->field ? pos->field->field_name : "")));
   }
   DBUG_RETURN(count);
 }
@@ -1022,7 +1060,7 @@ static ha_rows find_all_keys(THD *thd, Sort_param *param, QEP_TAB *qep_tab,
   uchar *ref_pos,*next_pos,ref_buff[MAX_REFLENGTH];
   my_off_t record;
   TABLE *sort_form;
-  volatile THD::killed_state *killed= &thd->killed;
+  std::atomic<THD::killed_state> *killed= &thd->killed;
   handler *file;
   MY_BITMAP *save_read_set, *save_write_set;
   bool skip_record;
@@ -1305,29 +1343,6 @@ write_keys(Sort_param *param, Filesort_info *fs_info, uint count,
 } /* write_keys */
 
 
-/**
-  Store length as suffix in high-byte-first order.
-*/
-
-static inline void store_length(uchar *to, size_t length, uint pack_length)
-{
-  switch (pack_length) {
-  case 1:
-    *to= (uchar) length;
-    break;
-  case 2:
-    mi_int2store(to, length);
-    break;
-  case 3:
-    mi_int3store(to, length);
-    break;
-  default:
-    mi_int4store(to, length);
-    break;
-  }
-}
-
-
 #ifdef WORDS_BIGENDIAN
 const bool Is_big_endian= true;
 #else
@@ -1401,7 +1416,7 @@ make_json_sort_key(Item *item, uchar *to, uchar *null_indicator,
     /* purecov: begin inspected */
     DBUG_PRINT("warning",
                ("Got null on something that shouldn't be null"));
-    DBUG_ABORT();
+    DBUG_ASSERT(false);
     return 0;
     /* purecov: end */
   }
@@ -1411,6 +1426,226 @@ make_json_sort_key(Item *item, uchar *to, uchar *null_indicator,
   return actual_length;
 }
 
+namespace {
+
+/*
+  Writes a NULL indicator byte (if the field may be NULL), leaves space for a
+  varlength prefix (if varlen and not NULL), and then the actual sort key.
+  Returns the length of the key, sans NULL indicator byte and varlength prefix.
+*/
+size_t make_sortkey_from_field(
+  Field *field, bool is_varlen, size_t max_length,
+  uchar *to, bool *maybe_null)
+{
+  *maybe_null= field->maybe_null();
+  if (field->maybe_null())
+  {
+    if (field->is_null())
+    {
+      *to++= 0;
+      if (is_varlen)
+      {
+        // Don't store anything except the NULL flag.
+        return 0;
+      }
+      memset(to, 0, max_length);
+      return max_length;
+    }
+    else
+      *to++= 1;
+  }
+
+  size_t actual_length;
+  if (is_varlen)
+  {
+    DBUG_ASSERT(max_length >= VARLEN_PREFIX);
+    actual_length= field->make_sort_key(
+      to + VARLEN_PREFIX, max_length - VARLEN_PREFIX);
+    DBUG_ASSERT(actual_length <= max_length - VARLEN_PREFIX);
+  }
+  else
+  {
+    actual_length= field->make_sort_key(to, max_length);
+    DBUG_ASSERT(actual_length == max_length);
+  }
+  return actual_length;
+}
+
+/*
+  Writes a NULL indicator byte (if the field may be NULL), leaves space for a
+  varlength prefix (if varlen and not NULL), and then the actual sort key.
+  Returns the length of the key, sans NULL indicator byte and varlength prefix.
+*/
+size_t make_sortkey_from_item(
+  Item *item, Item_result result_type, bool is_varlen,
+  size_t max_length, char *tmp_buffer, uchar *to, bool *maybe_null,
+  ulonglong *hash)
+{
+  uchar *null_indicator= nullptr;
+  *maybe_null= item->maybe_null;
+  if (item->maybe_null)
+  {
+    null_indicator= to++;
+    /*
+      Assume not NULL by default. Will be overwritten if needed.
+      Note that we can't check item->null_value at this time,
+      because it will only get properly set after a call to val_*().
+    */
+    *null_indicator= 1;
+  }
+
+  switch (result_type) {
+  case STRING_RESULT:
+  {
+    if (item->data_type() == MYSQL_TYPE_JSON)
+    {
+      DBUG_ASSERT(is_varlen);
+      DBUG_ASSERT(max_length >= VARLEN_PREFIX);
+      return make_json_sort_key(
+        item, to + VARLEN_PREFIX, null_indicator,
+        max_length - VARLEN_PREFIX, hash);
+    }
+
+    const CHARSET_INFO *cs=item->collation.collation;
+
+    // Allow item->str() to use some extra space for trailing zero byte.
+    String tmp((char*) to, max_length + 4, cs);
+    String *res= item->val_str(&tmp);
+    if (res == nullptr)  // Value is NULL.
+    {
+      DBUG_ASSERT(item->maybe_null);
+      if (is_varlen)
+      {
+        // Don't store anything except the NULL flag.
+        return 0;
+      }
+      *null_indicator= 0;
+      memset(to, 0, max_length);
+      return max_length;
+    }
+
+    uint length= static_cast<uint>(res->length());
+    char *from=(char*) res->ptr();
+    if ((uchar*) from == to)
+    {
+      /*
+        We can't do strnxfrm in-place, so copy the source string to a
+        temporary buffer.
+      */
+      DBUG_ASSERT(max_length >= length);
+      set_if_smaller(length, max_length);
+      memcpy(tmp_buffer, from, length);
+      from= tmp_buffer;
+    }
+
+    size_t actual_length;
+    if (is_varlen)
+    {
+      actual_length= cs->coll->strnxfrm(
+        cs, to + VARLEN_PREFIX, max_length - VARLEN_PREFIX,
+        item->max_char_length(),
+        (uchar*) from, length,
+        0);
+      DBUG_ASSERT(actual_length <= max_length - VARLEN_PREFIX);
+    }
+    else
+    {
+      actual_length= cs->coll->strnxfrm(
+        cs, to, max_length,
+        item->max_char_length(),
+        (uchar*) from, length,
+        MY_STRXFRM_PAD_TO_MAXLEN);
+      DBUG_ASSERT(actual_length == max_length);
+    }
+    return actual_length;
+  }
+  case INT_RESULT:
+  {
+    DBUG_ASSERT(!is_varlen);
+    longlong value= item->data_type() == MYSQL_TYPE_TIME ?
+                    item->val_time_temporal() :
+                    item->is_temporal_with_date() ?
+                    item->val_date_temporal() :
+                    item->val_int();
+    /*
+      Note: item->null_value can't be trusted alone here; there are cases
+      (for the DATE data type in particular) where we can have item->null_value
+      set without maybe_null being set! This really should be cleaned up,
+      but until that happens, we need to have a more conservative check.
+    */
+    if (item->maybe_null && item->null_value)
+    {
+      *null_indicator= 0;
+      memset(to, 0, max_length);
+    }
+    else
+      copy_native_longlong(to, max_length,
+                           value, item->unsigned_flag);
+    return max_length;
+  }
+  case DECIMAL_RESULT:
+  {
+    DBUG_ASSERT(!is_varlen);
+    my_decimal dec_buf, *dec_val= item->val_decimal(&dec_buf);
+    /*
+      Note: item->null_value can't be trusted alone here; there are cases
+      where we can have item->null_value set without maybe_null being set!
+      (There are also cases where dec_val can return non-nullptr even in
+      the case of a NULL result.) This really should be cleaned up, but until
+      that happens, we need to have a more conservative check.
+    */
+    if (item->maybe_null && item->null_value)
+    {
+      *null_indicator= 0;
+      memset(to, 0, max_length);
+    }
+    else if (max_length < DECIMAL_MAX_FIELD_SIZE)
+    {
+      uchar buf[DECIMAL_MAX_FIELD_SIZE];
+      my_decimal2binary(E_DEC_FATAL_ERROR, dec_val, buf,
+                        item->max_length - (item->decimals ? 1:0),
+                        item->decimals);
+      memcpy(to, buf, max_length);
+    }
+    else
+    {
+      my_decimal2binary(E_DEC_FATAL_ERROR, dec_val, to,
+                        item->max_length - (item->decimals ? 1:0),
+                        item->decimals);
+    }
+    return max_length;
+  }
+  case REAL_RESULT:
+  {
+    DBUG_ASSERT(!is_varlen);
+    double value= item->val_real();
+    if (item->null_value)
+    {
+      DBUG_ASSERT(item->maybe_null);
+      *null_indicator= 0;
+      memset(to, 0, max_length);
+    }
+    else if (max_length < sizeof(double))
+    {
+      uchar buf[sizeof(double)];
+      change_double_for_sort(value, buf);
+      memcpy(to, buf, max_length);
+    }
+    else
+    {
+      change_double_for_sort(value, to);
+    }
+    return max_length;
+  }
+  case ROW_RESULT:
+  default:
+    // This case should never be choosen
+    DBUG_ASSERT(0);
+    return max_length;
+  }
+}
+
+}  // namespace
 
 uint Sort_param::make_sortkey(uchar *to, const uchar *ref_pos)
 {
@@ -1426,46 +1661,17 @@ uint Sort_param::make_sortkey(uchar *to, const uchar *ref_pos)
        sort_field != local_sortorder.end() ;
        sort_field++)
   {
-    bool maybe_null= false;
+    bool maybe_null;
     uint actual_length= sort_field->length;
 
     if (sort_field->field)
     {
       Field *field= sort_field->field;
       DBUG_ASSERT(sort_field->field_type == field->type());
-      if (field->maybe_null())
-      {
-	if (field->is_null())
-	{
-          if (sort_field->is_varlen)
-          {
-            // Don't store anything, except NULL flag, invert it here
-            *to++= sort_field->reverse ? 0xff : 0;
-            continue;
-          }
-	  if (sort_field->reverse)
-	    memset(to, 255, sort_field->length+1);
-	  else
-	    memset(to, 0, sort_field->length+1);
-	  to+= sort_field->length+1;
-	  continue;
-	}
-	else
-	  *to++=1;
-      }
-      if (sort_field->is_varlen)
-      {
-        DBUG_ASSERT(sort_field->length >= VARLEN_PREFIX);
-        actual_length= field->make_sort_key(
-          to + VARLEN_PREFIX, sort_field->length - VARLEN_PREFIX);
-        DBUG_ASSERT(actual_length <= sort_field->length - VARLEN_PREFIX);
-        int4store(to, actual_length + VARLEN_PREFIX);
-      }
-      else
-      {
-        actual_length= field->make_sort_key(to, sort_field->length);
-        DBUG_ASSERT(actual_length == sort_field->length);
-      }
+
+      actual_length= make_sortkey_from_field(
+        field, sort_field->is_varlen, sort_field->length,
+	to, &maybe_null);
 
       if (sort_field->field_type == MYSQL_TYPE_JSON)
       {
@@ -1476,207 +1682,39 @@ uint Sort_param::make_sortkey(uchar *to, const uchar *ref_pos)
     else
     {						// Item
       Item *item=sort_field->item;
-      maybe_null= item->maybe_null;
       DBUG_ASSERT(sort_field->field_type == item->data_type());
-      switch (sort_field->result_type) {
-      case STRING_RESULT:
-      {
-        uchar* null_indicator= nullptr;
-        if (maybe_null)
-        {
-          null_indicator= to++;
-          *null_indicator= 1;
-        }
 
-        if (sort_field->field_type == MYSQL_TYPE_JSON)
-        {
-          DBUG_ASSERT(use_hash);
-          DBUG_ASSERT(sort_field->is_varlen);
-          DBUG_ASSERT(sort_field->length >= VARLEN_PREFIX);
-          /*
-            We don't want the code for creating JSON sort keys to be
-            inlined here, as increasing the size of the surrounding
-            "else" branch seems to have a negative impact on some
-            performance tests, even if those tests never execute the
-            "else" branch.
-          */
-          actual_length= make_json_sort_key(
-            item, to + VARLEN_PREFIX, null_indicator,
-            sort_field->length - VARLEN_PREFIX, &hash);
-          int4store(to, actual_length + VARLEN_PREFIX);
-          break;
-        }
-
-        const CHARSET_INFO *cs=item->collation.collation;
-        char fill_char= ((cs->state & MY_CS_BINSORT) ? (char) 0 : ' ');
-
-        /* All item->str() to use some extra byte for end null.. */
-        String tmp((char*) to,sort_field->length+4,cs);
-        String *res= item->str_result(&tmp);
-        if (!res)
-        {
-          if (maybe_null)
-            memset(to-1, 0, sort_field->length+1);
-          else      // The return value is null but the result may NOT be null.
-          {
-            /* purecov: begin deadcode */
-            /*
-              This assert should only trigger if we have an item marked
-              as null when in fact it cannot be null.
-              (ret_value == nullptr, null_value == true
-              and maybe_null == false).
-            */
-            DBUG_ASSERT(0);
-            DBUG_PRINT("warning",
-                       ("Got null on something that shouldn't be null"));
-            /*
-               Avoid a crash by filling the field with zeroes
-               and break as the error will be reported later in find_all_keys.
-            */
-            memset(to, 0, sort_field->length);
-            /* purecov: end */
-          }
-          break;
-        }
-        uint length= static_cast<uint>(res->length());
-        if (sort_field->need_strnxfrm)
-        {
-          char *from=(char*) res->ptr();
-          size_t tmp_length MY_ATTRIBUTE((unused));
-          if ((uchar*) from == to)
-          {
-            DBUG_ASSERT(sort_field->length >= length);
-            set_if_smaller(length,sort_field->length);
-            memcpy(tmp_buffer, from, length);
-            from= tmp_buffer;
-          }
-          tmp_length=
-            cs->coll->strnxfrm(cs, to, sort_field->length,
-                               item->max_char_length(),
-                               (uchar*) from, length,
-                               MY_STRXFRM_PAD_TO_MAXLEN);
-          DBUG_ASSERT(tmp_length == sort_field->length);
-        }
-        else
-        {
-          size_t diff;
-          uint sort_field_length= sort_field->length -
-            sort_field->suffix_length;
-          if (sort_field_length < length)
-          {
-            diff= 0;
-            length= sort_field_length;
-          }
-          else
-            diff= sort_field_length - length;
-          if (sort_field->suffix_length)
-          {
-            /* Store length last in result_string */
-            store_length(to + sort_field_length, length,
-                         sort_field->suffix_length);
-          }
-
-          my_strnxfrm(cs, to,length,(const uchar*)res->ptr(),length);
-          cs->cset->fill(cs, (char *)to+length,diff,fill_char);
-        }
-        break;
-      }
-      case INT_RESULT:
-	{
-          longlong value= item->data_type() == MYSQL_TYPE_TIME ?
-                          item->val_time_temporal_result() :
-                          item->is_temporal_with_date() ?
-                          item->val_date_temporal_result() :
-                          item->val_int_result();
-          if (maybe_null)
-          {
-	    *to++=1;				/* purecov: inspected */
-            if (item->null_value)
-            {
-              if (maybe_null)
-                memset(to-1, 0, sort_field->length+1);
-              else
-              {
-                DBUG_PRINT("warning",
-                           ("Got null on something that shouldn't be null"));
-                memset(to, 0, sort_field->length);
-              }
-              break;
-            }
-          }
-          copy_native_longlong(to, sort_field->length,
-                               value, item->unsigned_flag);
-	  break;
-	}
-      case DECIMAL_RESULT:
-        {
-          my_decimal dec_buf, *dec_val= item->val_decimal_result(&dec_buf);
-          if (maybe_null)
-          {
-            if (item->null_value)
-            { 
-              memset(to, 0, sort_field->length+1);
-              to++;
-              break;
-            }
-            *to++=1;
-          }
-          if (sort_field->length < DECIMAL_MAX_FIELD_SIZE)
-          {
-            uchar buf[DECIMAL_MAX_FIELD_SIZE];
-            my_decimal2binary(E_DEC_FATAL_ERROR, dec_val, buf,
-                              item->max_length - (item->decimals ? 1:0),
-                              item->decimals);
-            memcpy(to, buf, sort_field->length);
-          }
-          else
-          {
-            my_decimal2binary(E_DEC_FATAL_ERROR, dec_val, to,
-                              item->max_length - (item->decimals ? 1:0),
-                              item->decimals);
-          }
-         break;
-        }
-      case REAL_RESULT:
-	{
-          double value= item->val_result();
-	  if (maybe_null)
-          {
-            if (item->null_value)
-            {
-              memset(to, 0, sort_field->length+1);
-              to++;
-              break;
-            }
-	    *to++=1;
-          }
-          if (sort_field->length < sizeof(double))
-          {
-            uchar buf[sizeof(double)];
-            change_double_for_sort(value, buf);
-            memcpy(to, buf, sort_field->length);
-          }
-          else
-          {
-            change_double_for_sort(value, to);
-          }
-	  break;
-	}
-      case ROW_RESULT:
-      default: 
-	// This case should never be choosen
-	DBUG_ASSERT(0);
-	break;
-      }
+      actual_length= make_sortkey_from_item(
+        item, sort_field->result_type, sort_field->is_varlen,
+        sort_field->length, tmp_buffer, to, &maybe_null, &hash);
     }
-    if (sort_field->reverse)
-    {							/* Reverse key */
-      if (maybe_null)
-        to[-1]= ~to[-1];
-      if (sort_field->is_varlen && actual_length)
+
+    /*
+      Now advance past the key that was just written, reversing the parts that
+      we need to reverse.
+    */
+
+    bool is_null= maybe_null && *to == 0;
+    if (maybe_null)
+    {
+      DBUG_ASSERT(*to == 0 || *to == 1);
+      if (sort_field->reverse && is_null)
       {
-        to+= VARLEN_PREFIX;
+        *to= 0xff;
       }
+      ++to;
+    }
+
+    // Fill out the varlen prefix if it exists.
+    if (sort_field->is_varlen && !is_null)
+    {
+      int4store(to, actual_length + VARLEN_PREFIX);
+      to+= VARLEN_PREFIX;
+    }
+
+    // Reverse the key if needed.
+    if (sort_field->reverse)
+    {
       while (actual_length--)
       {
 	*to = (uchar) (~ *to);
@@ -1685,10 +1723,6 @@ uint Sort_param::make_sortkey(uchar *to, const uchar *ref_pos)
     }
     else
     {
-      if (sort_field->is_varlen && actual_length)
-      {
-        to+= VARLEN_PREFIX;
-      }
       to+= actual_length;
     }
   }
@@ -2166,7 +2200,8 @@ struct Merge_chunk_greater
       return memcmp(key1, key2, m_len) > 0;
 
     if (m_param)
-      return !cmp_varlen_keys(m_param->local_sortorder, key1, key2);
+      return !cmp_varlen_keys(m_param->local_sortorder, m_param->use_hash,
+                              key1, key2);
 
     // We can actually have zero-length sort key for filesort().
     return false;
@@ -2209,8 +2244,8 @@ int merge_buffers(THD *thd, Sort_param *param, IO_CACHE *from_file,
   my_off_t to_start_filepos;
   uchar *strpos;
   Merge_chunk *merge_chunk;
-  volatile THD::killed_state *killed= &thd->killed;
-  THD::killed_state not_killable;
+  std::atomic<THD::killed_state> *killed= &thd->killed;
+  std::atomic<THD::killed_state> not_killable{THD::NOT_KILLED};
   DBUG_ENTER("merge_buffers");
 
   thd->inc_status_sort_merge_passes();
@@ -2375,43 +2410,24 @@ static int merge_index(THD *thd, Sort_param *param, Sort_buffer sort_buffer,
 } /* merge_index */
 
 
-static uint suffix_length(ulong string_length)
-{
-  if (string_length < 256)
-    return 1;
-  if (string_length < 256L*256L)
-    return 2;
-  if (string_length < 256L*256L*256L)
-    return 3;
-  return 4;                                     // Can't sort longer than 4G
-}
-
-
-
 /**
   Calculate length of sort key.
 
   @param thd			  Thread handler
   @param sortorder		  Order of items to sort
   @param s_length	          Number of items to sort
-  @param[out] multi_byte_charset Set to 1 if we are using multi-byte charset
-                                 (In which case we have to use strnxfrm())
 
   @note
     sortorder->length is updated for each sort item.
-  @n
-    sortorder->need_strnxfrm is set 1 if we have to use strnxfrm
 
   @return
     Total length of sort buffer in bytes
 */
 
 uint
-sortlength(THD *thd, st_sort_field *sortorder, uint s_length,
-           bool *multi_byte_charset)
+sortlength(THD *thd, st_sort_field *sortorder, uint s_length)
 {
   uint total_length= 0;
-  *multi_byte_charset= false;
 
   // Heed the contract that strnxfrm() needs an even number of bytes.
   const uint max_sort_length_even=
@@ -2419,8 +2435,6 @@ sortlength(THD *thd, st_sort_field *sortorder, uint s_length,
 
   for (; s_length-- ; sortorder++)
   {
-    DBUG_ASSERT(!sortorder->need_strnxfrm);
-    DBUG_ASSERT(sortorder->suffix_length == 0);
     if (sortorder->field)
     {
       const Field *field= sortorder->field;
@@ -2428,21 +2442,15 @@ sortlength(THD *thd, st_sort_field *sortorder, uint s_length,
       sortorder->length= field->sort_length();
       sortorder->is_varlen= field->sort_key_is_varlen();
 
-      if (use_strnxfrm(cs))
-      {
-        // How many bytes do we need (including sort weights) for strnxfrm()?
-        sortorder->length= cs->coll->strnxfrmlen(cs, sortorder->length);
-        sortorder->need_strnxfrm= true;
-        *multi_byte_charset= 1;
-      }
+      // How many bytes do we need (including sort weights) for strnxfrm()?
+      sortorder->length= cs->coll->strnxfrmlen(cs, sortorder->length);
+
       /*
         NOTE: The corresponding test below also has a check for
-        cs == &my_charset_bin to sort truncated blobs deterministically;
+        NO PAD collations to sort truncated blobs deterministically;
         however, that part is dealt by in Field_blob/Field_varstring,
         so we don't need it here.
       */
-      if (sortorder->is_varlen)
-        sortorder->length+= VARLEN_PREFIX;
       sortorder->maybe_null= field->maybe_null();
       if (field->result_type() == STRING_RESULT &&
           !field->is_temporal())
@@ -2468,18 +2476,13 @@ sortlength(THD *thd, st_sort_field *sortorder, uint s_length,
         const CHARSET_INFO *cs= item->collation.collation;
 	sortorder->length= item->max_length;
         set_if_smaller(sortorder->length, max_sort_length_even);
-	if (use_strnxfrm(cs))
-	{ 
-          // How many bytes do we need (including sort weights) for strnxfrm()?
-          sortorder->length= cs->coll->strnxfrmlen(cs, sortorder->length);
-	  sortorder->need_strnxfrm= true;
-	  *multi_byte_charset= 1;
-	}
-        else if (cs->pad_attribute == NO_PAD)
+
+        // How many bytes do we need (including sort weights) for strnxfrm()?
+        sortorder->length= cs->coll->strnxfrmlen(cs, sortorder->length);
+
+        if (cs->pad_attribute == NO_PAD)
         {
-          /* Store length last to be able to sort blob/varbinary */
-          sortorder->suffix_length= suffix_length(sortorder->length);
-          sortorder->length+= sortorder->suffix_length;
+          sortorder->is_varlen= true;
         }
 	break;
       }
@@ -2500,7 +2503,7 @@ sortlength(THD *thd, st_sort_field *sortorder, uint s_length,
 	sortorder->length=sizeof(double);
 	break;
       case ROW_RESULT:
-      default: 
+      default:
 	// This case should never be choosen
 	DBUG_ASSERT(0);
 	break;
@@ -2509,6 +2512,8 @@ sortlength(THD *thd, st_sort_field *sortorder, uint s_length,
     }
     if (sortorder->maybe_null)
       total_length++;                       // Place for NULL marker
+    if (sortorder->is_varlen)
+      sortorder->length+= VARLEN_PREFIX;
     total_length+= sortorder->length;
   }
   sortorder->field= NULL;                       // end marker

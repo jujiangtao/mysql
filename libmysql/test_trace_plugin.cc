@@ -1,13 +1,20 @@
 /* Copyright (c) 2012, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -324,7 +331,7 @@ static bool opt_crash= false;
 
 
 int
-plugin_init(char *a, size_t b ,int argc, va_list args)
+plugin_init(char*, size_t,int, va_list)
 {
   const char *opt= getenv("MYSQL_TEST_TRACE_CRASH");
 
@@ -361,7 +368,7 @@ plugin_deinit()
 
 
 void*
-trace_start(struct st_mysql_client_plugin_TRACE *self,
+trace_start(struct st_mysql_client_plugin_TRACE*,
             MYSQL *conn, enum protocol_stage stage)
 {
   LOGGER(conn);
@@ -384,7 +391,7 @@ trace_start(struct st_mysql_client_plugin_TRACE *self,
 
 
 void
-trace_stop(struct st_mysql_client_plugin_TRACE *self,
+trace_stop(struct st_mysql_client_plugin_TRACE*,
            MYSQL *conn, void *data)
 {
   LOGGER(conn);
@@ -416,7 +423,7 @@ PROTOCOL_STAGE_LIST(chk_ev_declare)
 */
 
 int
-trace_event(struct st_mysql_client_plugin_TRACE *self,
+trace_event(struct st_mysql_client_plugin_TRACE*,
             void *data_ptr, MYSQL *conn,
             enum protocol_stage stage, enum trace_event ev,
             struct st_trace_event_args args)
@@ -670,10 +677,10 @@ trace_event(struct st_mysql_client_plugin_TRACE *self,
 #define NEXT_STAGE(S) do{ if(next_stage) *next_stage= PROTOCOL_STAGE_ ## S; } while(0)
 
 
-int check_event_CONNECTING(MYSQL *conn,
-                           struct st_trace_data *data,
+int check_event_CONNECTING(MYSQL*,
+                           struct st_trace_data*,
                            enum trace_event ev,
-                           struct st_trace_event_args args,
+                           struct st_trace_event_args,
                            enum protocol_stage *next_stage)
 {
   /*
@@ -692,10 +699,10 @@ int check_event_CONNECTING(MYSQL *conn,
 }
 
 
-int check_event_WAIT_FOR_INIT_PACKET(MYSQL *conn,
-                           struct st_trace_data *data,
+int check_event_WAIT_FOR_INIT_PACKET(MYSQL*,
+                           struct st_trace_data*,
                            enum trace_event ev,
-                           struct st_trace_event_args args,
+                           struct st_trace_event_args,
                            enum protocol_stage *next_stage)
 {
   /*
@@ -770,9 +777,9 @@ int check_event_AUTHENTICATE(MYSQL *conn,
 }
 
 int check_event_SSL_NEGOTIATION(MYSQL *conn,
-                           struct st_trace_data *data,
+                           struct st_trace_data*,
                            enum trace_event ev,
-                           struct st_trace_event_args args,
+                           struct st_trace_event_args,
                            enum protocol_stage *next_stage)
 {
   LOGGER(conn);
@@ -942,9 +949,9 @@ int check_event_READY_FOR_COMMAND(MYSQL *conn,
 
 
 int check_event_WAIT_FOR_PACKET(MYSQL *conn,
-                           struct st_trace_data *data,
+                           struct st_trace_data*,
                            enum trace_event ev,
-                           struct st_trace_event_args args,
+                           struct st_trace_event_args,
                            enum protocol_stage *next_stage)
 {
   /*
@@ -1405,11 +1412,11 @@ int check_event_FILE_REQUEST(MYSQL *conn,
 }
 
 
-int check_event_DISCONNECTED(MYSQL *conn,
-                           struct st_trace_data *data,
-                           enum trace_event ev,
-                           struct st_trace_event_args args,
-                           enum protocol_stage *next_stage)
+int check_event_DISCONNECTED(MYSQL*,
+                           struct st_trace_data*,
+                           enum trace_event,
+                           struct st_trace_event_args,
+                           enum protocol_stage*)
 {
   /*
     This is the final stage reached when connection with

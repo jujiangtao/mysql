@@ -1,21 +1,31 @@
 /* Copyright (c) 2006, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "rpl_utility.h"
+#include "sql/rpl_utility.h"
 
 #include <string.h>
+#include <iterator>
+#include <new>
+#include <utility>
 
 #include "binary_log_funcs.h"
 #include "lex_string.h"
@@ -24,41 +34,44 @@
 #include "my_loglevel.h"
 #include "my_sys.h"
 #include "mysql/service_mysql_alloc.h"
-#include "thr_malloc.h"
+#include "mysql/udf_registration_types.h"
+#include "sql/thr_malloc.h"
 
 #ifdef MYSQL_SERVER
 
 #include <algorithm>
 
 #include "binlog_event.h"                // checksum_crv32
-#include "dd/dd.h"                       // get_dictionary
-#include "dd/dictionary.h"               // is_dd_table_access_allowed
-#include "derror.h"                      // ER_THD
-#include "field.h"                       // Field
-#include "log.h"                         // sql_print_error
-#include "log_event.h"                   // Log_event
 #include "m_ctype.h"
 #include "m_string.h"
 #include "my_base.h"
 #include "my_bitmap.h"
-#include "my_decimal.h"
 #include "mysql/psi/psi_memory.h"
-#include "mysqld.h"                      // slave_type_conversions_options
 #include "mysqld_error.h"
-#include "psi_memory_key.h"
-#include "rpl_rli.h"                     // Relay_log_info
-#include "rpl_slave.h"
-#include "sql_class.h"                   // THD
-#include "sql_const.h"
-#include "sql_list.h"
-#include "sql_plugin_ref.h"
+#include "sql/dd/dd.h"                   // get_dictionary
+#include "sql/dd/dictionary.h"           // is_dd_table_access_allowed
+#include "sql/derror.h"                  // ER_THD
+#include "sql/field.h"                   // Field
+#include "sql/log.h"
+#include "sql/log_event.h"               // Log_event
+#include "sql/my_decimal.h"
+#include "sql/mysqld.h"                  // slave_type_conversions_options
+#include "sql/psi_memory_key.h"
+#include "sql/rpl_rli.h"                 // Relay_log_info
+#include "sql/rpl_slave.h"
+#include "sql/sql_class.h"               // THD
+#include "sql/sql_const.h"
+#include "sql/sql_list.h"
+#include "sql/sql_plugin_ref.h"
+#include "sql/sql_tmp_table.h"           // create_tmp_table_from_fields
 #include "sql_string.h"
-#include "sql_tmp_table.h"               // create_virtual_tmp_table
 #include "template_utils.h"              // delete_container_pointers
 #include "typelib.h"
+#include "sql_show.h"                    // show_sql_type
 
 using std::min;
 using std::max;
+using std::unique_ptr;
 using binary_log::checksum_crc32;
 
 #endif //MYSQL_SERVER
@@ -118,177 +131,6 @@ static int compare_lengths(Field *field, enum_field_types source_type,
   int result= compare(source_length, target_length);
   DBUG_PRINT("result", ("%d", result));
   DBUG_RETURN(result);
-}
-
-static void show_sql_type(enum_field_types type, uint16 metadata, String *str)
-{
-  DBUG_ENTER("show_sql_type");
-  DBUG_PRINT("enter", ("type: %d, metadata: 0x%x", type, metadata));
-
-  switch (type)
-  {
-  case MYSQL_TYPE_TINY:
-    str->set_ascii(STRING_WITH_LEN("tinyint"));
-    break;
-
-  case MYSQL_TYPE_SHORT:
-    str->set_ascii(STRING_WITH_LEN("smallint"));
-    break;
-
-  case MYSQL_TYPE_LONG:
-    str->set_ascii(STRING_WITH_LEN("int"));
-    break;
-
-  case MYSQL_TYPE_FLOAT:
-    str->set_ascii(STRING_WITH_LEN("float"));
-    break;
-
-  case MYSQL_TYPE_DOUBLE:
-    str->set_ascii(STRING_WITH_LEN("double"));
-    break;
-
-  case MYSQL_TYPE_NULL:
-    str->set_ascii(STRING_WITH_LEN("null"));
-    break;
-
-  case MYSQL_TYPE_TIMESTAMP:
-  case MYSQL_TYPE_TIMESTAMP2:
-    str->set_ascii(STRING_WITH_LEN("timestamp"));
-    break;
-
-  case MYSQL_TYPE_LONGLONG:
-    str->set_ascii(STRING_WITH_LEN("bigint"));
-    break;
-
-  case MYSQL_TYPE_INT24:
-    str->set_ascii(STRING_WITH_LEN("mediumint"));
-    break;
-
-  case MYSQL_TYPE_NEWDATE:
-  case MYSQL_TYPE_DATE:
-    str->set_ascii(STRING_WITH_LEN("date"));
-    break;
-
-  case MYSQL_TYPE_TIME:
-  case MYSQL_TYPE_TIME2:
-    str->set_ascii(STRING_WITH_LEN("time"));
-    break;
-
-  case MYSQL_TYPE_DATETIME:
-  case MYSQL_TYPE_DATETIME2:
-    str->set_ascii(STRING_WITH_LEN("datetime"));
-    break;
-
-  case MYSQL_TYPE_YEAR:
-    str->set_ascii(STRING_WITH_LEN("year"));
-    break;
-
-  case MYSQL_TYPE_VAR_STRING:
-  case MYSQL_TYPE_VARCHAR:
-    {
-      const CHARSET_INFO *cs= str->charset();
-      size_t length=
-        cs->cset->snprintf(cs, (char*) str->ptr(), str->alloced_length(),
-                           "varchar(%u(bytes))", metadata);
-      str->length(length);
-    }
-    break;
-
-  case MYSQL_TYPE_BIT:
-    {
-      const CHARSET_INFO *cs= str->charset();
-      int bit_length= 8 * (metadata >> 8) + (metadata & 0xFF);
-      size_t length=
-        cs->cset->snprintf(cs, (char*) str->ptr(), str->alloced_length(),
-                           "bit(%d)", bit_length);
-      str->length(length);
-    }
-    break;
-
-  case MYSQL_TYPE_DECIMAL:
-    {
-      const CHARSET_INFO *cs= str->charset();
-      size_t length=
-        cs->cset->snprintf(cs, (char*) str->ptr(), str->alloced_length(),
-                           "decimal(%d,?)", metadata);
-      str->length(length);
-    }
-    break;
-
-  case MYSQL_TYPE_NEWDECIMAL:
-    {
-      const CHARSET_INFO *cs= str->charset();
-      size_t length=
-        cs->cset->snprintf(cs, (char*) str->ptr(), str->alloced_length(),
-                           "decimal(%d,%d)", metadata >> 8, metadata & 0xff);
-      str->length(length);
-    }
-    break;
-
-  case MYSQL_TYPE_ENUM:
-    str->set_ascii(STRING_WITH_LEN("enum"));
-    break;
-
-  case MYSQL_TYPE_SET:
-    str->set_ascii(STRING_WITH_LEN("set"));
-    break;
-
-  case MYSQL_TYPE_BLOB:
-    /*
-      Field::real_type() lies regarding the actual type of a BLOB, so
-      it is necessary to check the pack length to figure out what kind
-      of blob it really is.
-     */
-    switch (metadata)
-    {
-    case 1:
-      str->set_ascii(STRING_WITH_LEN("tinyblob"));
-      break;
-
-    case 2:
-      str->set_ascii(STRING_WITH_LEN("blob"));
-      break;
-
-    case 3:
-      str->set_ascii(STRING_WITH_LEN("mediumblob"));
-      break;
-
-    case 4:
-      str->set_ascii(STRING_WITH_LEN("longblob"));
-      break;
-
-    default:
-      DBUG_ASSERT(0);
-      break;
-    }
-    break;
-
-  case MYSQL_TYPE_STRING:
-    {
-      /*
-        This is taken from Field_string::unpack.
-      */
-      const CHARSET_INFO *cs= str->charset();
-      uint bytes= (((metadata >> 4) & 0x300) ^ 0x300) + (metadata & 0x00ff);
-      size_t length=
-        cs->cset->snprintf(cs, (char*) str->ptr(), str->alloced_length(),
-                           "char(%d(bytes))", bytes);
-      str->length(length);
-    }
-    break;
-
-  case MYSQL_TYPE_GEOMETRY:
-    str->set_ascii(STRING_WITH_LEN("geometry"));
-    break;
-
-  case MYSQL_TYPE_JSON:
-    str->set_ascii(STRING_WITH_LEN("json"));
-    break;
-
-  default:
-    str->set_ascii(STRING_WITH_LEN("<unknown type>"));
-  }
-  DBUG_VOID_RETURN;
 }
 
 
@@ -721,8 +563,11 @@ table_def::compatible_with(THD *thd, Relay_log_info *rli,
         report_level= ERROR_LEVEL;
         thd->is_slave_error= 1;
       }
-      /* In case of ignored errors report warnings only if log_warnings > 1. */
-      else if (log_warnings > 1)
+      /*
+        In case of ignored errors report warnings only if
+        log_error_verbosity > 2.
+      */
+      else if (log_error_verbosity > 2)
         report_level= WARNING_LEVEL;
 
       if (field->has_charset() &&
@@ -852,14 +697,10 @@ TABLE *table_def::create_conversion_table(THD *thd, Relay_log_info *rli, TABLE *
       break;
 
     case MYSQL_TYPE_DECIMAL:
-      sql_print_error("In RBR mode, Slave received incompatible DECIMAL field "
-                      "(old-style decimal field) from Master while creating "
-                      "conversion table. Please consider changing datatype on "
-                      "Master to new style decimal by executing ALTER command for"
-                      " column Name: %s.%s.%s.",
-                      target_table->s->db.str,
-                      target_table->s->table_name.str,
-                      target_table->field[col]->field_name);
+      LogErr(ERROR_LEVEL, ER_RPL_INCOMPATIBLE_DECIMAL_IN_RBR,
+             target_table->s->db.str,
+             target_table->s->table_name.str,
+             target_table->field[col]->field_name);
       goto err;
 
     case MYSQL_TYPE_BLOB:
@@ -893,7 +734,7 @@ TABLE *table_def::create_conversion_table(THD *thd, Relay_log_info *rli, TABLE *
     field_def->interval= interval;
   }
 
-  conv_table= create_virtual_tmp_table(thd, field_list);
+  conv_table= create_tmp_table_from_fields(thd, field_list);
 
 err:
   if (conv_table == NULL)
@@ -904,8 +745,11 @@ err:
       report_level= ERROR_LEVEL;
       thd->is_slave_error= 1;
     }
-    /* In case of ignored errors report warnings only if log_warnings > 1. */
-    else if (log_warnings > 1)
+    /*
+      In case of ignored errors report warnings only if
+      log_error_verbosity > 2.
+    */
+    else if (log_error_verbosity > 2)
       report_level= WARNING_LEVEL;
 
     if (report_level != INFORMATION_LEVEL)
@@ -928,7 +772,7 @@ table_def::table_def(unsigned char *types, ulong size,
                      uchar *null_bitmap, uint16 flags)
   : m_size(size), m_type(0), m_field_metadata_size(metadata_size),
     m_field_metadata(0), m_null_bits(0), m_flags(flags),
-    m_memory(NULL)
+    m_memory(NULL), m_json_column_count(-1)
 {
   m_memory= (uchar *)my_multi_malloc(key_memory_table_def_memory,
                                      MYF(MY_WME),
@@ -1039,28 +883,16 @@ table_def::~table_def()
   Utility methods for handling row based operations.
  */
 
-static const uchar*
-hash_slave_rows_get_key(const uchar *record,
-                        size_t *length)
+void hash_slave_rows_free_entry::operator() (HASH_ROW_ENTRY *entry) const
 {
-  DBUG_ENTER("get_key");
-
-  HASH_ROW_ENTRY *entry=(HASH_ROW_ENTRY *) record;
-  HASH_ROW_PREAMBLE *preamble= entry->preamble;
-  *length= preamble->length;
-
-  DBUG_RETURN((uchar*) &preamble->hash_value);
-}
-
-static void
-hash_slave_rows_free_entry(void *ptr)
-{
-  DBUG_ENTER("free_entry");
-  HASH_ROW_ENTRY *entry= pointer_cast<HASH_ROW_ENTRY*>(ptr);
+  DBUG_ENTER("hash_slave_rows_free_entry::operator()");
   if (entry)
   {
     if (entry->preamble)
+    {
+      entry->preamble->~HASH_ROW_PREAMBLE();
       my_free(entry->preamble);
+    }
     if (entry->positions)
       my_free(entry->positions);
     my_free(entry);
@@ -1070,7 +902,7 @@ hash_slave_rows_free_entry(void *ptr)
 
 bool Hash_slave_rows::is_empty(void)
 {
-  return (m_hash.records == 0);
+  return m_hash.empty();
 }
 
 /**
@@ -1079,29 +911,19 @@ bool Hash_slave_rows::is_empty(void)
 
 bool Hash_slave_rows::init(void)
 {
-  if (my_hash_init(&m_hash,
-                   &my_charset_bin,                /* the charater set information */
-                   16 /* TODO */,                  /* size */
-                   0,                              /* key length */
-                   hash_slave_rows_get_key,        /* get function pointer */
-                   hash_slave_rows_free_entry,     /* freefunction pointer */
-                   0,                              /* flags */
-                   key_memory_HASH_ROW_ENTRY))     /* memory instrumentation key */
-    return true;
   return false;
 }
 
 bool Hash_slave_rows::deinit(void)
 {
-  if (my_hash_inited(&m_hash))
-    my_hash_free(&m_hash);
-
-  return 0;
+  DBUG_ENTER("Hash_slave_rows::deinit");
+  m_hash.clear();
+  DBUG_RETURN(0);
 }
 
 int Hash_slave_rows::size()
 {
-  return m_hash.records;
+  return m_hash.size();
 }
 
 HASH_ROW_ENTRY* Hash_slave_rows::make_entry()
@@ -1126,9 +948,9 @@ HASH_ROW_ENTRY* Hash_slave_rows::make_entry(const uchar* bi_start, const uchar* 
   /**
      Filling in the preamble.
    */
+  new (preamble) HASH_ROW_PREAMBLE();
   preamble->hash_value= 0;
-  preamble->length= sizeof(my_hash_value_type);
-  preamble->search_state= HASH_ROWS_POS_SEARCH_INVALID;
+  preamble->search_state= m_hash.end();
   preamble->is_search_state_inited= false;
 
   /**
@@ -1146,10 +968,14 @@ HASH_ROW_ENTRY* Hash_slave_rows::make_entry(const uchar* bi_start, const uchar* 
   DBUG_RETURN(entry);
 
 err:
+  DBUG_PRINT("info", ("Hash_slave_rows::make_entry - malloc error"));
   if (entry)
     my_free(entry);
   if (preamble)
-    my_free(entry);
+  {
+    preamble->~HASH_ROW_PREAMBLE();
+    my_free(preamble);
+  }
   if (pos)
     my_free(pos);
   DBUG_RETURN(NULL);
@@ -1173,7 +999,8 @@ Hash_slave_rows::put(TABLE *table,
   */
   preamble->hash_value= make_hash_key(table, cols);
 
-  my_hash_insert(&m_hash, (uchar *) entry);
+  m_hash.emplace(preamble->hash_value,
+                 unique_ptr<HASH_ROW_ENTRY, hash_slave_rows_free_entry>(entry));
   DBUG_PRINT("debug", ("Added record to hash with key=%u", preamble->hash_value));
   DBUG_RETURN(false);
 }
@@ -1182,19 +1009,15 @@ HASH_ROW_ENTRY*
 Hash_slave_rows::get(TABLE *table, MY_BITMAP *cols)
 {
   DBUG_ENTER("Hash_slave_rows::get");
-  HASH_SEARCH_STATE state;
-  my_hash_value_type key;
+  uint key;
   HASH_ROW_ENTRY *entry= NULL;
 
   key= make_hash_key(table, cols);
 
   DBUG_PRINT("debug", ("Looking for record with key=%u in the hash.", key));
 
-  entry= (HASH_ROW_ENTRY*) my_hash_first(&m_hash,
-                                         (const uchar*) &key,
-                                         sizeof(my_hash_value_type),
-                                         &state);
-  if (entry)
+  const auto it= m_hash.find(key);
+  if (it != m_hash.end())
   {
     DBUG_PRINT("debug", ("Found record with key=%u in the hash.", key));
 
@@ -1202,7 +1025,8 @@ Hash_slave_rows::get(TABLE *table, MY_BITMAP *cols)
        Save the search state in case we need to go through entries for
        the given key.
     */
-    entry->preamble->search_state= state;
+    entry= it->second.get();
+    entry->preamble->search_state= it;
     entry->preamble->is_search_state_inited= true;
   }
 
@@ -1222,36 +1046,34 @@ bool Hash_slave_rows::next(HASH_ROW_ENTRY** entry)
   if (!preamble->is_search_state_inited)
     DBUG_RETURN(true);
 
-  my_hash_value_type key= preamble->hash_value;
-  HASH_SEARCH_STATE state= preamble->search_state;
+  uint key= preamble->hash_value;
+  const auto it= std::next(preamble->search_state);
 
   /*
     Invalidate search for current preamble, because it is going to be
     used in the search below (and search state is used in a
     one-time-only basis).
    */
-  preamble->search_state= HASH_ROWS_POS_SEARCH_INVALID;
+  preamble->search_state= m_hash.end();
   preamble->is_search_state_inited= false;
 
   DBUG_PRINT("debug", ("Looking for record with key=%u in the hash (next).", key));
 
-  /**
-     Do the actual search in the hash table.
-   */
-  *entry= (HASH_ROW_ENTRY*) my_hash_next(&m_hash,
-                                         (const uchar*) &key,
-                                         sizeof(my_hash_value_type),
-                                         &state);
-  if (*entry)
+  if (it != m_hash.end() && it->first == key)
   {
     DBUG_PRINT("debug", ("Found record with key=%u in the hash (next).", key));
+    *entry= it->second.get();
     preamble= (*entry)->preamble;
 
     /**
        Save the search state for next iteration (if any).
      */
-    preamble->search_state= state;
+    preamble->search_state= it;
     preamble->is_search_state_inited= true;
+  }
+  else
+  {
+    *entry= nullptr;
   }
 
   DBUG_RETURN(false);
@@ -1263,12 +1085,11 @@ Hash_slave_rows::del(HASH_ROW_ENTRY *entry)
   DBUG_ENTER("Hash_slave_rows::del");
   DBUG_ASSERT(entry);
 
-  if (my_hash_delete(&m_hash, (uchar *) entry))
-    DBUG_RETURN(true);
+  erase_specific_element(&m_hash, entry->preamble->hash_value, entry);
   DBUG_RETURN(false);
 }
 
-my_hash_value_type
+uint
 Hash_slave_rows::make_hash_key(TABLE *table, MY_BITMAP *cols)
 {
   DBUG_ENTER("Hash_slave_rows::make_hash_key");
@@ -1325,7 +1146,9 @@ Hash_slave_rows::make_hash_key(TABLE *table, MY_BITMAP *cols)
     /*
       Field is set in the read_set and is isn't NULL.
      */
-    if (bitmap_is_set(cols, f->field_index) && !f->is_null())
+    if (bitmap_is_set(cols, f->field_index) &&
+        !f->is_virtual_gcol() && // Avoid virtual generated columns on hashes
+        !f->is_null())
     {
       /*
         BLOB and VARCHAR have pointers in their field, we must convert

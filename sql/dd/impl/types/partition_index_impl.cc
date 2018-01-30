@@ -1,40 +1,53 @@
 /* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "dd/impl/types/partition_index_impl.h"
+#include "sql/dd/impl/types/partition_index_impl.h"
 
 #include <sstream>
+#include <string>
 
-#include "dd/impl/properties_impl.h"          // Properties_impl
-#include "dd/impl/raw/raw_record.h"           // Raw_record
-#include "dd/impl/sdi_impl.h"                 // sdi read/write functions
-#include "dd/impl/tables/index_partitions.h"  // Index_partitions
-#include "dd/impl/transaction_impl.h"         // Open_dictionary_tables_ctx
-#include "dd/impl/types/entity_object_impl.h"
-#include "dd/impl/types/partition_impl.h"     // Partition_impl
-#include "dd/impl/types/table_impl.h"         // Table_impl
-#include "dd/string_type.h"                   // dd::String_type
-#include "dd/types/index.h"
-#include "dd/types/object_table.h"
-#include "dd/types/weak_object.h"
+#include "my_rapidjson_size_t.h"    // IWYU pragma: keep
+#include <rapidjson/document.h>
+#include <rapidjson/prettywriter.h>
+
 #include "m_string.h"
 #include "my_inttypes.h"
 #include "my_sys.h"
 #include "mysqld_error.h"                     // ER_*
-#include "rapidjson/document.h"
-#include "rapidjson/prettywriter.h"
+#include "sql/dd/impl/properties_impl.h"      // Properties_impl
+#include "sql/dd/impl/raw/raw_record.h"       // Raw_record
+#include "sql/dd/impl/sdi_impl.h"             // sdi read/write functions
+#include "sql/dd/impl/tables/index_partitions.h" // Index_partitions
+#include "sql/dd/impl/transaction_impl.h"     // Open_dictionary_tables_ctx
+#include "sql/dd/impl/types/partition_impl.h" // Partition_impl
+#include "sql/dd/impl/types/table_impl.h"     // Table_impl
+#include "sql/dd/string_type.h"               // dd::String_type
+#include "sql/dd/types/index.h"
+#include "sql/dd/types/object_table.h"
+#include "sql/dd/types/weak_object.h"
+
+namespace dd {
+class Entity_object_impl;
+}  // namespace dd
 
 using dd::tables::Index_partitions;
 
@@ -44,23 +57,6 @@ class Object_key;
 class Partition;
 class Sdi_rcontext;
 class Sdi_wcontext;
-
-///////////////////////////////////////////////////////////////////////////
-// Partition_index implementation.
-///////////////////////////////////////////////////////////////////////////
-
-const Object_table &Partition_index::OBJECT_TABLE()
-{
-  return Index_partitions::instance();
-}
-
-///////////////////////////////////////////////////////////////////////////
-
-const Object_type &Partition_index::TYPE()
-{
-  static Partition_index_type s_instance;
-  return s_instance;
-}
 
 ///////////////////////////////////////////////////////////////////////////
 // Partition_index_impl implementation.
@@ -150,7 +146,7 @@ bool Partition_index_impl::validate() const
   {
     my_error(ER_INVALID_DD_OBJECT,
              MYF(0),
-             Partition_index_impl::OBJECT_TABLE().name().c_str(),
+             DD_table::instance().name().c_str(),
              "No partition object associated with this element.");
     return true;
   }
@@ -159,7 +155,7 @@ bool Partition_index_impl::validate() const
   {
     my_error(ER_INVALID_DD_OBJECT,
              MYF(0),
-             Partition_index_impl::OBJECT_TABLE().name().c_str(),
+             DD_table::instance().name().c_str(),
              "No index object associated with this element.");
     return true;
   }
@@ -300,10 +296,15 @@ Partition_index_impl(const Partition_index_impl &src,
 {}
 
 ///////////////////////////////////////////////////////////////////////////
-//Partition_index_type implementation.
+
+const Object_table &Partition_index_impl::object_table() const
+{
+  return DD_table::instance();
+}
+
 ///////////////////////////////////////////////////////////////////////////
 
-void Partition_index_type::register_tables(Open_dictionary_tables_ctx *otx) const
+void Partition_index_impl::register_tables(Open_dictionary_tables_ctx *otx)
 {
   otx->add_table<Index_partitions>();
 }

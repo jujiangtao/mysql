@@ -1,14 +1,21 @@
 #ifndef MYSQL_PLUGIN_AUTH_INCLUDED
-/* Copyright (c) 2010, 2016 Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -26,7 +33,7 @@
 
 #include <mysql/plugin.h>
 
-#define MYSQL_AUTHENTICATION_INTERFACE_VERSION 0x0101
+#define MYSQL_AUTHENTICATION_INTERFACE_VERSION 0x0102
 
 #include "plugin_auth_common.h"
 
@@ -159,6 +166,24 @@ typedef int (*validate_authentication_string_t)(char* const inbuf, unsigned int 
 typedef int (*set_salt_t)(const char *password, unsigned int password_len,
                           unsigned char* salt, unsigned char *salt_len);
 
+
+/**
+  Plugin API to compare a clear text password with a stored hash
+
+  @arg hash              pointer to the hashed data
+  @arg hash_length       length of the hashed data
+  @arg cleartext         pointer to the clear text password
+  @arg cleartext_length  length of the cleat text password
+  @arg[out] is_error     non-zero in case of error extracting the salt
+  @retval 0              the hash was created with that password
+  @retval non-zero       the hash was created with a different password
+*/
+typedef int
+(*compare_password_with_hash_t)(const char *hash, unsigned long hash_length,
+                                const char *cleartext,
+                                unsigned long cleartext_length,
+                                int *is_error);
+
 /**
   Server authentication plugin descriptor
 */
@@ -180,6 +205,8 @@ struct st_mysql_auth
     Authentication plugin capabilities
   */
   const unsigned long authentication_flags;
+
+  compare_password_with_hash_t compare_password_with_hash;
 };
 #endif
 

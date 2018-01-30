@@ -1,40 +1,48 @@
 /* Copyright (c) 2011, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA */
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "unittest/gunit/test_utils.h"
 
 #include <gtest/gtest.h>
+#include <atomic>
 #include <new>
 #include <ostream>
 
-#include "dd/impl/dictionary_impl.h"            // dd::Dictionary_impl
 #include "gtest/gtest-message.h"
-#include "log.h"                                // query_logger
 #include "m_ctype.h"
 #include "m_string.h"
 #include "my_dbug.h"                            // DBUG_ASSERT
-#include "my_decimal.h"
 #include "my_inttypes.h"
 #include "mysql_com.h"
-#include "mysqld.h"                             // set_remaining_args
-#include "opt_costconstantcache.h"              // optimizer cost constant cache
-#include "rpl_handler.h"                        // delegates_init()
-#include "set_var.h"
-#include "sql_class.h"
-#include "sql_lex.h"
-#include "xa.h"
+#include "sql/dd/impl/dictionary_impl.h"        // dd::Dictionary_impl
+#include "sql/log.h"                            // query_logger
+#include "sql/my_decimal.h"
+#include "sql/mysqld.h"                         // set_remaining_args
+#include "sql/opt_costconstantcache.h"          // optimizer cost constant cache
+#include "sql/rpl_handler.h"                    // delegates_init()
+#include "sql/set_var.h"
+#include "sql/sql_class.h"
+#include "sql/sql_lex.h"
+#include "sql/xa.h"
 
 
 namespace my_testing {
@@ -49,8 +57,8 @@ int chars_2_decimal(const char *chars, my_decimal *to)
 /*
   A mock error handler for error_handler_hook.
 */
-uint expected_error= 0;
-extern "C" void test_error_handler_hook(uint err, const char *str, myf MyFlags)
+std::atomic<uint> expected_error{0};
+extern "C" void test_error_handler_hook(uint err, const char *str, myf)
 {
   EXPECT_EQ(expected_error, err) << str;
 }
@@ -89,6 +97,7 @@ void teardown_server_for_unit_tests()
   query_logger.cleanup();
   delete_optimizer_cost_module();
   DD_initializer::TearDown();
+  my_end(0);
 }
 
 void Server_initializer::set_expected_error(uint val)
@@ -141,11 +150,11 @@ Mock_error_handler::~Mock_error_handler()
   }
 }
 
-bool Mock_error_handler::handle_condition(THD *thd,
+bool Mock_error_handler::handle_condition(THD*,
                                           uint sql_errno,
-                                          const char* sqlstate,
-                                          Sql_condition::enum_severity_level *level,
-                                          const char* msg)
+                                          const char*,
+                                          Sql_condition::enum_severity_level*,
+                                          const char*)
 {
   EXPECT_EQ(m_expected_error, sql_errno);
   ++m_handle_called;

@@ -1,17 +1,24 @@
-/* Copyright (c) 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
 
 This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; version 2 of the License.
+it under the terms of the GNU General Public License, version 2.0,
+as published by the Free Software Foundation.
+
+This program is also distributed with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have included with MySQL.
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
+GNU General Public License, version 2.0, for more details.
 
 You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
-Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02111-1307  USA */
+Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef COMPONENT_IMPLEMENTATION_H
 #define COMPONENT_IMPLEMENTATION_H
@@ -72,6 +79,19 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02111-1307  USA */
   possible with the Component Infrastructure. These example Services are defined
   in example_services.h and are s_mysql_greetings,
   s_mysql_greetings_localization and s_mysql_example_math.
+
+  @section TROUBLESHOOTING Common problems
+
+  -# If you have problem during linking on GCC with similar message:
+
+        ../../../components/mysql_server/component_mysql_server.a(server_component.cc.o):%server_component.cc:imp_...: error: undefined reference to '..._impl::...'
+
+    In such case you should add a new `%init()` method (it can be dummy/empty) to
+    your source file that contains service methods implementations and a call
+    to that method somewhere in mysqld.cc. This will help GCC not to optimize
+    the required object file out of linkage. Take `mysql_string_services_init()`
+    as an example. This applies only to service implementations added to the
+    server component.
 
   @section TUTORIAL Step by step tutorial for creating new Component
   The creation of component is a mean to get some functionality exported for the
@@ -136,7 +156,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02111-1307  USA */
   Declares a component. For specified name following macros must be executed
   earlier: BEGIN_COMPONENT_PROVIDES, BEGIN_COMPONENT_REQUIRES and
   BEGIN_COMPONENT_METADATA.
-  It fills st_mysql_component_t structure with all of the component data. The
+  It fills mysql_component_t structure with all of the component data. The
   info object will be named mysql_component_{source_name}.
   After this macro it is required to specify comma-separated pointers to
   initialize and deinitialize methods for components to be used during loading

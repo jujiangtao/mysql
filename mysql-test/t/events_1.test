@@ -2,8 +2,6 @@
 # changes 2008-02-20 hhunger splitted events.test into events_1 and events_2
 # changes 2008-02-22 hhunger replaced all sleep by wait_condition
 #
-# Can't test with embedded server that doesn't support grants
--- source include/not_embedded.inc
 
 --disable_warnings
 drop database if exists events_test;
@@ -27,12 +25,13 @@ CREATE EVENT e_x1 ON SCHEDULE EVERY 1 SECOND DO DROP DATABASE db_x;
 CREATE EVENT e_x2 ON SCHEDULE EVERY 1 SECOND DO DROP TABLE x_table;
 connection default;
 SHOW DATABASES LIKE 'db_x';
-SET GLOBAL event_scheduler=1;
+# Make Sure Event scheduler is ON (by default)
+SELECT COUNT(*) = 1 FROM information_schema.processlist
+  WHERE user = 'event_scheduler' AND command = 'Daemon';
 let $wait_condition= SELECT count(*)= 1 FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME LIKE 'db_x';
 --source include/wait_condition.inc
 SHOW DATABASES LIKE 'db_x';
 SHOW TABLES FROM db_x;
-SET GLOBAL event_scheduler=off;
 connection priv_conn;
 DROP EVENT e_x1;
 DROP EVENT e_x2;
@@ -46,6 +45,7 @@ USE events_test;
 # END:    BUG #17289 Events: missing privilege check for drop database
 #
 SET GLOBAL event_scheduler=off;
+--source include/no_running_event_scheduler.inc
 drop event if exists event1;
 create event event1 on schedule every 15 minute starts now() ends date_add(now(), interval 5 hour) DO begin end;
 alter event event1 rename to event2 enable;
@@ -95,6 +95,8 @@ begin
 end|
 delimiter ;|
 set global event_scheduler = on;
+--source include/running_event_scheduler.inc
+
 let $wait_condition= SELECT count(*)>0 from information_schema.events where event_name='e_43' and interval_value= 5;
 --source include/wait_condition.inc
 select event_name, event_definition, status, interval_field, interval_value from information_schema.events;
@@ -113,7 +115,6 @@ drop table non_qualif;
 --error ER_EVENT_DOES_NOT_EXIST
 alter event non_existant rename to non_existant_too;
 
-set global event_scheduler = off;
 create event existant on schedule at now() + interval 1 year do select 12;
 --error ER_EVENT_ALREADY_EXISTS
 alter event non_existant rename to existant;
@@ -191,9 +192,11 @@ create event root20 on schedule every '50:20:12:45' day_second do select 1;
 --replace_regex /STARTS '[^']+'/STARTS '#'/
 SHOW CREATE EVENT root20;
 set names cp1251;
+--character_set cp1251
 create event руут21 on schedule every '50:23:59:95' day_second COMMENT 'това е 1251 коментар' do select 1;
 --replace_regex /STARTS '[^']+'/STARTS '#'/
 SHOW CREATE EVENT руут21;
+--character_set utf8mb4
 
 --echo #
 --echo # WL#9262: All system tables should support 32 character length user names
@@ -223,6 +226,7 @@ let $wait_condition=
 --echo #
 SET @orig_character_set_client = @@character_set_client;
 SET character_set_client = utf8;
+--character_set binary
 --error ER_INVALID_CHARACTER_STRING
 CREATE EVENT tчest ON SCHEDULE AT NOW() ON COMPLETION NOT PRESERVE DO SELECT 1;
 --error ER_INVALID_CHARACTER_STRING

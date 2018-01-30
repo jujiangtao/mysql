@@ -67,7 +67,7 @@ AND A.b = '06'
 AND A.c = 343;
 DROP TABLE t1;
 #
-# Bug#59503: explain extended crash in get_mm_leaf
+# Bug#59503: explain crash in get_mm_leaf
 #
 CREATE TABLE t1 (a VARCHAR(51) CHARACTER SET latin1)
 PARTITION BY KEY (a) PARTITIONS 1;
@@ -75,11 +75,10 @@ INSERT INTO t1 VALUES ('a'),('b'),('c');
 analyze table t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
-EXPLAIN EXTENDED SELECT 1 FROM t1 WHERE a > 1;
+EXPLAIN SELECT 1 FROM t1 WHERE a > 1;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	p0	ALL	NULL	NULL	NULL	NULL	3	33.33	Using where
 Warnings:
-Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select 1 AS `1` from `test`.`t1` where (`test`.`t1`.`a` > 1)
 DROP TABLE t1;
 #
@@ -96,7 +95,7 @@ Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` int(11) NOT NULL,
   `b` int(11) NOT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 /*!50100 PARTITION BY KEY (a)
 PARTITIONS 2 */
 SELECT * FROM t1;
@@ -176,12 +175,12 @@ PARTITION p11 VALUES LESS THAN(200),
 PARTITION p21 VALUES LESS THAN MAXVALUE);
 SELECT PARTITION_EXPRESSION, SUBPARTITION_EXPRESSION FROM INFORMATION_SCHEMA.PARTITIONS WHERE TABLE_NAME='t1';
 PARTITION_EXPRESSION	SUBPARTITION_EXPRESSION
-ID	`ID`,`aaaa,aaaaa`
-ID	`ID`,`aaaa,aaaaa`
-ID	`ID`,`aaaa,aaaaa`
-ID	`ID`,`aaaa,aaaaa`
-ID	`ID`,`aaaa,aaaaa`
-ID	`ID`,`aaaa,aaaaa`
+`ID`	`ID`,`aaaa,aaaaa`
+`ID`	`ID`,`aaaa,aaaaa`
+`ID`	`ID`,`aaaa,aaaaa`
+`ID`	`ID`,`aaaa,aaaaa`
+`ID`	`ID`,`aaaa,aaaaa`
+`ID`	`ID`,`aaaa,aaaaa`
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
@@ -190,8 +189,8 @@ t1	CREATE TABLE `t1` (
   `ddddddddd` int(11) NOT NULL DEFAULT '0',
   `new_field0` varchar(50) DEFAULT NULL,
   PRIMARY KEY (`ID`,`aaaa,aaaaa`,`ddddddddd`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
-/*!50100 PARTITION BY RANGE (ID)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+/*!50100 PARTITION BY RANGE (`ID`)
 SUBPARTITION BY LINEAR KEY (ID,`aaaa,aaaaa`)
 SUBPARTITIONS 2
 (PARTITION p01 VALUES LESS THAN (100) ENGINE = InnoDB,
@@ -241,17 +240,15 @@ a	b
 analyze table t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
-EXPLAIN PARTITIONS SELECT * FROM t1 where a between '2007-01-01' and '2007-08-01';
+EXPLAIN SELECT * FROM t1 where a between '2007-01-01' and '2007-08-01';
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	p1	range	PRIMARY	PRIMARY	4	NULL	1	100.00	Using where
 Warnings:
-Warning	1681	'PARTITIONS' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b` from `test`.`t1` where (`test`.`t1`.`a` between '2007-01-01' and '2007-08-01')
-EXPLAIN PARTITIONS SELECT * FROM t1 where a = '2007-07-30 17:35:48';
+EXPLAIN SELECT * FROM t1 where a = '2007-07-30 17:35:48';
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	p1	const	PRIMARY	PRIMARY	4	const	1	100.00	NULL
 Warnings:
-Warning	1681	'PARTITIONS' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select '2007-07-30 17:35:48' AS `a`,'p1' AS `b` from `test`.`t1` where 1
 ALTER TABLE t1 REORGANIZE PARTITION pmax INTO (
 PARTITION p3 VALUES LESS THAN (1247688000),
@@ -267,17 +264,15 @@ a	b
 analyze table t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
-EXPLAIN PARTITIONS SELECT * FROM t1 where a between '2007-01-01' and '2007-08-01';
+EXPLAIN SELECT * FROM t1 where a between '2007-01-01' and '2007-08-01';
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	p1	range	PRIMARY	PRIMARY	4	NULL	1	100.00	Using where
 Warnings:
-Warning	1681	'PARTITIONS' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b` from `test`.`t1` where (`test`.`t1`.`a` between '2007-01-01' and '2007-08-01')
-EXPLAIN PARTITIONS SELECT * FROM t1 where a = '2007-07-30 17:35:48';
+EXPLAIN SELECT * FROM t1 where a = '2007-07-30 17:35:48';
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	p1	const	PRIMARY	PRIMARY	4	const	1	100.00	NULL
 Warnings:
-Warning	1681	'PARTITIONS' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select '2007-07-30 17:35:48' AS `a`,'p1' AS `b` from `test`.`t1` where 1
 SHOW CREATE TABLE t1;
 Table	Create Table
@@ -285,8 +280,8 @@ t1	CREATE TABLE `t1` (
   `a` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `b` varchar(10) DEFAULT NULL,
   PRIMARY KEY (`a`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
-/*!50100 PARTITION BY RANGE (UNIX_TIMESTAMP(a))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+/*!50100 PARTITION BY RANGE (unix_timestamp(`a`))
 (PARTITION p1 VALUES LESS THAN (1199134800) ENGINE = InnoDB,
  PARTITION p3 VALUES LESS THAN (1247688000) ENGINE = InnoDB,
  PARTITION pmax VALUES LESS THAN MAXVALUE ENGINE = InnoDB) */
@@ -363,7 +358,7 @@ SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 DROP TABLE t1;
 SET sql_mode='';
 Warnings:
@@ -398,8 +393,8 @@ SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
-/*!50100 PARTITION BY HASH (a)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+/*!50100 PARTITION BY HASH (`a`)
 (PARTITION p0 ENGINE = InnoDB,
  PARTITION p1 ENGINE = InnoDB) */
 DROP TABLE t1;
@@ -566,11 +561,10 @@ INSERT INTO `t2` VALUES (1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),
 analyze table t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
-EXPLAIN PARTITIONS SELECT c1 FROM t1 WHERE (c1 > 10 AND c1 < 13) OR (c1 > 17 AND c1 < 20);
+EXPLAIN SELECT c1 FROM t1 WHERE (c1 > 10 AND c1 < 13) OR (c1 > 17 AND c1 < 20);
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	NULL	range	c1	c1	5	NULL	4	100.00	Using where; Using index
 Warnings:
-Warning	1681	'PARTITIONS' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select `test`.`t1`.`c1` AS `c1` from `test`.`t1` where (((`test`.`t1`.`c1` > 10) and (`test`.`t1`.`c1` < 13)) or ((`test`.`t1`.`c1` > 17) and (`test`.`t1`.`c1` < 20)))
 FLUSH STATUS;
 SELECT c1 FROM t1 WHERE (c1 > 10 AND c1 < 13) OR (c1 > 17 AND c1 < 20);
@@ -588,11 +582,10 @@ Handler_read_next	4
 Handler_read_prev	0
 Handler_read_rnd	0
 Handler_read_rnd_next	0
-EXPLAIN PARTITIONS SELECT c1 FROM t2 WHERE (c1 > 10 AND c1 < 13) OR (c1 > 17 AND c1 < 20);
+EXPLAIN SELECT c1 FROM t2 WHERE (c1 > 10 AND c1 < 13) OR (c1 > 17 AND c1 < 20);
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t2	a	range	c1	c1	5	NULL	4	100.00	Using where; Using index
 Warnings:
-Warning	1681	'PARTITIONS' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select `test`.`t2`.`c1` AS `c1` from `test`.`t2` where (((`test`.`t2`.`c1` > 10) and (`test`.`t2`.`c1` < 13)) or ((`test`.`t2`.`c1` > 17) and (`test`.`t2`.`c1` < 20)))
 FLUSH STATUS;
 SELECT c1 FROM t2 WHERE (c1 > 10 AND c1 < 13) OR (c1 > 17 AND c1 < 20);
@@ -627,11 +620,10 @@ INSERT INTO `t2` VALUES (1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),
 analyze table t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
-EXPLAIN PARTITIONS SELECT c1 FROM t1 WHERE (c1 > 2 AND c1 < 5);
+EXPLAIN SELECT c1 FROM t1 WHERE (c1 > 2 AND c1 < 5);
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	NULL	range	c1	c1	5	NULL	2	100.00	Using where; Using index
 Warnings:
-Warning	1681	'PARTITIONS' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select `test`.`t1`.`c1` AS `c1` from `test`.`t1` where ((`test`.`t1`.`c1` > 2) and (`test`.`t1`.`c1` < 5))
 FLUSH STATUS;
 SELECT c1 FROM t1 WHERE (c1 > 2 AND c1 < 5);
@@ -647,11 +639,10 @@ Handler_read_next	2
 Handler_read_prev	0
 Handler_read_rnd	0
 Handler_read_rnd_next	0
-EXPLAIN PARTITIONS SELECT c1 FROM t2 WHERE (c1 > 2 AND c1 < 5);
+EXPLAIN SELECT c1 FROM t2 WHERE (c1 > 2 AND c1 < 5);
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t2	a	range	c1	c1	5	NULL	2	100.00	Using where; Using index
 Warnings:
-Warning	1681	'PARTITIONS' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select `test`.`t2`.`c1` AS `c1` from `test`.`t2` where ((`test`.`t2`.`c1` > 2) and (`test`.`t2`.`c1` < 5))
 FLUSH STATUS;
 SELECT c1 FROM t2 WHERE (c1 > 2 AND c1 < 5);
@@ -667,11 +658,10 @@ Handler_read_next	2
 Handler_read_prev	0
 Handler_read_rnd	0
 Handler_read_rnd_next	0
-EXPLAIN PARTITIONS SELECT c1 FROM t1 WHERE (c1 > 12 AND c1 < 15);
+EXPLAIN SELECT c1 FROM t1 WHERE (c1 > 12 AND c1 < 15);
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	NULL	range	c1	c1	5	NULL	2	100.00	Using where; Using index
 Warnings:
-Warning	1681	'PARTITIONS' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select `test`.`t1`.`c1` AS `c1` from `test`.`t1` where ((`test`.`t1`.`c1` > 12) and (`test`.`t1`.`c1` < 15))
 FLUSH STATUS;
 SELECT c1 FROM t1 WHERE (c1 > 12 AND c1 < 15);
@@ -687,11 +677,10 @@ Handler_read_next	2
 Handler_read_prev	0
 Handler_read_rnd	0
 Handler_read_rnd_next	0
-EXPLAIN PARTITIONS SELECT c1 FROM t2 WHERE (c1 > 12 AND c1 < 15);
+EXPLAIN SELECT c1 FROM t2 WHERE (c1 > 12 AND c1 < 15);
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t2	a	range	c1	c1	5	NULL	2	100.00	Using where; Using index
 Warnings:
-Warning	1681	'PARTITIONS' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select `test`.`t2`.`c1` AS `c1` from `test`.`t2` where ((`test`.`t2`.`c1` > 12) and (`test`.`t2`.`c1` < 15))
 FLUSH STATUS;
 SELECT c1 FROM t2 WHERE (c1 > 12 AND c1 < 15);
@@ -800,8 +789,8 @@ show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
-/*!50100 PARTITION BY RANGE (a)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+/*!50100 PARTITION BY RANGE (`a`)
 SUBPARTITION BY KEY (a)
 (PARTITION p0 VALUES LESS THAN (1) ENGINE = InnoDB,
  PARTITION p1 VALUES LESS THAN (2) ENGINE = InnoDB) */
@@ -810,8 +799,8 @@ show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
-/*!50100 PARTITION BY RANGE (a)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+/*!50100 PARTITION BY RANGE (`a`)
 SUBPARTITION BY KEY (a)
 (PARTITION p0 VALUES LESS THAN (1) ENGINE = InnoDB,
  PARTITION p1 VALUES LESS THAN (3) ENGINE = InnoDB) */
@@ -832,7 +821,7 @@ t1	CREATE TABLE `t1` (
   `b` int(11) NOT NULL,
   `c` int(11) NOT NULL,
   PRIMARY KEY (`a`,`b`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 /*!50100 PARTITION BY KEY (a) */
 drop table t1;
 CREATE TABLE t1 (
@@ -894,7 +883,7 @@ t1	CREATE TABLE `t1` (
   `b` int(11) NOT NULL,
   `c` int(11) NOT NULL,
   PRIMARY KEY (`a`,`b`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 /*!50100 PARTITION BY KEY (a)
 (PARTITION x1 TABLESPACE = `ts1` ENGINE = InnoDB,
  PARTITION x2 TABLESPACE = `ts2` ENGINE = InnoDB,
@@ -906,7 +895,7 @@ t2	CREATE TABLE `t2` (
   `b` int(11) NOT NULL,
   `c` int(11) NOT NULL,
   PRIMARY KEY (`a`,`b`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 /*!50100 PARTITION BY KEY (a)
 (PARTITION x1 TABLESPACE = `ts1` ENGINE = InnoDB,
  PARTITION x2 TABLESPACE = `ts2` ENGINE = InnoDB,
@@ -930,8 +919,8 @@ t1	CREATE TABLE `t1` (
   `b` int(11) NOT NULL,
   `c` int(11) NOT NULL,
   PRIMARY KEY (`a`,`b`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
-/*!50100 PARTITION BY LIST (a)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+/*!50100 PARTITION BY LIST (`a`)
 (PARTITION x1 VALUES IN (1,2,9,4) TABLESPACE = `ts1` ENGINE = InnoDB,
  PARTITION x2 VALUES IN (3,11,5,7) TABLESPACE = `ts2` ENGINE = InnoDB,
  PARTITION x3 VALUES IN (16,8,24,27) TABLESPACE = `ts3` ENGINE = InnoDB) */
@@ -953,8 +942,8 @@ t1	CREATE TABLE `t1` (
   `b` int(11) NOT NULL,
   `c` int(11) NOT NULL,
   PRIMARY KEY (`a`,`b`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
-/*!50100 PARTITION BY LIST (b*a)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+/*!50100 PARTITION BY LIST ((`b` * `a`))
 (PARTITION x1 VALUES IN (1,2,9,4) TABLESPACE = `ts1` ENGINE = InnoDB,
  PARTITION x2 VALUES IN (3,11,5,7) TABLESPACE = `ts2` ENGINE = InnoDB,
  PARTITION x3 VALUES IN (16,8,24,27) TABLESPACE = `ts3` ENGINE = InnoDB) */
@@ -975,8 +964,8 @@ t1	CREATE TABLE `t1` (
   `b` int(11) NOT NULL,
   `c` int(11) NOT NULL,
   PRIMARY KEY (`a`,`b`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
-/*!50100 PARTITION BY LIST (b*a)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+/*!50100 PARTITION BY LIST ((`b` * `a`))
 (PARTITION x1 VALUES IN (1) TABLESPACE = `ts1` ENGINE = InnoDB,
  PARTITION x2 VALUES IN (3,11,5,7) TABLESPACE = `ts2` ENGINE = InnoDB,
  PARTITION x3 VALUES IN (16,8,24,27) TABLESPACE = `ts3` ENGINE = InnoDB) */
@@ -1073,8 +1062,8 @@ show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
-/*!50100 PARTITION BY LIST (a)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+/*!50100 PARTITION BY LIST (`a`)
 (PARTITION x1 VALUES IN (1) ENGINE = InnoDB) */
 drop table t1;
 CREATE TABLE t1 (a int, unique(a))
@@ -1099,8 +1088,8 @@ SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
-/*!50100 PARTITION BY HASH (a)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+/*!50100 PARTITION BY HASH (`a`)
 PARTITIONS 5 */
 drop table t1;
 CREATE TABLE t1 (a int)
@@ -1128,8 +1117,8 @@ show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
-/*!50100 PARTITION BY RANGE (a)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+/*!50100 PARTITION BY RANGE (`a`)
 (PARTITION p0 VALUES LESS THAN (10) ENGINE = InnoDB,
  PARTITION p1 VALUES LESS THAN (20) ENGINE = InnoDB,
  PARTITION p2 VALUES LESS THAN (30) ENGINE = InnoDB) */
@@ -1153,8 +1142,8 @@ Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` int(11) DEFAULT NULL,
   `b` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
-/*!50100 PARTITION BY RANGE (a)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+/*!50100 PARTITION BY RANGE (`a`)
 (PARTITION x1 VALUES LESS THAN (6) ENGINE = InnoDB,
  PARTITION x3 VALUES LESS THAN (8) ENGINE = InnoDB,
  PARTITION x4 VALUES LESS THAN (10) ENGINE = InnoDB,
@@ -1217,7 +1206,7 @@ show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 /*!50100 PARTITION BY KEY (a)
 (PARTITION p0 ENGINE = InnoDB,
  PARTITION p1 ENGINE = InnoDB) */
@@ -1226,7 +1215,7 @@ show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 /*!50100 PARTITION BY KEY (a)
 (PARTITION p0 ENGINE = InnoDB,
  PARTITION p1 ENGINE = InnoDB) */
@@ -1235,7 +1224,7 @@ show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 /*!50100 PARTITION BY KEY (a)
 (PARTITION p0 ENGINE = InnoDB,
  PARTITION p1 ENGINE = InnoDB) */
@@ -1244,7 +1233,7 @@ show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 drop table t1;
 create table t1 (a int)
 engine=innodb
@@ -1255,7 +1244,7 @@ show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 /*!50100 PARTITION BY KEY (a)
 (PARTITION p0 ENGINE = InnoDB,
  PARTITION p1 ENGINE = InnoDB) */
@@ -1265,7 +1254,7 @@ Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` int(11) DEFAULT NULL,
   `b` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 alter table t1
 engine=innodb
 partition by key(a)
@@ -1275,7 +1264,7 @@ Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` int(11) DEFAULT NULL,
   `b` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 /*!50100 PARTITION BY KEY (a)
 (PARTITION p0 ENGINE = InnoDB,
  PARTITION p1 ENGINE = InnoDB) */
@@ -1286,7 +1275,7 @@ t1	CREATE TABLE `t1` (
   `a` int(11) DEFAULT NULL,
   `b` int(11) DEFAULT NULL,
   `c` int(11) DEFAULT NULL
-) ENGINE=MyISAM DEFAULT CHARSET=latin1
+) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4
 alter table t1
 engine=innodb
 partition by key (a)
@@ -1297,7 +1286,7 @@ t1	CREATE TABLE `t1` (
   `a` int(11) DEFAULT NULL,
   `b` int(11) DEFAULT NULL,
   `c` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 /*!50100 PARTITION BY KEY (a)
 (PARTITION p0 ENGINE = InnoDB,
  PARTITION p1 ENGINE = InnoDB) */
@@ -1310,7 +1299,7 @@ t1	CREATE TABLE `t1` (
   `a` int(11) DEFAULT NULL,
   `b` int(11) DEFAULT NULL,
   `c` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 /*!50100 PARTITION BY KEY (a)
 (PARTITION p0 ENGINE = InnoDB,
  PARTITION p1 ENGINE = InnoDB) */
@@ -1390,7 +1379,7 @@ insert into t1 values (0, 1, 1);
 insert into t1 values (12, 1, 1);
 select partition_name, partition_description, table_rows
 from information_schema.partitions where table_schema ='test';
-partition_name	partition_description	table_rows
+PARTITION_NAME	PARTITION_DESCRIPTION	TABLE_ROWS
 x1	0	1
 x2	10	1
 x3	MAXVALUE	1
@@ -1401,15 +1390,21 @@ t1	CREATE TABLE `t1` (
   `b` int(11) DEFAULT NULL,
   `c` int(11) DEFAULT NULL,
   KEY `a` (`a`,`b`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
-/*!50100 PARTITION BY RANGE (a)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+/*!50100 PARTITION BY RANGE (`a`)
 (PARTITION x1 VALUES LESS THAN (0) TABLESPACE = `ts1` ENGINE = InnoDB,
  PARTITION x2 VALUES LESS THAN (10) TABLESPACE = `ts2` ENGINE = InnoDB,
  PARTITION x3 VALUES LESS THAN MAXVALUE TABLESPACE = `ts3` ENGINE = InnoDB) */
 drop table t1;
 DROP TABLESPACE ts1 ENGINE = InnoDB;
+Warnings:
+Warning	1681	'ENGINE tablespace option' is deprecated and will be removed in a future release.
 DROP TABLESPACE ts2 ENGINE = InnoDB;
+Warnings:
+Warning	1681	'ENGINE tablespace option' is deprecated and will be removed in a future release.
 DROP TABLESPACE ts3 ENGINE = InnoDB;
+Warnings:
+Warning	1681	'ENGINE tablespace option' is deprecated and will be removed in a future release.
 create table t1 (a int,b int, c int)
 partition by list(a)
 partitions 2
@@ -1439,7 +1434,7 @@ insert into t1 values (11,1,6);
 insert into t1 values (NULL,1,1);
 select partition_name, partition_description, table_rows
 from information_schema.partitions where table_schema ='test';
-partition_name	partition_description	table_rows
+PARTITION_NAME	PARTITION_DESCRIPTION	TABLE_ROWS
 x123	11,12	1
 x234	NULL,1	1
 drop table t1;
@@ -1462,9 +1457,9 @@ show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
-/*!50100 PARTITION BY RANGE (a)
-SUBPARTITION BY HASH (a)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+/*!50100 PARTITION BY RANGE (`a`)
+SUBPARTITION BY HASH (`a`)
 (PARTITION p0 VALUES LESS THAN (100) ENGINE = InnoDB) */
 alter table t1 add partition (partition p1 values less than (200)
 (subpartition subpart21));
@@ -1472,9 +1467,9 @@ show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
-/*!50100 PARTITION BY RANGE (a)
-SUBPARTITION BY HASH (a)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+/*!50100 PARTITION BY RANGE (`a`)
+SUBPARTITION BY HASH (`a`)
 (PARTITION p0 VALUES LESS THAN (100)
  (SUBPARTITION p0sp0 ENGINE = InnoDB),
  PARTITION p1 VALUES LESS THAN (200)
@@ -1486,14 +1481,14 @@ show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 /*!50100 PARTITION BY KEY (a) */
 alter table t1 add partition (partition p1);
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 /*!50100 PARTITION BY KEY (a)
 (PARTITION p0 ENGINE = InnoDB,
  PARTITION p1 ENGINE = InnoDB) */
@@ -1579,8 +1574,8 @@ Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` int(11) DEFAULT NULL,
   `b` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
-/*!50100 PARTITION BY LIST (a)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+/*!50100 PARTITION BY LIST (`a`)
 (PARTITION p1 VALUES IN (1) ENGINE = InnoDB,
  PARTITION p2 VALUES IN (2) ENGINE = InnoDB) */
 drop table t1;
@@ -1593,7 +1588,7 @@ t2	CREATE TABLE `t2` (
   `a` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `c` char(10) DEFAULT NULL,
   PRIMARY KEY (`a`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COMMENT='no comment'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='no comment'
 /*!50100 PARTITION BY KEY (a) */
 drop table t2;
 create table t1 (f1 int) partition by hash (f1) as select 1;
@@ -1638,11 +1633,10 @@ NULL
 analyze table t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
-explain partitions select * from t1 where f1 is null;
+explain select * from t1 where f1 is null;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	p1	ALL	NULL	NULL	NULL	NULL	1	100.00	Using where
 Warnings:
-Warning	1681	'PARTITIONS' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select `test`.`t1`.`f1` AS `f1` from `test`.`t1` where isnull(`test`.`t1`.`f1`)
 drop table t1;
 create table t1 (f1 integer) partition by list(f1)
@@ -1696,20 +1690,18 @@ f1
 analyze table t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
-explain partitions select * from t1 where f1 < 3;
+explain select * from t1 where f1 < 3;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	p1,p3	ALL	NULL	NULL	NULL	NULL	2	50.00	Using where
 Warnings:
-Warning	1681	'PARTITIONS' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select `test`.`t1`.`f1` AS `f1` from `test`.`t1` where (`test`.`t1`.`f1` < 3)
 select * from t1 where f1 is null;
 f1
 NULL
-explain partitions select * from t1 where f1 is null;
+explain select * from t1 where f1 is null;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	p2	ALL	NULL	NULL	NULL	NULL	1	100.00	Using where
 Warnings:
-Warning	1681	'PARTITIONS' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select `test`.`t1`.`f1` AS `f1` from `test`.`t1` where isnull(`test`.`t1`.`f1`)
 drop table t1;
 create table t1 (f1 int) partition by list(f1 div 2)
@@ -1727,20 +1719,18 @@ f1
 analyze table t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
-explain partitions select * from t1 where f1 < 3;
+explain select * from t1 where f1 < 3;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	p1,p2,p3,p4,p5	ALL	NULL	NULL	NULL	NULL	5	33.33	Using where
 Warnings:
-Warning	1681	'PARTITIONS' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select `test`.`t1`.`f1` AS `f1` from `test`.`t1` where (`test`.`t1`.`f1` < 3)
 select * from t1 where f1 is null;
 f1
 NULL
-explain partitions select * from t1 where f1 is null;
+explain select * from t1 where f1 is null;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	p2	ALL	NULL	NULL	NULL	NULL	1	100.00	Using where
 Warnings:
-Warning	1681	'PARTITIONS' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select `test`.`t1`.`f1` AS `f1` from `test`.`t1` where isnull(`test`.`t1`.`f1`)
 drop table t1;
 create table t1 (a int) partition by LIST(a) (
@@ -1758,21 +1748,19 @@ NULL
 analyze table t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
-explain partitions select * from t1 where a is null or a < 2;
+explain select * from t1 where a is null or a < 2;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	pn,p0,p1	ALL	NULL	NULL	NULL	NULL	3	55.56	Using where
 Warnings:
-Warning	1681	'PARTITIONS' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` where (isnull(`test`.`t1`.`a`) or (`test`.`t1`.`a` < 2))
 select * from t1 where a is null or a < 0 or a > 1;
 a
 NULL
 2
-explain partitions select * from t1 where a is null or a < 0 or a > 1;
+explain select * from t1 where a is null or a < 0 or a > 1;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	pn,p2	ALL	NULL	NULL	NULL	NULL	2	87.50	Using where
 Warnings:
-Warning	1681	'PARTITIONS' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` where (isnull(`test`.`t1`.`a`) or (`test`.`t1`.`a` < 0) or (`test`.`t1`.`a` > 1))
 drop table t1;
 CREATE TABLE t1 (id INT NOT NULL PRIMARY KEY, name VARCHAR(20)) 
@@ -1822,8 +1810,8 @@ SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
-/*!50100 PARTITION BY LIST (a)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+/*!50100 PARTITION BY LIST (`a`)
 (PARTITION p0 VALUES IN (NULL) ENGINE = InnoDB) */
 DROP TABLE t1;
 CREATE TABLE t1 (a int)
@@ -1881,7 +1869,7 @@ show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` varchar(1) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 /*!50100 PARTITION BY KEY (a) */
 drop table t1;
 CREATE TABLE t1 (a int) PARTITION BY KEY(a);
@@ -1891,14 +1879,14 @@ Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
 SHOW TABLE STATUS;
 Name	Engine	Version	Row_format	Rows	Avg_row_length	Data_length	Max_data_length	Index_length	Data_free	Auto_increment	Create_time	Update_time	Check_time	Collation	Checksum	Create_options	Comment
-t1	InnoDB	10	Dynamic	2	8192	16384	0	0	0	NULL	NULL	NULL	NULL	latin1_swedish_ci	NULL	partitioned	
+t1	InnoDB	10	Dynamic	2	8192	16384	0	0	0	NULL	NULL	NULL	NULL	utf8mb4_0900_ai_ci	NULL	partitioned	
 DELETE from t1 where a = 1;
 analyze table t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
 SHOW TABLE STATUS;
 Name	Engine	Version	Row_format	Rows	Avg_row_length	Data_length	Max_data_length	Index_length	Data_free	Auto_increment	Create_time	Update_time	Check_time	Collation	Checksum	Create_options	Comment
-t1	InnoDB	10	Dynamic	1	16384	16384	0	0	0	NULL	NULL	NULL	NULL	latin1_swedish_ci	NULL	partitioned	
+t1	InnoDB	10	Dynamic	1	16384	16384	0	0	0	NULL	NULL	NULL	NULL	utf8mb4_0900_ai_ci	NULL	partitioned	
 ALTER TABLE t1 OPTIMIZE PARTITION p0;
 Table	Op	Msg_type	Msg_text
 test.t1	optimize	note	Table does not support optimize on partitions. All partitions will be rebuilt and analyzed.
@@ -1908,7 +1896,7 @@ Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
 SHOW TABLE STATUS;
 Name	Engine	Version	Row_format	Rows	Avg_row_length	Data_length	Max_data_length	Index_length	Data_free	Auto_increment	Create_time	Update_time	Check_time	Collation	Checksum	Create_options	Comment
-t1	InnoDB	10	Dynamic	1	16384	16384	0	0	0	NULL	NULL	NULL	NULL	latin1_swedish_ci	NULL	partitioned	
+t1	InnoDB	10	Dynamic	1	16384	16384	0	0	0	NULL	NULL	NULL	NULL	utf8mb4_0900_ai_ci	NULL	partitioned	
 DROP TABLE t1;
 CREATE TABLE t1 (a int, index(a)) PARTITION BY KEY(a);
 ALTER TABLE t1 DISABLE KEYS;
@@ -1967,7 +1955,7 @@ Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` bigint(20) unsigned NOT NULL,
   PRIMARY KEY (`a`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 /*!50100 PARTITION BY KEY (a)
 PARTITIONS 10 */
 insert into t1 values (18446744073709551615), (0xFFFFFFFFFFFFFFFE),
@@ -2096,7 +2084,7 @@ Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
 show table status;
 Name	Engine	Version	Row_format	Rows	Avg_row_length	Data_length	Max_data_length	Index_length	Data_free	Auto_increment	Create_time	Update_time	Check_time	Collation	Checksum	Create_options	Comment
-t1	InnoDB	10	Dynamic	1	32768	32768	0	0	0	2	NULL	NULL	NULL	latin1_swedish_ci	NULL	partitioned	
+t1	InnoDB	10	Dynamic	1	32768	32768	0	0	0	2	NULL	NULL	NULL	utf8mb4_0900_ai_ci	NULL	partitioned	
 drop table t1;
 create table t1(a int auto_increment primary key)
 partition by key(a) partitions 2;
@@ -2106,7 +2094,7 @@ Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
 show table status;
 Name	Engine	Version	Row_format	Rows	Avg_row_length	Data_length	Max_data_length	Index_length	Data_free	Auto_increment	Create_time	Update_time	Check_time	Collation	Checksum	Create_options	Comment
-t1	InnoDB	10	Dynamic	3	10922	32768	0	0	0	4	NULL	NULL	NULL	latin1_swedish_ci	NULL	partitioned	
+t1	InnoDB	10	Dynamic	3	10922	32768	0	0	0	4	NULL	NULL	NULL	utf8mb4_0900_ai_ci	NULL	partitioned	
 drop table t1;
 CREATE TABLE t1(a INT NOT NULL, b TINYBLOB, KEY(a))
 PARTITION BY RANGE(a) ( PARTITION p0 VALUES LESS THAN (32));
@@ -2139,8 +2127,8 @@ Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` int(11) DEFAULT NULL,
   `b` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
-/*!50100 PARTITION BY RANGE (b)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+/*!50100 PARTITION BY RANGE (`b`)
 (PARTITION p1 VALUES LESS THAN (10) ENGINE = InnoDB,
  PARTITION p2 VALUES LESS THAN (20) ENGINE = InnoDB) */
 drop table t1, t2;
@@ -2280,9 +2268,9 @@ t1	CREATE TABLE `t1` (
   `id` mediumint(9) NOT NULL AUTO_INCREMENT,
   `user` char(25) DEFAULT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=16 DEFAULT CHARSET=latin1
-/*!50100 PARTITION BY RANGE (id)
-SUBPARTITION BY HASH (id)
+) ENGINE=InnoDB AUTO_INCREMENT=16 DEFAULT CHARSET=utf8mb4
+/*!50100 PARTITION BY RANGE (`id`)
+SUBPARTITION BY HASH (`id`)
 SUBPARTITIONS 2
 (PARTITION pa1 VALUES LESS THAN (10) ENGINE = InnoDB,
  PARTITION pa2 VALUES LESS THAN (20) ENGINE = InnoDB,
@@ -2415,11 +2403,10 @@ INSERT INTO t1 VALUES (10), (100), (200), (300), (400);
 analyze table t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
-EXPLAIN PARTITIONS SELECT * FROM t1 WHERE a>=200;
+EXPLAIN SELECT * FROM t1 WHERE a>=200;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	p2,p3	ALL	NULL	NULL	NULL	NULL	3	33.33	Using where
 Warnings:
-Warning	1681	'PARTITIONS' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` where (`test`.`t1`.`a` >= 200)
 DROP TABLE t1;
 CREATE TABLE t1 ( a INT, b INT, c INT, KEY bc(b, c) )
@@ -2628,17 +2615,15 @@ PARTITION BY RANGE (c1)
 PARTITION b VALUES LESS THAN (100),
 PARTITION c VALUES LESS THAN MAXVALUE);
 INSERT INTO t1 VALUES (1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15),(16),(17),(18),(19),(20);
-EXPLAIN PARTITIONS SELECT c1 FROM t1 WHERE (c1 > 2 AND c1 < 15);
+EXPLAIN SELECT c1 FROM t1 WHERE (c1 > 2 AND c1 < 15);
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	a,b	range	c1	c1	5	NULL	12	100.00	Using where; Using index
 Warnings:
-Warning	1681	'PARTITIONS' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select `test`.`t1`.`c1` AS `c1` from `test`.`t1` where ((`test`.`t1`.`c1` > 2) and (`test`.`t1`.`c1` < 15))
-EXPLAIN EXTENDED SELECT c1 FROM t1 WHERE (c1 > 2 AND c1 < 15);
+EXPLAIN SELECT c1 FROM t1 WHERE (c1 > 2 AND c1 < 15);
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	a,b	range	c1	c1	5	NULL	12	100.00	Using where; Using index
 Warnings:
-Warning	1681	'EXTENDED' is deprecated and will be removed in a future release.
 Note	1003	/* select#1 */ select `test`.`t1`.`c1` AS `c1` from `test`.`t1` where ((`test`.`t1`.`c1` > 2) and (`test`.`t1`.`c1` < 15))
 EXPLAIN FORMAT=JSON SELECT c1 FROM t1 WHERE (c1 > 2 AND c1 < 15);
 EXPLAIN
@@ -2744,8 +2729,8 @@ show create table t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
   `i` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
-/*!50100 PARTITION BY RANGE (i)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+/*!50100 PARTITION BY RANGE (`i`)
 (PARTITION p01 VALUES LESS THAN (1000) ENGINE = InnoDB) */
 DROP TABLE t1, t2;
 set @@sql_mode=@org_mode;
@@ -2794,3 +2779,114 @@ PARTITION p3 DATA DIRECTORY = 'MYSQLTEST_VARDIR/p3Data'
 );
 # Checking that InnoDB data files are in test db and data dir
 DROP TABLE example;
+#
+# Bug#18513130 STRANGE INTERACTION OF SQL_MODE=ANSI AND PARTITION
+#
+SET @@SQL_MODE= 'ANSI_QUOTES';
+Warnings:
+Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
+CREATE TABLESPACE ts1 ADD DATAFILE 'ts1.ibd';
+CREATE TABLE t1(col1 INT, col2 DATE)
+ENGINE=INNODB
+PARTITION BY RANGE(YEAR("col2"))
+SUBPARTITION BY HASH(TO_DAYS("col2"))(
+PARTITION p0 VALUES LESS THAN (1990)(
+SUBPARTITION s0,
+SUBPARTITION s1 tablespace=`ts1`
+      ),
+PARTITION p1 VALUES LESS THAN MAXVALUE(
+SUBPARTITION s2,
+SUBPARTITION s3 tablespace="ts1"
+        )
+);
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE "t1" (
+  "col1" int(11) DEFAULT NULL,
+  "col2" date DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+/*!50100 PARTITION BY RANGE (year("col2"))
+SUBPARTITION BY HASH (to_days("col2"))
+(PARTITION p0 VALUES LESS THAN (1990)
+ (SUBPARTITION s0 TABLESPACE = "innodb_file_per_table" ENGINE = InnoDB,
+  SUBPARTITION s1 TABLESPACE = "ts1" ENGINE = InnoDB),
+ PARTITION p1 VALUES LESS THAN MAXVALUE
+ (SUBPARTITION s2 TABLESPACE = "innodb_file_per_table" ENGINE = InnoDB,
+  SUBPARTITION s3 TABLESPACE = "ts1" ENGINE = InnoDB)) */
+SELECT partition_expression FROM information_schema.partitions
+WHERE table_schema = 'test' AND table_name = 't1';
+PARTITION_EXPRESSION
+year(`col2`)
+year(`col2`)
+year(`col2`)
+year(`col2`)
+SET @@SQL_MODE= DEFAULT;
+FLUSH TABLES;
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `col1` int(11) DEFAULT NULL,
+  `col2` date DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+/*!50100 PARTITION BY RANGE (year(`col2`))
+SUBPARTITION BY HASH (to_days(`col2`))
+(PARTITION p0 VALUES LESS THAN (1990)
+ (SUBPARTITION s0 TABLESPACE = `innodb_file_per_table` ENGINE = InnoDB,
+  SUBPARTITION s1 TABLESPACE = `ts1` ENGINE = InnoDB),
+ PARTITION p1 VALUES LESS THAN MAXVALUE
+ (SUBPARTITION s2 TABLESPACE = `innodb_file_per_table` ENGINE = InnoDB,
+  SUBPARTITION s3 TABLESPACE = `ts1` ENGINE = InnoDB)) */
+SELECT partition_expression FROM information_schema.partitions
+WHERE table_schema = 'test' AND table_name = 't1';
+PARTITION_EXPRESSION
+year(`col2`)
+year(`col2`)
+year(`col2`)
+year(`col2`)
+SET @@SQL_QUOTE_SHOW_CREATE= 0;
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE t1 (
+  col1 int(11) DEFAULT NULL,
+  col2 date DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+/*!50100 PARTITION BY RANGE (year(col2))
+SUBPARTITION BY HASH (to_days(col2))
+(PARTITION p0 VALUES LESS THAN (1990)
+ (SUBPARTITION s0 TABLESPACE = innodb_file_per_table ENGINE = InnoDB,
+  SUBPARTITION s1 TABLESPACE = ts1 ENGINE = InnoDB),
+ PARTITION p1 VALUES LESS THAN MAXVALUE
+ (SUBPARTITION s2 TABLESPACE = innodb_file_per_table ENGINE = InnoDB,
+  SUBPARTITION s3 TABLESPACE = ts1 ENGINE = InnoDB)) */
+SELECT partition_expression FROM information_schema.partitions
+WHERE table_schema = 'test' AND table_name = 't1';
+PARTITION_EXPRESSION
+year(`col2`)
+year(`col2`)
+year(`col2`)
+year(`col2`)
+SET @@SQL_QUOTE_SHOW_CREATE= 1;
+DROP TABLE t1;
+DROP TABLESPACE ts1;
+#
+# Test max partitioning and subpartition expression length
+#
+CREATE TABLE t1 (a INT) PARTITION BY HASH(ALMOST_TOO_LONG_EXPR);
+DROP TABLE t1;
+CREATE TABLE t1 (a INT) PARTITION BY HASH(TOO_LONG_EXPR);
+ERROR HY000: Partitioning expression is too long.
+# Check that the limit is on number of characters and not on bytes
+CREATE TABLE t1 (`å` INT) PARTITION BY HASH(ALMOST_TOO_LONG_EXPR);
+DROP TABLE t1;
+CREATE TABLE t1 (`å` INT) PARTITION BY HASH(TOO_LONG_EXPR);
+ERROR HY000: Partitioning expression is too long.
+# Repeat the same tests for subpartitioning expressions.
+CREATE TABLE t1 (b INT, a INT) PARTITION BY LIST (b) SUBPARTITION BY HASH(ALMOST_TOO_LONG_EXPR) (PARTITION p1 VALUES IN (1));
+DROP TABLE t1;
+CREATE TABLE t1 (b INT, a INT) PARTITION BY LIST (b) SUBPARTITION BY HASH(TOO_LONG_EXPR) (PARTITION p1 VALUES IN (1));
+ERROR HY000: Partitioning expression is too long.
+# Again the limit is on number of characters and not on bytes
+CREATE TABLE t1 (b INT, `å` INT) PARTITION BY LIST (b) SUBPARTITION BY HASH(ALMOST_TOO_LONG_EXPR) (PARTITION p1 VALUES IN (1));
+DROP TABLE t1;
+CREATE TABLE t1 (b INT, `å` INT) PARTITION BY LIST (b) SUBPARTITION BY HASH(TOO_LONG_EXPR) (PARTITION p1 VALUES IN (1));
+ERROR HY000: Partitioning expression is too long.

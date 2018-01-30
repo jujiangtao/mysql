@@ -1,17 +1,24 @@
 /* Copyright (c) 2006, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA */
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef SQL_UPDATE_INCLUDED
 #define SQL_UPDATE_INCLUDED
@@ -21,15 +28,14 @@
 
 #include "my_base.h"
 #include "my_sqlcommand.h"
-#include "query_result.h"    // Query_result_interceptor
-#include "sql_cmd_dml.h"     // Sql_cmd_dml
-#include "sql_lex.h"
-#include "sql_list.h"
+#include "sql/query_result.h" // Query_result_interceptor
+#include "sql/sql_cmd_dml.h" // Sql_cmd_dml
+#include "sql/sql_lex.h"
+#include "sql/sql_list.h"
 
 class COPY_INFO;
 class Copy_field;
 class Item;
-class JOIN;
 class THD;
 class Temp_table_param;
 struct TABLE;
@@ -50,7 +56,13 @@ class Query_result_update final : public Query_result_interceptor
   Temp_table_param *tmp_table_param;
   /// The first table in the join operation
   TABLE *main_table;
-  /// ???
+  /**
+    In a multi-table update, this is equal to the first table in the join
+    operation (#main_table) if that table can be updated on the fly while
+    scanning it. It is `nullptr` otherwise.
+
+    @see safe_update_on_fly
+  */
   TABLE *table_to_update;
   /// Number of rows found that matches join and WHERE conditions
   ha_rows found_rows;
@@ -134,7 +146,7 @@ public:
   : multitable(multitable_arg), update_value_list(update_values) {}
 
   enum_sql_command sql_command_code() const override
-  { return lex->sql_command; }
+  { return multitable ? SQLCOM_UPDATE_MULTI : SQLCOM_UPDATE; }
 
   bool is_single_table_plan() const override { return !multitable; }
 

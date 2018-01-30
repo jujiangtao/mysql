@@ -1,13 +1,20 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -21,56 +28,59 @@
   This file defines all compare functions
 */
 
-#include "item_cmpfunc.h"
+#include "sql/item_cmpfunc.h"
 
+#include <array>
 #include <limits.h>
 #include <math.h>
 #include <algorithm>
 #include <functional>
 #include <type_traits>
 
-#include "aggregate_check.h"    // Distinct_check
-#include "check_stack.h"
-#include "current_thd.h"        // current_thd
 #include "decimal.h"
-#include "field.h"
-#include "item_json_func.h"     // json_value, get_json_atom_wrapper
-#include "item_subselect.h"     // Item_subselect
-#include "item_sum.h"           // Item_sum_hybrid
-#include "json_dom.h"           // Json_scalar_holder
-#include "key.h"
 #include "m_ctype.h"
 #include "m_string.h"
 #include "mf_wcomp.h"           // wild_one, wild_many
 #include "my_bitmap.h"
 #include "my_dbug.h"
+#include "my_macros.h"
 #include "my_sqlcommand.h"
-#include "mysql/psi/mysql_statement.h"
+#include "mysql_com.h"
 #include "mysql_time.h"
-#include "mysqld.h"             // log_10
 #include "mysqld_error.h"
-#include "opt_trace.h"          // Opt_trace_object
-#include "parse_tree_helpers.h" // PT_item_list
-#include "set_var.h"
-#include "sql_bitmap.h"
-#include "sql_class.h"          // THD
-#include "sql_error.h"
-#include "sql_executor.h"
-#include "sql_lex.h"
-#include "sql_opt_exec_shared.h"
-#include "sql_optimizer.h"      // JOIN
-#include "sql_select.h"
-#include "sql_servers.h"
-#include "sql_time.h"           // str_to_datetime
-#include "thr_malloc.h"
+#include "sql/aggregate_check.h" // Distinct_check
+#include "sql/check_stack.h"
+#include "sql/current_thd.h"    // current_thd
+#include "sql/field.h"
+#include "sql/histograms/histogram.h"
+#include "sql/histograms/value_map.h"
+#include "sql/item_json_func.h" // json_value, get_json_atom_wrapper
+#include "sql/item_subselect.h" // Item_subselect
+#include "sql/item_sum.h"       // Item_sum_hybrid
+#include "sql/json_dom.h"       // Json_scalar_holder
+#include "sql/key.h"
+#include "sql/mysqld.h"         // log_10
+#include "sql/opt_trace.h"      // Opt_trace_object
+#include "sql/parse_tree_helpers.h" // PT_item_list
+#include "sql/set_var.h"
+#include "sql/sql_array.h"
+#include "sql/sql_bitmap.h"
+#include "sql/sql_class.h"      // THD
+#include "sql/sql_error.h"
+#include "sql/sql_executor.h"
+#include "sql/sql_lex.h"
+#include "sql/sql_opt_exec_shared.h"
+#include "sql/sql_optimizer.h"  // JOIN
+#include "sql/sql_select.h"
+#include "sql/sql_servers.h"
+#include "sql/sql_time.h"       // str_to_datetime
+#include "sql/system_variables.h"
+#include "sql/thr_malloc.h"
+
 
 using std::min;
 using std::max;
 
-static void fix_num_type_shared_for_case(Item_func *item_func,
-                                         Item_result result_type,
-                                         Item **item,
-                                         uint nitems);
 static bool convert_constant_item(THD *, Item_field *, Item **, bool *);
 static longlong
 get_year_value(THD *thd, Item ***item_arg, Item **cache_arg,
@@ -150,6 +160,13 @@ static int agg_cmp_type(Item_result *type, Item **items, uint nitems)
 }
 
 
+static void write_histogram_to_trace(THD *thd, Item_func *item,
+                                     const double selectivity)
+{
+  Opt_trace_object obj(&thd->opt_trace);
+  obj.add("condition", item).add("histogram_selectivity", selectivity);
+}
+
 /**
   @brief Aggregates field types from the array of items.
 
@@ -224,6 +241,29 @@ static void my_coll_agg_error(DTCollation &c1, DTCollation &c2,
            c1.collation->name,c1.derivation_name(),
            c2.collation->name,c2.derivation_name(),
            fname);
+}
+
+
+static bool get_histogram_selectivity(THD *thd, Field *field,
+                                      Item **args, size_t arg_count,
+                                      histograms::enum_operator op,
+                                      Item_func *item_func,
+                                      TABLE_SHARE *table_share,
+                                      double *selectivity)
+{
+  const histograms::Histogram *histogram=
+    table_share->find_histogram(field->field_index);
+  if (histogram != nullptr)
+  {
+    if (!histogram->get_selectivity(args, arg_count, op, selectivity))
+    {
+      if (unlikely(thd->opt_trace.is_started()))
+        write_histogram_to_trace(thd, item_func, *selectivity);
+      return false;
+    }
+  }
+
+  return true;
 }
 
 
@@ -326,12 +366,12 @@ Item_bool_func* Le_creator::create(Item *a, Item *b) const
   return new Item_func_le(a, b);
 }
 
-float Item_func_not::get_filtering_effect(table_map filter_for_table,
+float Item_func_not::get_filtering_effect(THD *thd, table_map filter_for_table,
                                           table_map read_tables,
                                           const MY_BITMAP *fields_to_ignore,
                                           double rows_in_table)
 {
-  const float filter= args[0]->get_filtering_effect(filter_for_table,
+  const float filter= args[0]->get_filtering_effect(thd, filter_for_table,
                                                     read_tables,
                                                     fields_to_ignore,
                                                     rows_in_table);
@@ -489,7 +529,7 @@ static bool convert_constant_item(THD *thd, Item_field *field_item,
 
   *converted= false;
 
-  if ((*item)->const_item() &&
+  if ((*item)->may_evaluate_const(thd) &&
       /*
         In case of GC it's possible that this func will be called on an
         already converted constant. Don't convert it again.
@@ -574,7 +614,7 @@ static bool convert_constant_item(THD *thd, Item_field *field_item,
                                      *item) :
 #endif
           new Item_int_with_ref(field->type(), field->val_int(), *item,
-                                MY_TEST(field->flags & UNSIGNED_FLAG));
+                                field->flags & UNSIGNED_FLAG);
         if (tmp == NULL)
           return true;
 
@@ -717,7 +757,7 @@ bool Arg_comparator::set_compare_func(Item_result_field *item, Item_result type)
       comparators= 0;
       return true;
     }
-    if (!(comparators= new Arg_comparator[n]))
+    if (!(comparators= new (*THR_MALLOC) Arg_comparator[n]))
       return true;
     comparator_count= n;
 
@@ -740,7 +780,7 @@ bool Arg_comparator::set_compare_func(Item_result_field *item, Item_result type)
       We must set cmp_charset here as we may be called from for an automatic
       generated item, like in natural join
     */
-    if (cmp_collation.set((*a)->collation, (*b)->collation) || 
+    if (cmp_collation.set((*a)->collation, (*b)->collation, MY_COLL_CMP_CONV) ||
 	cmp_collation.derivation == DERIVATION_NONE)
     {
       my_coll_agg_error((*a)->collation, (*b)->collation,
@@ -818,11 +858,11 @@ bool Arg_comparator::set_compare_func(Item_result_field *item, Item_result type)
 /**
   Parse date provided in a string to a MYSQL_TIME.
 
-  @param[in]   thd        Thread handle
-  @param[in]   str        A string to convert
-  @param[in]   warn_type  Type of the timestamp for issuing the warning
-  @param[in]   warn_name  Field name for issuing the warning
-  @param[out]  l_time     The MYSQL_TIME objects is initialized.
+  @param[in]   thd           Thread handle
+  @param[in]   str           A string to convert
+  @param[in]   warn_type     Type of the timestamp for issuing the warning
+  @param[in]   warn_name     Field name for issuing the warning
+  @param[out]  l_time        The MYSQL_TIME objects is initialized.
 
   Parses a date provided in the string str into a MYSQL_TIME object. If the
   string contains an incorrect date or doesn't correspond to a date at all
@@ -836,7 +876,7 @@ bool Arg_comparator::set_compare_func(Item_result_field *item, Item_result type)
   @retval True Indicates failure.
 */
 
-bool get_mysql_time_from_str(THD *thd, String *str, timestamp_type warn_type, 
+bool get_mysql_time_from_str(THD *thd, String *str, timestamp_type warn_type,
                              const char *warn_name, MYSQL_TIME *l_time)
 {
   bool value;
@@ -865,8 +905,11 @@ bool get_mysql_time_from_str(THD *thd, String *str, timestamp_type warn_type,
   }
 
   if (status.warnings > 0)
-    make_truncated_value_warning(thd, Sql_condition::SL_WARNING,
-                                 ErrConvString(str), warn_type, warn_name);
+  {
+    if (make_truncated_value_warning(thd, Sql_condition::SL_WARNING,
+                                     ErrConvString(str), warn_type, warn_name))
+      return true;
+  }
 
   return value;
 }
@@ -921,8 +964,6 @@ bool Arg_comparator::get_date_from_const(Item *date_arg,
 {
   THD *thd= current_thd;
   /*
-    Do not cache GET_USER_VAR() function as its const_item() may return TRUE
-    for the current thread but it still may change during the execution.
     Don't use cache while in the context analysis mode only (i.e. for 
     EXPLAIN/CREATE VIEW and similar queries). Cache is useless in such 
     cases and can cause problems. For example evaluating subqueries can 
@@ -930,9 +971,8 @@ bool Arg_comparator::get_date_from_const(Item *date_arg,
     aren't locked.
   */
   if (!thd->lex->is_ps_or_view_context_analysis() &&
-      str_arg->const_item() &&
-      (str_arg->type() != Item::FUNC_ITEM ||
-      ((Item_func*) str_arg)->functype() != Item_func::GUSERVAR_FUNC))
+      str_arg->may_evaluate_const(thd) &&
+      str_arg->type() != Item::FUNC_ITEM)
   {
     ulonglong value;
     if (str_arg->data_type() == MYSQL_TYPE_TIME)
@@ -1047,7 +1087,7 @@ Arg_comparator::can_compare_as_dates(Item *a, Item *b, ulonglong *const_value)
 */
 
 static longlong
-get_time_value(THD*, Item ***item_arg, Item **cache_arg,
+get_time_value(THD *, Item ***item_arg, Item **cache_arg,
                Item*, bool *is_null)
 {
   longlong value;
@@ -1081,19 +1121,14 @@ get_time_value(THD*, Item ***item_arg, Item **cache_arg,
   value= item->val_time_temporal();
   *is_null= item->null_value;
 
-  /*
-    Do not cache GET_USER_VAR() function as its const_item() may return TRUE
-    for the current thread but it still may change during the execution.
-  */
   if (item->const_item() && cache_arg &&
       item->type() != Item::CACHE_ITEM &&
-      (item->type() != Item::FUNC_ITEM ||
-       ((Item_func*)item)->functype() != Item_func::GUSERVAR_FUNC))
+      item->type() != Item::FUNC_ITEM)
   {
     Item_cache_datetime *cache= new Item_cache_datetime(item->data_type());
     /* Mark the cache as non-const to prevent re-caching. */
     cache->set_used_tables(1);
-    cache->store(item, value);
+    cache->store_value(item, value);
     *cache_arg= cache;
     *item_arg= cache_arg;
   }
@@ -1151,13 +1186,13 @@ bool Arg_comparator::set_cmp_func(Item_result_field *owner_arg,
       cache->set_used_tables(1);
       if (!(*a)->is_temporal_with_date())
       {
-        cache->store((*a), const_value);
+        cache->store_value((*a), const_value);
         a_cache= cache;
         a= &a_cache;
       }
       else
       {
-        cache->store((*b), const_value);
+        cache->store_value((*b), const_value);
         b_cache= cache;
         b= &b_cache;
       }
@@ -1191,7 +1226,7 @@ bool Arg_comparator::set_cmp_func(Item_result_field *owner_arg,
            (*b)->result_type() == STRING_RESULT)
   {
     DTCollation coll;
-    coll.set((*a)->collation.collation);
+    coll.set((*a)->collation, (*b)->collation, MY_COLL_CMP_CONV);
     if (agg_item_set_converter(coll, owner->func_name(),
                                b, 1, MY_COLL_CMP_CONV, 1))
       return true;
@@ -1276,7 +1311,7 @@ bool Arg_comparator::try_year_cmp_func(Item_result type)
 /**
   Convert and cache a constant.
 
-  @param thd_arg The current session.
+  @param thd   The current session.
   @param value       An item to cache
   @param [out] cache_item Placeholder for the cache item
   @param type        Comparison type
@@ -1291,13 +1326,14 @@ bool Arg_comparator::try_year_cmp_func(Item_result type)
   @return cache item or original value.
 */
 
-Item** Arg_comparator::cache_converted_constant(THD *thd_arg, Item **value,
+Item** Arg_comparator::cache_converted_constant(THD *thd, Item **value,
                                                 Item **cache_item,
                                                 Item_result type)
 {
   /* Don't need cache if doing context analysis only. */
-  if (!thd_arg->lex->is_ps_or_view_context_analysis() &&
-      (*value)->const_item() && type != (*value)->result_type())
+  if (!thd->lex->is_ps_or_view_context_analysis() &&
+      (*value)->const_for_execution() &&
+      type != (*value)->result_type())
   {
     Item_cache *cache= Item_cache::get_cache(*value, type);
     cache->setup(*value);
@@ -1394,19 +1430,15 @@ get_datetime_value(THD *thd, Item ***item_arg, Item **cache_arg,
       "SQL modes" in the manual), so we're done here.
     */
   }
-  /*
-    Do not cache GET_USER_VAR() function as its const_item() may return TRUE
-    for the current thread but it still may change during the execution.
-  */
+
   if (item->const_item() && cache_arg &&
       item->type() != Item::CACHE_ITEM &&
-      (item->type() != Item::FUNC_ITEM ||
-       ((Item_func*)item)->functype() != Item_func::GUSERVAR_FUNC))
+      item->type() != Item::FUNC_ITEM)
   {
     Item_cache_datetime *cache= new Item_cache_datetime(MYSQL_TYPE_DATETIME);
     /* Mark the cache as non-const to prevent re-caching. */
     cache->set_used_tables(1);
-    cache->store(item, value);
+    cache->store_value(item, value);
     *cache_arg= cache;
     *item_arg= cache_arg;
   }
@@ -1559,7 +1591,7 @@ static bool get_json_arg(Item* arg, String *value, String *tmp,
       so. Otherwise, we reuse the previously allocated memory.
     */
     if (*scalar == NULL)
-      *scalar= new Json_scalar_holder();
+      *scalar= new (*THR_MALLOC) Json_scalar_holder();
 
     holder= *scalar;
   }
@@ -1703,8 +1735,8 @@ int Arg_comparator::compare_e_string()
   res1= (*a)->val_str(&value1);
   res2= (*b)->val_str(&value2);
   if (!res1 || !res2)
-    return MY_TEST(res1 == res2);
-  return MY_TEST(sortcmp(res1, res2, cmp_collation.collation) == 0);
+    return (res1 == res2);
+  return (sortcmp(res1, res2, cmp_collation.collation) == 0);
 }
 
 
@@ -1714,8 +1746,8 @@ int Arg_comparator::compare_e_binary_string()
   res1= (*a)->val_str(&value1);
   res2= (*b)->val_str(&value2);
   if (!res1 || !res2)
-    return MY_TEST(res1 == res2);
-  return MY_TEST(stringcmp(res1, res2) == 0);
+    return (res1 == res2);
+  return (stringcmp(res1, res2) == 0);
 }
 
 
@@ -1770,8 +1802,8 @@ int Arg_comparator::compare_e_real()
   double val1= (*a)->val_real();
   double val2= (*b)->val_real();
   if ((*a)->null_value || (*b)->null_value)
-    return MY_TEST((*a)->null_value && (*b)->null_value);
-  return MY_TEST(val1 == val2);
+    return ((*a)->null_value && (*b)->null_value);
+  return (val1 == val2);
 }
 
 int Arg_comparator::compare_e_decimal()
@@ -1780,8 +1812,8 @@ int Arg_comparator::compare_e_decimal()
   my_decimal *val1= (*a)->val_decimal(&decimal1);
   my_decimal *val2= (*b)->val_decimal(&decimal2);
   if ((*a)->null_value || (*b)->null_value)
-    return MY_TEST((*a)->null_value && (*b)->null_value);
-  return MY_TEST(my_decimal_cmp(val1, val2) == 0);
+    return ((*a)->null_value && (*b)->null_value);
+  return (my_decimal_cmp(val1, val2) == 0);
 }
 
 
@@ -1819,8 +1851,8 @@ int Arg_comparator::compare_e_real_fixed()
   double val1= (*a)->val_real();
   double val2= (*b)->val_real();
   if ((*a)->null_value || (*b)->null_value)
-    return MY_TEST((*a)->null_value && (*b)->null_value);
-  return MY_TEST(val1 == val2 || fabs(val1 - val2) < precision);
+    return ((*a)->null_value && (*b)->null_value);
+  return (val1 == val2 || fabs(val1 - val2) < precision);
 }
 
 
@@ -1894,8 +1926,8 @@ int Arg_comparator::compare_e_time_packed()
   longlong val1= (*a)->val_time_temporal();
   longlong val2= (*b)->val_time_temporal();
   if ((*a)->null_value || (*b)->null_value)
-    return MY_TEST((*a)->null_value && (*b)->null_value);
-  return MY_TEST(val1 == val2);
+    return ((*a)->null_value && (*b)->null_value);
+  return (val1 == val2);
 }
 
 
@@ -1986,8 +2018,8 @@ int Arg_comparator::compare_e_int()
   longlong val1= (*a)->val_int();
   longlong val2= (*b)->val_int();
   if ((*a)->null_value || (*b)->null_value)
-    return MY_TEST((*a)->null_value && (*b)->null_value);
-  return MY_TEST(val1 == val2);
+    return ((*a)->null_value && (*b)->null_value);
+  return (val1 == val2);
 }
 
 /**
@@ -1998,8 +2030,8 @@ int Arg_comparator::compare_e_int_diff_signedness()
   longlong val1= (*a)->val_int();
   longlong val2= (*b)->val_int();
   if ((*a)->null_value || (*b)->null_value)
-    return MY_TEST((*a)->null_value && (*b)->null_value);
-  return (val1 >= 0) && MY_TEST(val1 == val2);
+    return ((*a)->null_value && (*b)->null_value);
+  return (val1 >= 0) && (val1 == val2);
 }
 
 int Arg_comparator::compare_row()
@@ -2150,8 +2182,8 @@ bool Item_in_optimizer::fix_left(THD *thd, Item**)
     }
   }
   not_null_tables_cache= args[0]->not_null_tables();
-  with_sum_func= args[0]->with_sum_func;
-  if ((const_item_cache= args[0]->const_item()))
+  add_accum_properties(args[0]);
+  if (const_item())
     cache->store(args[0]);
   return 0;
 }
@@ -2175,7 +2207,7 @@ bool Item_in_optimizer::fix_fields(THD *thd, Item **ref)
   }
   if (args[1]->maybe_null)
     maybe_null=1;
-  with_sum_func= with_sum_func || args[1]->with_sum_func;
+  add_accum_properties(args[1]);
   used_tables_cache|= args[1]->used_tables();
   not_null_tables_cache|= args[1]->not_null_tables();
 
@@ -2189,7 +2221,6 @@ bool Item_in_optimizer::fix_fields(THD *thd, Item **ref)
     */
     not_null_tables_cache&= ~args[0]->not_null_tables();
   }
-  const_item_cache&= args[1]->const_item();
   fixed= 1;
   return FALSE;
 }
@@ -2200,7 +2231,6 @@ void Item_in_optimizer::fix_after_pullout(SELECT_LEX *parent_select,
 {
   used_tables_cache= get_initial_pseudo_tables();
   not_null_tables_cache= 0;
-  const_item_cache= 1;
 
   /*
     No need to call fix_after_pullout() on args[0] (ie left expression),
@@ -2212,7 +2242,6 @@ void Item_in_optimizer::fix_after_pullout(SELECT_LEX *parent_select,
 
   used_tables_cache|= args[1]->used_tables();
   not_null_tables_cache|= args[1]->not_null_tables();
-  const_item_cache&= args[1]->const_item();
 }
 
 
@@ -2359,7 +2388,7 @@ longlong Item_in_optimizer::val_int()
       else 
       {
         /* The subquery has to be evaluated */
-        (void) item_subs->val_bool_result();
+        (void) item_subs->val_bool();
         if (!item_subs->value)
           null_value= item_subs->null_value;
         else
@@ -2374,7 +2403,7 @@ longlong Item_in_optimizer::val_int()
     }
     return 0;
   }
-  tmp= args[1]->val_bool_result();
+  tmp= args[1]->val_bool();
   null_value= args[1]->null_value;
   return tmp;
 }
@@ -2501,7 +2530,7 @@ longlong Item_func_equal::val_int()
   return cmp.compare();
 }
 
-float Item_func_ne::get_filtering_effect(table_map filter_for_table,
+float Item_func_ne::get_filtering_effect(THD *thd, table_map filter_for_table,
                                          table_map read_tables,
                                          const MY_BITMAP *fields_to_ignore,
                                          double rows_in_table)
@@ -2510,6 +2539,12 @@ float Item_func_ne::get_filtering_effect(table_map filter_for_table,
     contributes_to_filter(read_tables, filter_for_table, fields_to_ignore);
   if (!fld)
     return COND_FILTER_ALLPASS;
+
+  double selectivity;
+  if (!get_histogram_selectivity(thd, fld->field, args, arg_count,
+                                 histograms::enum_operator::NOT_EQUALS_TO,
+                                 this, fld->field->orig_table->s, &selectivity))
+    return static_cast<float>(selectivity);
 
   return 1.0f - fld->get_cond_filter_default_probability(rows_in_table,
                                                          COND_FILTER_EQUALITY);
@@ -2522,7 +2557,7 @@ longlong Item_func_ne::val_int()
   return value != 0 && !null_value ? 1 : 0;
 }
 
-float Item_func_equal::get_filtering_effect(table_map filter_for_table,
+float Item_func_equal::get_filtering_effect(THD*, table_map filter_for_table,
                                             table_map read_tables,
                                             const MY_BITMAP *fields_to_ignore,
                                             double rows_in_table)
@@ -2536,7 +2571,7 @@ float Item_func_equal::get_filtering_effect(table_map filter_for_table,
                                                   COND_FILTER_EQUALITY);
 }
 
-float Item_func_ge::get_filtering_effect(table_map filter_for_table,
+float Item_func_ge::get_filtering_effect(THD *thd, table_map filter_for_table,
                                          table_map read_tables,
                                          const MY_BITMAP *fields_to_ignore,
                                          double rows_in_table)
@@ -2545,12 +2580,18 @@ float Item_func_ge::get_filtering_effect(table_map filter_for_table,
     contributes_to_filter(read_tables, filter_for_table, fields_to_ignore);
   if (!fld)
     return COND_FILTER_ALLPASS;
+
+  double selectivity;
+  if (!get_histogram_selectivity(thd, fld->field, args, arg_count,
+                                 histograms::enum_operator::GREATER_THAN_OR_EQUAL,
+                                 this, fld->field->orig_table->s, &selectivity))
+    return static_cast<float>(selectivity);
 
   return fld->get_cond_filter_default_probability(rows_in_table,
                                                   COND_FILTER_INEQUALITY);
 }
 
-float Item_func_lt::get_filtering_effect(table_map filter_for_table,
+float Item_func_lt::get_filtering_effect(THD *thd, table_map filter_for_table,
                                          table_map read_tables,
                                          const MY_BITMAP *fields_to_ignore,
                                          double rows_in_table)
@@ -2559,12 +2600,18 @@ float Item_func_lt::get_filtering_effect(table_map filter_for_table,
     contributes_to_filter(read_tables, filter_for_table, fields_to_ignore);
   if (!fld)
     return COND_FILTER_ALLPASS;
+
+  double selectivity;
+  if (!get_histogram_selectivity(thd, fld->field, args, arg_count,
+                                 histograms::enum_operator::LESS_THAN,
+                                 this, fld->field->orig_table->s, &selectivity))
+    return static_cast<float>(selectivity);
 
   return fld->get_cond_filter_default_probability(rows_in_table,
                                                   COND_FILTER_INEQUALITY);
 }
 
-float Item_func_le::get_filtering_effect(table_map filter_for_table,
+float Item_func_le::get_filtering_effect(THD *thd, table_map filter_for_table,
                                          table_map read_tables,
                                          const MY_BITMAP *fields_to_ignore,
                                          double rows_in_table)
@@ -2573,12 +2620,18 @@ float Item_func_le::get_filtering_effect(table_map filter_for_table,
     contributes_to_filter(read_tables, filter_for_table, fields_to_ignore);
   if (!fld)
     return COND_FILTER_ALLPASS;
+
+  double selectivity;
+  if (!get_histogram_selectivity(thd, fld->field, args, arg_count,
+                                 histograms::enum_operator::LESS_THAN_OR_EQUAL,
+                                 this, fld->field->orig_table->s, &selectivity))
+    return static_cast<float>(selectivity);
 
   return fld->get_cond_filter_default_probability(rows_in_table,
                                                   COND_FILTER_INEQUALITY);
 }
 
-float Item_func_gt::get_filtering_effect(table_map filter_for_table,
+float Item_func_gt::get_filtering_effect(THD *thd, table_map filter_for_table,
                                          table_map read_tables,
                                          const MY_BITMAP *fields_to_ignore,
                                          double rows_in_table)
@@ -2587,6 +2640,12 @@ float Item_func_gt::get_filtering_effect(table_map filter_for_table,
     contributes_to_filter(read_tables, filter_for_table, fields_to_ignore);
   if (!fld)
     return COND_FILTER_ALLPASS;
+
+  double selectivity;
+  if (!get_histogram_selectivity(thd, fld->field, args, arg_count,
+                                 histograms::enum_operator::GREATER_THAN,
+                                 this, fld->field->orig_table->s, &selectivity))
+    return static_cast<float>(selectivity);
 
   return fld->get_cond_filter_default_probability(rows_in_table,
                                                   COND_FILTER_INEQUALITY);
@@ -2752,8 +2811,8 @@ bool Item_func_interval::resolve_type(THD *)
   max_length= 2;
   used_tables_cache|= row->used_tables();
   not_null_tables_cache= row->not_null_tables();
-  with_sum_func= with_sum_func || row->with_sum_func;
-  const_item_cache&= row->const_item();
+  add_accum_properties(row);
+
   return false;
 }
 
@@ -3069,7 +3128,7 @@ bool Item_func_between::resolve_type(THD *thd)
 }
 
 float
-Item_func_between::get_filtering_effect(table_map filter_for_table,
+Item_func_between::get_filtering_effect(THD *thd, table_map filter_for_table,
                                         table_map read_tables,
                                         const MY_BITMAP *fields_to_ignore,
                                         double rows_in_table)
@@ -3078,6 +3137,15 @@ Item_func_between::get_filtering_effect(table_map filter_for_table,
     contributes_to_filter(read_tables, filter_for_table, fields_to_ignore);
   if (!fld)
     return COND_FILTER_ALLPASS;
+
+  histograms::enum_operator op=
+    (negated ? histograms::enum_operator::NOT_BETWEEN :
+               histograms::enum_operator::BETWEEN);
+
+  double selectivity;
+  if (!get_histogram_selectivity(thd, fld->field, args, arg_count, op,
+                                 this, fld->field->orig_table->s, &selectivity))
+    return static_cast<float>(selectivity);
 
   const float filter=
     fld->get_cond_filter_default_probability(rows_in_table,
@@ -3299,6 +3367,9 @@ void Item_func_between::print(String *str, enum_query_type query_type)
   str->append(')');
 }
 
+/**
+  @todo Consolidate type resolution logic with CASE and COALESCE.
+*/
 bool Item_func_ifnull::resolve_type(THD *)
 {
   uint32 char_length;
@@ -3314,14 +3385,15 @@ bool Item_func_ifnull::resolve_type(THD *)
     int len1= args[1]->max_char_length() - args[1]->decimals
       - (args[1]->unsigned_flag ? 0 : 1);
 
-    char_length= max(len0, len1) + decimals + (unsigned_flag ? 0 : 1);
+    char_length= max(len0, len1) + decimals + (unsigned_flag ? 0 : 1) +
+      (decimals > 0 ? 1 : 0);
   }
   else
     char_length= max(args[0]->max_char_length(), args[1]->max_char_length());
 
   switch (hybrid_type) {
   case STRING_RESULT:
-    if (count_string_result_length(data_type(), args, 2))
+    if (aggregate_string_properties(func_name(), args, 2))
       return true;
     break;
   case DECIMAL_RESULT:
@@ -3517,13 +3589,12 @@ bool Item_func_if::resolve_type(THD*)
 
   if (cached_result_type == STRING_RESULT)
   {
-    if (count_string_result_length(data_type(), args + 1, 2))
+    if (aggregate_string_properties(func_name(), args + 1, 2))
       return true;
   }
   else
   {
-    collation.set_numeric(); // Number
-    fix_num_type_shared_for_case(this, cached_result_type, args + 1, 2);
+    aggregate_num_type(cached_result_type, args + 1, 2);
   }
   return false;
 }
@@ -3639,6 +3710,10 @@ bool Item_func_nullif::resolve_type(THD *thd)
       agg_arg_charsets_for_comparison(collation, args, arg_count))
     return true;
 
+  // This class does not implement temporal data types
+  if (is_temporal())
+    set_data_type_string(args[0]->max_length);
+
   return false;
 }
 
@@ -3656,11 +3731,11 @@ bool Item_func_nullif::resolve_type(THD *thd)
 double
 Item_func_nullif::val_real()
 {
-  DBUG_ASSERT(fixed == 1);
+  DBUG_ASSERT(fixed);
   double value;
   if (!cmp.compare())
   {
-    null_value=1;
+    null_value= true;
     return 0.0;
   }
   value= args[0]->val_real();
@@ -3671,11 +3746,11 @@ Item_func_nullif::val_real()
 longlong
 Item_func_nullif::val_int()
 {
-  DBUG_ASSERT(fixed == 1);
+  DBUG_ASSERT(fixed);
   longlong value;
   if (!cmp.compare())
   {
-    null_value=1;
+    null_value= true;
     return 0;
   }
   value=args[0]->val_int();
@@ -3686,12 +3761,12 @@ Item_func_nullif::val_int()
 String *
 Item_func_nullif::val_str(String *str)
 {
-  DBUG_ASSERT(fixed == 1);
+  DBUG_ASSERT(fixed);
   String *res;
   if (!cmp.compare())
   {
-    null_value=1;
-    return 0;
+    null_value= true;
+    return nullptr;
   }
   res=args[0]->val_str(str);
   null_value=args[0]->null_value;
@@ -3702,14 +3777,28 @@ Item_func_nullif::val_str(String *str)
 my_decimal *
 Item_func_nullif::val_decimal(my_decimal * decimal_value)
 {
-  DBUG_ASSERT(fixed == 1);
+  DBUG_ASSERT(fixed);
   my_decimal *res;
   if (!cmp.compare())
   {
-    null_value=1;
-    return 0;
+    null_value= true;
+    return nullptr;
   }
   res= args[0]->val_decimal(decimal_value);
+  null_value= args[0]->null_value;
+  return res;
+}
+
+
+bool Item_func_nullif::val_json(Json_wrapper *wr)
+{
+  DBUG_ASSERT(fixed);
+  if (cmp.compare() == 0)
+  {
+    null_value= true;
+    return false;
+  }
+  bool res= args[0]->val_json(wr);
   null_value= args[0]->null_value;
   return res;
 }
@@ -3955,34 +4044,6 @@ static void change_item_tree_if_needed(THD *thd,
   thd->change_item_tree(place, new_value);
 }
 
-/**
-  This function is a shared part to resolve_type() for numeric result
-  type of CASE, COALESCE and IF.
-  COALESCE is a CASE abbreviation according to the standard.
- */
-static void fix_num_type_shared_for_case(Item_func *item_func,
-                                         Item_result result_type,
-                                         Item **item,
-                                         uint nitems)
-{
-  switch (result_type)
-  {
-  case DECIMAL_RESULT:
-    item_func->count_decimal_length(item, nitems);
-    break;
-  case REAL_RESULT:
-    item_func->count_real_length(item, nitems);
-    break;
-  case INT_RESULT:
-    item_func->count_only_length(item, nitems);
-    item_func->decimals= 0;
-    break;
-  case ROW_RESULT:
-  default:
-    DBUG_ASSERT(0);
-  }
-}
-
 bool Item_func_case::resolve_type(THD *thd)
 {
   Item **agg= (Item**) sql_alloc(sizeof(Item*)*(ncases+1));
@@ -4013,7 +4074,7 @@ bool Item_func_case::resolve_type(THD *thd)
   if (cached_result_type == STRING_RESULT)
   {
     /* Note: String result type is the same for CASE and COALESCE. */
-    if (count_string_result_length(data_type(), agg, nagg))
+    if (aggregate_string_properties(func_name(), agg, nagg))
       return true;
     /*
       Copy all THEN and ELSE items back to args[] array.
@@ -4027,8 +4088,7 @@ bool Item_func_case::resolve_type(THD *thd)
   }
   else
   {
-    collation.set_numeric();
-    fix_num_type_shared_for_case(this, cached_result_type, agg, nagg);
+    aggregate_num_type(cached_result_type, agg, nagg);
   }
 
   /*
@@ -4165,7 +4225,7 @@ void Item_func_case::cleanup()
   Item_func::cleanup();
   for (i= 0; i <= (uint)DECIMAL_RESULT; i++)
   {
-    delete cmp_items[i];
+    destroy(cmp_items[i]);
     cmp_items[i]= 0;
   }
   DBUG_VOID_RETURN;
@@ -4175,10 +4235,6 @@ void Item_func_case::cleanup()
 /**
   Coalesce - return first not NULL argument.
 */
-
-Item_func_coalesce::Item_func_coalesce(const POS &pos, PT_item_list *list)
-  : Item_func_numhybrid(pos, list)
-{}
 
 String *Item_func_coalesce::str_op(String *str)
 {
@@ -4288,13 +4344,12 @@ bool Item_func_coalesce::resolve_type(THD *)
   hybrid_type= Field::result_merge_type(data_type());
   if (hybrid_type == STRING_RESULT)
   {
-    if (count_string_result_length(data_type(), args, arg_count))
+    if (aggregate_string_properties(func_name(), args, arg_count))
       return true;
   }
   else
   {
-    collation.set_numeric(); // Number
-    fix_num_type_shared_for_case(this, hybrid_type, args, arg_count);
+    aggregate_num_type(hybrid_type, args, arg_count);
   }
 
   return false;
@@ -4756,15 +4811,15 @@ cmp_item* cmp_item::get_comparator(Item_result type,
 {
   switch (type) {
   case STRING_RESULT:
-    return new cmp_item_string(cs);
+    return new (*THR_MALLOC) cmp_item_string(cs);
   case INT_RESULT:
-    return new cmp_item_int;
+    return new (*THR_MALLOC) cmp_item_int;
   case REAL_RESULT:
-    return new cmp_item_real;
+    return new (*THR_MALLOC) cmp_item_real;
   case ROW_RESULT:
-    return new cmp_item_row;
+    return new (*THR_MALLOC) cmp_item_row;
   case DECIMAL_RESULT:
-    return new cmp_item_decimal;
+    return new (*THR_MALLOC) cmp_item_decimal;
   default:
     DBUG_ASSERT(0);
     break;
@@ -4775,22 +4830,22 @@ cmp_item* cmp_item::get_comparator(Item_result type,
 
 cmp_item* cmp_item_string::make_same()
 {
-  return new cmp_item_string(cmp_charset);
+  return new (*THR_MALLOC) cmp_item_string(cmp_charset);
 }
 
 cmp_item* cmp_item_int::make_same()
 {
-  return new cmp_item_int();
+  return new (*THR_MALLOC) cmp_item_int();
 }
 
 cmp_item* cmp_item_real::make_same()
 {
-  return new cmp_item_real();
+  return new (*THR_MALLOC) cmp_item_real();
 }
 
 cmp_item* cmp_item_row::make_same()
 {
-  return new cmp_item_row();
+  return new (*THR_MALLOC) cmp_item_row();
 }
 
 
@@ -4955,7 +5010,7 @@ int cmp_item_decimal::compare(const cmp_item *arg) const
 
 cmp_item* cmp_item_decimal::make_same()
 {
-  return new cmp_item_decimal();
+  return new (*THR_MALLOC) cmp_item_decimal();
 }
 
 
@@ -4991,7 +5046,7 @@ int cmp_item_datetime::compare(const cmp_item *ci) const
 
 cmp_item *cmp_item_datetime::make_same()
 {
-  return new cmp_item_datetime(warn_item);
+  return new (*THR_MALLOC) cmp_item_datetime(warn_item);
 }
 
 
@@ -5020,7 +5075,7 @@ Item_func_in::get_single_col_filtering_effect(Item_ident *fieldref,
 
 }
 
-float Item_func_in::get_filtering_effect(table_map filter_for_table,
+float Item_func_in::get_filtering_effect(THD *thd, table_map filter_for_table,
                                          table_map read_tables,
                                          const MY_BITMAP *fields_to_ignore,
                                          double rows_in_table)
@@ -5113,8 +5168,22 @@ float Item_func_in::get_filtering_effect(table_map filter_for_table,
       hand side are identical.
     */
     DBUG_ASSERT(args[0]->type() == FIELD_ITEM || args[0]->type() == REF_ITEM);
-    Item_ident *fieldref= static_cast<Item_ident*>(args[0]);
 
+    if (args[0]->type() == FIELD_ITEM)
+    {
+      const Item_field *item_field= down_cast<const Item_field*>(args[0]);
+      histograms::enum_operator op=
+        (negated ? histograms::enum_operator::NOT_IN_LIST :
+                   histograms::enum_operator::IN_LIST);
+
+      double selectivity;
+      if (!get_histogram_selectivity(thd, item_field->field, args, arg_count,
+                                     op, this, item_field->field->orig_table->s,
+                                     &selectivity))
+        return static_cast<float>(selectivity);
+    }
+
+    Item_ident *fieldref= static_cast<Item_ident*>(args[0]);
     const float tmp_filt= get_single_col_filtering_effect(fieldref,
                                                           filter_for_table,
                                                           fields_to_ignore,
@@ -5231,7 +5300,7 @@ static int srtcmp_in(const void *cmp_arg, const void *a, const void *b)
 bool Item_func_in::resolve_type(THD *thd)
 {
   Item **arg, **arg_end;
-  bool const_itm= 1;
+  bool const_itm= true;
   bool datetime_found= false;
   /* TRUE <=> arguments values will be compared as DATETIMEs. */
   bool compare_as_datetime= false;
@@ -5247,7 +5316,7 @@ bool Item_func_in::resolve_type(THD *thd)
   {
     if (!arg[0]->const_item())
     {
-      const_itm= 0;
+      const_itm= false;
       if (arg[0]->real_item()->type() == Item::SUBSELECT_ITEM)
         dep_subq_in_list= true;
       break;
@@ -5685,7 +5754,6 @@ Item_cond::fix_fields(THD *thd, Item**)
 
   uchar buff[sizeof(char*)];			// Max local vars in function
   used_tables_cache= 0;
-  const_item_cache= true;
 
   if (functype() == COND_AND_FUNC && abort_on_null)
     not_null_tables_cache= 0;
@@ -5728,15 +5796,12 @@ Item_cond::fix_fields(THD *thd, Item**)
 	(item= *li.ref())->check_cols(1))
       return TRUE; /* purecov: inspected */
     used_tables_cache|= item->used_tables();
-    const_item_cache&=  item->const_item();
 
     if (functype() == COND_AND_FUNC && abort_on_null)
       not_null_tables_cache|= item->not_null_tables();
     else
       not_null_tables_cache&= item->not_null_tables();
-    with_sum_func|=  item->with_sum_func;
-    with_subselect|= item->has_subquery();
-    with_stored_program|= item->has_stored_program();
+    add_accum_properties(item);
     maybe_null|= item->maybe_null;
   }
   thd->lex->current_select()->cond_count+= list.elements;
@@ -5755,7 +5820,6 @@ void Item_cond::fix_after_pullout(SELECT_LEX *parent_select,
   Item *item;
 
   used_tables_cache= get_initial_pseudo_tables();
-  const_item_cache= true;
 
   if (functype() == COND_AND_FUNC && abort_on_null)
     not_null_tables_cache= 0;
@@ -5766,7 +5830,6 @@ void Item_cond::fix_after_pullout(SELECT_LEX *parent_select,
   {
     item->fix_after_pullout(parent_select, removed_select);
     used_tables_cache|= item->used_tables();
-    const_item_cache&= item->const_item();
     if (functype() == COND_AND_FUNC && abort_on_null)
       not_null_tables_cache|= item->not_null_tables();
     else
@@ -5944,17 +6007,14 @@ void Item_cond::update_used_tables()
   List_iterator_fast<Item> li(list);
   Item *item;
 
-  used_tables_cache=0;
-  const_item_cache=1;
-  with_subselect= false;
-  with_stored_program= false;
+  used_tables_cache= 0;
+  m_accum_properties= 0;
+
   while ((item=li++))
   {
     item->update_used_tables();
     used_tables_cache|= item->used_tables();
-    const_item_cache&= item->const_item();
-    with_subselect|= item->has_subquery();
-    with_stored_program|= item->has_stored_program();
+    add_accum_properties(item);
   }
 }
 
@@ -5994,7 +6054,7 @@ void Item_cond::neg_arguments(THD *thd)
 }
 
 
-float Item_cond_and::get_filtering_effect(table_map filter_for_table,
+float Item_cond_and::get_filtering_effect(THD *thd, table_map filter_for_table,
                                           table_map read_tables,
                                           const MY_BITMAP *fields_to_ignore,
                                           double rows_in_table)
@@ -6011,7 +6071,7 @@ float Item_cond_and::get_filtering_effect(table_map filter_for_table,
        P(A and B ...) = P(A) * P(B) * ...
   */
   while ((item= it++))
-    filter*= item->get_filtering_effect(filter_for_table,
+    filter*= item->get_filtering_effect(thd, filter_for_table,
                                         read_tables,
                                         fields_to_ignore,
                                         rows_in_table);
@@ -6056,7 +6116,7 @@ longlong Item_cond_and::val_int()
 }
 
 
-float Item_cond_or::get_filtering_effect(table_map filter_for_table,
+float Item_cond_or::get_filtering_effect(THD *thd, table_map filter_for_table,
                                          table_map read_tables,
                                          const MY_BITMAP *fields_to_ignore,
                                          double rows_in_table)
@@ -6070,7 +6130,7 @@ float Item_cond_or::get_filtering_effect(table_map filter_for_table,
   while ((item= it++))
   {
     const float cur_filter=
-      item->get_filtering_effect(filter_for_table, read_tables,
+      item->get_filtering_effect(thd, filter_for_table, read_tables,
                                  fields_to_ignore, rows_in_table);
     /*
       Calculated as "Disjunction of independent events":
@@ -6107,7 +6167,30 @@ longlong Item_cond_or::val_int()
   return 0;
 }
 
-float Item_func_isnull::get_filtering_effect(table_map filter_for_table,
+
+void Item_func_isnull::update_used_tables()
+{
+  if (!args[0]->maybe_null)
+  {
+    used_tables_cache= 0;
+    cached_value= (longlong) 0;
+  }
+  else
+  {
+    args[0]->update_used_tables();
+    set_accum_properties(args[0]);
+
+    used_tables_cache= args[0]->used_tables();
+
+    // If const, remember if value is always NULL or never NULL
+    if (const_item())
+      cached_value= (longlong) args[0]->is_null();
+  }
+}
+
+
+float Item_func_isnull::get_filtering_effect(THD *thd,
+                                             table_map filter_for_table,
                                              table_map read_tables,
                                              const MY_BITMAP *fields_to_ignore,
                                              double rows_in_table)
@@ -6116,6 +6199,12 @@ float Item_func_isnull::get_filtering_effect(table_map filter_for_table,
     contributes_to_filter(read_tables, filter_for_table, fields_to_ignore);
   if (!fld)
     return COND_FILTER_ALLPASS;
+
+  double selectivity;
+  if (!get_histogram_selectivity(thd, fld->field, args, arg_count,
+                                 histograms::enum_operator::IS_NULL,
+                                 this, fld->field->orig_table->s, &selectivity))
+    return static_cast<float>(selectivity);
 
   return fld->get_cond_filter_default_probability(rows_in_table,
                                                   COND_FILTER_EQUALITY);
@@ -6137,7 +6226,7 @@ longlong Item_func_isnull::val_int()
     Handle optimization if the argument can't be null
     This has to be here because of the test in update_used_tables().
   */
-  if (const_item_cache)
+  if (const_item())
     return cached_value;
   return args[0]->is_null() ? 1: 0;
 }
@@ -6146,13 +6235,14 @@ longlong Item_is_not_null_test::val_int()
 {
   DBUG_ASSERT(fixed == 1);
   DBUG_ENTER("Item_is_not_null_test::val_int");
-  if (!used_tables_cache && !with_subselect && !with_stored_program)
+  if (!used_tables_cache)
   {
     /*
      TODO: Currently this branch never executes, since used_tables_cache
      is never equal to 0 --  it always contains RAND_TABLE_BIT,
      see get_initial_pseudo_tables().
     */
+    DBUG_ASSERT(false);
     owner->was_null|= (!cached_value);
     DBUG_PRINT("info", ("cached: %ld", (long) cached_value));
     DBUG_RETURN(cached_value);
@@ -6180,17 +6270,16 @@ void Item_is_not_null_test::update_used_tables()
     return;
   }
   args[0]->update_used_tables();
-  with_subselect= args[0]->has_subquery();
-  with_stored_program= args[0]->has_stored_program();
+  set_accum_properties(args[0]);
   used_tables_cache|= args[0]->used_tables();
-  if (used_tables_cache == initial_pseudo_tables && !with_subselect &&
-      !with_stored_program)
+
+  if (used_tables_cache == initial_pseudo_tables)
     /* Remember if the value is always NULL or never NULL */
     cached_value= !args[0]->is_null();
 }
 
 float
-Item_func_isnotnull::get_filtering_effect(table_map filter_for_table,
+Item_func_isnotnull::get_filtering_effect(THD *thd, table_map filter_for_table,
                                           table_map read_tables,
                                           const MY_BITMAP *fields_to_ignore,
                                           double rows_in_table)
@@ -6199,6 +6288,12 @@ Item_func_isnotnull::get_filtering_effect(table_map filter_for_table,
     contributes_to_filter(read_tables, filter_for_table, fields_to_ignore);
   if (!fld)
     return COND_FILTER_ALLPASS;
+
+  double selectivity;
+  if (!get_histogram_selectivity(thd, fld->field, args, arg_count,
+                                 histograms::enum_operator::IS_NOT_NULL,
+                                 this, fld->field->orig_table->s, &selectivity))
+    return static_cast<float>(selectivity);
 
   return 1.0f - fld->get_cond_filter_default_probability(rows_in_table,
                                                          COND_FILTER_EQUALITY);
@@ -6219,7 +6314,7 @@ void Item_func_isnotnull::print(String *str, enum_query_type query_type)
 }
 
 
-float Item_func_like::get_filtering_effect(table_map filter_for_table,
+float Item_func_like::get_filtering_effect(THD*, table_map filter_for_table,
                                            table_map read_tables,
                                            const MY_BITMAP *fields_to_ignore,
                                            double rows_in_table)
@@ -6289,8 +6384,6 @@ longlong Item_func_like::val_int()
     return 0;
   }
   null_value=0;
-  if (can_do_bm)
-    return bm_matches(res->ptr(), res->length()) ? 1 : 0;
   return my_wildcmp(cmp.cmp_collation.collation,
 		    res->ptr(),res->ptr()+res->length(),
 		    res2->ptr(),res2->ptr()+res2->length(),
@@ -6304,7 +6397,7 @@ longlong Item_func_like::val_int()
 
 Item_func::optimize_type Item_func_like::select_optimize() const
 {
-  if (!args[1]->const_item())
+  if (!args[1]->may_evaluate_const(current_thd))
     return OPTIMIZE_NONE;
 
   String* res2= args[1]->val_str((String *)&cmp.value2);
@@ -6330,78 +6423,36 @@ bool Item_func_like::fix_fields(THD *thd, Item **ref)
   if (Item_bool_func2::fix_fields(thd, ref) ||
       escape_item->fix_fields(thd, &escape_item) ||
       escape_item->check_cols(1))
+  {
+    fixed= false;
     return true;
+  }
 
-  if (!escape_item->const_during_execution())
+  // ESCAPE clauses that vary per row are not valid:
+  if (!escape_item->const_for_execution())
   {
     my_error(ER_WRONG_ARGUMENTS,MYF(0),"ESCAPE");
     return true;
   }
-  
-  if (escape_item->const_item())
+
+  /*
+    If the escape item is const, evaluate it now, so that the range optimizer
+    can try to optimize LIKE 'foo%' into a range query.
+
+    TODO: If we move this into escape_is_evaluated(), which is called later,
+    it could be that we could optimize more cases.
+  */
+  if (escape_item->may_evaluate_const(thd))
   {
-    /*
-      We need to know the escape character in order to apply Boyer-Moore. Since
-      it is const, it is safe to evaluate it now at the resolution stage.
-    */
     if (eval_escape_clause(thd))
       return true;
-
-    /*
-      We could also do boyer-more for non-const items, but as we would have to
-      recompute the tables for each row it's not worth it.
-    */
-    if (args[1]->const_item() && !use_strnxfrm(collation.collation) &&
-       !(specialflag & SPECIAL_NO_NEW_FUNC))
-    {
-      String* res2 = args[1]->val_str(&cmp.value2);
-      if (thd->is_error())
-        return true;
-      if (!res2)
-        return false;				// Null argument
-
-      const size_t len   = res2->length();
-      const char*  first = res2->ptr();
-      const char*  last  = first + len - 1;
-
-      /*
-        Minimum length pattern before Boyer-Moore is used
-        for SELECT "text" LIKE "%pattern%" including the two
-        wildcards in class Item_func_like.
-      */
-
-      const size_t min_bm_pattern_len= 5;
-
-      if (len > min_bm_pattern_len &&
-          *first == wild_many &&
-          *last  == wild_many)
-      {
-        const char* tmp = first + 1;
-        for (; *tmp != wild_many && *tmp != wild_one && *tmp != escape; tmp++) ;
-        can_do_bm= (tmp == last) && !use_mb(args[0]->collation.collation);
-      }
-      if (can_do_bm)
-      {
-        pattern_len = (int) len - 2;
-        pattern     = thd->strmake(first + 1, pattern_len);
-        DBUG_PRINT("info", ("Initializing pattern: '%s'", first));
-        int *suff = (int*) thd->alloc((int) (sizeof(int)*
-                                      ((pattern_len + 1)*2+
-                                      alphabet_size)));
-        bmGs      = suff + pattern_len + 1;
-        bmBc      = bmGs + pattern_len + 1;
-        bm_compute_good_suffix_shifts(suff);
-        bm_compute_bad_character_shifts();
-        DBUG_PRINT("info",("done"));
-      }
-    }
   }
+  
   return false;
 }
 
 void Item_func_like::cleanup()
 {
-  can_do_bm= false;
   escape_evaluated= false;
   Item_bool_func2::cleanup();
 }
@@ -6471,355 +6522,8 @@ bool Item_func_like::eval_escape_clause(THD *thd)
   return false;
 }
 
-/**
-  @brief Compile regular expression.
 
-  @param[in]    send_error     send error message if any.
-
-  @details Make necessary character set conversion then 
-  compile regular expression passed in the args[1].
-
-  @retval    0     success.
-  @retval    1     error occurred.
-  @retval   -1     given null regular expression.
- */
-
-int Item_func_regex::regcomp(bool send_error)
-{
-  char buff[MAX_FIELD_WIDTH];
-  String tmp(buff,sizeof(buff),&my_charset_bin);
-  String *res= args[1]->val_str(&tmp);
-  int error;
-
-  if (args[1]->null_value)
-    return -1;
-
-  if (regex_compiled)
-  {
-    if (!stringcmp(res, &prev_regexp))
-      return 0;
-    prev_regexp.copy(*res);
-    my_regfree(&preg);
-    regex_compiled= 0;
-  }
-
-  if (cmp_collation.collation != regex_lib_charset)
-  {
-    /* Convert UCS2 strings to UTF8 */
-    uint dummy_errors;
-    if (conv.copy(res->ptr(), res->length(), res->charset(),
-                  regex_lib_charset, &dummy_errors))
-      return 1;
-    res= &conv;
-  }
-
-  if ((error= my_regcomp(&preg, res->c_ptr_safe(),
-                         regex_lib_flags, regex_lib_charset)))
-  {
-    if (send_error)
-    {
-      (void) my_regerror(error, &preg, buff, sizeof(buff));
-      my_error(ER_REGEXP_ERROR, MYF(0), buff);
-    }
-    return 1;
-  }
-  regex_compiled= 1;
-  return 0;
-}
-
-
-bool
-Item_func_regex::fix_fields(THD *thd, Item**)
-{
-  DBUG_ASSERT(fixed == 0);
-
-  Disable_semijoin_flattening DSF(thd->lex->current_select(), true);
-
-  if ((!args[0]->fixed &&
-       args[0]->fix_fields(thd, args)) || args[0]->check_cols(1) ||
-      (!args[1]->fixed &&
-       args[1]->fix_fields(thd, args + 1)) || args[1]->check_cols(1))
-    return TRUE;				/* purecov: inspected */
-  with_sum_func=args[0]->with_sum_func || args[1]->with_sum_func;
-  with_subselect= args[0]->has_subquery() || args[1]->has_subquery();
-  with_stored_program= args[0]->has_stored_program() ||
-                       args[1]->has_stored_program();
-  max_length= 1;
-  decimals= 0;
-
-  if (agg_arg_charsets_for_comparison(cmp_collation, args, 2))
-    return TRUE;
-
-  regex_lib_flags= (cmp_collation.collation->state &
-                    (MY_CS_BINSORT | MY_CS_CSSORT)) ?
-                   MY_REG_EXTENDED | MY_REG_NOSUB :
-                   MY_REG_EXTENDED | MY_REG_NOSUB | MY_REG_ICASE;
-  /*
-    If the case of UCS2 and other non-ASCII character sets,
-    we will convert patterns and strings to UTF8.
-  */
-  regex_lib_charset= (cmp_collation.collation->mbminlen > 1) ?
-                     &my_charset_utf8_general_ci :
-                     cmp_collation.collation;
-
-  used_tables_cache=args[0]->used_tables() | args[1]->used_tables();
-  not_null_tables_cache= (args[0]->not_null_tables() |
-			  args[1]->not_null_tables());
-  const_item_cache=args[0]->const_item() && args[1]->const_item();
-  if (!regex_compiled && args[1]->const_item())
-  {
-    int comp_res= regcomp(TRUE);
-    if (comp_res == -1)
-    {						// Will always return NULL
-      maybe_null=1;
-      fixed= 1;
-      return thd->is_error();
-    }
-    else if (comp_res)
-      return TRUE;
-    regex_is_const= 1;
-    maybe_null= args[0]->maybe_null;
-  }
-  else
-    maybe_null=1;
-  fixed= 1;
-  return FALSE;
-}
-
-
-longlong Item_func_regex::val_int()
-{
-  DBUG_ASSERT(fixed == 1);
-  char buff[MAX_FIELD_WIDTH];
-  String tmp(buff,sizeof(buff),&my_charset_bin);
-  String *res= args[0]->val_str(&tmp);
-
-  if ((null_value= (args[0]->null_value ||
-                    (!regex_is_const && regcomp(FALSE)))))
-    return 0;
-
-  if (cmp_collation.collation != regex_lib_charset)
-  {
-    /* Convert UCS2 strings to UTF8 */
-    uint dummy_errors;
-    if (conv.copy(res->ptr(), res->length(), res->charset(),
-                  regex_lib_charset, &dummy_errors))
-    {
-      null_value= 1;
-      return 0;
-    }
-    res= &conv;
-  }
-  return my_regexec(&preg,res->c_ptr_safe(),0,(my_regmatch_t*) 0,0) ? 0 : 1;
-}
-
-
-void Item_func_regex::cleanup()
-{
-  DBUG_ENTER("Item_func_regex::cleanup");
-  Item_bool_func::cleanup();
-  if (regex_compiled)
-  {
-    my_regfree(&preg);
-    regex_compiled=0;
-    prev_regexp.length(0);
-  }
-  DBUG_VOID_RETURN;
-}
-
-
-#define likeconv(cs,A) (uchar) (cs)->sort_order[(uchar) (A)]
-
-
-/**
-  Precomputation dependent only on pattern_len.
-*/
-
-void Item_func_like::bm_compute_suffixes(int *suff)
-{
-  const int   plm1 = pattern_len - 1;
-  int            f = 0;
-  int            g = plm1;
-  int *const splm1 = suff + plm1;
-  const CHARSET_INFO	*cs= cmp.cmp_collation.collation;
-
-  *splm1 = pattern_len;
-
-  if (!cs->sort_order)
-  {
-    int i;
-    for (i = pattern_len - 2; i >= 0; i--)
-    {
-      int tmp = *(splm1 + i - f);
-      if (g < i && tmp < i - g)
-	suff[i] = tmp;
-      else
-      {
-	if (i < g)
-	  g = i; // g = min(i, g)
-	f = i;
-	while (g >= 0 && pattern[g] == pattern[g + plm1 - f])
-	  g--;
-	suff[i] = f - g;
-      }
-    }
-  }
-  else
-  {
-    int i;
-    for (i = pattern_len - 2; 0 <= i; --i)
-    {
-      int tmp = *(splm1 + i - f);
-      if (g < i && tmp < i - g)
-	suff[i] = tmp;
-      else
-      {
-	if (i < g)
-	  g = i; // g = min(i, g)
-	f = i;
-	while (g >= 0 &&
-	       likeconv(cs, pattern[g]) == likeconv(cs, pattern[g + plm1 - f]))
-	  g--;
-	suff[i] = f - g;
-      }
-    }
-  }
-}
-
-
-/**
-  Precomputation dependent only on pattern_len.
-*/
-
-void Item_func_like::bm_compute_good_suffix_shifts(int *suff)
-{
-  bm_compute_suffixes(suff);
-
-  int *end = bmGs + pattern_len;
-  int *k;
-  for (k = bmGs; k < end; k++)
-    *k = pattern_len;
-
-  int tmp;
-  int i;
-  int j          = 0;
-  const int plm1 = pattern_len - 1;
-  for (i = plm1; i > -1; i--)
-  {
-    if (suff[i] == i + 1)
-    {
-      for (tmp = plm1 - i; j < tmp; j++)
-      {
-	int *tmp2 = bmGs + j;
-	if (*tmp2 == pattern_len)
-	  *tmp2 = tmp;
-      }
-    }
-  }
-
-  int *tmp2;
-  for (tmp = plm1 - i; j < tmp; j++)
-  {
-    tmp2 = bmGs + j;
-    if (*tmp2 == pattern_len)
-      *tmp2 = tmp;
-  }
-
-  tmp2 = bmGs + plm1;
-  for (i = 0; i <= pattern_len - 2; i++)
-    *(tmp2 - suff[i]) = plm1 - i;
-}
-
-
-/**
-   Precomputation dependent on pattern_len.
-*/
-
-void Item_func_like::bm_compute_bad_character_shifts()
-{
-  int *i;
-  int *end = bmBc + alphabet_size;
-  int j;
-  const int plm1 = pattern_len - 1;
-  const CHARSET_INFO	*cs= cmp.cmp_collation.collation;
-
-  for (i = bmBc; i < end; i++)
-    *i = pattern_len;
-
-  if (!cs->sort_order)
-  {
-    for (j = 0; j < plm1; j++)
-      bmBc[(uchar) pattern[j]] = plm1 - j;
-  }
-  else
-  {
-    for (j = 0; j < plm1; j++)
-      bmBc[likeconv(cs,pattern[j])] = plm1 - j;
-  }
-}
-
-
-/**
-  Search for pattern in text.
-
-  @return
-    returns true/false for match/no match
-*/
-
-bool Item_func_like::bm_matches(const char* text, size_t text_len) const
-{
-  int bcShift;
-  int shift = pattern_len;
-  int j     = 0;
-  const CHARSET_INFO	*cs= cmp.cmp_collation.collation;
-
-  const int plm1=  pattern_len - 1;
-  const int tlmpl= text_len - pattern_len;
-
-  /* Searching */
-  if (!cs->sort_order)
-  {
-    while (j <= tlmpl)
-    {
-      int i;
-
-      for (i= plm1; (i >= 0) && (pattern[i] == text[i + j]) ;--i) {}
-
-      if (i < 0)
-	return true;
-      else
-      {
-        bcShift= bmBc[(uchar) text[i + j]] - plm1 + i;
-        shift= max(bcShift, bmGs[i]);
-      }
-      j+= shift;
-    }
-    return false;
-  }
-  else
-  {
-    while (j <= tlmpl)
-    {
-      int i;
-
-      for (i= plm1;
-           (i >= 0) && likeconv(cs,pattern[i]) == likeconv(cs,text[i + j]);
-           --i) {}
-
-      if (i < 0)
-	return true;
-      else
-      {
-        bcShift= bmBc[likeconv(cs, text[i + j])] - plm1 + i;
-        shift= max(bcShift, bmGs[i]);
-      }
-      j+= shift;
-    }
-    return false;
-  }
-}
-
-float Item_func_xor::get_filtering_effect(table_map filter_for_table,
+float Item_func_xor::get_filtering_effect(THD *thd, table_map filter_for_table,
                                           table_map read_tables,
                                           const MY_BITMAP *fields_to_ignore,
                                           double rows_in_table)
@@ -6827,13 +6531,13 @@ float Item_func_xor::get_filtering_effect(table_map filter_for_table,
   DBUG_ASSERT(arg_count == 2);
 
   const float filter0=
-    args[0]->get_filtering_effect(filter_for_table, read_tables,
+    args[0]->get_filtering_effect(thd, filter_for_table, read_tables,
                                   fields_to_ignore, rows_in_table);
   if (filter0 == COND_FILTER_ALLPASS)
     return COND_FILTER_ALLPASS;
 
   const float filter1=
-    args[1]->get_filtering_effect(filter_for_table, read_tables,
+    args[1]->get_filtering_effect(thd, filter_for_table, read_tables,
                                   fields_to_ignore, rows_in_table);
 
   if (filter1 == COND_FILTER_ALLPASS)
@@ -7051,7 +6755,6 @@ Item_equal::Item_equal(Item_field *f1, Item_field *f2)
   : Item_bool_func(), const_item(0), eval_item(0), cond_false(0),
     compare_as_dates(FALSE)
 {
-  const_item_cache= 0;
   fields.push_back(f1);
   fields.push_back(f2);
 }
@@ -7059,7 +6762,6 @@ Item_equal::Item_equal(Item_field *f1, Item_field *f2)
 Item_equal::Item_equal(Item *c, Item_field *f)
   : Item_bool_func(), eval_item(0), cond_false(0)
 {
-  const_item_cache= 0;
   fields.push_back(f);
   const_item= c;
   compare_as_dates= f->is_temporal_with_date();
@@ -7069,7 +6771,6 @@ Item_equal::Item_equal(Item *c, Item_field *f)
 Item_equal::Item_equal(Item_equal *item_equal)
   : Item_bool_func(), eval_item(0), cond_false(0)
 {
-  const_item_cache= 0;
   List_iterator_fast<Item_field> li(item_equal->fields);
   Item_field *item;
   while ((item= li++))
@@ -7102,7 +6803,8 @@ bool Item_equal::compare_const(THD *thd, Item *c)
   if (thd->is_error())
     return true;
   if (cond_false)
-    const_item_cache= 1;
+    used_tables_cache= 0;
+
   return false;
 }
 
@@ -7201,6 +6903,9 @@ bool Item_equal::merge(THD *thd, Item_equal *item)
       return true;
   }
   cond_false|= item->cond_false;
+  if (cond_false)
+    used_tables_cache= 0;
+
   return false;
 } 
 
@@ -7277,7 +6982,6 @@ bool Item_equal::fix_fields(THD *thd, Item**)
   List_iterator_fast<Item_field> li(fields);
   Item *item;
   not_null_tables_cache= used_tables_cache= 0;
-  const_item_cache= false;
   while ((item= li++))
   {
     used_tables_cache|= item->used_tables();
@@ -7306,7 +7010,7 @@ bool Item_equal::fix_fields(THD *thd, Item**)
   'filter_for_table', the predicates on all these fields will
   contribute to the filtering effect.
 */
-float Item_equal::get_filtering_effect(table_map filter_for_table,
+float Item_equal::get_filtering_effect(THD *thd, table_map filter_for_table,
                                        table_map read_tables,
                                        const MY_BITMAP *fields_to_ignore,
                                        double rows_in_table)
@@ -7388,6 +7092,33 @@ float Item_equal::get_filtering_effect(table_map filter_for_table,
           if (cur_filter >= 1.0)
             cur_filter= 1.0f;
         }
+        else if (const_item)
+        {
+          /*
+            If index statistics is not available, see if we can use any
+            available histogram statistics.
+          */
+          const histograms::Histogram *histogram=
+            cur_field->field->orig_table->s->find_histogram(
+              cur_field->field->field_index);
+          if (histogram != nullptr)
+          {
+            std::array<Item*, 2> items {{cur_field, const_item}};
+            double selectivity;
+            if (!histogram->get_selectivity(items.data(), items.size(),
+                                            histograms::enum_operator::EQUALS_TO,
+                                            &selectivity))
+            {
+              if (unlikely(thd->opt_trace.is_started()))
+              {
+                Item_func_eq *eq_func=
+                  new (thd->mem_root) Item_func_eq(cur_field, const_item);
+                write_histogram_to_trace(thd, eq_func, selectivity);
+              }
+              cur_filter= static_cast<float>(selectivity);
+            }
+          }
+        }
 
         filter*= cur_filter;
       }
@@ -7401,19 +7132,15 @@ void Item_equal::update_used_tables()
   List_iterator_fast<Item_field> li(fields);
   Item *item;
   not_null_tables_cache= used_tables_cache= 0;
-  if ((const_item_cache= cond_false))
+  if (cond_false)
     return;
-  with_subselect= false;
-  with_stored_program= false;
+  m_accum_properties= 0;
   while ((item=li++))
   {
     item->update_used_tables();
     used_tables_cache|= item->used_tables();
     not_null_tables_cache|= item->not_null_tables();
-    /* see commentary at Item_equal::update_const() */
-    const_item_cache&= item->const_item() && !item->is_outer_field();
-    with_subselect|= item->has_subquery();
-    with_stored_program|= item->has_stored_program();
+    add_accum_properties(item);
   }
 }
 
@@ -7530,6 +7257,33 @@ longlong Item_func_trig_cond::val_int()
   return *trig_var ? args[0]->val_int() : 1;
 }
 
+void Item_func_trig_cond::get_table_range(TABLE_LIST **first_table,
+                                          TABLE_LIST **last_table)
+{
+  *first_table= NULL;
+  *last_table= NULL;
+  if (m_join == NULL)
+    return;
+
+  // There may be a JOIN_TAB or a QEP_TAB.
+  plan_idx last_inner;
+  if (m_join->qep_tab)
+  {
+    QEP_TAB *qep_tab= &m_join->qep_tab[m_idx];
+    *first_table= qep_tab->table_ref;
+    last_inner= qep_tab->last_inner();
+    *last_table= m_join->qep_tab[last_inner].table_ref;
+  }
+  else
+  {
+    JOIN_TAB *join_tab= m_join->best_ref[m_idx];
+    *first_table= join_tab->table_ref;
+    last_inner= join_tab->last_inner();
+    *last_table= m_join->best_ref[last_inner]->table_ref;
+  }
+}
+
+
 void Item_func_trig_cond::print(String *str, enum_query_type query_type)
 {
   /*
@@ -7557,33 +7311,15 @@ void Item_func_trig_cond::print(String *str, enum_query_type query_type)
   }
   if (m_join != NULL)
   {
-    /*
-      Item printing is done at various stages of optimization, so there can
-      be a JOIN_TAB or a QEP_TAB.
-    */
-    TABLE *table, *last_inner_table;
-    plan_idx last_inner;
-    if (m_join->qep_tab)
-    {
-      QEP_TAB *qep_tab= &m_join->qep_tab[m_idx];
-      table= qep_tab->table();
-      last_inner= qep_tab->last_inner();
-      last_inner_table= m_join->qep_tab[last_inner].table();
-    }
-    else
-    {
-      JOIN_TAB *join_tab= m_join->best_ref[m_idx];
-      table= join_tab->table();
-      last_inner= join_tab->last_inner();
-      last_inner_table= m_join->best_ref[last_inner]->table();
-    }
+    TABLE_LIST *first_table, *last_table;
+    get_table_range(&first_table, &last_table);
     str->append("(");
-    str->append(table->alias);
-    if (last_inner != m_idx)
+    str->append(first_table->table->alias);
+    if (first_table != last_table)
     {
       /* case of t1 LEFT JOIN (t2,t3,...): print range of inner tables */
       str->append("..");
-      str->append(last_inner_table->alias);
+      str->append(last_table->table->alias);
     }
     str->append(")");
   }
@@ -7765,7 +7501,7 @@ Item* Item_func_eq::equality_substitution_transformer(uchar *arg)
   return this;
 }
 
-float Item_func_eq::get_filtering_effect(table_map filter_for_table,
+float Item_func_eq::get_filtering_effect(THD *thd, table_map filter_for_table,
                                          table_map read_tables,
                                          const MY_BITMAP *fields_to_ignore,
                                          double rows_in_table)
@@ -7774,6 +7510,12 @@ float Item_func_eq::get_filtering_effect(table_map filter_for_table,
     contributes_to_filter(read_tables, filter_for_table, fields_to_ignore);
   if (!fld)
     return COND_FILTER_ALLPASS;
+
+  double selectivity;
+  if (!get_histogram_selectivity(thd, fld->field, args, arg_count,
+                                 histograms::enum_operator::EQUALS_TO,
+                                 this, fld->field->orig_table->s, &selectivity))
+    return static_cast<float>(selectivity);
 
   return fld->get_cond_filter_default_probability(rows_in_table,
                                                   COND_FILTER_EQUALITY);

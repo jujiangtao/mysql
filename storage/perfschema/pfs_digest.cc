@@ -1,17 +1,24 @@
 /* Copyright (c) 2008, 2017, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
-  along with this program; if not, write to the Free Software Foundation,
-  51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+  along with this program; if not, write to the Free Software
+  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 /**
   @file storage/perfschema/pfs_digest.cc
@@ -29,14 +36,14 @@
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_sys.h"
-#include "pfs_builtin_memory.h"
-#include "pfs_global.h"
-#include "pfs_instr.h"
-#include "sql_get_diagnostics.h"
-#include "sql_lex.h"
-#include "sql_signal.h"
+#include "sql/sql_get_diagnostics.h"
+#include "sql/sql_lex.h"
+#include "sql/sql_signal.h"
 #include "sql_string.h"
-#include "table_helper.h"
+#include "storage/perfschema/pfs_builtin_memory.h"
+#include "storage/perfschema/pfs_global.h"
+#include "storage/perfschema/pfs_instr.h"
+#include "storage/perfschema/table_helper.h"
 
 size_t digest_max = 0;
 ulong digest_lost = 0;
@@ -44,13 +51,14 @@ ulong digest_lost = 0;
 /** EVENTS_STATEMENTS_SUMMARY_BY_DIGEST buffer. */
 PFS_statements_digest_stat *statements_digest_stat_array = NULL;
 static unsigned char *statements_digest_token_array = NULL;
+static char *statements_digest_query_sample_text_array = NULL;
 /** Consumer flag for table EVENTS_STATEMENTS_SUMMARY_BY_DIGEST. */
 bool flag_statements_digest = true;
 /**
   Current index in Stat array where new record is to be inserted.
   index 0 is reserved for "all else" case when entire array is full.
 */
-static PFS_ALIGNED PFS_cacheline_uint32 digest_monotonic_index;
+static PFS_ALIGNED PFS_cacheline_atomic_uint32 digest_monotonic_index;
 bool digest_full = false;
 
 LF_HASH digest_hash;
@@ -69,7 +77,7 @@ init_digest(const PFS_global_param *param)
   */
   digest_max = param->m_digest_sizing;
   digest_lost = 0;
-  PFS_atomic::store_u32(&digest_monotonic_index.m_u32, 1);
+  digest_monotonic_index.m_u32.store(1);
   digest_full = false;
 
   if (digest_max == 0)
@@ -109,11 +117,31 @@ init_digest(const PFS_global_param *param)
     }
   }
 
+  if (pfs_max_sqltext > 0)
+  {
+    /* Size of each query sample text array. */
+    size_t sqltext_size = pfs_max_sqltext * sizeof(char);
+
+    statements_digest_query_sample_text_array =
+      PFS_MALLOC_ARRAY(&builtin_memory_digest_sample_sqltext,
+                       digest_max,
+                       sqltext_size,
+                       char,
+                       MYF(MY_ZEROFILL));
+
+    if (unlikely(statements_digest_query_sample_text_array == NULL))
+    {
+      cleanup_digest();
+      return 1;
+    }
+  }
+
   for (size_t index = 0; index < digest_max; index++)
   {
     statements_digest_stat_array[index].reset_data(
       statements_digest_token_array + index * pfs_max_digest_length,
-      pfs_max_digest_length);
+      pfs_max_digest_length,
+      statements_digest_query_sample_text_array + index * pfs_max_sqltext);
   }
 
   /* Set record[0] as allocated. */
@@ -136,8 +164,14 @@ cleanup_digest(void)
                  (pfs_max_digest_length * sizeof(unsigned char)),
                  statements_digest_token_array);
 
+  PFS_FREE_ARRAY(&builtin_memory_digest_sample_sqltext,
+                 digest_max,
+                 (pfs_max_sqltext * sizeof(char)),
+                 statements_digest_query_sample_text_array);
+
   statements_digest_stat_array = NULL;
   statements_digest_token_array = NULL;
+  statements_digest_query_sample_text_array = NULL;
 }
 
 static const uchar *
@@ -232,8 +266,8 @@ find_or_create_digest(PFS_thread *thread,
   */
   PFS_digest_key hash_key;
   memset(&hash_key, 0, sizeof(hash_key));
-  /* Copy MD5 Hash of the tokens received. */
-  memcpy(&hash_key.m_md5, digest_storage->m_md5, MD5_HASH_SIZE);
+  /* Copy digest hash of the tokens received. */
+  memcpy(&hash_key.m_hash, digest_storage->m_hash, DIGEST_HASH_SIZE);
   /* Add the current schema to the key */
   hash_key.m_schema_name_length = schema_name_length;
   if (schema_name_length > 0)
@@ -285,8 +319,7 @@ search:
 
   while (++attempts <= digest_max)
   {
-    safe_index =
-      PFS_atomic::add_u32(&digest_monotonic_index.m_u32, 1) % digest_max;
+    safe_index = digest_monotonic_index.m_u32++ % digest_max;
     if (safe_index == 0)
     {
       /* Record [0] is reserved. */
@@ -312,6 +345,8 @@ search:
 
         pfs->m_first_seen = now;
         pfs->m_last_seen = now;
+
+        pfs->m_query_sample_refs = 0;
 
         pfs->m_histogram.reset();
 
@@ -380,14 +415,21 @@ purge_digest(PFS_thread *thread, PFS_digest_key *hash_key)
 
 void
 PFS_statements_digest_stat::reset_data(unsigned char *token_array,
-                                       size_t length)
+                                       size_t token_array_length,
+                                       char *query_sample_array)
 {
   pfs_dirty_state dirty_state;
   m_lock.set_dirty(&dirty_state);
-  m_digest_storage.reset(token_array, length);
+  m_digest_storage.reset(token_array, token_array_length);
   m_stat.reset();
   m_first_seen = 0;
   m_last_seen = 0;
+  m_query_sample = query_sample_array;
+  m_query_sample_length = 0;
+  m_query_sample_truncated = false;
+  m_query_sample_seen = 0;
+  m_query_sample_timer_wait = 0;
+  m_query_sample_cs_number = system_charset_info->number;
   m_lock.dirty_to_free(&dirty_state);
 }
 
@@ -423,7 +465,8 @@ reset_esms_by_digest()
     statements_digest_stat_array[index].reset_index(thread);
     statements_digest_stat_array[index].reset_data(
       statements_digest_token_array + index * pfs_max_digest_length,
-      pfs_max_digest_length);
+      pfs_max_digest_length,
+      statements_digest_query_sample_text_array + index * pfs_max_sqltext);
   }
 
   /* Mark record[0] as allocated again. */
@@ -433,7 +476,7 @@ reset_esms_by_digest()
     Reset index which indicates where the next calculated digest information
     to be inserted in statements_digest_stat_array.
   */
-  PFS_atomic::store_u32(&digest_monotonic_index.m_u32, 1);
+  digest_monotonic_index.m_u32.store(1);
   digest_full = false;
 }
 

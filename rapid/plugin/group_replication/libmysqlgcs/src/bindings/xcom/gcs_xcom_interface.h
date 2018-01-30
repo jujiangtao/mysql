@@ -1,13 +1,20 @@
-/* Copyright (c) 2015, 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -21,24 +28,27 @@
   the XCom Group communication library.
 */
 
-#include <map>
-#include <string>
 #include <cstdlib>
 #include <ctime>
+#include <map>
+#include <string>
 
-#include "mysql/gcs/xplatform/my_xp_thread.h"
-#include "mysql/gcs/xplatform/my_xp_mutex.h"
-#include "mysql/gcs/xplatform/my_xp_cond.h"
-#include "mysql/gcs/gcs_logging.h"
-#include "mysql/gcs/gcs_interface.h"
+#include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/gcs_interface.h"
+#include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/gcs_logging_system.h"
+#include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/gcs_psi.h"
+#include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/xplatform/my_xp_cond.h"
+#include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/xplatform/my_xp_mutex.h"
+#include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/xplatform/my_xp_thread.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_xcom_communication_interface.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_xcom_control_interface.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_xcom_group_management.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_xcom_group_member_information.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_xcom_networking.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_xcom_state_exchange.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_xcom_statistics_interface.h"
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_xcom_utils.h"
 
-#include "gcs_xcom_communication_interface.h"
-#include "gcs_xcom_control_interface.h"
-#include "gcs_xcom_statistics_interface.h"
-#include "gcs_xcom_state_exchange.h"
-#include "gcs_xcom_group_management.h"
-#include "gcs_xcom_utils.h"
-#include "gcs_xcom_networking.h"
+class Gcs_suspicions_manager;
 
 /**
   Struct that holds instances of this binding interface implementations.
@@ -73,6 +83,7 @@ private:
     XCom binding private constructor.
   */
   explicit Gcs_xcom_interface();
+
 public:
   /**
     Since one wants that a single instance exists, the interface implementation
@@ -122,13 +133,16 @@ public:
   enum_gcs_error configure_msg_stages(const Gcs_interface_parameters &p,
                                       const Gcs_group_identifier &gid);
 
-  enum_gcs_error set_logger(Ext_logger_interface *logger);
+  enum_gcs_error configure_suspicions_mgr(Gcs_interface_parameters &p,
+                                          Gcs_suspicions_manager *mgr);
+
+  enum_gcs_error set_logger(Logger_interface *logger);
 
   void set_xcom_group_information(const std::string &group_id);
 
   Gcs_group_identifier *get_xcom_group_information(const u_long group_id);
 
-  Gcs_xcom_group_member_information *get_xcom_local_information();
+  Gcs_xcom_node_address *get_node_address();
 
   /**
    This member function shall return the set of parameters that configure
@@ -174,6 +188,29 @@ public:
 
 
 private:
+  /**
+    Method to initialize the logging and debugging systems. If something
+    bad happens, an error is returned.
+
+
+    @param[in] debug_file File where the debug information on GCS will
+                          be stored to
+    @param[in] debug_path Default path where the debug information on GCS
+                          will be stored to
+  */
+
+  enum_gcs_error initialize_logging(const std::string *debug_file,
+                                    const std::string *debug_path);
+
+
+  /**
+    Method to finalize the logging and debugging systems. If something
+    bad happens, an error is returned.
+  */
+
+  enum_gcs_error finalize_logging();
+
+
   /**
     Internal helper method that retrieves all group interfaces for a certain
     group.
@@ -240,8 +277,15 @@ private:
 
   std::map<u_long, Gcs_group_identifier *> m_xcom_configured_groups;
 
-  Gcs_xcom_group_member_information *m_local_node_information;
-  std::vector<Gcs_xcom_group_member_information *> m_xcom_peers;
+  /*
+    The address associated with the current node.
+  */
+  Gcs_xcom_node_address *m_node_address;
+
+  /*
+    The addresses associated with current node's peers.
+  */
+  std::vector<Gcs_xcom_node_address *> m_xcom_peers;
 
   // States if this interface is initialized
   bool m_is_initialized;
@@ -266,8 +310,14 @@ private:
    */
   Gcs_interface_parameters m_initialization_parameters;
 
+  // Store pointer to default sink
+  Gcs_async_buffer *m_default_sink;
+
   // Store pointer to default logger
-  Ext_logger_interface *m_default_logger;
+  Logger_interface *m_default_logger;
+
+  // Store pointer to default debugger
+  Gcs_default_debugger *m_default_debugger;
 
   /**
    The IP whitelist.

@@ -1,42 +1,51 @@
-/* Copyright (c) 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "derror.h"
-#include "item.h"
+#include "sql/parse_tree_partitions.h"
+
 #include "my_dbug.h"
 #include "my_sys.h"
 #include "mysql_com.h"
 #include "mysqld_error.h"
-#include "parse_location.h"
-#include "parse_tree_partitions.h"
-#include "sql_alter.h"
-#include "sql_class.h"
-#include "sql_const.h"
-#include "sql_lex.h"
-#include "sql_list.h"
-#include "sql_parse.h"
-#include "sql_security_ctx.h"
+#include "sql/auth/sql_security_ctx.h"
+#include "sql/derror.h"
+#include "sql/item.h"
+#include "sql/parse_location.h"
+#include "sql/sql_class.h"
+#include "sql/sql_const.h"
+#include "sql/sql_lex.h"
+#include "sql/sql_list.h"
+#include "sql/sql_parse.h"
 #include "sql_string.h"
 
 Partition_parse_context::Partition_parse_context(
     THD *thd,
     partition_info *part_info,
     partition_element *current_partition,
-    partition_element *curr_part_elem)
+    partition_element *curr_part_elem,
+    bool is_add_or_reorganize_partition)
 : Parse_context(thd, thd->lex->current_select()),
-  Parser_partition_info(part_info, current_partition, curr_part_elem, NULL, 0)
+  Parser_partition_info(part_info, current_partition, curr_part_elem, NULL, 0),
+  is_add_or_reorganize_partition(is_add_or_reorganize_partition)
 {}
 
 
@@ -81,7 +90,8 @@ bool PT_subpartition::contextualize(Partition_parse_context *pc)
   pc->count_curr_subparts++;
 
   Partition_parse_context subpart_pc(pc->thd, part_info,
-                                     pc->current_partition, sub_p_elem);
+                                     pc->current_partition, sub_p_elem,
+                                     pc->is_add_or_reorganize_partition);
 
   if (options != NULL)
   {
@@ -182,7 +192,7 @@ bool PT_part_values_in_item::contextualize(Partition_parse_context *pc)
 
   if (part_info->num_columns != 1U)
   {
-    if (!pc->thd->lex->is_partition_management() ||
+    if (!pc->is_add_or_reorganize_partition ||
         part_info->num_columns == 0 ||
         part_info->num_columns > MAX_REF_PARTS)
     {
@@ -232,14 +242,14 @@ bool PT_part_definition::contextualize(Partition_parse_context *pc)
     return true;
 
   THD * const thd= pc->thd;
-  LEX * const lex= thd->lex;
   partition_info * const part_info= pc->part_info;
 
   auto * const curr_part= new (pc->thd->mem_root) partition_element();
   if (curr_part == NULL)
     return true;
 
-  Partition_parse_context ppc(pc->thd, part_info, curr_part, curr_part);
+  Partition_parse_context ppc(pc->thd, part_info, curr_part, curr_part,
+                              pc->is_add_or_reorganize_partition);
 
   if (!curr_part || part_info->partitions.push_back(curr_part))
     return true;
@@ -259,7 +269,7 @@ bool PT_part_definition::contextualize(Partition_parse_context *pc)
   switch (type) {
   case partition_type::HASH:
     {
-      if (!lex->is_partition_management())
+      if (!pc->is_add_or_reorganize_partition)
       {
         if (part_info->part_type == partition_type::RANGE)
         {
@@ -282,7 +292,7 @@ bool PT_part_definition::contextualize(Partition_parse_context *pc)
     break;
   case partition_type::RANGE:
     {
-      if (!lex->is_partition_management())
+      if (!pc->is_add_or_reorganize_partition)
       {
         if (part_info->part_type != partition_type::RANGE)
         {
@@ -314,7 +324,7 @@ bool PT_part_definition::contextualize(Partition_parse_context *pc)
     break;
   case partition_type::LIST:
     {
-      if (!lex->is_partition_management())
+      if (!pc->is_add_or_reorganize_partition)
       {
         if (part_info->part_type != partition_type::LIST)
         {
@@ -579,7 +589,7 @@ bool PT_partition::contextualize(Parse_context *pc)
   if (super::contextualize(pc))
     return true;
 
-  Partition_parse_context part_pc(pc->thd, &part_info);
+  Partition_parse_context part_pc(pc->thd, &part_info, false);
   if (part_type_def->contextualize(&part_pc))
     return true;
 
@@ -626,49 +636,5 @@ bool PT_partition::contextualize(Parse_context *pc)
     else if (count_curr_parts > 0)
       part_info.num_parts= count_curr_parts;
   }
-  return false;
-}
-
-
-bool PT_add_partition::contextualize(Parse_context *pc)
-{
-  if (super::contextualize(pc))
-    return true;
-
-  LEX * const lex= pc->thd->lex;
-  lex->alter_info.flags|= Alter_info::ALTER_ADD_PARTITION;
-  lex->no_write_to_binlog= no_write_to_binlog;
-  return false;
-}
-
-
-bool PT_add_partition_def_list::contextualize(Parse_context *pc)
-{
-  if (super::contextualize(pc))
-    return true;
-
-  Partition_parse_context part_pc(pc->thd, &part_info);
-  for (auto part_def : *def_list)
-  {
-    if (part_def->contextualize(&part_pc))
-      return true;
-  }
-  part_info.num_parts= part_info.partitions.elements;
-  DBUG_ASSERT(pc->thd->lex->part_info == NULL);
-  pc->thd->lex->part_info= &part_info;
-
-  return false;
-}
-
-
-bool PT_add_partition_num::contextualize(Parse_context *pc)
-{
-  if (super::contextualize(pc))
-    return true;
-
-  part_info.num_parts= num_parts;
-  DBUG_ASSERT(pc->thd->lex->part_info == NULL);
-  pc->thd->lex->part_info= &part_info;
-
   return false;
 }

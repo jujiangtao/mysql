@@ -1,17 +1,24 @@
 /* Copyright (c) 2006, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA */
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef SQL_INSERT_INCLUDED
 #define SQL_INSERT_INCLUDED
@@ -19,15 +26,15 @@
 #include <stddef.h>
 #include <sys/types.h>
 
-#include "handler.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_sqlcommand.h"
-#include "query_result.h"         // Query_result_interceptor
-#include "sql_cmd_dml.h"          // Sql_cmd_dml
-#include "sql_data_change.h"      // enum_duplicates
-#include "sql_list.h"
-#include "table.h"
+#include "sql/handler.h"
+#include "sql/query_result.h"     // Query_result_interceptor
+#include "sql/sql_cmd_dml.h"      // Sql_cmd_dml
+#include "sql/sql_data_change.h"  // enum_duplicates
+#include "sql/sql_list.h"
+#include "sql/table.h"
 
 class Alter_info;
 class Field;
@@ -154,6 +161,13 @@ public:
   bool send_eof() override;
   void abort_result_set() override;
   void cleanup() override;
+
+private:
+  /**
+    Indicates whether this statement should be written to binary log's
+    transactional cache in statement mode.
+  */
+  virtual bool stmt_binlog_is_trans() const;
 };
 
 
@@ -195,6 +209,7 @@ public:
   bool start_execution() override;
 
 private:
+  bool stmt_binlog_is_trans() const override;
   int binlog_show_create_table();
   void drop_open_table();
 };
@@ -211,6 +226,9 @@ protected:
   virtual bool precheck(THD *thd);
 
   virtual bool prepare_inner(THD *thd);
+
+private:
+  bool resolve_update_expressions(THD *thd);
 
 public:
   /*

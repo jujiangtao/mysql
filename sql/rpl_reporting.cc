@@ -1,33 +1,40 @@
-/* Copyright (c) 2007, 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2007, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "rpl_reporting.h"
+#include "sql/rpl_reporting.h"
 
-#include <stddef.h>
-
-#include "current_thd.h"
-#include "log.h"               // sql_print_warning
 #include "m_string.h"
 #include "my_dbug.h"
+#include "my_sys.h"
+#include "mysql/components/services/log_shared.h"
 #include "mysql/service_my_snprintf.h"
-#include "mysqld.h"            // slave_trans_retries
 #include "mysqld_error.h"
-#include "sql_class.h"         // THD
-#include "sql_error.h"         // Diagnostics_area
+#include "sql/current_thd.h"
+#include "sql/log.h"
+#include "sql/mysqld.h"        // slave_trans_retries
+#include "sql/sql_class.h"     // THD
+#include "sql/sql_error.h"     // Diagnostics_area
+#include "sql/transaction_info.h"
 #include "thr_mutex.h"
-#include "transaction_info.h"
 
 Slave_reporting_capability::Slave_reporting_capability(char const *thread_name)
   : m_thread_name(thread_name)
@@ -127,7 +134,6 @@ Slave_reporting_capability::va_report(loglevel level, int err_code,
                                       const char *msg, va_list args) const
 {
   THD *thd= current_thd;
-  void (*report_function)(const char *, ...);
   char buff[MAX_SLAVE_ERRMSG];
   char *pbuff= buff;
   char *curr_buff;
@@ -150,13 +156,9 @@ Slave_reporting_capability::va_report(loglevel level, int err_code,
     pbuffsize= sizeof(m_last_error.message);
     m_last_error.number = err_code;
     m_last_error.update_timestamp();
-    report_function= sql_print_error;
     break;
   case WARNING_LEVEL:
-    report_function= sql_print_warning;
-    break;
   case INFORMATION_LEVEL:
-    report_function= sql_print_information;
     break;
   default:
     DBUG_ASSERT(0);                            // should not come here
@@ -170,10 +172,14 @@ Slave_reporting_capability::va_report(loglevel level, int err_code,
   mysql_mutex_unlock(&err_lock);
 
   /* If the msg string ends with '.', do not add a ',' it would be ugly */
-  report_function("Slave %s%s: %s%s Error_code: %d",
-                  m_thread_name, get_for_channel_str(false), pbuff,
-                  (curr_buff[0] && *(strend(curr_buff)-1) == '.') ? "" : ",",
-                  err_code);
+  LogEvent().type(LOG_TYPE_ERROR)
+            .prio(level)
+            .errcode(err_code)
+            .subsys("replication")
+            .message("Slave %s%s: %s%s Error_code: %d",
+                     m_thread_name, get_for_channel_str(false), pbuff,
+                     (curr_buff[0] && *(strend(curr_buff)-1) == '.') ? "" : ",",
+                     err_code);
 }
 
 Slave_reporting_capability::~Slave_reporting_capability()

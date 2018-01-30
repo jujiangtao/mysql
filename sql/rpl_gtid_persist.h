@@ -1,19 +1,24 @@
 /* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
-   This program is free software; you can redistribute it and/or
-   modify it under the terms of the GNU General Public License as
-   published by the Free Software Foundation; version 2 of the
-   License.
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
 
-   This program is distributed in the hope that it will be useful, but
-   WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
-   General Public License for more details.
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
-   02110-1301 USA */
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef RPL_GTID_PERSIST_H_
 #define RPL_GTID_PERSIST_H_
@@ -27,13 +32,13 @@
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "mysqld_error.h"
-#include "rpl_gtid.h"
-#include "rpl_table_access.h"        // System_table_access
-#include "sql_class.h"               // Open_tables_backup
-#include "table.h"
+#include "sql/rpl_gtid.h"
+#include "sql/rpl_table_access.h"    // System_table_access
+#include "sql/sql_class.h"           // Open_tables_backup
+#include "sql/table.h"
+#include "sql/transaction_info.h"
+#include "sql/xa.h"
 #include "thr_lock.h"
-#include "transaction_info.h"
-#include "xa.h"
 
 class Field;
 
@@ -72,8 +77,12 @@ public:
     @param table       Table to be closed
     @param error       If there was an error while updating the table
     @param need_commit Need to commit current transaction if it is true
+
+    @return
+      @retval true  failed
+      @retval false success
   */
-  void deinit(THD *thd, TABLE *table, bool error, bool need_commit);
+  bool deinit(THD *thd, TABLE *table, bool error, bool need_commit);
   /**
     Prepares before opening table.
     - set flags

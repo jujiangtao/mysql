@@ -4,13 +4,20 @@
 /* Copyright (c) 2006, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -19,15 +26,16 @@
 #include <stddef.h>
 #include <sys/types.h>
 
-#include "handler.h"
-#include "lock.h"                             // Tablespace_hash_set
 #include "my_bitmap.h"
 #include "my_inttypes.h"
-#include "partition_element.h"
-#include "sql_alloc.h"
-#include "sql_bitmap.h"                       // Bitmap
-#include "sql_data_change.h"                  // enum_duplicates
-#include "sql_list.h"
+#include "mysql/udf_registration_types.h"
+#include "sql/handler.h"
+#include "sql/lock.h"                         // Tablespace_hash_set
+#include "sql/partition_element.h"
+#include "sql/sql_alloc.h"
+#include "sql/sql_bitmap.h"                   // Bitmap
+#include "sql/sql_data_change.h"              // enum_duplicates
+#include "sql/sql_list.h"
 
 class Field;
 class Item;
@@ -285,10 +293,6 @@ public:
 
   Item *item_free_list;
 
-  struct st_ddl_log_memory_entry *first_log_entry;
-  struct st_ddl_log_memory_entry *exec_log_entry;
-  struct st_ddl_log_memory_entry *frm_log_entry;
-
   /*
     Bitmaps of partitions used by the current query.
     * read_partitions  - partitions to be used for reading.
@@ -342,7 +346,6 @@ public:
    ********************************************/
 
   longlong err_value;
-  char* part_info_string;                //!< Partition clause as string
 
   char *part_func_string;                //!< Partition expression as string
   char *subpart_func_string;             //!< Subpartition expression as string
@@ -362,7 +365,6 @@ public:
   partition_type part_type;
   partition_type subpart_type;
 
-  size_t part_info_len;
   size_t part_func_len;
   size_t subpart_func_len;
 
@@ -420,16 +422,13 @@ public:
     part_field_buffers(NULL), subpart_field_buffers(NULL),
     restore_part_field_ptrs(NULL), restore_subpart_field_ptrs(NULL),
     part_expr(NULL), subpart_expr(NULL), item_free_list(NULL),
-    first_log_entry(NULL), exec_log_entry(NULL), frm_log_entry(NULL),
     bitmaps_are_initialized(FALSE),
     list_array(NULL), err_value(0),
-    part_info_string(NULL),
     part_func_string(NULL), subpart_func_string(NULL),
     num_columns(0), table(NULL),
     default_engine_type(NULL),
     part_type(partition_type::NONE),
     subpart_type(partition_type::NONE),
-    part_info_len(0),
     part_func_len(0), subpart_func_len(0),
     num_parts(0), num_subparts(0),
     num_list_values(0), num_part_fields(0), num_subpart_fields(0),
@@ -450,8 +449,8 @@ public:
   }
   ~partition_info() {}
 
-  partition_info *get_clone(bool reset = false);
-  partition_info *get_full_clone();
+  partition_info *get_clone(THD *thd, bool reset = false);
+  partition_info *get_full_clone(THD *thd);
   bool set_named_partition_bitmap(const char *part_name, size_t length);
   bool set_partition_bitmaps(TABLE_LIST *table_list);
   bool set_read_partitions(List<String> *partition_names);
@@ -471,7 +470,7 @@ public:
                                         HA_CREATE_INFO *info,
                                         uint start_no);
   char *find_duplicate_field();
-  char *find_duplicate_name();
+  const char *find_duplicate_name();
   bool check_engine_mix(handlerton *engine_type, bool default_engine);
   bool check_range_constants(THD *thd);
   bool check_list_constants(THD *thd);
@@ -490,7 +489,8 @@ public:
   bool fix_parser_data(THD *thd);
   bool set_part_expr(char *start_token, Item *item_ptr,
                      char *end_token, bool is_subpart);
-  static int compare_column_values(const void *a, const void *b);
+  static bool compare_column_values(
+    const part_column_list_val *a, const part_column_list_val *b);
   bool set_up_charset_field_preps();
   bool check_partition_field_length();
   void set_show_version_string(String *packet);

@@ -1,18 +1,26 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2016, Oracle and/or its affiliates. All rights reserved.
+Copyright (c) 1995, 2017, Oracle and/or its affiliates. All rights reserved.
 
 This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+the terms of the GNU General Public License, version 2.0, as published by the
+Free Software Foundation.
+
+This program is also distributed with certain software (including but not
+limited to OpenSSL) that is licensed under separate terms, as designated in a
+particular file or component or in included license documentation. The authors
+of MySQL hereby grant you an additional permission to link the program and
+your derivative works with the separately licensed software that they have
+included with MySQL.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+FOR A PARTICULAR PURPOSE. See the GNU General Public License, version 2.0,
+for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA
+51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 *****************************************************************************/
 
@@ -145,11 +153,17 @@ typedef ib_bpmutex_t BPageMutex;
 typedef ib_mutex_t BufListMutex;
 typedef ib_mutex_t FlushListMutex;
 typedef BPageMutex BufPoolZipMutex;
+#ifndef UNIV_HOTBACKUP
 typedef rw_lock_t BPageLock;
+#endif /* !UNIV_HOTBACKUP */
 
 /** Page identifier. */
 class page_id_t {
 public:
+	/** Default constructor */
+	page_id_t() : m_space(), m_page_no(), m_fold()
+	{
+	}
 
 	/** Constructor from (space, page_no).
 	@param[in]	space	tablespace id
@@ -245,11 +259,11 @@ private:
 	@param[in,out]	out	the output stream
 	@param[in]	page_id	the page_id_t object to be printed
 	@return the output stream */
-        friend
-        std::ostream&
-        operator<<(
-                std::ostream&           out,
-                const page_id_t&        page_id);
+	friend
+	std::ostream&
+	operator<<(
+		std::ostream&		out,
+		const page_id_t&	page_id);
 };
 
 /** Print the given page_id_t object.

@@ -1,22 +1,27 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef SQL_AUTHENTICATION_INCLUDED
 #define SQL_AUTHENTICATION_INCLUDED
-
-#include "my_config.h"
 
 #include <sys/types.h>
 
@@ -26,10 +31,12 @@
 #include "mysql/plugin.h"
 #include "mysql/plugin_auth.h"          // MYSQL_SERVER_AUTH_INFO
 #include "mysql/plugin_auth_common.h"
+#include "mysql/udf_registration_types.h"
 #include "mysql_com.h"
-#include "sql_plugin.h"
-#include "sql_plugin_ref.h"             // plugin_ref
-#include "thr_malloc.h"
+#include "sql/sql_plugin_ref.h"         // plugin_ref
+#include "sql/thr_malloc.h"
+
+#include <string>
 
 class THD;
 
@@ -37,7 +44,6 @@ typedef struct charset_info_st CHARSET_INFO;
 typedef struct st_mysql_show_var SHOW_VAR;
 class ACL_USER;
 class Protocol_classic;
-class String;
 
 typedef struct st_net NET;
 
@@ -95,12 +101,15 @@ struct MPVIO_EXT : public MYSQL_PLUGIN_VIO
 };
 
 #if defined(HAVE_OPENSSL)
-#ifndef HAVE_YASSL
+class String;
+
 bool init_rsa_keys(void);
 void deinit_rsa_keys(void);
 int show_rsa_public_key(THD *thd, SHOW_VAR *var, char *buff);
 
+#ifndef HAVE_YASSL
 typedef struct rsa_st RSA;
+#endif
 class Rsa_authentication_keys
 {
 private:
@@ -108,15 +117,24 @@ private:
   RSA *m_private_key;
   int m_cipher_len;
   char *m_pem_public_key;
+  char **m_private_key_path;
+  char **m_public_key_path;
 
   void get_key_file_path(char *key, String *key_file_path);
   bool read_key_file(RSA **key_ptr, bool is_priv_key, char **key_text_buffer);
 
 public:
-  Rsa_authentication_keys();
+  Rsa_authentication_keys(char **private_key_path,
+                          char **public_key_path)
+    : m_public_key(0),
+      m_private_key(0),
+      m_cipher_len(0),
+      m_pem_public_key(0),
+      m_private_key_path(private_key_path),
+      m_public_key_path(public_key_path)
+  {}
   ~Rsa_authentication_keys()
-  {
-  }
+  {}
 
   void free_memory();
   void *allocate_pem_buffer(size_t buffer_len);
@@ -139,7 +157,6 @@ public:
   
 };
 
-#endif /* HAVE_YASSL */
 #endif /* HAVE_OPENSSL */
 
 /* Data Structures */
@@ -148,9 +165,13 @@ extern LEX_CSTRING native_password_plugin_name;
 extern LEX_CSTRING sha256_password_plugin_name;
 extern LEX_CSTRING validate_password_plugin_name;
 extern LEX_CSTRING default_auth_plugin_name;
+extern LEX_CSTRING caching_sha2_password_plugin_name;
 
 extern bool allow_all_hosts;
 
 extern plugin_ref native_password_plugin;
+
+#define AUTH_DEFAULT_RSA_PRIVATE_KEY "private_key.pem"
+#define AUTH_DEFAULT_RSA_PUBLIC_KEY "public_key.pem"
 
 #endif /* SQL_AUTHENTICATION_INCLUDED */

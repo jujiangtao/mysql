@@ -1,13 +1,20 @@
-/* Copyright (c) 2003, 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2003, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -15,13 +22,15 @@
 
 /* Some useful string utility functions used by the MySQL server */
 
-#include "strfunc.h"
+#include "sql/strfunc.h"
 
 #include "m_ctype.h"                            // my_charset_latin1
 #include "my_dbug.h"
-#include "mysqld.h"                             // system_charset_info
-#include "sql_class.h"
-#include "sql_const.h"
+#include "mysql/udf_registration_types.h"
+#include "sql/session_tracker.h"
+#include "sql/sql_class.h"
+#include "sql/sql_const.h"
+#include "sql/table.h"
 #include "sql_string.h"
 #include "typelib.h"                            // TYPELIB
 
@@ -46,7 +55,7 @@
 
 static const char field_separator=',';
 
-ulonglong find_set(TYPELIB *lib, const char *str, size_t length,
+ulonglong find_set(const TYPELIB *lib, const char *str, size_t length,
                    const CHARSET_INFO *cs,
                    char **err_pos, uint *err_len, bool *set_warning)
 {
@@ -341,4 +350,3 @@ char *flagset_to_string(THD *thd, LEX_STRING *result, ulonglong set,
 
   return result->str;
 }
-

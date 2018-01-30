@@ -1,14 +1,4 @@
-# The include statement below is a temp one for tests that are yet to
-#be ported to run with InnoDB,
-#but needs to be kept for tests that would need MyISAM in future.
---source include/force_myisam_default.inc
-
 --source include/have_ndb.inc
-
---disable_warnings
-drop table if exists t1;
-drop database if exists test2;
---enable_warnings
 
 #
 # Minimal NDB blobs test.

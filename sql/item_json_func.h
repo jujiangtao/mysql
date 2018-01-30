@@ -4,13 +4,20 @@
 /* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -21,21 +28,24 @@
 #include <utility>              // std::forward
 
 #include "binary_log_types.h"
-#include "enum_query_type.h"
-#include "field.h"
-#include "item.h"
-#include "item_func.h"
-#include "item_strfunc.h"       // Item_str_func
-#include "json_path.h"          // Json_path
 #include "m_ctype.h"
-#include "mem_root_array.h"     // Mem_root_array
-#include "my_decimal.h"
 #include "my_inttypes.h"
 #include "my_time.h"
+#include "mysql/udf_registration_types.h"
 #include "mysql_com.h"
-#include "parse_tree_node_base.h"
 #include "prealloced_array.h"   // Prealloced_array
+#include "sql/enum_query_type.h"
+#include "sql/field.h"
+#include "sql/item.h"
+#include "sql/item_func.h"
+#include "sql/item_strfunc.h"   // Item_str_func
+#include "sql/json_path.h"      // Json_path
+#include "sql/mem_root_array.h" // Mem_root_array
+#include "sql/my_decimal.h"
+#include "sql/parse_tree_node_base.h"
 #include "sql_string.h"
+#include "psi_memory_key.h"     // key_memory_JSON
+#include <vector>
 
 class Item_func_like;
 class Json_scalar_holder;
@@ -128,6 +138,8 @@ public:
 */
 class Item_json_func : public Item_func
 {
+  /// Can this function type be used in partial update?
+  virtual bool can_use_in_partial_update() const { return false; }
 protected:
   /// String used when reading JSON binary values or JSON text values.
   String m_value;
@@ -141,6 +153,12 @@ protected:
 
   type_conversion_status save_in_field_inner(Field *field, bool no_conversions)
     override;
+
+  /**
+    Target column for partial update, if this function is used in an
+    update statement and partial update can be used.
+  */
+  const Field_json *m_partial_update_column= nullptr;
 
 public:
   /**
@@ -171,6 +189,28 @@ public:
   void cleanup() override;
 
   Item_result cast_to_int_type() const override { return INT_RESULT; }
+
+  /**
+    Does this function call support partial update of the given JSON column?
+
+    JSON_SET, JSON_REPLACE and JSON_REMOVE support partial update of a JSON
+    column if the JSON column is the first argument of the function call, or if
+    the first argument is a sequence of nested JSON_SET, JSON_REPLACE and
+    JSON_REMOVE calls in which the JSON column is the first argument of the
+    inner function call.
+
+    For example, this expression can be used to partially update column
+    `json_col`:
+
+        JSON_SET(JSON_REPLACE(json_col, path1, val1), path2, val2)
+  */
+  bool supports_partial_update(const Field_json *field) const override;
+
+  /**
+    Mark this expression as used in partial update. Should only be
+    called if #supports_partial_update returns true.
+  */
+  void mark_for_partial_update(const Field_json *field);
 };
 
 /**
@@ -195,14 +235,10 @@ bool json_value(Item **args, uint arg_idx, Json_wrapper *result);
   @param[out] str           the string buffer
   @param[in]  func_name     the name of the function we are executing
   @param[out] wrapper       the JSON value wrapper
-  @param[in]  handle_numbers_as_double
-                            whether numbers should be handled as double. If set
-                            to TRUE, all numbers are parsed as DOUBLE
   @returns false if we found a value or NULL, true if not.
 */
 bool get_json_wrapper(Item **args, uint arg_idx, String *str,
-                      const char *func_name, Json_wrapper *wrapper,
-                      bool handle_numbers_as_double= false);
+                      const char *func_name, Json_wrapper *wrapper);
 
 /**
   Convert Json values or MySQL values to JSON.
@@ -251,7 +287,7 @@ bool get_json_atom_wrapper(Item **args, uint arg_idx,
 
   @returns True if the string could not be converted. False on success.
 */
-bool ensure_utf8mb4(String *val,
+bool ensure_utf8mb4(const String &val,
                     String *buf,
                     const char **resptr,
                     size_t *reslength,
@@ -467,6 +503,8 @@ public:
   }
 
   bool val_json(Json_wrapper *wr) override;
+
+  bool eq(const Item *item, bool binary_cmp) const override;
 };
 
 /**
@@ -492,7 +530,6 @@ public:
 class Item_func_json_insert :public Item_json_func
 {
   String m_doc_value;
-  Json_path_clone m_path;
 
 public:
   Item_func_json_insert(THD *thd, const POS &pos, PT_item_list *a)
@@ -510,7 +547,6 @@ public:
 class Item_func_json_array_insert :public Item_json_func
 {
   String m_doc_value;
-  Json_path_clone m_path;
 
 public:
   Item_func_json_array_insert(THD *thd, const POS &pos, PT_item_list *a)
@@ -531,14 +567,16 @@ class Item_func_json_set_replace :public Item_json_func
   const bool m_json_set;
   String m_doc_value;
   Json_path_clone m_path;
+  bool can_use_in_partial_update() const override { return true; }
 
 protected:
-  Item_func_json_set_replace(THD *thd, const POS &pos, PT_item_list *a, bool json_set)
-    : Item_json_func(thd, pos, a), m_json_set(json_set)
+  template <typename... Args>
+  Item_func_json_set_replace(bool json_set, Args&&... args)
+    : Item_json_func(std::forward<Args>(args)...), m_json_set(json_set)
   {}
 
 public:
-  bool val_json(Json_wrapper *wr);
+  bool val_json(Json_wrapper *wr) override;
 };
 
 /**
@@ -547,8 +585,9 @@ public:
 class Item_func_json_set :public Item_func_json_set_replace
 {
 public:
-  Item_func_json_set(THD *thd, const POS &pos, PT_item_list *a)
-    : Item_func_json_set_replace(thd, pos, a, true)
+  template <typename... Args>
+  Item_func_json_set(Args&&... args)
+    : Item_func_json_set_replace(true, std::forward<Args>(args)...)
   {}
 
   const char *func_name() const override { return "json_set"; }
@@ -560,8 +599,9 @@ public:
 class Item_func_json_replace :public Item_func_json_set_replace
 {
 public:
-  Item_func_json_replace(THD *thd, const POS &pos, PT_item_list *a)
-    : Item_func_json_set_replace(thd, pos, a, false)
+  template <typename... Args>
+  Item_func_json_replace(Args&&... args)
+    : Item_func_json_set_replace(false, std::forward<Args>(args)...)
   {}
 
   const char *func_name() const override { return "json_replace"; }
@@ -573,8 +613,9 @@ public:
 class Item_func_json_array :public Item_json_func
 {
 public:
-  Item_func_json_array(THD *thd, const POS &pos, PT_item_list *a)
-    : Item_json_func(thd, pos, a)
+  template <typename... Args>
+  Item_func_json_array(Args&&... args)
+    : Item_json_func(std::forward<Args>(args)...)
   {}
 
   const char *func_name() const override { return "json_array"; }
@@ -645,9 +686,13 @@ public:
 class Item_func_json_remove :public Item_json_func
 {
   String m_doc_value;
+  bool can_use_in_partial_update() const override { return true; }
 
 public:
-  Item_func_json_remove(THD *thd, const POS &pos, PT_item_list *a);
+  template <typename... Args>
+  Item_func_json_remove(Args&&... args)
+    : Item_json_func(std::forward<Args>(args)...)
+  {}
 
   const char *func_name() const override { return "json_remove"; }
 
@@ -655,16 +700,44 @@ public:
 };
 
 /**
-  Represents the JSON function JSON_MERGE()
+  Represents the JSON function JSON_MERGE_PRESERVE.
 */
-class Item_func_json_merge :public Item_json_func
+class Item_func_json_merge_preserve :public Item_json_func
 {
 public:
-  Item_func_json_merge(THD *thd, const POS &pos, PT_item_list *a)
+  Item_func_json_merge_preserve(THD *thd, const POS &pos, PT_item_list *a)
     : Item_json_func(thd, pos, a)
   {}
 
-  const char *func_name() const override { return "json_merge"; }
+  const char *func_name() const override { return "json_merge_preserve"; }
+
+  bool val_json(Json_wrapper *wr) override;
+};
+
+/**
+  Represents the JSON function JSON_MERGE. It is a deprecated alias
+  for JSON_MERGE_PRESERVE.
+*/
+class Item_func_json_merge :public Item_func_json_merge_preserve
+{
+public:
+  Item_func_json_merge(THD *thd, const POS &pos, PT_item_list *a);
+
+  bool is_deprecated() const override { return true; }
+};
+
+
+/**
+  Represents the JSON function JSON_MERGE_PATCH.
+*/
+class Item_func_json_merge_patch :public Item_json_func
+{
+public:
+  Item_func_json_merge_patch(THD *thd, const POS &pos, PT_item_list *a)
+    : Item_json_func(thd, pos, a)
+  {}
+
+  const char *func_name() const override { return "json_merge_patch"; }
 
   bool val_json(Json_wrapper *wr) override;
 };
@@ -746,6 +819,32 @@ public:
 };
 
 /**
+  Class that represents the function JSON_STORAGE_SIZE.
+*/
+class Item_func_json_storage_size final : public Item_int_func
+{
+public:
+  Item_func_json_storage_size(const POS &pos, Item *a)
+    : Item_int_func(pos, a)
+  {}
+  const char *func_name() const override { return "json_storage_size"; }
+  longlong val_int() override;
+};
+
+/**
+  Class that represents the function JSON_STORAGE_FREE.
+*/
+class Item_func_json_storage_free final : public Item_int_func
+{
+public:
+  Item_func_json_storage_free(const POS &pos, Item *a)
+    : Item_int_func(pos, a)
+  {}
+  const char *func_name() const override { return "json_storage_free"; }
+  longlong val_int() override;
+};
+
+/**
   Turn a GEOMETRY value into a JSON value per the GeoJSON specification revison 1.0.
   This method is implemented in item_geofunc.cc.
 
@@ -808,6 +907,13 @@ bool get_json_string(Item *arg_item,
                      String *utf8_res,
                      const char **safep,
                      size_t *safe_length);
+using Json_dom_ptr= std::unique_ptr<Json_dom>;
 
+bool parse_json(const String &res,
+                uint arg_idx,
+                const char *func_name,
+                Json_dom_ptr *dom,
+                bool require_str_or_json,
+                bool *parse_error);
 
 #endif /* ITEM_JSON_FUNC_INCLUDED */

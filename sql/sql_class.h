@@ -1,13 +1,20 @@
 /* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -27,8 +34,25 @@
 #include "my_config.h"
 
 #include <limits.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+
+#include "m_ctype.h"
+#include "mysql/components/services/mysql_cond_bits.h"
+#include "mysql/components/services/mysql_mutex_bits.h"
+#include "mysql/components/services/psi_idle_bits.h"
+#include "mysql/components/services/psi_stage_bits.h"
+#include "mysql/components/services/psi_statement_bits.h"
+#include "mysql/components/services/psi_thread_bits.h"
+#include "mysql/components/services/psi_transaction_bits.h"
+#include "mysql/udf_registration_types.h"
+#include "pfs_thread_provider.h"
+#include "sql/dd/cache/dictionary_client.h"
+#include "sql/item_create.h"
+#include "sql/key.h"
+#include "sql/psi_memory_key.h"
+#include "sql/xa.h"
 #ifdef HAVE_SYS_TIME_H
 #include <sys/time.h>
 #endif
@@ -37,16 +61,11 @@
 #include <atomic>
 #include <memory>
 #include <new>
+#include <string>
 
-#include "auth/sql_security_ctx.h"        // Security_context
-#include "discrete_interval.h"            // Discrete_interval
 #include "dur_prop.h"                     // durability_properties
-#include "enum_query_type.h"
-#include "field.h"
-#include "handler.h"
-#include "item.h"
 #include "lex_string.h"
-#include "mdl.h"
+#include "map_helpers.h"
 #include "my_base.h"
 #include "my_command.h"
 #include "my_dbug.h"
@@ -73,35 +92,42 @@
 #include "mysql_com.h"
 #include "mysql_com_server.h"             // NET_SERVER
 #include "mysqld_error.h"
-#include "opt_costmodel.h"
-#include "opt_trace_context.h"            // Opt_trace_context
-#include "parse_location.h"
 #include "prealloced_array.h"
-#include "protocol.h"                     // Protocol
-#include "protocol_classic.h"             // Protocol_text
-#include "query_options.h"
-#include "rpl_context.h"                  // Rpl_thd_context
-#include "rpl_gtid.h"
-#include "session_tracker.h"              // Session_tracker
-#include "set_var.h"
-#include "sql_admin.h"
-#include "sql_cmd.h"
-#include "sql_connect.h"
-#include "sql_const.h"
-#include "sql_digest_stream.h"            // sql_digest_state
-#include "sql_error.h"
-#include "sql_lex.h"                      // LEX
-#include "sql_list.h"
-#include "sql_plugin.h"
-#include "sql_plugin_ref.h"
-#include "sql_profile.h"                  // PROFILING
-#include "sql_servers.h"
+#include "sql/auth/sql_security_ctx.h"    // Security_context
+#include "sql/discrete_interval.h"        // Discrete_interval
+#include "sql/enum_query_type.h"
+#include "sql/field.h"
+#include "sql/handler.h"
+#include "sql/item.h"
+#include "sql/mdl.h"
+#include "sql/opt_costmodel.h"
+#include "sql/opt_trace_context.h"        // Opt_trace_context
+#include "sql/parse_location.h"
+#include "sql/protocol.h"                 // Protocol
+#include "sql/protocol_classic.h"         // Protocol_text
+#include "sql/query_options.h"
+#include "sql/rpl_context.h"              // Rpl_thd_context
+#include "sql/rpl_gtid.h"
+#include "sql/session_tracker.h"          // Session_tracker
+#include "sql/set_var.h"
+#include "sql/sql_admin.h"
+#include "sql/sql_cmd.h"
+#include "sql/sql_connect.h"
+#include "sql/sql_const.h"
+#include "sql/sql_digest_stream.h"        // sql_digest_state
+#include "sql/sql_error.h"
+#include "sql/sql_lex.h"                  // LEX
+#include "sql/sql_list.h"
+#include "sql/sql_plugin.h"
+#include "sql/sql_plugin_ref.h"
+#include "sql/sql_profile.h"              // PROFILING
+#include "sql/sql_servers.h"
+#include "sql/sys_vars_resource_mgr.h"    // Session_sysvar_resource_manager
+#include "sql/system_variables.h"         // system_variables
+#include "sql/table.h"
+#include "sql/transaction_info.h"         // Ha_trx_info
 #include "sql_string.h"
-#include "sys_vars_resource_mgr.h"        // Session_sysvar_resource_manager
-#include "system_variables.h"             // system_variables
-#include "table.h"
 #include "thr_lock.h"
-#include "transaction_info.h"             // Ha_trx_info
 #include "violite.h"
 
 class Query_arena;
@@ -109,9 +135,11 @@ class Relay_log_info;
 class THD;
 class partition_info;
 class sp_rcontext;
+class user_var_entry;
 struct PSI_idle_locker;
 struct PSI_statement_locker;
 struct PSI_transaction_locker;
+struct User_level_lock;
 
 namespace dd {
   namespace cache {
@@ -129,7 +157,6 @@ class Rows_log_event;
 class Time_zone;
 class sp_cache;
 struct Binlog_user_var_event;
-struct Query_cache_block;
 
 typedef struct st_log_info LOG_INFO;
 typedef struct user_conn USER_CONN;
@@ -147,6 +174,15 @@ extern "C"
 void thd_exit_cond(void *opaque_thd, const PSI_stage_info *stage,
                    const char *src_function, const char *src_file,
                    int src_line);
+
+extern "C"
+void thd_enter_stage(void *opaque_thd, const PSI_stage_info *new_stage,
+                     PSI_stage_info *old_stage,
+                     const char *src_function, const char *src_file,
+                     int src_line);
+
+extern "C"
+void thd_set_waiting_for_disk_space(void *opaque_thd, const bool waiting);
 
 #define THD_STAGE_INFO(thd, stage) \
   (thd)->enter_stage(& stage, NULL, __func__, __FILE__, __LINE__)
@@ -278,14 +314,23 @@ public:
     void *m= alloc(sizeof(T));
     return m == NULL ? NULL : new (m) T;
   }
+  template<typename T> T *memdup_typed(const T *mem)
+  {
+    return static_cast<T *>(memdup_root(mem_root, mem, sizeof(T)));
+  }
   inline char *mem_strdup(const char *str)
   { return strdup_root(mem_root,str); }
-  inline char *strmake(const char *str, size_t size)
+  inline char *strmake(const char *str, size_t size) const
   { return strmake_root(mem_root,str,size); }
   inline void *memdup(const void *str, size_t size)
   { return memdup_root(mem_root,str,size); }
 
-  void set_query_arena(Query_arena *set);
+  /**
+    Copies memory-managing members from `set`. No references are kept to it.
+
+    @param set A Query_arena from which members are copied.
+  */
+  void set_query_arena(const Query_arena *set);
 
   void free_items();
   /* Close the active state associated with execution of this statement */
@@ -347,8 +392,8 @@ public:
 
   ~Prepared_statement_map();
 private:
-  HASH st_hash;
-  HASH names_hash;
+  malloc_unordered_map<ulong, std::unique_ptr<Prepared_statement>> st_hash;
+  collation_unordered_map<std::string, Prepared_statement *> names_hash;
   Prepared_statement *m_last_found_statement;
 };
 
@@ -676,6 +721,9 @@ public:
                                 MYSQL_LOCK *lock,
                                 size_t reopen_count);
   bool reopen_tables(THD *thd);
+  void rename_locked_table(TABLE_LIST *old_table_list,
+                           const char *new_db, const char *new_table_name,
+                           MDL_ticket *target_mdl_ticket);
 };
 
 
@@ -890,6 +938,12 @@ private:
   */
   LEX_CSTRING m_db;
 
+  /**
+    Resource group context indicating the current resource group
+    and the name of the resource group to switch to during execution
+    of a query.
+  */
+  resourcegroups::Resource_group_ctx m_resource_group_ctx;
 public:
 
   /**
@@ -946,11 +1000,6 @@ public:
   */
   static const char * const DEFAULT_WHERE;
 
-  /*
-    'first_query_cache_block' should be accessed only via query cache
-    functions and methods to maintain proper locking.
-  */
-  Query_cache_block *first_query_cache_block;
   /** Aditional network instrumentation for the server only. */
   NET_SERVER m_net_server_extension;
   /**
@@ -960,7 +1009,8 @@ public:
     so a lock is needed to prevent race conditions.
     Protected by @c LOCK_thd_data.
   */
-  HASH    user_vars;			// hash for user variables
+  collation_unordered_map<std::string, unique_ptr_with_deleter<user_var_entry>>
+    user_vars{system_charset_info, key_memory_user_var_entry};
   String  convert_buffer;               // buffer for charset conversions
   struct  rand_struct rand;		// used for authentication
   struct  System_variables variables;	// Changeable local variables
@@ -1043,7 +1093,7 @@ public:
     avoid crashes in following functions:
       explain_single_table_modification
       explain_query
-      mysql_explain_other
+      Sql_cmd_explain_other_thread::execute
     When doing EXPLAIN CONNECTION:
       all explain code assumes that this mutex is already taken.
     When doing ordinary EXPLAIN:
@@ -1217,7 +1267,6 @@ public:
                    const char *calling_func,
                    const char *calling_file,
                    const unsigned int calling_line);
-
   const char *get_proc_info() const
   { return proc_info; }
 
@@ -1230,13 +1279,15 @@ public:
 
   ulong max_client_packet_length;
 
-  HASH		handler_tables_hash;
+  collation_unordered_map<std::string, unique_ptr_my_free<TABLE_LIST>>
+    handler_tables_hash{&my_charset_latin1, key_memory_THD_handler_tables_hash};
   /*
     A thread can hold named user-level locks. This variable
     contains granted tickets if a lock is present. See item_func.cc and
     chapter 'Miscellaneous functions', for functions GET_LOCK, RELEASE_LOCK.
   */
-  HASH ull_hash;
+  malloc_unordered_map<std::string, User_level_lock*> ull_hash{
+    key_memory_User_level_lock};
 #ifndef DBUG_OFF
   uint dbug_sentry; // watch out for memory corruption
 #endif
@@ -1249,7 +1300,7 @@ public:
     The mutex used with current_cond.
     @see current_cond
   */
-  mysql_mutex_t * volatile current_mutex;
+  std::atomic<mysql_mutex_t *> current_mutex;
   /**
     Pointer to the condition variable the thread owning this THD
     is currently waiting for. If the thread is not waiting, the
@@ -1259,7 +1310,7 @@ public:
     thread will broadcast on this condition variable so that the
     thread can be unstuck.
   */
-  mysql_cond_t * volatile current_cond;
+  std::atomic<mysql_cond_t *> current_cond;
   /**
     Condition variable used for waiting by the THR_LOCK.c subsystem.
   */
@@ -1472,6 +1523,11 @@ public:
   struct st_thd_timer_info *timer_cache;
 
 private:
+  /*
+    Indicates that the command which is under execution should ignore the
+    'read_only' and 'super_read_only' options.
+  */
+  bool skip_readonly_check;
   /**
     Indicate if the current statement should be discarded
     instead of written to the binlog.
@@ -1534,6 +1590,22 @@ private:
   NET     net;                          // client connection descriptor
   String  packet;                       // dynamic buffer for network I/O
 public:
+  void set_skip_readonly_check()
+  {
+    skip_readonly_check= true;
+  }
+
+  bool is_cmd_skip_readonly()
+  {
+    return skip_readonly_check;
+  }
+
+  void reset_skip_readonly_check()
+  {
+    if (skip_readonly_check)
+      skip_readonly_check= false;
+  }
+
   void issue_unsafe_warnings();
 
   uint get_binlog_table_maps() const {
@@ -1659,13 +1731,47 @@ private:
     Attachable_trx &operator =(const Attachable_trx &);
   };
 
-  /*
-    Forward declaration of a read-write attachable transaction class.
-    Its exact definition is located in the gtid module that proves its
-    safe usage. Any potential customer to the class must beware of a danger
-    of screwing the global transaction state through ha_commit_{stmt,trans}.
+  /**
+    A derived from THD::Attachable_trx class allows updates in
+    the attachable transaction. Callers of the class methods must
+    make sure the attachable_rw won't cause deadlock with the main transaction.
+    The destructor does not invoke ha_commit_{stmt,trans} nor ha_rollback_trans
+    on purpose.
+    Burden to terminate the read-write instance also lies on the caller!
+    In order to use this interface it *MUST* prove that no side effect to
+    the global transaction state can be inflicted by a chosen method.
+
+    This class is being used only by class Gtid_table_access_context by
+    replication and by dd::info_schema::Table_statistics.
   */
-  class Attachable_trx_rw;
+
+  class Attachable_trx_rw : public Attachable_trx
+  {
+  public:
+    bool is_read_only() const { return false; }
+    Attachable_trx_rw(THD *thd, Attachable_trx *prev_trx= NULL)
+      : Attachable_trx(thd, prev_trx)
+    {
+      m_thd->tx_read_only= false;
+      m_thd->lex->sql_command= SQLCOM_END;
+      m_xa_state_saved= m_thd->get_transaction()->xid_state()->get_state();
+      thd->get_transaction()->xid_state()->set_state(XID_STATE::XA_NOTR);
+    }
+    ~Attachable_trx_rw()
+    {
+      /* The attachable transaction has been already committed */
+      DBUG_ASSERT(!m_thd->get_transaction()->is_active(Transaction_ctx::STMT)
+                  && !m_thd->get_transaction()->is_active(Transaction_ctx::SESSION));
+
+      m_thd->get_transaction()->xid_state()->set_state(m_xa_state_saved);
+      m_thd->tx_read_only= true;
+    }
+
+  private:
+    XID_STATE::xa_states m_xa_state_saved;
+    Attachable_trx_rw(const Attachable_trx_rw &);
+    Attachable_trx_rw &operator =(const Attachable_trx_rw &);
+  };
 
   Attachable_trx *m_attachable_trx;
 
@@ -2097,14 +2203,10 @@ public:
   { return system_thread != NON_SYSTEM_THREAD; }
 
   // Check if this THD belongs to a dd bootstrap system thread.
-  // For now we also count the thread (or rather THD) that is used
-  // during DDL log recovery as a DD system thread as we do not
-  // need to take MDL locks during this phase either.
   bool is_dd_system_thread() const
   {
     return system_thread == SYSTEM_THREAD_DD_INITIALIZE ||
-           system_thread == SYSTEM_THREAD_DD_RESTART ||
-           system_thread == SYSTEM_THREAD_DDL_LOG_RECOVERY;
+           system_thread == SYSTEM_THREAD_DD_RESTART;
   }
 
   // Check if this THD belongs to the initialize system thread. The
@@ -2283,7 +2385,7 @@ public:
     KILL_TIMEOUT=ER_QUERY_TIMEOUT,
     KILLED_NO_VALUE      /* means neither of the states */
   };
-  killed_state volatile killed;
+  std::atomic<killed_state> killed;
 
   /**
     When operation on DD tables is in progress then THD is set to kill immune
@@ -2543,7 +2645,7 @@ public:
       locked (if that would not be the case, you'll get a deadlock if someone
       does a THD::awake() on you).
     */
-    mysql_mutex_assert_not_owner(current_mutex);
+    mysql_mutex_assert_not_owner(current_mutex.load());
     mysql_mutex_lock(&LOCK_current_cond);
     current_mutex= NULL;
     current_cond= NULL;
@@ -2552,7 +2654,7 @@ public:
     DBUG_VOID_RETURN;
   }
 
-  virtual int is_killed() { return killed; }
+  virtual int is_killed() const final { return killed; }
   virtual THD* get_thd() { return this; }
 
   /**
@@ -2605,8 +2707,8 @@ public:
 
   inline bool is_strict_mode() const
   {
-    return MY_TEST(variables.sql_mode & (MODE_STRICT_TRANS_TABLES |
-                                         MODE_STRICT_ALL_TABLES));
+    return (variables.sql_mode & (MODE_STRICT_TRANS_TABLES |
+                                  MODE_STRICT_ALL_TABLES));
   }
   inline const CHARSET_INFO *collation()
   {
@@ -3015,6 +3117,15 @@ public:
   void begin_attachable_rw_transaction();
 
   /**
+    Start a read-write attachable transaction to write
+    to  mysql.table_stats and mysql.index_stats. All the
+    requirements and restrictions to Attachable_trx apply.
+    Additional requirements are documented along the class
+    declaration.
+  */
+  void begin_attachable_rw_i_s_transaction();
+
+  /**
     End an active attachable transaction. Applies to both the read-only
     and the read-write versions.
     Note, that the read-write attachable transaction won't be terminated
@@ -3028,6 +3139,12 @@ public:
   */
   bool is_attachable_ro_transaction_active() const
   { return m_attachable_trx != NULL && m_attachable_trx->is_read_only(); }
+
+  /**
+    @return true if there is an active attachable transaction.
+  */
+  bool is_attachable_transaction_active() const
+  { return m_attachable_trx != NULL; }
 
   /**
     @return true if there is an active rw attachable transaction.
@@ -3080,30 +3197,15 @@ public:
   inline void reset_current_stmt_binlog_format_row()
   {
     DBUG_ENTER("reset_current_stmt_binlog_format_row");
-    /*
-      If there are temporary tables, don't reset back to
-      statement-based. Indeed it could be that:
-      CREATE TEMPORARY TABLE t SELECT UUID(); # row-based
-      # and row-based does not store updates to temp tables
-      # in the binlog.
-      INSERT INTO u SELECT * FROM t; # stmt-based
-      and then the INSERT will fail as data inserted into t was not logged.
-      So we continue with row-based until the temp table is dropped.
-      If we are in a stored function or trigger, we mustn't reset in the
-      middle of its execution (as the binary logging way of a stored function
-      or trigger is decided when it starts executing, depending for example on
-      the caller (for a stored function: if caller is SELECT or
-      INSERT/UPDATE/DELETE...).
-    */
     DBUG_PRINT("debug",
-               ("temporary_tables: %d, in_sub_stmt: %d, system_thread: %s",
-                temporary_tables != NULL, in_sub_stmt != 0,
+               ("in_sub_stmt: %d, system_thread: %s",
+                in_sub_stmt != 0,
                 show_system_thread(system_thread)));
     if (in_sub_stmt == 0)
     {
       if (variables.binlog_format == BINLOG_FORMAT_ROW)
         set_current_stmt_binlog_format_row();
-      else if (temporary_tables == NULL)
+      else
         clear_current_stmt_binlog_format_row();
     }
     DBUG_VOID_RETURN;
@@ -3496,7 +3598,7 @@ public:
     allocate memory for a deep copy: current database may be freed after
     a statement is parsed but before it's executed.
   */
-  bool copy_db_to(char **p_db, size_t *p_db_length)
+  bool copy_db_to(char const **p_db, size_t *p_db_length) const
   {
     if (m_db.str == NULL)
     {
@@ -3507,7 +3609,24 @@ public:
     *p_db_length= m_db.length;
     return false;
   }
+
+  bool copy_db_to(char **p_db, size_t *p_db_length) const
+  {
+    return copy_db_to(const_cast<char const **>(p_db), p_db_length);
+  }
+
+
   thd_scheduler scheduler;
+
+
+  /**
+    Get resource group context.
+
+    @returns pointer to resource group context.
+  */
+
+  resourcegroups::Resource_group_ctx *resource_group_ctx()
+  {  return &m_resource_group_ctx; }
 
 public:
   /**
@@ -3515,13 +3634,20 @@ public:
     associated with this user session.
     @param psi Performance schema thread instrumentation
   */
-  void set_psi(PSI_thread *psi);
+  void set_psi(PSI_thread *psi)
+  {
+    m_psi= psi;
+  }
+
   /**
     Read the performance schema thread instrumentation
     associated with this user session.
     This method is safe to use from a different thread.
   */
-  PSI_thread* get_psi();
+  PSI_thread* get_psi()
+  {
+    return m_psi;
+  }
 
 private:
   /**
@@ -3531,7 +3657,7 @@ private:
     @sa set_psi
     @sa get_psi
   */
-  PSI_thread* m_psi;
+  std::atomic<PSI_thread*> m_psi;
 
 public:
   inline Internal_error_handler *get_internal_handler()
@@ -3896,7 +4022,27 @@ public:
   Session_tracker session_tracker;
   Session_sysvar_resource_manager session_sysvar_res_mgr;
 
-  void syntax_error_at(const YYLTYPE &location, const char *s= NULL);
+  void syntax_error()
+  {
+    syntax_error(ER_SYNTAX_ERROR);
+  }
+  void syntax_error(const char *format, ...);
+  void syntax_error(int mysql_errno, ...);
+
+  void syntax_error_at(const YYLTYPE &location)
+  {
+    syntax_error_at(location, ER_SYNTAX_ERROR);
+  }
+  void syntax_error_at(const YYLTYPE &location, const char *format, ...);
+  void syntax_error_at(const YYLTYPE &location, int mysql_errno, ...);
+
+  void vsyntax_error_at(const YYLTYPE &location,
+                        const char *format, va_list args)
+  {
+    vsyntax_error_at(location.raw.start, format, args);
+  }
+  void vsyntax_error_at(const char *pos_in_lexer_raw_buffer,
+                        const char *format, va_list args);
 
   /**
     Send name and type of result to client.
@@ -4003,6 +4149,15 @@ public:
 
   bool is_a_srv_session() const { return is_a_srv_session_thd; }
   void mark_as_srv_session() { is_a_srv_session_thd= true; }
+#ifndef DBUG_OFF
+  uint get_tmp_table_seq_id() { return tmp_table_seq_id++; }
+  void set_tmp_table_seq_id(uint arg) { tmp_table_seq_id= arg; }
+#endif
+
+  bool is_plugin_fake_ddl() const
+  { return m_is_plugin_fake_ddl; }
+  void mark_plugin_fake_ddl(bool flag)
+  { m_is_plugin_fake_ddl= flag; }
 private:
   /**
     Variable to mark if the object is part of a Srv_session object, which
@@ -4010,7 +4165,20 @@ private:
   */
   bool is_a_srv_session_thd;
 
+  /**
+    Creating or dropping plugin native table through a plugin service.
+    This variable enables the DDL command execution from
+    dd::create_native_table() to be executed without committing the
+    transaction.
+  */
+  bool m_is_plugin_fake_ddl;
+
 #ifndef DBUG_OFF
+  /**
+    Sequential number of internal tmp table created in the statement. Useful for
+    tracking tmp tables when number of them is involved in a query.
+  */
+  uint tmp_table_seq_id;
 public:
   /*
     The member serves to guard against duplicate use of the same xid
@@ -4018,6 +4186,35 @@ public:
   */
   XID debug_binlog_xid_last;
 #endif
+private:
+  /*
+    Flag set by my_write before waiting for disk space.
+
+    This is used by replication to decide if the I/O thread should be
+    killed or not when stopping the replication threads.
+
+    In ordinary STOP SLAVE case, the I/O thread will wait for disk space
+    or to be killed regardless of this flag value.
+
+    In server shutdown case, if this flag is true, the I/O thread will be
+    signaled with KILL_CONNECTION to abort the waiting, letting the server
+    to shutdown promptly.
+  */
+  bool waiting_for_disk_space= false;
+public:
+  /**
+    Set the waiting_for_disk_space flag.
+
+    @param waiting The value to set in the flag.
+  */
+  void set_waiting_for_disk_space(bool waiting)
+  {
+    waiting_for_disk_space= waiting;
+  }
+  /**
+    Returns the current waiting_for_disk_space flag value.
+  */
+  bool is_waiting_for_disk_space() const { return waiting_for_disk_space; }
 };
 
 
@@ -4153,12 +4350,6 @@ my_eof(THD *thd)
   }
 }
 
-#define tmp_disable_binlog(A)       \
-  {ulonglong tmp_disable_binlog__save_options= (A)->variables.option_bits; \
-  (A)->variables.option_bits&= ~OPTION_BIN_LOG
-
-#define reenable_binlog(A)   (A)->variables.option_bits= tmp_disable_binlog__save_options;}
-
 LEX_STRING *
 make_lex_string_root(MEM_ROOT *mem_root,
                      LEX_STRING *lex_str, const char* str, size_t length,
@@ -4277,6 +4468,32 @@ private:
   bool m_save_skip_gtid_rollback;
 };
 
+
+/**
+  RAII class to temporarily disable binlogging.
+*/
+
+class Disable_binlog_guard
+{
+public:
+  Disable_binlog_guard(THD *thd)
+    : m_thd(thd), m_binlog_disabled(thd->variables.option_bits & OPTION_BIN_LOG)
+  {
+    thd->variables.option_bits &= ~OPTION_BIN_LOG;
+  }
+
+  ~Disable_binlog_guard()
+  {
+    if (m_binlog_disabled)
+      m_thd->variables.option_bits |= OPTION_BIN_LOG;
+  }
+
+private:
+  THD * const m_thd;
+  const bool m_binlog_disabled;
+};
+
+
 /**
   RAII class which allows to save, clear and store binlog format state
   There are two variables in THD class that will decide the binlog
@@ -4312,6 +4529,60 @@ private:
   THD *m_thd;
   ulong m_global_binlog_format;
   enum_binlog_format m_current_stmt_binlog_format;
+};
+
+
+/**
+  RAII class to temporarily turn off SQL modes that affect parsing
+  of expressions. Can also be used when printing expressions even
+  if it turns off more SQL modes than strictly necessary for it
+  (these extra modes are harmless as they do not affect expression
+  printing).
+*/
+class Sql_mode_parse_guard
+{
+public:
+  Sql_mode_parse_guard(THD *thd)
+    : m_thd(thd), m_old_sql_mode(thd->variables.sql_mode)
+  {
+    /*
+      Switch off modes which can prevent normal parsing of expressions:
+
+      - MODE_REAL_AS_FLOAT            affect only CREATE TABLE parsing
+      + MODE_PIPES_AS_CONCAT          affect expression parsing
+      + MODE_ANSI_QUOTES              affect expression parsing
+      + MODE_IGNORE_SPACE             affect expression parsing
+      - MODE_NOT_USED                 not used :)
+      * MODE_ONLY_FULL_GROUP_BY       affect execution
+      * MODE_NO_UNSIGNED_SUBTRACTION  affect execution
+      - MODE_NO_DIR_IN_CREATE         affect table creation only
+      - MODE_POSTGRESQL               compounded from other modes
+      - MODE_ORACLE                   compounded from other modes
+      - MODE_MSSQL                    compounded from other modes
+      - MODE_DB2                      compounded from other modes
+      - MODE_MAXDB                    affect only CREATE TABLE parsing
+      - MODE_NO_KEY_OPTIONS           affect only SHOW
+      - MODE_NO_TABLE_OPTIONS         affect only SHOW
+      - MODE_NO_FIELD_OPTIONS         affect only SHOW
+      - MODE_MYSQL323                 affect only SHOW
+      - MODE_MYSQL40                  affect only SHOW
+      - MODE_ANSI                     compounded from other modes
+                                      (+ transaction mode)
+      ? MODE_NO_AUTO_VALUE_ON_ZERO    affect UPDATEs
+      + MODE_NO_BACKSLASH_ESCAPES     affect expression parsing
+    */
+    thd->variables.sql_mode&= ~(MODE_PIPES_AS_CONCAT | MODE_ANSI_QUOTES |
+                                MODE_IGNORE_SPACE | MODE_NO_BACKSLASH_ESCAPES);
+  }
+
+  ~Sql_mode_parse_guard()
+  {
+    m_thd->variables.sql_mode= m_old_sql_mode;
+  }
+
+private:
+  THD *m_thd;
+  const sql_mode_t m_old_sql_mode;
 };
 
 

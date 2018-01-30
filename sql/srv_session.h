@@ -1,34 +1,43 @@
 /*  Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
 
-    This program is free software; you can redistribute it and/or
-    modify it under the terms of the GNU General Public License as
-    published by the Free Software Foundation; version 2 of the
-    License.
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License, version 2.0,
+    as published by the Free Software Foundation.
+
+    This program is also distributed with certain software (including
+    but not limited to OpenSSL) that is licensed under separate terms,
+    as designated in a particular file or component or in included license
+    documentation.  The authors of MySQL hereby grant you an additional
+    permission to link the program and your derivative works with the
+    separately licensed software that they have included with MySQL.
 
     This program is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-    GNU General Public License for more details.
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License, version 2.0, for more details.
 
     You should have received a copy of the GNU General Public License
     along with this program; if not, write to the Free Software
-    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA */
+    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #ifndef SRV_SESSION_H
 #define SRV_SESSION_H
 
 #include <stdint.h>
 
-#include "key.h"
-#include "lex_string.h"
 #include "my_command.h"
+#include "my_psi_config.h"
 #include "my_thread_local.h"
+#include "mysql/components/services/psi_statement_bits.h"
 #include "mysql/psi/mysql_statement.h"
 #include "mysql/service_command.h"
 #include "mysql/service_srv_session.h"
-#include "protocol_callback.h"
-#include "sql_class.h"
-#include "sql_error.h"
+#include "sql/item_create.h"
+#include "sql/key.h"
+#include "sql/protocol_callback.h"
+#include "sql/session_tracker.h"
+#include "sql/sql_class.h"
+#include "sql/sql_error.h"
 #include "violite.h"             /* enum_vio_type */
 
 struct st_plugin_int;
@@ -41,6 +50,9 @@ struct st_plugin_int;
   respective deinitialization.
 */
 
+#ifdef HAVE_PSI_STATEMENT_INTERFACE
+extern PSI_statement_info stmt_info_new_packet;
+#endif
 
 class Srv_session
 {
@@ -115,6 +127,11 @@ public:
     Returns the number currently running threads initialized by this class.
   */
   static unsigned int thread_count(const void *plugin_name);
+
+  /**
+    Check if current physical thread was created to be used with this class.
+  */
+  static bool is_srv_session_thread();
 
 
   /* Non-static members follow */

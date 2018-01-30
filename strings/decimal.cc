@@ -1,17 +1,29 @@
 /* Copyright (c) 2004, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
+
+   Without limiting anything contained in the foregoing, this file,
+   which is part of C Driver for MySQL (Connector/C), is also subject to the
+   Universal FOSS Exception, version 1.0, a copy of which can be found at
+   http://oss.oracle.com/licenses/universal-foss-exception.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA */
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 /*
 =======================================================================
@@ -97,18 +109,19 @@
       implementation-defined.
 */
 
-#include <decimal.h>
+#include "decimal.h"
+
 #include <limits.h>
-#include <m_ctype.h>
-#include <m_string.h>
 #include <math.h>
-#include <my_sys.h> /* for my_alloca */
-#include <myisampack.h>
 #include <string.h>
 #include <algorithm>
 
+#include "m_ctype.h"
+#include "m_string.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
+#include "my_sys.h" /* for my_alloca */
+#include "myisampack.h"
 
 /*
   Internally decimal numbers are stored base 10^9 (see DIG_BASE below)
@@ -140,6 +153,54 @@ static const dec1 frac_max[DIG_PER_DEC1-1]={
   900000000, 990000000, 999000000,
   999900000, 999990000, 999999000,
   999999900, 999999990 };
+
+static inline dec1 div_by_pow10(dec1 x, int p)
+{
+  /*
+    GCC can optimize division by a constant to a multiplication and some
+    shifts, which is faster than dividing by a variable, even taking into
+    account the extra cost of the switch. It is also (empirically on a Skylake)
+    faster than storing the magic multiplier constants in a table and doing it
+    ourselves. However, since the code is much bigger, we only use this in
+    a few select places.
+
+    Note the use of unsigned, which is faster for this specific operation.
+  */
+  DBUG_ASSERT(x >= 0);
+  switch (p) {
+    case 0: return static_cast<uint32_t>(x) / 1;
+    case 1: return static_cast<uint32_t>(x) / 10;
+    case 2: return static_cast<uint32_t>(x) / 100;
+    case 3: return static_cast<uint32_t>(x) / 1000;
+    case 4: return static_cast<uint32_t>(x) / 10000;
+    case 5: return static_cast<uint32_t>(x) / 100000;
+    case 6: return static_cast<uint32_t>(x) / 1000000;
+    case 7: return static_cast<uint32_t>(x) / 10000000;
+    case 8: return static_cast<uint32_t>(x) / 100000000;
+    default:
+      DBUG_ASSERT(FALSE);
+      return x / powers10[p];
+  }
+}
+
+static inline dec1 mod_by_pow10(dec1 x, int p)
+{
+  // See div_by_pow10 for rationale.
+  DBUG_ASSERT(x >= 0);
+  switch (p) {
+    case 1: return static_cast<uint32_t>(x) % 10;
+    case 2: return static_cast<uint32_t>(x) % 100;
+    case 3: return static_cast<uint32_t>(x) % 1000;
+    case 4: return static_cast<uint32_t>(x) % 10000;
+    case 5: return static_cast<uint32_t>(x) % 100000;
+    case 6: return static_cast<uint32_t>(x) % 1000000;
+    case 7: return static_cast<uint32_t>(x) % 10000000;
+    case 8: return static_cast<uint32_t>(x) % 100000000;
+    default:
+      DBUG_ASSERT(FALSE);
+      return x % powers10[p];
+  }
+}
 
 #define sanity(d) DBUG_ASSERT((d)->len >0)
 
@@ -211,6 +272,7 @@ static const dec1 frac_max[DIG_PER_DEC1-1]={
           (to)=a;                                                       \
         } while(0)
 
+ALWAYS_INLINE static int decimal_bin_size_inline(int precision, int scale);
 
 /*
   This is a direct loop unrolling of code that used to look like this:
@@ -259,20 +321,23 @@ static inline int count_leading_zeroes(int i, dec1 val)
  */
 static inline int count_trailing_zeroes(int i, dec1 val)
 {
+  DBUG_ASSERT(val >= 0);
+  uint32_t uval= val;
+
   int ret= 0;
   switch(i)
   {
   /* @note Intentional fallthrough in all case labels */
-  case 0: if ((val % 1) != 0) break; ++ret;  // Fall through.
-  case 1: if ((val % 10) != 0) break; ++ret;  // Fall through.
-  case 2: if ((val % 100) != 0) break; ++ret;  // Fall through.
-  case 3: if ((val % 1000) != 0) break; ++ret;  // Fall through.
-  case 4: if ((val % 10000) != 0) break; ++ret;  // Fall through.
-  case 5: if ((val % 100000) != 0) break; ++ret;  // Fall through.
-  case 6: if ((val % 1000000) != 0) break; ++ret;  // Fall through.
-  case 7: if ((val % 10000000) != 0) break; ++ret;  // Fall through.
-  case 8: if ((val % 100000000) != 0) break; ++ret;  // Fall through.
-  case 9: if ((val % 1000000000) != 0) break; ++ret;  // Fall through.
+  case 0: if ((uval % 1) != 0) break; ++ret;  // Fall through.
+  case 1: if ((uval % 10) != 0) break; ++ret;  // Fall through.
+  case 2: if ((uval % 100) != 0) break; ++ret;  // Fall through.
+  case 3: if ((uval % 1000) != 0) break; ++ret;  // Fall through.
+  case 4: if ((uval % 10000) != 0) break; ++ret;  // Fall through.
+  case 5: if ((uval % 100000) != 0) break; ++ret;  // Fall through.
+  case 6: if ((uval % 1000000) != 0) break; ++ret;  // Fall through.
+  case 7: if ((uval % 10000000) != 0) break; ++ret;  // Fall through.
+  case 8: if ((uval % 100000000) != 0) break; ++ret;  // Fall through.
+  case 9: if ((uval % 1000000000) != 0) break; ++ret;  // Fall through.
   default: { DBUG_ASSERT(FALSE); }
   }
   return ret;
@@ -316,7 +381,7 @@ void max_decimal(int precision, int frac, decimal_t *to)
 }
 
 
-static dec1 *remove_leading_zeroes(const decimal_t *from, int *intg_result)
+static inline dec1 *remove_leading_zeroes(const decimal_t *from, int *intg_result)
 {
   int intg= from->intg, i;
   dec1 *buf0= from->buf;
@@ -843,17 +908,12 @@ int decimal_shift(decimal_t *dec, int shift)
   Convert string to decimal
 
   SYNOPSIS
-    internal_str2decl()
+    string2decimal()
       from    - value to convert. Doesn't have to be \0 terminated!
       to      - decimal where where the result will be stored
                 to->buf and to->len must be set.
       end     - Pointer to pointer to end of string. Will on return be
 		set to the char after the last used character
-      fixed   - use to->intg, to->frac as limits for input number
-
-  NOTE
-    to->intg and to->frac can be modified even when fixed=1
-    (but only decreased, in this case)
 
   RETURN VALUE
     E_DEC_OK/E_DEC_TRUNCATED/E_DEC_OVERFLOW/E_DEC_BAD_NUM/E_DEC_OOM
@@ -862,7 +922,7 @@ int decimal_shift(decimal_t *dec, int shift)
 */
 
 int
-internal_str2dec(const char *from, decimal_t *to, char **end, bool fixed)
+string2decimal(const char *from, decimal_t *to, char **end)
 {
   const char *s= from, *s1, *endp, *end_of_string= *end;
   int i, intg, frac, error, intg1, frac1;
@@ -903,38 +963,17 @@ internal_str2dec(const char *from, decimal_t *to, char **end, bool fixed)
     goto fatal_error;
 
   error= 0;
-  if (fixed)
+
+  intg1=ROUND_UP(intg);
+  frac1=ROUND_UP(frac);
+  FIX_INTG_FRAC_ERROR(to->len, intg1, frac1, error);
+  if (unlikely(error))
   {
-    if (frac > to->frac)
-    {
-      error=E_DEC_TRUNCATED;
-      frac=to->frac;
-    }
-    if (intg > to->intg)
-    {
-      error=E_DEC_OVERFLOW;
-      intg=to->intg;
-    }
-    intg1=ROUND_UP(intg);
-    frac1=ROUND_UP(frac);
-    if (intg1+frac1 > to->len)
-    {
-      error= E_DEC_OOM;
-      goto fatal_error;
-    }
+    frac=frac1*DIG_PER_DEC1;
+    if (error == E_DEC_OVERFLOW)
+      intg=intg1*DIG_PER_DEC1;
   }
-  else
-  {
-    intg1=ROUND_UP(intg);
-    frac1=ROUND_UP(frac);
-    FIX_INTG_FRAC_ERROR(to->len, intg1, frac1, error);
-    if (unlikely(error))
-    {
-      frac=frac1*DIG_PER_DEC1;
-      if (error == E_DEC_OVERFLOW)
-        intg=intg1*DIG_PER_DEC1;
-    }
-  }
+
   /* Error is guranteed to be set here */
   to->intg=intg;
   to->frac=frac;
@@ -1059,7 +1098,7 @@ int double2decimal(double from, decimal_t *to)
   int res;
   DBUG_ENTER("double2decimal");
   end= buff + my_gcvt(from, MY_GCVT_ARG_DOUBLE, (int)sizeof(buff) - 1, buff, NULL);
-  res= internal_str2dec(buff, to, &end, FALSE);
+  res= string2decimal(buff, to, &end);
   DBUG_PRINT("exit", ("res: %d", res));
   DBUG_RETURN(res);
 }
@@ -1417,7 +1456,7 @@ int decimal2bin(decimal_t *from, uchar *to, int precision, int frac)
   if (intg1x)
   {
     int i=dig2bytes[intg1x];
-    dec1 x=(*buf1++ % powers10[intg1x]) ^ mask;
+    dec1 x= mod_by_pow10(*buf1++, intg1x) ^ mask;
     switch (i)
     {
       case 1: mi_int1store(to, x); break;
@@ -1445,7 +1484,7 @@ int decimal2bin(decimal_t *from, uchar *to, int precision, int frac)
         lim=(frac1 < frac0 ? DIG_PER_DEC1 : frac0x);
     while (frac1x < lim && dig2bytes[frac1x] == i)
       frac1x++;
-    x=(*buf1 / powers10[DIG_PER_DEC1 - frac1x]) ^ mask;
+    x=div_by_pow10(*buf1, DIG_PER_DEC1 - frac1x) ^ mask;
     switch (i)
     {
       case 1: mi_int1store(to, x); break;
@@ -1496,7 +1535,7 @@ int bin2decimal(const uchar *from, decimal_t *to, int precision, int scale)
   dec1 *buf=to->buf, mask=(*from & 0x80) ? 0 : -1;
   const uchar *stop;
   uchar *d_copy;
-  int bin_size= decimal_bin_size(precision, scale);
+  int bin_size= decimal_bin_size_inline(precision, scale);
 
   sanity(to);
   d_copy= (uchar*) my_alloca(bin_size);
@@ -1616,8 +1655,7 @@ int decimal_size(int precision, int scale)
   RETURN VALUE
     size in bytes
 */
-
-int decimal_bin_size(int precision, int scale)
+ALWAYS_INLINE static int decimal_bin_size_inline(int precision, int scale)
 {
   int intg=precision-scale,
       intg0=intg/DIG_PER_DEC1, frac0=scale/DIG_PER_DEC1,
@@ -1630,6 +1668,11 @@ int decimal_bin_size(int precision, int scale)
   DBUG_ASSERT(frac0x <= DIG_PER_DEC1);
   return intg0*sizeof(dec1)+dig2bytes[intg0x]+
          frac0*sizeof(dec1)+dig2bytes[frac0x];
+}
+
+int decimal_bin_size(int precision, int scale)
+{
+  return decimal_bin_size_inline(precision, scale);
 }
 
 /*
@@ -2142,7 +2185,7 @@ int decimal_cmp(const decimal_t *from1, const decimal_t *from2)
   if (likely(from1->sign == from2->sign))
     return do_sub(from1, from2, 0);
 
-  // Reject negative zero, cfr. internal_str2dec()
+  // Reject negative zero, cfr. string2decimal()
   DBUG_ASSERT(!(decimal_is_zero(from1) && from1->sign));
   DBUG_ASSERT(!(decimal_is_zero(from2) && from2->sign));
 

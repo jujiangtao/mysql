@@ -1,41 +1,52 @@
 /* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "dd/impl/types/foreign_key_element_impl.h"
+#include "sql/dd/impl/types/foreign_key_element_impl.h"
 
-#include <memory>
 #include <sstream>
+#include <string>
 
-#include "dd/impl/raw/raw_record.h"                  // Raw_record
-#include "dd/impl/sdi_impl.h"                        // sdi read/write functions
-#include "dd/impl/tables/foreign_key_column_usage.h" // Foreign_key_column_usage
-#include "dd/impl/transaction_impl.h"                // Open_dictionary_tables_ctx
-#include "dd/impl/types/entity_object_impl.h"
-#include "dd/impl/types/foreign_key_impl.h"          // Foreign_key_impl
-#include "dd/impl/types/table_impl.h"                // Table_impl
-#include "dd/properties.h"                           // Needed for destructor
-#include "dd/string_type.h"                          // dd::String_type
-#include "dd/types/column.h"                         // Column
-#include "dd/types/object_table.h"
-#include "dd/types/weak_object.h"
+#include "my_rapidjson_size_t.h"    // IWYU pragma: keep
+#include <rapidjson/document.h>
+#include <rapidjson/prettywriter.h>
+
 #include "m_string.h"
 #include "my_inttypes.h"
 #include "my_sys.h"
 #include "mysqld_error.h"                            // ER_*
-#include "rapidjson/document.h"
-#include "rapidjson/prettywriter.h"
+#include "sql/dd/impl/raw/raw_record.h"              // Raw_record
+#include "sql/dd/impl/sdi_impl.h"                    // sdi read/write functions
+#include "sql/dd/impl/tables/foreign_key_column_usage.h" // Foreign_key_column_usage
+#include "sql/dd/impl/transaction_impl.h"            // Open_dictionary_tables_ctx
+#include "sql/dd/impl/types/foreign_key_impl.h"      // Foreign_key_impl
+#include "sql/dd/impl/types/table_impl.h"            // Table_impl
+#include "sql/dd/string_type.h"                      // dd::String_type
+#include "sql/dd/types/column.h"                     // Column
+#include "sql/dd/types/object_table.h"
+#include "sql/dd/types/weak_object.h"
+
+namespace dd {
+class Entity_object_impl;
+}  // namespace dd
 
 using dd::tables::Foreign_key_column_usage;
 
@@ -45,23 +56,6 @@ class Foreign_key;
 class Object_key;
 class Sdi_rcontext;
 class Sdi_wcontext;
-
-///////////////////////////////////////////////////////////////////////////
-// Foreign_key_element implementation.
-///////////////////////////////////////////////////////////////////////////
-
-const Object_table &Foreign_key_element::OBJECT_TABLE()
-{
-  return Foreign_key_column_usage::instance();
-}
-
-///////////////////////////////////////////////////////////////////////////
-
-const Object_type &Foreign_key_element::TYPE()
-{
-  static Foreign_key_element_type s_instance;
-  return s_instance;
-}
 
 ///////////////////////////////////////////////////////////////////////////
 // Foreign_key_element_impl implementation.
@@ -85,7 +79,7 @@ bool Foreign_key_element_impl::validate() const
   {
     my_error(ER_INVALID_DD_OBJECT,
              MYF(0),
-             Foreign_key_element_impl::OBJECT_TABLE().name().c_str(),
+             DD_table::instance().name().c_str(),
              "No foreign key associated with this element.");
     return true;
   }
@@ -94,7 +88,7 @@ bool Foreign_key_element_impl::validate() const
   {
     my_error(ER_INVALID_DD_OBJECT,
              MYF(0),
-             Foreign_key_element_impl::OBJECT_TABLE().name().c_str(),
+             DD_table::instance().name().c_str(),
              "No Column is associated with this key element.");
     return true;
   }
@@ -103,7 +97,7 @@ bool Foreign_key_element_impl::validate() const
   {
     my_error(ER_INVALID_DD_OBJECT,
              MYF(0),
-             Foreign_key_element_impl::OBJECT_TABLE().name().c_str(),
+             DD_table::instance().name().c_str(),
              "Referenced column name is not set.");
     return true;
   }
@@ -224,10 +218,15 @@ Foreign_key_element_impl(const Foreign_key_element_impl &src,
 {}
 
 ///////////////////////////////////////////////////////////////////////////
-// Foreign_key_element_type implementation.
+
+const Object_table &Foreign_key_element_impl::object_table() const
+{
+  return DD_table::instance();
+}
+
 ///////////////////////////////////////////////////////////////////////////
 
-void Foreign_key_element_type::register_tables(Open_dictionary_tables_ctx *otx) const
+void Foreign_key_element_impl::register_tables(Open_dictionary_tables_ctx *otx)
 {
   otx->add_table<Foreign_key_column_usage>();
 }

@@ -1,13 +1,20 @@
 /* Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -23,9 +30,9 @@
 #include "my_inttypes.h"
 #include "my_io.h"            // mysql_com.h needs my_socket
 #include "mysql_com.h"        // Item_result
-#include "sql_alloc.h"        // sql_alloc
-#include "sql_array.h"        // Bounds_checked_array
-#include "sql_sort.h"         // Filesort_info
+#include "sql/sql_alloc.h"    // sql_alloc
+#include "sql/sql_array.h"    // Bounds_checked_array
+#include "sql/sql_sort.h"     // Filesort_info
 
 class Field;
 class Filesort;
@@ -76,7 +83,6 @@ struct st_sort_field {
   Item_result result_type;       ///< Type of item (not used for fields)
   enum_field_types field_type;   ///< Field type of the field or item
   bool reverse;                  ///< if descending sort
-  bool need_strnxfrm;            ///< If we have to use strnxfrm()
   bool is_varlen;                ///< If key part has variable length
   bool maybe_null;               ///< If key part is nullable
 };
@@ -255,12 +261,19 @@ private:
 <dt>@<hash@>
           <dd>  Optional 8 byte hash, used for GROUPing of JSON values.
 <dt>@<varkey@>
-          <dd>  Used for JSON values, the format is:
+          <dd>  Used for JSON and variable-length string values, the format is:
 </dl>
 @verbatim
-                |<null value>|<key length>|<JSON sort key>    |
-                / 1 byte     /   4 bytes  / key length bytes  /
+                |<null value>|<key length>|<sort key>        |
+                / 1 byte     /   4 bytes  / key length bytes /
 @endverbatim
+<dl>
+<dt>@<null value@>
+          <dd>  0x00 for NULL. 0xff for NULL under DESC sort. 0x01 for NOT NULL.
+<dt>@<key length@>
+          <dd>  The length of the sort key, *including* the four bytes for the
+                key length. Does not exist if the field is NULL.
+</dl>
  */
 class Sort_param {
   uint m_fixed_rec_length;    ///< Maximum length of a record, see above.
@@ -274,6 +287,7 @@ public:
   ha_rows num_examined_rows;  // Number of examined rows.
   TABLE *sort_form;           // For quicker make_sortkey.
   bool use_hash;              // Whether to use hash to distinguish cut JSON
+  bool m_force_stable_sort;   // Keep relative order of equal elements
 
   /**
     ORDER BY list with some precalculated info for filesort.
@@ -319,10 +333,16 @@ public:
     return m_using_packed_addons;
   }
 
-  /// Are we using varlen JSON key fields?
+  /// Are we using varlen key fields?
   bool using_varlen_keys() const
   {
     return m_num_varlen_keys > 0;
+  }
+
+  /// Are we using any JSON key fields?
+  bool using_json_keys() const
+  {
+    return m_num_json_keys > 0;
   }
 
   /// Are we using "addon fields"?
@@ -400,7 +420,6 @@ public:
 
   enum enum_sort_algorithm {
     FILESORT_ALG_NONE,
-    FILESORT_ALG_RADIX,
     FILESORT_ALG_STD_SORT,
     FILESORT_ALG_STD_STABLE
   };
@@ -411,12 +430,15 @@ public:
   static const uint size_of_varlength_field= 4;
 
 private:
-  /// Counts number of JSON keys
+  /// Counts number of varlen keys
   int count_varlen_keys() const;
+  /// Counts number of JSON keys
+  int count_json_keys() const;
 
   uint m_packable_length; ///< total length of fields which have a packable type
   bool m_using_packed_addons; ///< caches the value of using_packed_addons()
   int  m_num_varlen_keys;     ///< number of varlen keys
+  int  m_num_json_keys;       ///< number of JSON keys
 
 public:
   // Not copyable.

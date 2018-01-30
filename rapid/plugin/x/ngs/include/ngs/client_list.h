@@ -1,30 +1,36 @@
 /*
- * Copyright (c) 2015, 2016 Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
  *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License as
- * published by the Free Software Foundation; version 2 of the
- * License.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License, version 2.0,
+ * as published by the Free Software Foundation.
  *
+ * This program is also distributed with certain software (including
+ * but not limited to OpenSSL) that is licensed under separate terms,
+ * as designated in a particular file or component or in included license
+ * documentation.  The authors of MySQL hereby grant you an additional
+ * permission to link the program and your derivative works with the
+ * separately licensed software that they have included with MySQL.
+ *  
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License, version 2.0, for more details.
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
- * 02110-1301  USA
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
  */
 
 #ifndef _NGS_CLIENT_LIST_H_
 #define _NGS_CLIENT_LIST_H_
 
 #include <algorithm>
-#include <vector>
 #include <list>
-#include <ngs/thread.h>
-#include <ngs/interface/client_interface.h>
+#include <vector>
+
+#include "plugin/x/ngs/include/ngs/interface/client_interface.h"
+#include "plugin/x/ngs/include/ngs/thread.h"
 
 namespace ngs
 {
@@ -43,8 +49,18 @@ public:
   void remove(uint64_t client_id);
   Client_ptr find(const uint64_t client_id);
 
+  /**
+    Enumerate clients.
+
+    Each client present on the list is passed to 'matcher'
+    using it as functor which takes one argument.
+    Enumeration process can be stopped by 'matcher' any time,
+    its done by returning 'true'.
+   */
   template<typename Functor>
   void enumerate(Functor &matcher);
+  template<typename Functor>
+  void enumerate(const Functor &matcher);
 
   void get_all_clients(std::vector<Client_ptr> &result);
 private:
@@ -69,6 +85,24 @@ void Client_list::enumerate(Functor &matcher)
 {
   RWLock_readlock guard(m_clients_lock);
 
+  /*
+    Matcher can stop enumeration process by returning
+    'true'. 'std::find_if' is used as stoppable enumeration
+    dispatcher.
+   */
+  std::find_if(m_clients.begin(), m_clients.end(), matcher);
+}
+
+template<typename Functor>
+void Client_list::enumerate(const Functor &matcher)
+{
+  RWLock_readlock guard(m_clients_lock);
+
+  /*
+    Matcher can stop enumeration process by returning
+    'true'. 'std::find_if' is used as stoppable enumeration
+    dispatcher.
+   */
   std::find_if(m_clients.begin(), m_clients.end(), matcher);
 }
 

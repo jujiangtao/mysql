@@ -1,17 +1,24 @@
 /* Copyright (c) 2010, 2017, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
-  along with this program; if not, write to the Free Software Foundation,
-  51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+  along with this program; if not, write to the Free Software
+  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "storage/perfschema/pfs_visitor.h"
 
@@ -19,15 +26,15 @@
 
 #include "my_dbug.h"
 #include "my_sys.h"
-#include "mysqld.h"
-#include "mysqld_thd_manager.h"
-#include "pfs_account.h"
-#include "pfs_buffer_container.h"
-#include "pfs_host.h"
-#include "pfs_instr.h"
-#include "pfs_instr_class.h"
-#include "pfs_user.h"
-#include "sql_class.h"
+#include "sql/mysqld.h"
+#include "sql/mysqld_thd_manager.h"
+#include "sql/sql_class.h"
+#include "storage/perfschema/pfs_account.h"
+#include "storage/perfschema/pfs_buffer_container.h"
+#include "storage/perfschema/pfs_host.h"
+#include "storage/perfschema/pfs_instr.h"
+#include "storage/perfschema/pfs_instr_class.h"
+#include "storage/perfschema/pfs_user.h"
 
 /**
   @file storage/perfschema/pfs_visitor.cc
@@ -794,10 +801,7 @@ public:
   virtual void
   operator()(PFS_table_share *pfs)
   {
-    if (pfs->m_enabled)
-    {
-      m_visitor->visit_table_share(pfs);
-    }
+    m_visitor->visit_table_share(pfs);
   }
 
 private:
@@ -817,10 +821,7 @@ public:
     PFS_table_share *safe_share = sanitize_table_share(pfs->m_share);
     if (safe_share != NULL)
     {
-      if (safe_share->m_enabled)
-      {
-        m_visitor->visit_table(pfs);
-      }
+      m_visitor->visit_table(pfs);
     }
   }
 
@@ -873,11 +874,6 @@ PFS_object_iterator::visit_tables(PFS_table_share *share,
 {
   DBUG_ASSERT(visitor != NULL);
 
-  if (!share->m_enabled)
-  {
-    return;
-  }
-
   visitor->visit_table_share(share);
 
 #ifdef LATER
@@ -923,11 +919,6 @@ PFS_object_iterator::visit_table_indexes(PFS_table_share *share,
                                          PFS_object_visitor *visitor)
 {
   DBUG_ASSERT(visitor != NULL);
-
-  if (!share->m_enabled)
-  {
-    return;
-  }
 
   visitor->visit_table_share_index(share, index);
 
@@ -1312,49 +1303,6 @@ PFS_connection_transaction_visitor::visit_thread(PFS_thread *pfs)
     m_stat.aggregate(&event_name_array[m_index]);
   }
 }
-
-/** Disabled pending code review */
-#if 0
-/** Instance wait visitor */
-PFS_connection_all_transaction_visitor
-::PFS_connection_all_transaction_visitor()
-{}
-
-PFS_connection_all_transaction_visitor::~PFS_connection_all_transaction_visitor()
-{}
-
-void PFS_connection_all_transaction_visitor::visit_global()
-{
-  m_stat.aggregate(&global_transaction_stat);
-}
-
-void PFS_connection_all_transaction_visitor::visit_connection_slice(
-  PFS_connection_slice *pfs)
-{
-  PFS_transaction_stat *stat= pfs->m_instr_class_transactions_stats;
-  m_stat.aggregate(stat);
-}
-
-void PFS_connection_all_transaction_visitor::visit_host(PFS_host *pfs)
-{
-  visit_connection_slice(pfs);
-}
-
-void PFS_connection_all_transaction_visitor::visit_user(PFS_user *pfs)
-{
-  visit_connection_slice(pfs);
-}
-
-void PFS_connection_all_transaction_visitor::visit_account(PFS_account *pfs)
-{
-  visit_connection_slice(pfs);
-}
-
-void PFS_connection_all_transaction_visitor::visit_thread(PFS_thread *pfs)
-{
-  visit_connection_slice(pfs);
-}
-#endif
 
 PFS_connection_error_visitor::PFS_connection_error_visitor(
   PFS_error_class *klass, int error_index)

@@ -1,30 +1,37 @@
 /* Copyright (c) 2002, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA */
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include <errmsg.h>
-#include <m_string.h>
-#include <my_getopt.h>
-#include <my_sys.h>
 #include <mysql.h>
 #include <mysql/client_plugin.h>
 #include <mysqld_error.h>
-#include <sql_common.h>
 
+#include "errmsg.h"
+#include "m_string.h"
 #include "my_default.h"
+#include "my_getopt.h"
+#include "my_sys.h"
 #include "mysql/service_mysql_alloc.h"
 #include "print_version.h"
+#include "sql_common.h"
 #include "welcome_copyright_notice.h"           /* ORACLE_WELCOME_COPYRIGHT_NOTICE */
 
 #define MAX_TEST_QUERY_LENGTH 300 /* MAX QUERY BUFFER LENGTH */
@@ -44,7 +51,6 @@ static unsigned int  opt_port;
 static bool tty_password= 0;
 static int opt_silent= 0;
 
-static bool opt_secure_auth= 1;
 static MYSQL *mysql= 0;
 static char current_db[]= "client_test_db";
 static unsigned int test_count= 0;
@@ -266,6 +272,7 @@ base on Windows.
 static MYSQL *mysql_client_init(MYSQL* con)
 {
  MYSQL* res = mysql_init(con);
+ uint ssl_mode= SSL_MODE_REQUIRED;
  #if defined (_WIN32)
  if (res && shared_memory_base_name)
  mysql_options(res, MYSQL_SHARED_MEMORY_BASE_NAME, shared_memory_base_name);
@@ -276,8 +283,7 @@ static MYSQL *mysql_client_init(MYSQL* con)
  if (opt_default_auth && *opt_default_auth)
  mysql_options(res, MYSQL_DEFAULT_AUTH, opt_default_auth);
 
- if (!opt_secure_auth)
- mysql_options(res, MYSQL_SECURE_AUTH, (char*)&opt_secure_auth);
+ mysql_options(res, MYSQL_OPT_SSL_MODE, &ssl_mode);
  return res;
 }
 
@@ -367,9 +373,6 @@ static MYSQL* client_connect(ulong flag, uint protocol, bool auto_reconnect)
 
  if (opt_default_auth && *opt_default_auth)
  mysql_options(mysql, MYSQL_DEFAULT_AUTH, opt_default_auth);
-
- if (!opt_secure_auth)
- mysql_options(mysql, MYSQL_SECURE_AUTH, (char*)&opt_secure_auth);
 
  if (!(mysql_real_connect(mysql, opt_host, opt_user,
  opt_password, opt_db ? opt_db:"test", opt_port,
@@ -1246,9 +1249,6 @@ static struct my_option client_test_long_options[] =
 {"default_auth", 0, "Default authentication client-side plugin to use.",
  &opt_default_auth, &opt_default_auth, 0,
  GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
-{"secure-auth", 0, "Refuse client connecting to server if it"
-  " uses old (pre-4.1.1) protocol.", &opt_secure_auth,
-  &opt_secure_auth, 0, GET_BOOL, NO_ARG, 1, 0, 0, 0, 0, 0},
 { 0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
 };
 

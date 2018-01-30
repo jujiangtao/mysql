@@ -19,6 +19,7 @@
 # 6. Clean up.
 ################################################################################
 
+--source include/big_test.inc
 --source ../inc/have_group_replication_plugin.inc
 --let $rpl_skip_group_replication_start= 1
 --let $rpl_group_replication_single_primary_mode=1
@@ -64,6 +65,8 @@ call mtr.add_suppression("Fatal error during the Recovery process of Group Repli
 call mtr.add_suppression("The server was automatically set into read only mode after an error was detected.");
 call mtr.add_suppression("Skipping leave operation: concurrent attempt to leave the group is on-going.");
 call mtr.add_suppression("Slave SQL for channel 'group_replication_applier': ... The slave coordinator and worker threads are stopped,*");
+call mtr.add_suppression("Skipping leave operation: member already left the group.");
+call mtr.add_suppression("On shutdown there was a timeout receiving a view change. This can lead *");
 SET SESSION sql_log_bin= 1;
 
 --let $assert_text= Verify MEMBER_STATE is OFFLINE
