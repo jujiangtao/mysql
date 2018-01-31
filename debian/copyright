@@ -1,7 +1,7 @@
 Format: http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-Upstream-Name: MySQL 5.7
+Upstream-Name: MySQL 8.0
 Upstream-Contact: http://bugs.mysql.com/
-Source: http://dev.mysql.com/downloads/mysql/5.7.html
+Source: http://dev.mysql.com/downloads/mysql/8.0.html
 Comments:
  The file Docs/mysql.info is removed from the upstream source
  because it is incompatible with the Debian Free Software Guidelines.
@@ -179,6 +179,7 @@ Files: cmd-line-utils/libedit/config.h
  man/*
  .gitignore
  COPYING
+ LICENSE
  Doxyfile-perfschema
  INSTALL
  VERSION
@@ -200,14 +201,20 @@ Comment: These files fall under the blanket license specified in the file
  of which version of the GPL is applied is otherwise unspecified.
 License: GPL-2
 
-Files: .gitreview
- BUILD/*
+Files: BUILD/*
+ .clang-format
+ .gitreview
  Docs/*
+ Doxyfile
+ Doxyfile-ignored
+ doxygen_resources/*
  client/*
  client/echo.c
  client/get_password.c
  cmake/*
+ components/*
  dbug/dbug_add_tags.pl
+ dbug/trace.cc
  extra/*
  include/*
  libmysql/*
@@ -268,9 +275,12 @@ Files: .gitreview
  plugin/auth/*
  plugin/daemon_example/*
  plugin/fulltext/*
+ plugin/keyring_udf/*
+ plugin/pfs_table_plugin/*
  plugin/semisync/semisync_slave.cc
  plugin/semisync/semisync_slave.h
  scripts/*
+ share/*
  sql/*
  sql-common/*
  storage/*
@@ -279,10 +289,11 @@ Files: .gitreview
  support-files/MacOSX/*
  support-files/mysql.m4
  unittest/*
+ utilities/*
  vio/*
 Copyright: 1979-2008 MySQL AB
            1995-2010 MySQL AB Sun Microsystems Inc
-           1994-1997,2000-2011 Oracle and/or its affiliates.
+           1994-1997,2000-2018 Oracle and/or its affiliates.
 License: GPL-2
 
 Files: storage/innobase/*
