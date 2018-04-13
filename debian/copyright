@@ -154,14 +154,16 @@ Copyright: 2006, Baron Schwartz <baron at xaprb dot com>
 License: Artistic or GPL-2
 
 Files: cmd-line-utils/libedit/config.h
- dbug/example1.c
- dbug/example2.c
- dbug/example3.c
- dbug/factorial.c
- dbug/main.c
- dbug/my_main.c
+ dbug/dbug.cc
+ dbug/dbug_analyze.cc
+ dbug/example1.cc
+ dbug/example2.cc
+ dbug/example3.cc
+ dbug/factorial.cc
+ dbug/main.cc
+ dbug/my_main.cc
  dbug/remove_function_from_trace.pl
- dbug/tests.c
+ dbug/tests.cc
  dbug/tests-t.pl
  dbug/monty.doc
  dbug/user.r
@@ -177,16 +179,20 @@ Files: cmd-line-utils/libedit/config.h
  support-files/mysql.server-sys5.sh
  win/create_def_file.js
  man/*
+ .gitconfig
  .gitignore
  COPYING
  LICENSE
  Doxyfile-perfschema
+ Doxyfile.in
  INSTALL
  VERSION
  plugin/connection_control/*
+ plugin/group_replication/*
  plugin/innodb_memcached/daemon_memcached/*
  plugin/innodb_memcached/README-innodb_memcached
  plugin/udf_services/*
+ plugin/x/*
  rapid/*
 Copyright: UNKNOWN
 Comment: These files fall under the blanket license specified in the file
