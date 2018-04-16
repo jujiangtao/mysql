@@ -1,4 +1,4 @@
-'''apport package hook for mysql-5.7
+'''apport package hook for mysql-8.0
 
 (c) 2009 Canonical Ltd.
 Author: Mathias Gug <mathias.gug@canonical.com>
@@ -22,7 +22,7 @@ def _add_my_conf_files(report, filename):
 
 '''
 Mitigation for upstream bug that can lead to statements containing passwords being written to error log
-We strip out any lines containing terms listed on http://dev.mysql.com/doc/refman/5.7/en/password-logging.html
+We strip out any lines containing terms listed on http://dev.mysql.com/doc/refman/8.0/en/password-logging.html
 (LP: #1574458)
 '''
 def strip_protected(line):
@@ -33,7 +33,7 @@ def strip_protected(line):
     return line
 
 def add_info(report):
-    attach_conffiles(report, 'mysql-server-5.7', conffiles=None)
+    attach_conffiles(report, 'mysql-server-8.0', conffiles=None)
     key = 'Logs' + path_to_key('/var/log/daemon.log')
     report[key] = ""
     for line in read_file('/var/log/daemon.log').split('\n'):
