@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2016, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -26,19 +26,24 @@
 
 namespace keyring {
 
-bool CheckerVer_1_0::is_file_size_correct(size_t file_size)
-{
+bool CheckerVer_1_0::is_file_size_correct(size_t file_size) {
   return file_size >= ((size_t)EOF_TAG_SIZE + file_version.length());
 }
-bool CheckerVer_1_0::file_seek_to_tag(File file)
-{
+bool CheckerVer_1_0::file_seek_to_tag(File file) {
   return mysql_file_seek(file, -static_cast<int>(EOF_TAG_SIZE), MY_SEEK_END,
                          MYF(0)) == MY_FILEPOS_ERROR;
 }
-bool CheckerVer_1_0::is_dgst_correct(File, Digest *digest)
-{
-  digest->is_empty= TRUE;
-  return TRUE;
+bool CheckerVer_1_0::is_dgst_correct(File, Digest *digest) {
+  digest->is_empty = true;
+  return true;
 }
 
-}//namespace keyring
+/**
+  calculates the size of end-of-file data for particular format
+  - it includes fixed size data after the last key in file
+
+  @return size of end-of-file data
+*/
+size_t CheckerVer_1_0::eof_size() { return EOF_TAG_SIZE; }
+
+}  // namespace keyring

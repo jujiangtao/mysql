@@ -1,4 +1,4 @@
-# Copyright (c) 2005, 2017, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2005, 2018, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -44,6 +44,15 @@
    fun:_dl_allocate_tls
    fun:pthread_create*
 
+}
+
+{
+   semi_sync_master_plugin_init
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:malloc
+   ...
+   fun:tls_get_addr_tail
 }
 
 {
@@ -248,6 +257,17 @@
   fun:my_write
   fun:do_flush
   fun:azclose
+}
+
+# Warning from zlib, cf. http://www.zlib.net/zlib_faq.html#faq36
+
+{
+   libz deflate5
+   Memcheck:Cond
+   fun:slide_hash
+   fun:fill_window
+   fun:deflate_fast
+   fun:deflate
 }
 
 #
@@ -904,9 +924,9 @@
    Memcheck:Param
    write(buf)
    ...
-   fun:my_b_flush_io_cache
-   fun:_my_b_write
-   fun:_Z*10write_keysP10Sort_paramP13Filesort_infojP11st_io_cacheS4_
+   fun:_Z19my_b_flush_io_cacheP8IO_CACHEi
+   fun:_Z11_my_b_writeP8IO_CACHEPKhm
+   fun:_Z*10write_keysP10Sort_paramP13Filesort_infojP8IO_CACHES4_
    ...
    fun:_Z8filesortP3THDP8FilesortbPyS3_S3_
 }
@@ -916,7 +936,7 @@
    Memcheck:Param
    write(buf)
    ...
-   fun:my_b_flush_io_cache
+   fun:_Z19my_b_flush_io_cacheP8IO_CACHEi
    fun:_Z8filesortP3THDP8FilesortbPyS3_S3_
 }
 
@@ -992,7 +1012,7 @@
    fun:_dlerror_run
    fun:dlclose
    fun:_ZL15free_plugin_memP12st_plugin_dl
-   fun:_ZL13plugin_dl_delPK19st_mysql_lex_string
+   fun:_ZL13plugin_dl_delPK16MYSQL_LEX_STRING
    fun:_ZL10plugin_delP13st_plugin_int
    fun:_ZL12reap_pluginsv
    fun:_Z15plugin_shutdownv
@@ -1182,7 +1202,7 @@
    ...
    fun:dlopen*
    ...
-   fun:_ZL13plugin_dl_addPK19st_mysql_lex_stringi*
+   fun:_ZL13plugin_dl_addPK16MYSQL_LEX_STRINGi*
    ...
 }
 
@@ -1204,7 +1224,7 @@
    obj:*
    obj:*
    obj:*
-   fun:_ZN14Trans_delegate13before_commitEP3THDbP11st_io_cacheS3_y
+   fun:_ZN14Trans_delegate13before_commitEP3THDbP8IO_CACHES3_y
    fun:_ZN13MYSQL_BIN_LOG6commitEP3THDb
    fun:_Z17trans_commit_stmtP3THD
 }
@@ -1226,7 +1246,7 @@
    obj:*
    obj:*
    obj:*
-   fun:_ZN14Trans_delegate13before_commitEP3THDbP11st_io_cacheS3_y
+   fun:_ZN14Trans_delegate13before_commitEP3THDbP8IO_CACHES3_y
    fun:_ZN13MYSQL_BIN_LOG6commitEP3THDb
    fun:_Z15ha_commit_transP3THDbb
 }
@@ -1250,7 +1270,7 @@
    obj:*
    obj:*
    obj:*
-   fun:_ZN14Trans_delegate13before_commitEP3THDbP11st_io_cacheS3_y
+   fun:_ZN14Trans_delegate13before_commitEP3THDbP8IO_CACHES3_y
 }
 
 {
@@ -1703,30 +1723,38 @@
   ...
 }
 
-# Temp workaround for
+# Workarounds for
 #
 # Bug#26116237 SYSCALL PARAM PPOLL(SIGMASK) POINTS TO UNADDRESSABLE BYTE
 {
-   RPL temp workaround
+   RPL workaround 1
    Memcheck:Param
    ppoll(sigmask)
    fun:ppoll
    fun:vio_io_wait
 }
 
+{
+   RPL workaround 2
+   Memcheck:Param
+   ppoll(sigmask)
+   fun:ppoll
+   fun:_Z11vio_io_waitP3Vio17enum_vio_io_eventi
+}
+
 # Workarounds for
 #
 # Bug#22833138 KEYRING_OKV : MEMORY LEAKS FROM OKV CLIENT LIB
 {
-  Keyring_OKV_workaround_addtoTagObj
-  Memcheck:Leak
-  fun:malloc
-  fun:okimem_nat_malloc
-  fun:OKIMemAlloc
-  fun:addtoTagObj
+   Keyring_OKV_workaround_addtoTagObj
+   Memcheck:Leak
+   fun:malloc
+   fun:okimem_nat_malloc
+   fun:OKIMemAlloc
+   fun:addtoTagObj
 }
 {
-  Keyring_OKV_workaround_OKIGetKey
+   Keyring_OKV_workaround_OKIGetKey
    Memcheck:Leak
    fun:malloc
    fun:okimem_nat_malloc
@@ -1735,13 +1763,21 @@
    fun:OKIGetKey
 }
 {
-  Keyring_OKV_workaround_OKICreateKey
+   Keyring_OKV_workaround_OKICreateKey
    Memcheck:Leak
    fun:malloc
    fun:okimem_nat_malloc
    fun:OKIMemAlloc
    fun:OKIAPIResultAlloc
    fun:OKICreateKey
+}
+{
+   Keyring_OKV_workaround_okiconn_ssl_send_recv
+   Memcheck:Leak
+   fun:calloc
+   ...
+   fun:OKIConnSendRecvBytes
+   fun:OKIOpsExecuteOp
 }
 {
    Keyring_OKV_workaround_OKIGetAttributes
@@ -1784,7 +1820,6 @@
 {
    Keyring_OKV_workaround_OKILocate
    Memcheck:Leak
-   match-leak-kinds: definite
    fun:malloc
    fun:okimem_nat_malloc
    fun:OKIMemAlloc
@@ -1822,7 +1857,6 @@
 {
    Keyring_OKV_workaround_OKIEnvCreate
    Memcheck:Leak
-   match-leak-kinds: definite
    fun:malloc
    fun:okimem_nat_malloc
    fun:OKIMemAlloc
@@ -1851,4 +1885,173 @@
    fun:okimem_nat_malloc
    fun:OKIMemAlloc
    fun:OKITTLVAddChildObject
+}
+
+# Bug#27209265 Suppress all issues relating to communication with AWS KMS server.
+
+{
+   OpenSSL still reachable.
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:malloc
+   fun:CRYPTO_malloc
+   fun:ERR_get_state
+   fun:ERR_put_error
+   fun:PEM_read_bio
+   fun:PEM_X509_INFO_read_bio
+   fun:X509_load_cert_crl_file
+   fun:by_file_ctrl
+   fun:X509_STORE_load_locations
+   obj:*
+   obj:*
+   obj:*
+   obj:*
+   obj:*
+   obj:*
+   obj:*
+}
+
+# Bug #25964438  LDAP: ASAN AND VALGRIND ISSUES
+
+{
+   LDAP_TLS_workaround1
+   Memcheck:Leak
+   fun:calloc
+   ...
+   ...
+   ...
+   ...
+   ...
+   fun:ldap_int_tls_start
+   fun:ldap_start_tls_s
+   fun:*establish_tls*
+   fun:*create*
+}
+{
+   LDAP_TLS_workaround2
+   Memcheck:Leak
+   fun:malloc
+   ...
+   ...
+   ...
+   ...
+   ...
+   fun:ldap_int_tls_start
+   fun:ldap_start_tls_s
+   fun:*establish_tls*
+   fun:*create*
+}
+{
+   LDAP_TLS_workaround3
+   Memcheck:Leak
+   fun:calloc
+   fun:PR_LoadLibraryWithFlags
+   ...
+   ...
+   ...
+   fun:PR_CallOnce
+   ...
+   ...
+   fun:_dl_init
+}
+{
+   LDAP_TLS_workaround4
+   Memcheck:Leak
+   fun:malloc
+   fun:PR_ErrorInstallTable
+   fun:PR_CallOnce
+   ...
+   ...
+   fun:PR_CallOnceWithArg
+   ...
+   fun:NSS_SetDomesticPolicy
+   ...
+   fun:PR_CallOnceWithArg
+   ...
+   ...
+   ...
+   fun:ldap_int_tls_start
+   fun:ldap_start_tls_s
+   fun:*establish_tls*
+}
+{
+   LDAP_TLS_workaround5
+   Memcheck:Leak
+   fun:malloc
+   ...
+   fun:PR_LoadLibraryWithFlags
+   ...
+   ...
+   ...
+   fun:PR_CallOnce
+   ...
+   ...
+   ...
+   ...
+   fun:_dl_catch_error
+   fun:_dl_open
+   fun:dlopen_doit
+   fun:_dl_catch_error
+   fun:_dlerror_run
+}
+{
+   LDAP_TLS_workaround6
+   Memcheck:Leak
+   fun:malloc
+   fun:ber_memalloc_x
+   fun:ber_strdup_x
+   ...
+   fun:ldap_int_initialize
+   fun:ldap_create
+   fun:ldap_initialize
+   fun:*create*
+}
+{
+   LDAP_TLS_workaround7
+   Memcheck:Leak
+   fun:malloc
+   fun:*dl_close_worker*
+   fun:*dl_close*
+   fun:*dl_catch_error*
+   fun:*libc_dlclose*
+   fun:*free_mem*
+   fun:*libc_freeres*
+   fun:*vgnU_freeres*
+   fun:*run_exit_handlers*
+   fun:exit*
+   fun:*mysqld_exit*
+   fun:*mysqld_main*
+   fun:*main*
+}
+{
+   LDAP_TLS_workaround8
+   Memcheck:Leak
+   fun:malloc
+   fun:ber_memalloc_x
+   fun:ber_strdup_x
+   ...
+   fun:ldap_int_initialize
+   fun:ldap_set_option
+   fun:*configure_tls*
+}
+{
+   LDAP_TLS_workaround9
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:malloc
+   fun:PR_ErrorInstallTable
+   ...
+   ...
+   ...
+   ...
+   ...
+   ...  
+   ...
+   ...
+   ...
+   ...
+   ...
+   ...
+   fun:ldap_int_tls_start
+   fun:ldap_start_tls_s
 }

@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2016, 2018, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -56,27 +56,21 @@
 */
 PFS_histogram_timers g_histogram_pico_timers;
 
-void
-PFS_histogram::reset()
-{
+void PFS_histogram::reset() {
   ulong bucket_index;
 
-  for (bucket_index = 0; bucket_index < NUMBER_OF_BUCKETS; bucket_index++)
-  {
+  for (bucket_index = 0; bucket_index < NUMBER_OF_BUCKETS; bucket_index++) {
     m_bucket[bucket_index] = 0;
   }
 }
 
-void
-PFS_histogram_timers::init()
-{
+void PFS_histogram_timers::init() {
   ulong bucket_index;
   double current_bucket_timer = BUCKET_BASE_TIMER;
 
   m_bucket_timer[0] = 0;
 
-  for (bucket_index = 1; bucket_index < NUMBER_OF_BUCKETS; bucket_index++)
-  {
+  for (bucket_index = 1; bucket_index < NUMBER_OF_BUCKETS; bucket_index++) {
     m_bucket_timer[bucket_index] = current_bucket_timer;
     current_bucket_timer *= BUCKET_BASE_FACTOR;
   }

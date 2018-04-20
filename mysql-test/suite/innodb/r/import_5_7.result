@@ -36,7 +36,7 @@ a	b	c	d
                 "is_unsigned": false,
                 "is_auto_increment": false,
                 "is_virtual": false,
-                "hidden": false,
+                "hidden": 1,
                 "ordinal_position": 1,
                 "char_length": 11,
                 "numeric_precision": 10,
@@ -61,7 +61,8 @@ a	b	c	d
                 "column_key": 2,
                 "column_type_utf8": "int(11)",
                 "elements": [],
-                "collation_id": 8
+                "collation_id": 8,
+                "is_explicit_collation": false
             },
             {
                 "name": "b",
@@ -71,7 +72,7 @@ a	b	c	d
                 "is_unsigned": false,
                 "is_auto_increment": false,
                 "is_virtual": false,
-                "hidden": false,
+                "hidden": 1,
                 "ordinal_position": 2,
                 "char_length": 11,
                 "numeric_precision": 10,
@@ -96,7 +97,8 @@ a	b	c	d
                 "column_key": 2,
                 "column_type_utf8": "int(11)",
                 "elements": [],
-                "collation_id": 8
+                "collation_id": 8,
+                "is_explicit_collation": false
             },
             {
                 "name": "c",
@@ -106,7 +108,7 @@ a	b	c	d
                 "is_unsigned": false,
                 "is_auto_increment": false,
                 "is_virtual": false,
-                "hidden": false,
+                "hidden": 1,
                 "ordinal_position": 3,
                 "char_length": 8,
                 "numeric_precision": 0,
@@ -131,7 +133,8 @@ a	b	c	d
                 "column_key": 1,
                 "column_type_utf8": "blob",
                 "elements": [],
-                "collation_id": 63
+                "collation_id": 63,
+                "is_explicit_collation": true
             },
             {
                 "name": "d",
@@ -141,7 +144,7 @@ a	b	c	d
                 "is_unsigned": false,
                 "is_auto_increment": false,
                 "is_virtual": false,
-                "hidden": false,
+                "hidden": 1,
                 "ordinal_position": 4,
                 "char_length": 8,
                 "numeric_precision": 0,
@@ -166,7 +169,8 @@ a	b	c	d
                 "column_key": 1,
                 "column_type_utf8": "text",
                 "elements": [],
-                "collation_id": 8
+                "collation_id": 8,
+                "is_explicit_collation": false
             },
             {
                 "name": "DB_TRX_ID",
@@ -176,7 +180,7 @@ a	b	c	d
                 "is_unsigned": false,
                 "is_auto_increment": false,
                 "is_virtual": false,
-                "hidden": true,
+                "hidden": 2,
                 "ordinal_position": 5,
                 "char_length": 6,
                 "numeric_precision": 0,
@@ -201,7 +205,8 @@ a	b	c	d
                 "column_key": 1,
                 "column_type_utf8": "",
                 "elements": [],
-                "collation_id": 63
+                "collation_id": 63,
+                "is_explicit_collation": false
             },
             {
                 "name": "DB_ROLL_PTR",
@@ -211,7 +216,7 @@ a	b	c	d
                 "is_unsigned": false,
                 "is_auto_increment": false,
                 "is_virtual": false,
-                "hidden": true,
+                "hidden": 2,
                 "ordinal_position": 6,
                 "char_length": 7,
                 "numeric_precision": 0,
@@ -236,7 +241,8 @@ a	b	c	d
                 "column_key": 1,
                 "column_type_utf8": "",
                 "elements": [],
-                "collation_id": 63
+                "collation_id": 63,
+                "is_explicit_collation": false
             }
         ],
         "schema_ref": "test",

@@ -272,14 +272,16 @@ utf8_unicode_520_ci	utf8	214		#	#	PAD SPACE
 utf8_unicode_ci	utf8	192		#	#	PAD SPACE
 utf8_vietnamese_ci	utf8	215		#	#	PAD SPACE
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER DATABASE d10   COLLATE utf8_general_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -288,19 +290,21 @@ def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER DATABASE d10 DEFAULT COLLATE utf8_general_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -309,19 +313,21 @@ def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER DATABASE d10   COLLATE utf8_bin;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -330,19 +336,21 @@ def	d10	utf8	utf8_bin	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER DATABASE d10 DEFAULT COLLATE utf8_bin;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -351,19 +359,21 @@ def	d10	utf8	utf8_bin	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER DATABASE d10   COLLATE utf8_unicode_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -372,19 +382,21 @@ def	d10	utf8	utf8_unicode_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER DATABASE d10 DEFAULT COLLATE utf8_unicode_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -393,19 +405,21 @@ def	d10	utf8	utf8_unicode_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER DATABASE d10   COLLATE utf8_icelandic_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -414,19 +428,21 @@ def	d10	utf8	utf8_icelandic_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER DATABASE d10 DEFAULT COLLATE utf8_icelandic_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -435,19 +451,21 @@ def	d10	utf8	utf8_icelandic_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER DATABASE d10   COLLATE utf8_latvian_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -456,19 +474,21 @@ def	d10	utf8	utf8_latvian_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER DATABASE d10 DEFAULT COLLATE utf8_latvian_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -477,19 +497,21 @@ def	d10	utf8	utf8_latvian_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER DATABASE d10   COLLATE utf8_romanian_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -498,19 +520,21 @@ def	d10	utf8	utf8_romanian_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER DATABASE d10 DEFAULT COLLATE utf8_romanian_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -519,19 +543,21 @@ def	d10	utf8	utf8_romanian_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER DATABASE d10   COLLATE utf8_slovenian_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -540,19 +566,21 @@ def	d10	utf8	utf8_slovenian_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER DATABASE d10 DEFAULT COLLATE utf8_slovenian_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -561,19 +589,21 @@ def	d10	utf8	utf8_slovenian_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER DATABASE d10   COLLATE utf8_polish_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -582,19 +612,21 @@ def	d10	utf8	utf8_polish_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER DATABASE d10 DEFAULT COLLATE utf8_polish_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -603,19 +635,21 @@ def	d10	utf8	utf8_polish_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER DATABASE d10   COLLATE utf8_estonian_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -624,19 +658,21 @@ def	d10	utf8	utf8_estonian_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER DATABASE d10 DEFAULT COLLATE utf8_estonian_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -645,19 +681,21 @@ def	d10	utf8	utf8_estonian_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER DATABASE d10   COLLATE utf8_spanish_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -666,19 +704,21 @@ def	d10	utf8	utf8_spanish_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER DATABASE d10 DEFAULT COLLATE utf8_spanish_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -687,19 +727,21 @@ def	d10	utf8	utf8_spanish_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER DATABASE d10   COLLATE utf8_swedish_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -708,19 +750,21 @@ def	d10	utf8	utf8_swedish_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER DATABASE d10 DEFAULT COLLATE utf8_swedish_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -729,19 +773,21 @@ def	d10	utf8	utf8_swedish_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER DATABASE d10   COLLATE utf8_turkish_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -750,19 +796,21 @@ def	d10	utf8	utf8_turkish_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER DATABASE d10 DEFAULT COLLATE utf8_turkish_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -771,19 +819,21 @@ def	d10	utf8	utf8_turkish_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER DATABASE d10   COLLATE utf8_czech_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -792,19 +842,21 @@ def	d10	utf8	utf8_czech_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER DATABASE d10 DEFAULT COLLATE utf8_czech_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -813,19 +865,21 @@ def	d10	utf8	utf8_czech_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER DATABASE d10   COLLATE utf8_danish_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -834,19 +888,21 @@ def	d10	utf8	utf8_danish_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER DATABASE d10 DEFAULT COLLATE utf8_danish_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -855,19 +911,21 @@ def	d10	utf8	utf8_danish_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER DATABASE d10   COLLATE utf8_lithuanian_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -876,19 +934,21 @@ def	d10	utf8	utf8_lithuanian_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER DATABASE d10 DEFAULT COLLATE utf8_lithuanian_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -897,19 +957,21 @@ def	d10	utf8	utf8_lithuanian_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER DATABASE d10   COLLATE utf8_slovak_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -918,19 +980,21 @@ def	d10	utf8	utf8_slovak_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER DATABASE d10 DEFAULT COLLATE utf8_slovak_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -939,19 +1003,21 @@ def	d10	utf8	utf8_slovak_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER DATABASE d10   COLLATE utf8_spanish2_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -960,19 +1026,21 @@ def	d10	utf8	utf8_spanish2_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER DATABASE d10 DEFAULT COLLATE utf8_spanish2_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -981,19 +1049,21 @@ def	d10	utf8	utf8_spanish2_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER DATABASE d10   COLLATE utf8_roman_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1002,19 +1072,21 @@ def	d10	utf8	utf8_roman_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER DATABASE d10 DEFAULT COLLATE utf8_roman_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1023,19 +1095,21 @@ def	d10	utf8	utf8_roman_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER DATABASE d10   COLLATE utf8_persian_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1044,19 +1118,21 @@ def	d10	utf8	utf8_persian_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER DATABASE d10 DEFAULT COLLATE utf8_persian_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1065,19 +1141,21 @@ def	d10	utf8	utf8_persian_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER DATABASE d10   COLLATE utf8_esperanto_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1086,19 +1164,21 @@ def	d10	utf8	utf8_esperanto_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER DATABASE d10 DEFAULT COLLATE utf8_esperanto_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1107,19 +1187,21 @@ def	d10	utf8	utf8_esperanto_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER DATABASE d10   COLLATE utf8_hungarian_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1128,19 +1210,21 @@ def	d10	utf8	utf8_hungarian_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER DATABASE d10 DEFAULT COLLATE utf8_hungarian_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1149,19 +1233,21 @@ def	d10	utf8	utf8_hungarian_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER SCHEMA d10   COLLATE utf8_general_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1170,19 +1256,21 @@ def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER SCHEMA d10 DEFAULT COLLATE utf8_general_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1191,19 +1279,21 @@ def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER SCHEMA d10   COLLATE utf8_bin;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1212,19 +1302,21 @@ def	d10	utf8	utf8_bin	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER SCHEMA d10 DEFAULT COLLATE utf8_bin;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1233,19 +1325,21 @@ def	d10	utf8	utf8_bin	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER SCHEMA d10   COLLATE utf8_unicode_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1254,19 +1348,21 @@ def	d10	utf8	utf8_unicode_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER SCHEMA d10 DEFAULT COLLATE utf8_unicode_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1275,19 +1371,21 @@ def	d10	utf8	utf8_unicode_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER SCHEMA d10   COLLATE utf8_icelandic_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1296,19 +1394,21 @@ def	d10	utf8	utf8_icelandic_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER SCHEMA d10 DEFAULT COLLATE utf8_icelandic_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1317,19 +1417,21 @@ def	d10	utf8	utf8_icelandic_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER SCHEMA d10   COLLATE utf8_latvian_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1338,19 +1440,21 @@ def	d10	utf8	utf8_latvian_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER SCHEMA d10 DEFAULT COLLATE utf8_latvian_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1359,19 +1463,21 @@ def	d10	utf8	utf8_latvian_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER SCHEMA d10   COLLATE utf8_romanian_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1380,19 +1486,21 @@ def	d10	utf8	utf8_romanian_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER SCHEMA d10 DEFAULT COLLATE utf8_romanian_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1401,19 +1509,21 @@ def	d10	utf8	utf8_romanian_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER SCHEMA d10   COLLATE utf8_slovenian_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1422,19 +1532,21 @@ def	d10	utf8	utf8_slovenian_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER SCHEMA d10 DEFAULT COLLATE utf8_slovenian_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1443,19 +1555,21 @@ def	d10	utf8	utf8_slovenian_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER SCHEMA d10   COLLATE utf8_polish_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1464,19 +1578,21 @@ def	d10	utf8	utf8_polish_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER SCHEMA d10 DEFAULT COLLATE utf8_polish_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1485,19 +1601,21 @@ def	d10	utf8	utf8_polish_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER SCHEMA d10   COLLATE utf8_estonian_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1506,19 +1624,21 @@ def	d10	utf8	utf8_estonian_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER SCHEMA d10 DEFAULT COLLATE utf8_estonian_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1527,19 +1647,21 @@ def	d10	utf8	utf8_estonian_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER SCHEMA d10   COLLATE utf8_spanish_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1548,19 +1670,21 @@ def	d10	utf8	utf8_spanish_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER SCHEMA d10 DEFAULT COLLATE utf8_spanish_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1569,19 +1693,21 @@ def	d10	utf8	utf8_spanish_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER SCHEMA d10   COLLATE utf8_swedish_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1590,19 +1716,21 @@ def	d10	utf8	utf8_swedish_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER SCHEMA d10 DEFAULT COLLATE utf8_swedish_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1611,19 +1739,21 @@ def	d10	utf8	utf8_swedish_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER SCHEMA d10   COLLATE utf8_turkish_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1632,19 +1762,21 @@ def	d10	utf8	utf8_turkish_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER SCHEMA d10 DEFAULT COLLATE utf8_turkish_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1653,19 +1785,21 @@ def	d10	utf8	utf8_turkish_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER SCHEMA d10   COLLATE utf8_czech_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1674,19 +1808,21 @@ def	d10	utf8	utf8_czech_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER SCHEMA d10 DEFAULT COLLATE utf8_czech_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1695,19 +1831,21 @@ def	d10	utf8	utf8_czech_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER SCHEMA d10   COLLATE utf8_danish_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1716,19 +1854,21 @@ def	d10	utf8	utf8_danish_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER SCHEMA d10 DEFAULT COLLATE utf8_danish_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1737,19 +1877,21 @@ def	d10	utf8	utf8_danish_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER SCHEMA d10   COLLATE utf8_lithuanian_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1758,19 +1900,21 @@ def	d10	utf8	utf8_lithuanian_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER SCHEMA d10 DEFAULT COLLATE utf8_lithuanian_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1779,19 +1923,21 @@ def	d10	utf8	utf8_lithuanian_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER SCHEMA d10   COLLATE utf8_slovak_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1800,19 +1946,21 @@ def	d10	utf8	utf8_slovak_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER SCHEMA d10 DEFAULT COLLATE utf8_slovak_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1821,19 +1969,21 @@ def	d10	utf8	utf8_slovak_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER SCHEMA d10   COLLATE utf8_spanish2_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1842,19 +1992,21 @@ def	d10	utf8	utf8_spanish2_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER SCHEMA d10 DEFAULT COLLATE utf8_spanish2_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1863,19 +2015,21 @@ def	d10	utf8	utf8_spanish2_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER SCHEMA d10   COLLATE utf8_roman_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1884,19 +2038,21 @@ def	d10	utf8	utf8_roman_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER SCHEMA d10 DEFAULT COLLATE utf8_roman_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1905,19 +2061,21 @@ def	d10	utf8	utf8_roman_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER SCHEMA d10   COLLATE utf8_persian_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1926,19 +2084,21 @@ def	d10	utf8	utf8_persian_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER SCHEMA d10 DEFAULT COLLATE utf8_persian_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1947,19 +2107,21 @@ def	d10	utf8	utf8_persian_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER SCHEMA d10   COLLATE utf8_esperanto_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1968,19 +2130,21 @@ def	d10	utf8	utf8_esperanto_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER SCHEMA d10 DEFAULT COLLATE utf8_esperanto_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -1989,19 +2153,21 @@ def	d10	utf8	utf8_esperanto_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER SCHEMA d10   COLLATE utf8_hungarian_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -2010,19 +2176,21 @@ def	d10	utf8	utf8_hungarian_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;
 CREATE DATABASE d10 DEFAULT CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	d10	utf8	utf8_general_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 ALTER SCHEMA d10 DEFAULT COLLATE utf8_hungarian_ci;
 SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME;
@@ -2031,7 +2199,7 @@ def	d10	utf8	utf8_hungarian_ci	NULL
 def	information_schema	utf8	utf8_general_ci	NULL
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 DROP DATABASE d10;

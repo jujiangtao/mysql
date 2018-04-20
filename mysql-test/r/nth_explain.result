@@ -1,6 +1,8 @@
 # Test of SQL window functions NTH_VALUE
 # ----------------------------------------------------------------------
 SET NAMES utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 CREATE TABLE t1 (d DOUBLE, id INT, sex CHAR(1));
 INSERT INTO t1 VALUES (1.0, 1, 'M'),
 (2.0, 2, 'F'),
@@ -151,12 +153,16 @@ EXPLAIN
   "query_block": {
     "select_id": 1,
     "cost_info": {
-      "query_cost": "1.15"
+      "query_cost": "10.15"
     },
     "windowing": {
       "windows": [
         {
           "name": "w",
+          "using_filesort": true,
+          "filesort_key": [
+            "`sex`"
+          ],
           "frame_buffer": {
             "using_temporary_table": true,
             "optimized_frame_evaluation": true
@@ -166,6 +172,9 @@ EXPLAIN
           ]
         }
       ],
+      "cost_info": {
+        "sort_cost": "9.00"
+      },
       "table": {
         "table_name": "t1",
         "access_type": "ALL",
@@ -194,12 +203,16 @@ EXPLAIN
   "query_block": {
     "select_id": 1,
     "cost_info": {
-      "query_cost": "1.15"
+      "query_cost": "10.15"
     },
     "windowing": {
       "windows": [
         {
           "name": "w",
+          "using_filesort": true,
+          "filesort_key": [
+            "`id`"
+          ],
           "frame_buffer": {
             "using_temporary_table": true,
             "optimized_frame_evaluation": true
@@ -209,6 +222,9 @@ EXPLAIN
           ]
         }
       ],
+      "cost_info": {
+        "sort_cost": "9.00"
+      },
       "table": {
         "table_name": "t1",
         "access_type": "ALL",
@@ -238,7 +254,7 @@ EXPLAIN
   "query_block": {
     "select_id": 1,
     "cost_info": {
-      "query_cost": "1.15"
+      "query_cost": "10.15"
     },
     "windowing": {
       "windows": [
@@ -254,6 +270,9 @@ EXPLAIN
           ]
         }
       ],
+      "cost_info": {
+        "sort_cost": "9.00"
+      },
       "table": {
         "table_name": "t1",
         "access_type": "ALL",
@@ -282,7 +301,7 @@ EXPLAIN
   "query_block": {
     "select_id": 1,
     "cost_info": {
-      "query_cost": "1.15"
+      "query_cost": "10.15"
     },
     "windowing": {
       "windows": [
@@ -302,6 +321,9 @@ EXPLAIN
           ]
         }
       ],
+      "cost_info": {
+        "sort_cost": "9.00"
+      },
       "table": {
         "table_name": "t1",
         "access_type": "ALL",
@@ -332,7 +354,7 @@ EXPLAIN
   "query_block": {
     "select_id": 1,
     "cost_info": {
-      "query_cost": "1.15"
+      "query_cost": "10.15"
     },
     "windowing": {
       "windows": [
@@ -352,6 +374,9 @@ EXPLAIN
           ]
         }
       ],
+      "cost_info": {
+        "sort_cost": "9.00"
+      },
       "table": {
         "table_name": "t1",
         "access_type": "ALL",
@@ -380,7 +405,7 @@ EXPLAIN
   "query_block": {
     "select_id": 1,
     "cost_info": {
-      "query_cost": "1.15"
+      "query_cost": "10.15"
     },
     "windowing": {
       "windows": [
@@ -400,6 +425,9 @@ EXPLAIN
           ]
         }
       ],
+      "cost_info": {
+        "sort_cost": "9.00"
+      },
       "table": {
         "table_name": "t1",
         "access_type": "ALL",
@@ -428,7 +456,7 @@ EXPLAIN
   "query_block": {
     "select_id": 1,
     "cost_info": {
-      "query_cost": "1.15"
+      "query_cost": "10.15"
     },
     "windowing": {
       "windows": [
@@ -448,6 +476,9 @@ EXPLAIN
           ]
         }
       ],
+      "cost_info": {
+        "sort_cost": "9.00"
+      },
       "table": {
         "table_name": "t1",
         "access_type": "ALL",
@@ -475,7 +506,7 @@ EXPLAIN
   "query_block": {
     "select_id": 1,
     "cost_info": {
-      "query_cost": "1.15"
+      "query_cost": "10.15"
     },
     "windowing": {
       "windows": [
@@ -495,6 +526,9 @@ EXPLAIN
           ]
         }
       ],
+      "cost_info": {
+        "sort_cost": "9.00"
+      },
       "table": {
         "table_name": "t1",
         "access_type": "ALL",
@@ -522,7 +556,7 @@ EXPLAIN
   "query_block": {
     "select_id": 1,
     "cost_info": {
-      "query_cost": "1.15"
+      "query_cost": "10.15"
     },
     "windowing": {
       "windows": [
@@ -542,6 +576,9 @@ EXPLAIN
           ]
         }
       ],
+      "cost_info": {
+        "sort_cost": "9.00"
+      },
       "table": {
         "table_name": "t1",
         "access_type": "ALL",
@@ -569,7 +606,7 @@ EXPLAIN
   "query_block": {
     "select_id": 1,
     "cost_info": {
-      "query_cost": "1.15"
+      "query_cost": "10.15"
     },
     "windowing": {
       "windows": [
@@ -589,6 +626,9 @@ EXPLAIN
           ]
         }
       ],
+      "cost_info": {
+        "sort_cost": "9.00"
+      },
       "table": {
         "table_name": "t1",
         "access_type": "ALL",
@@ -616,7 +656,7 @@ EXPLAIN
   "query_block": {
     "select_id": 1,
     "cost_info": {
-      "query_cost": "1.15"
+      "query_cost": "10.15"
     },
     "windowing": {
       "windows": [
@@ -636,6 +676,9 @@ EXPLAIN
           ]
         }
       ],
+      "cost_info": {
+        "sort_cost": "9.00"
+      },
       "table": {
         "table_name": "t1",
         "access_type": "ALL",
@@ -663,7 +706,7 @@ EXPLAIN
   "query_block": {
     "select_id": 1,
     "cost_info": {
-      "query_cost": "1.15"
+      "query_cost": "10.15"
     },
     "windowing": {
       "windows": [
@@ -683,6 +726,9 @@ EXPLAIN
           ]
         }
       ],
+      "cost_info": {
+        "sort_cost": "9.00"
+      },
       "table": {
         "table_name": "t1",
         "access_type": "ALL",
@@ -711,7 +757,7 @@ EXPLAIN
   "query_block": {
     "select_id": 1,
     "cost_info": {
-      "query_cost": "1.15"
+      "query_cost": "10.15"
     },
     "windowing": {
       "windows": [
@@ -731,6 +777,9 @@ EXPLAIN
           ]
         }
       ],
+      "cost_info": {
+        "sort_cost": "9.00"
+      },
       "table": {
         "table_name": "t1",
         "access_type": "ALL",
@@ -759,7 +808,7 @@ EXPLAIN
   "query_block": {
     "select_id": 1,
     "cost_info": {
-      "query_cost": "1.15"
+      "query_cost": "10.15"
     },
     "windowing": {
       "windows": [
@@ -779,6 +828,9 @@ EXPLAIN
           ]
         }
       ],
+      "cost_info": {
+        "sort_cost": "9.00"
+      },
       "table": {
         "table_name": "t1",
         "access_type": "ALL",
@@ -807,7 +859,7 @@ EXPLAIN
   "query_block": {
     "select_id": 1,
     "cost_info": {
-      "query_cost": "1.15"
+      "query_cost": "10.15"
     },
     "windowing": {
       "windows": [
@@ -827,6 +879,9 @@ EXPLAIN
           ]
         }
       ],
+      "cost_info": {
+        "sort_cost": "9.00"
+      },
       "table": {
         "table_name": "t1",
         "access_type": "ALL",
@@ -854,7 +909,7 @@ EXPLAIN
   "query_block": {
     "select_id": 1,
     "cost_info": {
-      "query_cost": "1.15"
+      "query_cost": "10.15"
     },
     "windowing": {
       "windows": [
@@ -874,6 +929,9 @@ EXPLAIN
           ]
         }
       ],
+      "cost_info": {
+        "sort_cost": "9.00"
+      },
       "table": {
         "table_name": "t1",
         "access_type": "ALL",
@@ -901,7 +959,7 @@ EXPLAIN
   "query_block": {
     "select_id": 1,
     "cost_info": {
-      "query_cost": "1.15"
+      "query_cost": "10.15"
     },
     "windowing": {
       "windows": [
@@ -921,6 +979,9 @@ EXPLAIN
           ]
         }
       ],
+      "cost_info": {
+        "sort_cost": "9.00"
+      },
       "table": {
         "table_name": "t1",
         "access_type": "ALL",
@@ -948,7 +1009,7 @@ EXPLAIN
   "query_block": {
     "select_id": 1,
     "cost_info": {
-      "query_cost": "1.15"
+      "query_cost": "10.15"
     },
     "windowing": {
       "windows": [
@@ -968,6 +1029,9 @@ EXPLAIN
           ]
         }
       ],
+      "cost_info": {
+        "sort_cost": "9.00"
+      },
       "table": {
         "table_name": "t1",
         "access_type": "ALL",
@@ -995,7 +1059,7 @@ EXPLAIN
   "query_block": {
     "select_id": 1,
     "cost_info": {
-      "query_cost": "1.15"
+      "query_cost": "10.15"
     },
     "windowing": {
       "windows": [
@@ -1015,6 +1079,9 @@ EXPLAIN
           ]
         }
       ],
+      "cost_info": {
+        "sort_cost": "9.00"
+      },
       "table": {
         "table_name": "t1",
         "access_type": "ALL",
@@ -1042,7 +1109,7 @@ EXPLAIN
   "query_block": {
     "select_id": 1,
     "cost_info": {
-      "query_cost": "1.15"
+      "query_cost": "10.15"
     },
     "windowing": {
       "windows": [
@@ -1062,6 +1129,9 @@ EXPLAIN
           ]
         }
       ],
+      "cost_info": {
+        "sort_cost": "9.00"
+      },
       "table": {
         "table_name": "t1",
         "access_type": "ALL",
@@ -1090,7 +1160,7 @@ EXPLAIN
   "query_block": {
     "select_id": 1,
     "cost_info": {
-      "query_cost": "1.15"
+      "query_cost": "10.15"
     },
     "windowing": {
       "windows": [
@@ -1109,6 +1179,9 @@ EXPLAIN
           ]
         }
       ],
+      "cost_info": {
+        "sort_cost": "9.00"
+      },
       "table": {
         "table_name": "t1",
         "access_type": "ALL",
@@ -1139,7 +1212,7 @@ EXPLAIN
   "query_block": {
     "select_id": 1,
     "cost_info": {
-      "query_cost": "1.15"
+      "query_cost": "10.15"
     },
     "windowing": {
       "windows": [
@@ -1159,6 +1232,9 @@ EXPLAIN
           ]
         }
       ],
+      "cost_info": {
+        "sort_cost": "9.00"
+      },
       "table": {
         "table_name": "t1",
         "access_type": "ALL",
@@ -1187,7 +1263,7 @@ EXPLAIN
   "query_block": {
     "select_id": 1,
     "cost_info": {
-      "query_cost": "1.15"
+      "query_cost": "10.15"
     },
     "windowing": {
       "windows": [
@@ -1207,6 +1283,9 @@ EXPLAIN
           ]
         }
       ],
+      "cost_info": {
+        "sort_cost": "9.00"
+      },
       "table": {
         "table_name": "t1",
         "access_type": "ALL",
@@ -1235,7 +1314,7 @@ EXPLAIN
   "query_block": {
     "select_id": 1,
     "cost_info": {
-      "query_cost": "1.15"
+      "query_cost": "10.15"
     },
     "windowing": {
       "windows": [
@@ -1255,6 +1334,9 @@ EXPLAIN
           ]
         }
       ],
+      "cost_info": {
+        "sort_cost": "9.00"
+      },
       "table": {
         "table_name": "t1",
         "access_type": "ALL",
@@ -1282,7 +1364,7 @@ EXPLAIN
   "query_block": {
     "select_id": 1,
     "cost_info": {
-      "query_cost": "1.15"
+      "query_cost": "10.15"
     },
     "windowing": {
       "windows": [
@@ -1302,6 +1384,9 @@ EXPLAIN
           ]
         }
       ],
+      "cost_info": {
+        "sort_cost": "9.00"
+      },
       "table": {
         "table_name": "t1",
         "access_type": "ALL",
@@ -1329,7 +1414,7 @@ EXPLAIN
   "query_block": {
     "select_id": 1,
     "cost_info": {
-      "query_cost": "1.15"
+      "query_cost": "10.15"
     },
     "windowing": {
       "windows": [
@@ -1349,6 +1434,9 @@ EXPLAIN
           ]
         }
       ],
+      "cost_info": {
+        "sort_cost": "9.00"
+      },
       "table": {
         "table_name": "t1",
         "access_type": "ALL",
@@ -1376,7 +1464,7 @@ EXPLAIN
   "query_block": {
     "select_id": 1,
     "cost_info": {
-      "query_cost": "1.15"
+      "query_cost": "10.15"
     },
     "windowing": {
       "windows": [
@@ -1396,6 +1484,9 @@ EXPLAIN
           ]
         }
       ],
+      "cost_info": {
+        "sort_cost": "9.00"
+      },
       "table": {
         "table_name": "t1",
         "access_type": "ALL",
@@ -1423,7 +1514,7 @@ EXPLAIN
   "query_block": {
     "select_id": 1,
     "cost_info": {
-      "query_cost": "1.15"
+      "query_cost": "10.15"
     },
     "windowing": {
       "windows": [
@@ -1443,6 +1534,9 @@ EXPLAIN
           ]
         }
       ],
+      "cost_info": {
+        "sort_cost": "9.00"
+      },
       "table": {
         "table_name": "t1",
         "access_type": "ALL",
@@ -1470,7 +1564,7 @@ EXPLAIN
   "query_block": {
     "select_id": 1,
     "cost_info": {
-      "query_cost": "1.15"
+      "query_cost": "10.15"
     },
     "windowing": {
       "windows": [
@@ -1490,6 +1584,9 @@ EXPLAIN
           ]
         }
       ],
+      "cost_info": {
+        "sort_cost": "9.00"
+      },
       "table": {
         "table_name": "t1",
         "access_type": "ALL",
@@ -1518,7 +1615,7 @@ EXPLAIN
   "query_block": {
     "select_id": 1,
     "cost_info": {
-      "query_cost": "1.15"
+      "query_cost": "10.15"
     },
     "windowing": {
       "windows": [
@@ -1538,6 +1635,9 @@ EXPLAIN
           ]
         }
       ],
+      "cost_info": {
+        "sort_cost": "9.00"
+      },
       "table": {
         "table_name": "t1",
         "access_type": "ALL",
@@ -1566,7 +1666,7 @@ EXPLAIN
   "query_block": {
     "select_id": 1,
     "cost_info": {
-      "query_cost": "1.15"
+      "query_cost": "10.15"
     },
     "windowing": {
       "windows": [
@@ -1586,6 +1686,9 @@ EXPLAIN
           ]
         }
       ],
+      "cost_info": {
+        "sort_cost": "9.00"
+      },
       "table": {
         "table_name": "t1",
         "access_type": "ALL",
@@ -1614,7 +1717,7 @@ EXPLAIN
   "query_block": {
     "select_id": 1,
     "cost_info": {
-      "query_cost": "1.15"
+      "query_cost": "10.15"
     },
     "windowing": {
       "windows": [
@@ -1634,6 +1737,9 @@ EXPLAIN
           ]
         }
       ],
+      "cost_info": {
+        "sort_cost": "9.00"
+      },
       "table": {
         "table_name": "t1",
         "access_type": "ALL",
@@ -1661,7 +1767,7 @@ EXPLAIN
   "query_block": {
     "select_id": 1,
     "cost_info": {
-      "query_cost": "1.15"
+      "query_cost": "10.15"
     },
     "windowing": {
       "windows": [
@@ -1681,6 +1787,9 @@ EXPLAIN
           ]
         }
       ],
+      "cost_info": {
+        "sort_cost": "9.00"
+      },
       "table": {
         "table_name": "t1",
         "access_type": "ALL",
@@ -1708,7 +1817,7 @@ EXPLAIN
   "query_block": {
     "select_id": 1,
     "cost_info": {
-      "query_cost": "1.15"
+      "query_cost": "10.15"
     },
     "windowing": {
       "windows": [
@@ -1728,6 +1837,9 @@ EXPLAIN
           ]
         }
       ],
+      "cost_info": {
+        "sort_cost": "9.00"
+      },
       "table": {
         "table_name": "t1",
         "access_type": "ALL",
@@ -1755,7 +1867,7 @@ EXPLAIN
   "query_block": {
     "select_id": 1,
     "cost_info": {
-      "query_cost": "1.15"
+      "query_cost": "10.15"
     },
     "windowing": {
       "windows": [
@@ -1775,6 +1887,9 @@ EXPLAIN
           ]
         }
       ],
+      "cost_info": {
+        "sort_cost": "9.00"
+      },
       "table": {
         "table_name": "t1",
         "access_type": "ALL",
@@ -1802,7 +1917,7 @@ EXPLAIN
   "query_block": {
     "select_id": 1,
     "cost_info": {
-      "query_cost": "1.15"
+      "query_cost": "10.15"
     },
     "windowing": {
       "windows": [
@@ -1822,6 +1937,9 @@ EXPLAIN
           ]
         }
       ],
+      "cost_info": {
+        "sort_cost": "9.00"
+      },
       "table": {
         "table_name": "t1",
         "access_type": "ALL",
@@ -1849,7 +1967,7 @@ EXPLAIN
   "query_block": {
     "select_id": 1,
     "cost_info": {
-      "query_cost": "1.15"
+      "query_cost": "10.15"
     },
     "windowing": {
       "windows": [
@@ -1869,6 +1987,9 @@ EXPLAIN
           ]
         }
       ],
+      "cost_info": {
+        "sort_cost": "9.00"
+      },
       "table": {
         "table_name": "t1",
         "access_type": "ALL",
@@ -1902,7 +2023,7 @@ EXPLAIN
   "query_block": {
     "select_id": 1,
     "cost_info": {
-      "query_cost": "1.15"
+      "query_cost": "10.15"
     },
     "windowing": {
       "windows": [
@@ -1925,6 +2046,9 @@ EXPLAIN
           ]
         }
       ],
+      "cost_info": {
+        "sort_cost": "9.00"
+      },
       "table": {
         "table_name": "t1",
         "access_type": "ALL",
@@ -1958,7 +2082,7 @@ EXPLAIN
   "query_block": {
     "select_id": 1,
     "cost_info": {
-      "query_cost": "1.15"
+      "query_cost": "10.15"
     },
     "windowing": {
       "windows": [
@@ -1981,6 +2105,9 @@ EXPLAIN
           ]
         }
       ],
+      "cost_info": {
+        "sort_cost": "9.00"
+      },
       "table": {
         "table_name": "t1",
         "access_type": "ALL",

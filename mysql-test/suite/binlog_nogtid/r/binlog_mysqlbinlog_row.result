@@ -136,18 +136,20 @@ INSERT INTO t1 VALUES (repeat('c',255));
 DELETE FROM t1 WHERE c36>'c';
 DROP TABLE t1;
 CREATE TABLE t1 (c37 NATIONAL CHAR);
+Warnings:
+Warning	3720	NATIONAL/NCHAR/NVARCHAR implies the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using CHAR(x) CHARACTER SET UTF8MB4 in order to be unambiguous.
 INSERT INTO t1 VALUES ('a');
 DELETE FROM t1 WHERE c37='a';
 DROP TABLE t1;
-CREATE TABLE t1 (c38 NATIONAL CHAR(0));
+CREATE TABLE t1 (c38 CHAR(0) CHARACTER SET utf8mb4);
 INSERT INTO t1 VALUES ('');
 DELETE FROM t1 WHERE c38='';
 DROP TABLE t1;
-CREATE TABLE t1 (c39 NATIONAL CHAR(1));
+CREATE TABLE t1 (c39 CHAR(1) CHARACTER SET utf8mb4);
 INSERT INTO t1 VALUES ('a');
 DELETE FROM t1 WHERE c39='a';
 DROP TABLE t1;
-CREATE TABLE t1 (c40 NATIONAL CHAR(255));
+CREATE TABLE t1 (c40 CHAR(255) CHARACTER SET utf8mb4);
 INSERT INTO t1 VALUES (repeat('a', 255));
 INSERT INTO t1 VALUES (repeat(_latin1 0xDF, 255));
 DELETE FROM t1 WHERE c40>'a';
@@ -185,20 +187,20 @@ CREATE TABLE t1 (c48 VARCHAR(261));
 INSERT INTO t1 VALUES (repeat('a',261));
 DELETE FROM t1 WHERE c48>'a';
 DROP TABLE t1;
-CREATE TABLE t1 (c49 NATIONAL VARCHAR(0));
+CREATE TABLE t1 (c49 VARCHAR(0) CHARACTER SET utf8mb4);
 INSERT INTO t1 VALUES ('');
 DELETE FROM t1 WHERE c49='';
 DROP TABLE t1;
-CREATE TABLE t1 (c50 NATIONAL VARCHAR(1));
+CREATE TABLE t1 (c50 VARCHAR(1) CHARACTER SET utf8mb4);
 INSERT INTO t1 VALUES ('a');
 DELETE FROM t1 WHERE c50='a';
 DROP TABLE t1;
-CREATE TABLE t1 (c51 NATIONAL VARCHAR(255));
+CREATE TABLE t1 (c51 VARCHAR(255) CHARACTER SET utf8mb4);
 INSERT INTO t1 VALUES (repeat('a',255));
 INSERT INTO t1 VALUES (repeat(_latin1 0xDF, 255));
 DELETE FROM t1 WHERE c51>'a';
 DROP TABLE t1;
-CREATE TABLE t1 (c52 NATIONAL VARCHAR(261));
+CREATE TABLE t1 (c52 VARCHAR(261) CHARACTER SET utf8mb4);
 INSERT INTO t1 VALUES (repeat('a',261));
 INSERT INTO t1 VALUES (repeat(_latin1 0xDF, 261));
 DELETE FROM t1 WHERE c52>'a';
@@ -341,8 +343,6 @@ INSERT INTO t1 VALUES (NOW(6), NOW(6), NOW(6), NOW(6), NOW(6), NOW(6));
 DROP TABLE t1;
 SET @ts='2001-01-01 00:00:00.123456';
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 CREATE TABLE t1 (
 c85 TIMESTAMP(6), c86 TIMESTAMP(5), c87 TIMESTAMP(4),
 c88 TIMESTAMP(3), c89 TIMESTAMP(2), c90 TIMESTAMP(1)
@@ -398,12 +398,13 @@ use `test`/*!*/;
 SET TIMESTAMP=#/*!*/;
 SET @@session.pseudo_thread_id=#/*!*/;
 SET @@session.foreign_key_checks=1, @@session.sql_auto_is_null=0, @@session.unique_checks=1, @@session.autocommit=1/*!*/;
-SET @@session.sql_mode=1436549152/*!*/;
+SET @@session.sql_mode=1168113696/*!*/;
 SET @@session.auto_increment_increment=1, @@session.auto_increment_offset=1/*!*/;
 /*!\C utf8mb4 *//*!*/;
 SET @@session.character_set_client=255,@@session.collation_connection=255,@@session.collation_server=255/*!*/;
 SET @@session.lc_time_names=0/*!*/;
 SET @@session.collation_database=DEFAULT/*!*/;
+/*!80005 SET @@session.default_collation_for_utf8mb4=255*//*!*/;
 CREATE TABLE t1 (c01 BIT)
 /*!*/;
 # at #
@@ -2640,7 +2641,7 @@ SET @@SESSION.GTID_NEXT= '#'/*!*/;
 # at #
 # # server id #  end_log_pos # CRC32 # 	Query	thread_id=#	exec_time=#	error_code=0	Xid = #
 SET TIMESTAMP=#/*!*/;
-CREATE TABLE t1 (c38 NATIONAL CHAR(0))
+CREATE TABLE t1 (c38 CHAR(0) CHARACTER SET utf8mb4)
 /*!*/;
 # at #
 # # server id #  end_log_pos # CRC32 # 	Anonymous_GTID	last_committed=#	sequence_number=#	rbr_only=yes	original_committed_timestamp=#   immediate_commit_timestamp=#	transaction_length=#
@@ -2706,7 +2707,7 @@ SET @@SESSION.GTID_NEXT= '#'/*!*/;
 # at #
 # # server id #  end_log_pos # CRC32 # 	Query	thread_id=#	exec_time=#	error_code=0	Xid = #
 SET TIMESTAMP=#/*!*/;
-CREATE TABLE t1 (c39 NATIONAL CHAR(1))
+CREATE TABLE t1 (c39 CHAR(1) CHARACTER SET utf8mb4)
 /*!*/;
 # at #
 # # server id #  end_log_pos # CRC32 # 	Anonymous_GTID	last_committed=#	sequence_number=#	rbr_only=yes	original_committed_timestamp=#   immediate_commit_timestamp=#	transaction_length=#
@@ -2726,7 +2727,7 @@ BEGIN
 # # server id #  end_log_pos # CRC32 # 	Write_rows: table id # flags: STMT_END_F
 ### INSERT INTO `test`.`t1`
 ### SET
-###   @1='a' /* STRING(3) meta=65027 nullable=1 is_null=0 */
+###   @1='a' /* STRING(4) meta=65028 nullable=1 is_null=0 */
 # at #
 # # server id #  end_log_pos # CRC32 # 	Xid = #
 COMMIT/*!*/;
@@ -2748,7 +2749,7 @@ BEGIN
 # # server id #  end_log_pos # CRC32 # 	Delete_rows: table id # flags: STMT_END_F
 ### DELETE FROM `test`.`t1`
 ### WHERE
-###   @1='a' /* STRING(3) meta=65027 nullable=1 is_null=0 */
+###   @1='a' /* STRING(4) meta=65028 nullable=1 is_null=0 */
 # at #
 # # server id #  end_log_pos # CRC32 # 	Xid = #
 COMMIT/*!*/;
@@ -2772,7 +2773,7 @@ SET @@SESSION.GTID_NEXT= '#'/*!*/;
 # at #
 # # server id #  end_log_pos # CRC32 # 	Query	thread_id=#	exec_time=#	error_code=0	Xid = #
 SET TIMESTAMP=#/*!*/;
-CREATE TABLE t1 (c40 NATIONAL CHAR(255))
+CREATE TABLE t1 (c40 CHAR(255) CHARACTER SET utf8mb4)
 /*!*/;
 # at #
 # # server id #  end_log_pos # CRC32 # 	Anonymous_GTID	last_committed=#	sequence_number=#	rbr_only=yes	original_committed_timestamp=#   immediate_commit_timestamp=#	transaction_length=#
@@ -2792,7 +2793,7 @@ BEGIN
 # # server id #  end_log_pos # CRC32 # 	Write_rows: table id # flags: STMT_END_F
 ### INSERT INTO `test`.`t1`
 ### SET
-###   @1='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' /* STRING(765) meta=57085 nullable=1 is_null=0 */
+###   @1='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' /* STRING(1020) meta=52988 nullable=1 is_null=0 */
 # at #
 # # server id #  end_log_pos # CRC32 # 	Xid = #
 COMMIT/*!*/;
@@ -2814,7 +2815,7 @@ BEGIN
 # # server id #  end_log_pos # CRC32 # 	Write_rows: table id # flags: STMT_END_F
 ### INSERT INTO `test`.`t1`
 ### SET
-###   @1='ßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßß' /* STRING(765) meta=57085 nullable=1 is_null=0 */
+###   @1='ßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßß' /* STRING(1020) meta=52988 nullable=1 is_null=0 */
 # at #
 # # server id #  end_log_pos # CRC32 # 	Xid = #
 COMMIT/*!*/;
@@ -2836,10 +2837,10 @@ BEGIN
 # # server id #  end_log_pos # CRC32 # 	Delete_rows: table id # flags: STMT_END_F
 ### DELETE FROM `test`.`t1`
 ### WHERE
-###   @1='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' /* STRING(765) meta=57085 nullable=1 is_null=0 */
+###   @1='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' /* STRING(1020) meta=52988 nullable=1 is_null=0 */
 ### DELETE FROM `test`.`t1`
 ### WHERE
-###   @1='ßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßß' /* STRING(765) meta=57085 nullable=1 is_null=0 */
+###   @1='ßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßß' /* STRING(1020) meta=52988 nullable=1 is_null=0 */
 # at #
 # # server id #  end_log_pos # CRC32 # 	Xid = #
 COMMIT/*!*/;
@@ -3416,7 +3417,7 @@ SET @@SESSION.GTID_NEXT= '#'/*!*/;
 # at #
 # # server id #  end_log_pos # CRC32 # 	Query	thread_id=#	exec_time=#	error_code=0	Xid = #
 SET TIMESTAMP=#/*!*/;
-CREATE TABLE t1 (c49 NATIONAL VARCHAR(0))
+CREATE TABLE t1 (c49 VARCHAR(0) CHARACTER SET utf8mb4)
 /*!*/;
 # at #
 # # server id #  end_log_pos # CRC32 # 	Anonymous_GTID	last_committed=#	sequence_number=#	rbr_only=yes	original_committed_timestamp=#   immediate_commit_timestamp=#	transaction_length=#
@@ -3482,7 +3483,7 @@ SET @@SESSION.GTID_NEXT= '#'/*!*/;
 # at #
 # # server id #  end_log_pos # CRC32 # 	Query	thread_id=#	exec_time=#	error_code=0	Xid = #
 SET TIMESTAMP=#/*!*/;
-CREATE TABLE t1 (c50 NATIONAL VARCHAR(1))
+CREATE TABLE t1 (c50 VARCHAR(1) CHARACTER SET utf8mb4)
 /*!*/;
 # at #
 # # server id #  end_log_pos # CRC32 # 	Anonymous_GTID	last_committed=#	sequence_number=#	rbr_only=yes	original_committed_timestamp=#   immediate_commit_timestamp=#	transaction_length=#
@@ -3502,7 +3503,7 @@ BEGIN
 # # server id #  end_log_pos # CRC32 # 	Write_rows: table id # flags: STMT_END_F
 ### INSERT INTO `test`.`t1`
 ### SET
-###   @1='a' /* VARSTRING(3) meta=3 nullable=1 is_null=0 */
+###   @1='a' /* VARSTRING(4) meta=4 nullable=1 is_null=0 */
 # at #
 # # server id #  end_log_pos # CRC32 # 	Xid = #
 COMMIT/*!*/;
@@ -3524,7 +3525,7 @@ BEGIN
 # # server id #  end_log_pos # CRC32 # 	Delete_rows: table id # flags: STMT_END_F
 ### DELETE FROM `test`.`t1`
 ### WHERE
-###   @1='a' /* VARSTRING(3) meta=3 nullable=1 is_null=0 */
+###   @1='a' /* VARSTRING(4) meta=4 nullable=1 is_null=0 */
 # at #
 # # server id #  end_log_pos # CRC32 # 	Xid = #
 COMMIT/*!*/;
@@ -3548,7 +3549,7 @@ SET @@SESSION.GTID_NEXT= '#'/*!*/;
 # at #
 # # server id #  end_log_pos # CRC32 # 	Query	thread_id=#	exec_time=#	error_code=0	Xid = #
 SET TIMESTAMP=#/*!*/;
-CREATE TABLE t1 (c51 NATIONAL VARCHAR(255))
+CREATE TABLE t1 (c51 VARCHAR(255) CHARACTER SET utf8mb4)
 /*!*/;
 # at #
 # # server id #  end_log_pos # CRC32 # 	Anonymous_GTID	last_committed=#	sequence_number=#	rbr_only=yes	original_committed_timestamp=#   immediate_commit_timestamp=#	transaction_length=#
@@ -3568,7 +3569,7 @@ BEGIN
 # # server id #  end_log_pos # CRC32 # 	Write_rows: table id # flags: STMT_END_F
 ### INSERT INTO `test`.`t1`
 ### SET
-###   @1='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' /* VARSTRING(765) meta=765 nullable=1 is_null=0 */
+###   @1='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' /* VARSTRING(1020) meta=1020 nullable=1 is_null=0 */
 # at #
 # # server id #  end_log_pos # CRC32 # 	Xid = #
 COMMIT/*!*/;
@@ -3590,7 +3591,7 @@ BEGIN
 # # server id #  end_log_pos # CRC32 # 	Write_rows: table id # flags: STMT_END_F
 ### INSERT INTO `test`.`t1`
 ### SET
-###   @1='ßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßß' /* VARSTRING(765) meta=765 nullable=1 is_null=0 */
+###   @1='ßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßß' /* VARSTRING(1020) meta=1020 nullable=1 is_null=0 */
 # at #
 # # server id #  end_log_pos # CRC32 # 	Xid = #
 COMMIT/*!*/;
@@ -3612,10 +3613,10 @@ BEGIN
 # # server id #  end_log_pos # CRC32 # 	Delete_rows: table id # flags: STMT_END_F
 ### DELETE FROM `test`.`t1`
 ### WHERE
-###   @1='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' /* VARSTRING(765) meta=765 nullable=1 is_null=0 */
+###   @1='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' /* VARSTRING(1020) meta=1020 nullable=1 is_null=0 */
 ### DELETE FROM `test`.`t1`
 ### WHERE
-###   @1='ßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßß' /* VARSTRING(765) meta=765 nullable=1 is_null=0 */
+###   @1='ßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßß' /* VARSTRING(1020) meta=1020 nullable=1 is_null=0 */
 # at #
 # # server id #  end_log_pos # CRC32 # 	Xid = #
 COMMIT/*!*/;
@@ -3639,7 +3640,7 @@ SET @@SESSION.GTID_NEXT= '#'/*!*/;
 # at #
 # # server id #  end_log_pos # CRC32 # 	Query	thread_id=#	exec_time=#	error_code=0	Xid = #
 SET TIMESTAMP=#/*!*/;
-CREATE TABLE t1 (c52 NATIONAL VARCHAR(261))
+CREATE TABLE t1 (c52 VARCHAR(261) CHARACTER SET utf8mb4)
 /*!*/;
 # at #
 # # server id #  end_log_pos # CRC32 # 	Anonymous_GTID	last_committed=#	sequence_number=#	rbr_only=yes	original_committed_timestamp=#   immediate_commit_timestamp=#	transaction_length=#
@@ -3659,7 +3660,7 @@ BEGIN
 # # server id #  end_log_pos # CRC32 # 	Write_rows: table id # flags: STMT_END_F
 ### INSERT INTO `test`.`t1`
 ### SET
-###   @1='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' /* VARSTRING(783) meta=783 nullable=1 is_null=0 */
+###   @1='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' /* VARSTRING(1044) meta=1044 nullable=1 is_null=0 */
 # at #
 # # server id #  end_log_pos # CRC32 # 	Xid = #
 COMMIT/*!*/;
@@ -3681,7 +3682,7 @@ BEGIN
 # # server id #  end_log_pos # CRC32 # 	Write_rows: table id # flags: STMT_END_F
 ### INSERT INTO `test`.`t1`
 ### SET
-###   @1='ßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßß' /* VARSTRING(783) meta=783 nullable=1 is_null=0 */
+###   @1='ßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßß' /* VARSTRING(1044) meta=1044 nullable=1 is_null=0 */
 # at #
 # # server id #  end_log_pos # CRC32 # 	Xid = #
 COMMIT/*!*/;
@@ -3703,10 +3704,10 @@ BEGIN
 # # server id #  end_log_pos # CRC32 # 	Delete_rows: table id # flags: STMT_END_F
 ### DELETE FROM `test`.`t1`
 ### WHERE
-###   @1='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' /* VARSTRING(783) meta=783 nullable=1 is_null=0 */
+###   @1='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' /* VARSTRING(1044) meta=1044 nullable=1 is_null=0 */
 ### DELETE FROM `test`.`t1`
 ### WHERE
-###   @1='ßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßß' /* VARSTRING(783) meta=783 nullable=1 is_null=0 */
+###   @1='ßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßßß' /* VARSTRING(1044) meta=1044 nullable=1 is_null=0 */
 # at #
 # # server id #  end_log_pos # CRC32 # 	Xid = #
 COMMIT/*!*/;
@@ -6053,7 +6054,7 @@ SET @@SESSION.GTID_NEXT= '#'/*!*/;
 # at #
 # # server id #  end_log_pos # CRC32 # 	Query	thread_id=#	exec_time=#	error_code=0	Xid = #
 SET TIMESTAMP=#/*!*/;
-SET @@session.sql_mode=1436549152/*!*/;
+SET @@session.sql_mode=1168113696/*!*/;
 CREATE TABLE t1 (a int NOT NULL DEFAULT 0, b int NOT NULL DEFAULT 0)
 /*!*/;
 # at #

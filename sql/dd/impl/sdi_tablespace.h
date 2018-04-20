@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,7 +23,7 @@
 #ifndef DD__SDI_TABLESPACE_INCLUDED
 #define DD__SDI_TABLESPACE_INCLUDED
 
-#include "sql/dd/impl/sdi.h" // dd::Sdi_type
+#include "sql/dd/impl/sdi.h"  // dd::Sdi_type
 #include "sql/dd/object_id.h"
 
 class THD;
@@ -51,7 +51,6 @@ namespace sdi_tablespace {
   @{
 */
 
-
 /**
   Looks up the relevant tablespaces for the table and stores the
   table SDI in each.
@@ -62,7 +61,7 @@ namespace sdi_tablespace {
   @param table
   @param schema
  */
-bool store_tbl_sdi(THD *thd, const handlerton &hton, const Sdi_type &sdi,
+bool store_tbl_sdi(THD *thd, handlerton *hton, const Sdi_type &sdi,
                    const Table &table, const dd::Schema &schema);
 
 /**
@@ -72,7 +71,7 @@ bool store_tbl_sdi(THD *thd, const handlerton &hton, const Sdi_type &sdi,
   @param sdi
   @param tablespace
  */
-bool store_tsp_sdi(const handlerton &hton, const Sdi_type &sdi,
+bool store_tsp_sdi(handlerton *hton, const Sdi_type &sdi,
                    const Tablespace &tablespace);
 
 /**
@@ -89,11 +88,10 @@ bool store_tsp_sdi(const handlerton &hton, const Sdi_type &sdi,
   @param table
   @param schema
  */
-bool drop_tbl_sdi(THD *thd, const handlerton &hton,
-                  const Table &table,
+bool drop_tbl_sdi(THD *thd, const handlerton &hton, const Table &table,
                   const Schema &schema MY_ATTRIBUTE((unused)));
 
 /** @} End of group sdi_tablespace */
-}
-}
-#endif // !DD__SDI_TABLESPACE_INCLUDED
+}  // namespace sdi_tablespace
+}  // namespace dd
+#endif  // !DD__SDI_TABLESPACE_INCLUDED

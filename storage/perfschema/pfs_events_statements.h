@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2018, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -42,8 +42,7 @@ struct PFS_user;
 struct PFS_host;
 
 /** A statement record. */
-struct PFS_events_statements : public PFS_events
-{
+struct PFS_events_statements : public PFS_events {
   enum_object_type m_sp_type;
   char m_schema_name[NAME_LEN];
   uint m_schema_name_length;
@@ -135,12 +134,12 @@ extern bool flag_events_statements_history_long;
 
 extern bool events_statements_history_long_full;
 extern PFS_ALIGNED PFS_cacheline_atomic_uint32
-  events_statements_history_long_index;
+    events_statements_history_long_index;
 extern PFS_events_statements *events_statements_history_long_array;
 extern size_t events_statements_history_long_size;
 
 int init_events_statements_history_long(
-  size_t events_statements_history_long_sizing);
+    size_t events_statements_history_long_sizing);
 void cleanup_events_statements_history_long();
 
 void reset_events_statements_current();

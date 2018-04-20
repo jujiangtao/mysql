@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2012, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,39 +25,23 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-
 /**
   @file mysys_ssl/my_md5.cc
-  Wrapper functions for OpenSSL and YaSSL. Also provides a Compatibility layer
-  to make available YaSSL's MD5 implementation.
+  Wrapper functions for OpenSSL and wolfSSL.
 */
 
 #include "my_md5.h"
 
-#if defined(HAVE_YASSL)
-#include "my_config.h"
-
-#include <md5.hpp>
-
-static void my_md5_hash(char *digest, const char *buf, int len)
-{
-  TaoCrypt::MD5 hasher;
-  hasher.Update((TaoCrypt::byte *) buf, len);
-  hasher.Final((TaoCrypt::byte *) digest);
-}
-
-#elif defined(HAVE_OPENSSL)
+#include <openssl/crypto.h>
 #include <openssl/md5.h>
 
-static void my_md5_hash(unsigned char* digest, unsigned const char *buf, int len)
-{
+static void my_md5_hash(unsigned char *digest, unsigned const char *buf,
+                        int len) {
   MD5_CTX ctx;
-  MD5_Init (&ctx);
-  MD5_Update (&ctx, buf, len);
-  MD5_Final (digest, &ctx);
+  MD5_Init(&ctx);
+  MD5_Update(&ctx, buf, len);
+  MD5_Final(digest, &ctx);
 }
-
-#endif /* HAVE_YASSL */
 
 /**
     Wrapper function to compute MD5 message digest.
@@ -65,12 +49,22 @@ static void my_md5_hash(unsigned char* digest, unsigned const char *buf, int len
     @param [out] digest Computed MD5 digest
     @param [in] buf     Message to be computed
     @param [in] len     Length of the message
+    @return             0 when MD5 hash function called successfully
+                        1 when MD5 hash function doesn't called because of fips
+   mode (ON/STRICT)
 */
-void compute_md5_hash(char *digest, const char *buf, int len)
-{
-#if defined(HAVE_YASSL)
-  my_md5_hash(digest, buf, len);
-#elif defined(HAVE_OPENSSL)
-  my_md5_hash((unsigned char*)digest, (unsigned const char*)buf, len);
-#endif /* HAVE_YASSL */
+int compute_md5_hash(char *digest, const char *buf, int len) {
+  int retval = 0;
+  int fips_mode = 0;
+#if !defined(HAVE_WOLFSSL)
+  fips_mode = FIPS_mode();
+#endif /* HAVE_WOLFSSL */
+  /* If fips mode is ON/STRICT restricted method calls will result into abort,
+   * skipping call. */
+  if (fips_mode == 0) {
+    my_md5_hash((unsigned char *)digest, (unsigned const char *)buf, len);
+  } else {
+    retval = 1;
+  }
+  return retval;
 }

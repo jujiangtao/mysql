@@ -418,12 +418,12 @@ DROP TABLESPACE ts1;
 --echo #
 --echo # Bug#21957001 INNODB: FAILING ASSERTION: 0 IN FILE HA_INNOPART.CC LINE 3526
 --echo #
-call mtr.add_suppression("\\[Warning\\] \\[[^]]*\\] InnoDB: Trying to access missing tablespace .*");
-call mtr.add_suppression("\\[Warning\\] \\[[^]]*\\] InnoDB: Missing .ibd file for table `test`\.`t1` .* ");
-call mtr.add_suppression("\\[Warning\\] \\[[^]]*\\] InnoDB: Cannot calculate statistics for table .*");
-call mtr.add_suppression("\\[ERROR\\] \\[[^]]*\\] InnoDB: Operating system error number 2 in a file operation.");
-call mtr.add_suppression("\\[ERROR\\] \\[[^]]*\\] InnoDB: The error means the system cannot find the path specified.");
-call mtr.add_suppression("\\[ERROR\\] \\[[^]]*\\] InnoDB: Cannot open datafile for read-only:");
+call mtr.add_suppression("\\[Warning\\] .*MY-\\d+.* Trying to access missing tablespace .*");
+call mtr.add_suppression("\\[Warning\\] .*MY-\\d+.* Missing .ibd file for table `test`\.`t1` .* ");
+call mtr.add_suppression("\\[Warning\\] .*MY-\\d+.* Cannot calculate statistics for table .*");
+call mtr.add_suppression("\\[ERROR\\] .*MY-\\d+.* Operating system error number 2 in a file operation.");
+call mtr.add_suppression("\\[ERROR\\] .*MY-\\d+.* The error means the system cannot find the path specified.");
+call mtr.add_suppression("\\[ERROR\\] .*MY-\\d+.* Cannot open datafile for read-only:");
 
 CREATE TABLE t1(c1 INT,c2 CHAR(1)) PARTITION BY KEY(c1) PARTITIONS 4;
 
@@ -865,3 +865,25 @@ INSERT INTO t1 VALUES(0, 1), (2, 3), (5, 6), (10, 11);
 SELECT * FROM t1 ORDER BY a;
 
 DROP TABLE t1;
+
+
+--echo # DATA DIRECTORY should be read correctly after restart
+
+--replace_result $MYSQL_TMP_DIR MYSQL_TMP_DIR
+eval CREATE TABLE t1 (a INT, b INT) PARTITION BY RANGE(a)
+(PARTITION P0 VALUES LESS THAN (10) DATA DIRECTORY '$MYSQL_TMP_DIR',
+ PARTITION p1 VALUES LESS THAN (20) DATA DIRECTORY '$MYSQL_TMP_DIR');
+
+--replace_result $MYSQL_TMP_DIR MYSQL_TMP_DIR
+SHOW CREATE TABLE t1;
+
+--source include/restart_mysqld.inc
+
+TRUNCATE TABLE t1;
+
+--replace_result $MYSQL_TMP_DIR MYSQL_TMP_DIR
+SHOW CREATE TABLE t1;
+
+DROP TABLE t1;
+# Remove directory left behind by the above
+--rmdir $MYSQL_TMP_DIR/test

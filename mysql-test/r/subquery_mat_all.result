@@ -2,8 +2,6 @@ set optimizer_switch='semijoin=on,materialization=on,firstmatch=on,loosescan=on,
 set @old_opt_switch=@@optimizer_switch;
 set optimizer_switch='subquery_materialization_cost_based=off';
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 drop table if exists t1, t2, t3, t1i, t2i, t3i;
 drop view if exists v1, v2, v1m, v2m;
 create table t1 (a1 char(8), a2 char(8)) charset utf8mb4;
@@ -2033,6 +2031,8 @@ DROP TABLE t1,t2,t3;
 # Bug#19297190 NOT IN DOESN'T RETURN EXPECTED RESULT
 #
 CREATE TABLE t1 (a VARCHAR(500) CHARACTER SET UTF8) ENGINE=INNODB;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SET @str= repeat("a",450);
 SET @num=1000;
 INSERT INTO t1 VALUES (CONCAT((@num:=@num+1), @str));

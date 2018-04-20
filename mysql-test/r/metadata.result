@@ -96,7 +96,7 @@ i
 2
 affected rows: 1
 affected rows: 0
-create table t1 (id int(10));
+create table t1 (id int(10)) ENGINE=MyISAM;
 insert into t1 values (1);
 CREATE  VIEW v1 AS select t1.id as id from t1;
 CREATE  VIEW v2 AS select t1.id as renamed from t1;
@@ -306,8 +306,6 @@ drop table t1;
 #  WL#946 TIME/DATETIME/TIMESTAMP with fractional precision
 #
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 CREATE TABLE t1 (
 t6 TIME(6), t5 TIME(5), t4 TIME(4),
 t3 TIME(3), t2 TIME(2), t1 TIME(1),

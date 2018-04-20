@@ -1,4 +1,4 @@
-/* Copyright (c) 2013, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2013, 2018, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -37,15 +37,14 @@
 
 #define PROGRAM_HASH_KEY_LENGTH                         \
   sizeof(enum_object_type) + COL_OBJECT_NAME_SIZE + 1 + \
-    COL_OBJECT_SCHEMA_SIZE + 1
+      COL_OBJECT_SCHEMA_SIZE + 1
 
 extern LF_HASH program_hash;
 
 /**
   Hash key for a program.
 */
-struct PFS_program_key
-{
+struct PFS_program_key {
   /**
     Hash search key.
     This has to be a string for @c LF_HASH,
@@ -55,8 +54,7 @@ struct PFS_program_key
   uint m_key_length;
 };
 
-struct PFS_ALIGNED PFS_program : public PFS_instr
-{
+struct PFS_ALIGNED PFS_program : public PFS_instr {
   /** Object type. */
   enum_object_type m_type;
 
@@ -94,14 +92,10 @@ void reset_esms_by_program();
 PFS_program *find_or_create_program(PFS_thread *thread,
                                     enum_object_type object_type,
                                     const char *object_name,
-                                    uint object_name_length,
-                                    const char *schema,
+                                    uint object_name_length, const char *schema,
                                     uint schema_length);
 
-void drop_program(PFS_thread *thread,
-                  enum_object_type object_type,
-                  const char *object_name,
-                  uint object_name_length,
-                  const char *schema_name,
-                  uint schema_name_length);
+void drop_program(PFS_thread *thread, enum_object_type object_type,
+                  const char *object_name, uint object_name_length,
+                  const char *schema_name, uint schema_name_length);
 #endif

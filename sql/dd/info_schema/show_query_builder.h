@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2016, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -76,9 +76,8 @@ namespace info_schema {
   The memory used while building the this Parse Tree is thd->mem_root.
 */
 
-class Select_lex_builder
-{
-public:
+class Select_lex_builder {
+ public:
   Select_lex_builder(const POS *pc, THD *thd);
 
   /**
@@ -89,7 +88,6 @@ public:
   */
 
   bool add_star_select_item();
-
 
   /**
     Add item representing a column as,
@@ -102,9 +100,19 @@ public:
             true  on failure.
   */
 
-  bool add_select_item(const LEX_STRING field_name,
-                       const LEX_STRING alias);
+  bool add_select_item(const LEX_STRING field_name, const LEX_STRING alias);
 
+  /**
+    Add expression as an item tree, with an alias to name the resulting column.
+
+    The item will be appended to existing list of select items
+    for this query block.
+
+    @return false on success.
+            true  on failure.
+  */
+
+  bool add_select_expr(Item *select_list_item, const LEX_STRING alias);
 
   /**
     Add item representing a FROM clause table as,
@@ -117,9 +125,7 @@ public:
             true  on failure.
   */
 
-  bool add_from_item(const LEX_STRING schema_name,
-                     const LEX_STRING table_name);
-
+  bool add_from_item(const LEX_STRING schema_name, const LEX_STRING table_name);
 
   /**
     Add item representing a FROM clause table as,
@@ -134,7 +140,6 @@ public:
 
   bool add_from_item(PT_derived_table *dt);
 
-
   /**
     Prepare item representing a LIKE condition,
 
@@ -147,9 +152,7 @@ public:
             nullptr on failure.
   */
 
-  Item *prepare_like_item(const LEX_STRING field_name,
-                          const String *wild);
-
+  Item *prepare_like_item(const LEX_STRING field_name, const String *wild);
 
   /**
     Prepare item representing a equal to comparision condition,
@@ -163,9 +166,7 @@ public:
             nullptr on failure.
   */
 
-  Item *prepare_equal_item(const LEX_STRING field_name,
-                           const LEX_STRING value);
-
+  Item *prepare_equal_item(const LEX_STRING field_name, const LEX_STRING value);
 
   /**
     Add a WHERE clause condition to Select_lex_builder.
@@ -180,7 +181,6 @@ public:
   */
 
   bool add_condition(Item *a);
-
 
   /**
     Add a ORDER BY clause field to Select_lex_builder.
@@ -197,7 +197,6 @@ public:
 
   bool add_order_by(const LEX_STRING field_name);
 
-
   /**
     This function build ParseTree node that represents this
     Select_lex_builder as sub-query. This enables us to build a
@@ -210,8 +209,7 @@ public:
             nullptr on failure.
   */
 
-  PT_derived_table* prepare_derived_table(const LEX_STRING table_alias);
-
+  PT_derived_table *prepare_derived_table(const LEX_STRING table_alias);
 
   /**
     Prepare a SELECT_LEX using all the information information
@@ -221,11 +219,9 @@ public:
             nullptr on failure.
   */
 
-  SELECT_LEX* prepare_select_lex();
+  SELECT_LEX *prepare_select_lex();
 
-
-private:
-
+ private:
   /**
     Prepare a list of expression used to build select items for
     the query being built.
@@ -236,7 +232,7 @@ private:
 
   bool add_to_select_item_list(Item *expr);
 
-private:
+ private:
   // Parser current position represented by YYLTYPE
   const POS *m_pos;
 
@@ -256,7 +252,7 @@ private:
   PT_order_list *m_order_by_list;
 };
 
-} // namespace info_schema
-} // namespace dd
+}  // namespace info_schema
+}  // namespace dd
 
-#endif  /* SQL_DD_SHOW_QUERY_BUILDER_H */
+#endif /* SQL_DD_SHOW_QUERY_BUILDER_H */

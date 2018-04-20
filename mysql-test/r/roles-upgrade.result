@@ -12,8 +12,6 @@ mysql.help_category                                OK
 mysql.help_keyword                                 OK
 mysql.help_relation                                OK
 mysql.help_topic                                   OK
-mysql.innodb_ddl_log                               OK
-mysql.innodb_dynamic_metadata                      OK
 mysql.innodb_index_stats                           OK
 mysql.innodb_table_stats                           OK
 mysql.password_history                             OK
@@ -40,14 +38,14 @@ sys.sys_config                                     OK
 #
 # Bug#24447771 ACL_INIT() RETURNS TRUE ON 5.7 DATA DIRECTORY
 #
-CALL mtr.add_suppression("Could not load mysql.role_edges and mysql.default_roles tables. ACL DDLs will not work unless mysql_upgrade is executed.");
 CALL mtr.add_suppression("ACL table mysql.role_edges missing. Some operations may fail.");
 CALL mtr.add_suppression("ACL table mysql.default_roles missing. Some operations may fail.");
 DROP TABLE mysql.role_edges;
 DROP TABLE mysql.default_roles;
 # restart:--log-error=MYSQLTEST_VARDIR/log/roles-upgrade.err
 # let's check for the presense of the warning
-Pattern "Could not load mysql.role_edges and mysql.default_roles tables. ACL DDLs will not work unless mysql_upgrade is executed." found
+Pattern "ACL table mysql.role_edges missing. Some operations may fail." found
+Pattern "ACL table mysql.default_roles missing. Some operations may fail." found
 # ACL DDLs should not work
 CREATE USER u1;
 ERROR 42S02: Table 'mysql.role_edges' doesn't exist
@@ -69,8 +67,6 @@ mysql.help_category                                OK
 mysql.help_keyword                                 OK
 mysql.help_relation                                OK
 mysql.help_topic                                   OK
-mysql.innodb_ddl_log                               OK
-mysql.innodb_dynamic_metadata                      OK
 mysql.innodb_index_stats                           OK
 mysql.innodb_table_stats                           OK
 mysql.password_history                             OK
@@ -101,7 +97,7 @@ role_edges	CREATE TABLE `role_edges` (
   `FROM_USER` char(32) COLLATE utf8_bin NOT NULL DEFAULT '',
   `TO_HOST` char(60) COLLATE utf8_bin NOT NULL DEFAULT '',
   `TO_USER` char(32) COLLATE utf8_bin NOT NULL DEFAULT '',
-  `WITH_ADMIN_OPTION` enum('N','Y') CHARACTER SET utf8 NOT NULL DEFAULT 'N',
+  `WITH_ADMIN_OPTION` enum('N','Y') CHARACTER SET utf8 COLLATE utf8_general_ci NOT NULL DEFAULT 'N',
   PRIMARY KEY (`FROM_HOST`,`FROM_USER`,`TO_HOST`,`TO_USER`)
 ) /*!50100 TABLESPACE `mysql` */ ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin STATS_PERSISTENT=0 COMMENT='Role hierarchy and role grants'
 SHOW CREATE TABLE mysql.default_roles;

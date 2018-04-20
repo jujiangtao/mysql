@@ -152,6 +152,12 @@ d varchar(255) character set utf8,
 e varchar(4) character set utf8,
 PRIMARY KEY (a,b,c,d,e))
 ENGINE=innodb;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 DROP TABLE t1;
 CREATE TABLE t1 (a varchar(255) character set utf8,
 b varchar(255) character set utf8,
@@ -169,6 +175,13 @@ e varchar(255) character set utf8,
 f varchar(4)   character set utf8,
 PRIMARY KEY (a), KEY (b,c,d,e,f))
 ENGINE=innodb;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 DROP TABLE t1;
 CREATE TABLE t1 (a varchar(255) character set utf8,
 b varchar(255) character set utf8,
@@ -302,12 +315,16 @@ DROP TABLE t4,t5;
 # page sizes.  The previously disabled portions of this test were
 # moved as well.
 CREATE TABLE t2(d varchar(17) PRIMARY KEY) ENGINE=innodb DEFAULT CHARSET=utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 CREATE TABLE t3(a int PRIMARY KEY) ENGINE=innodb;
 INSERT INTO t3 VALUES (22),(44),(33),(55),(66);
 INSERT INTO t2 VALUES ('jejdkrun87'),('adfd72nh9k'),
 ('adfdpplkeock'),('adfdijnmnb78k'),('adfdijn0loKNHJik');
 CREATE TABLE t1(a int, b blob, c text, d text NOT NULL)
 ENGINE=innodb DEFAULT CHARSET=utf8 STATS_PERSISTENT=0;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 INSERT INTO t1
 SELECT a,LEFT(REPEAT(d,100*a),65535),REPEAT(d,20*a),d FROM t2,t3 order by a, d;
 DROP TABLE t2, t3;
@@ -501,7 +518,7 @@ t1	CREATE TABLE `t1` (
   KEY `t1u` (`u`(767)),
   KEY `t1ut` (`u`(767),`t`(767)),
   KEY `t1st` (`s`(767),`t`(767))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci ROW_FORMAT=DYNAMIC
 DROP TABLE t1;
 # Bug #12429576 - Test an assertion failure on purge.
 CREATE TABLE t1_purge (
@@ -618,7 +635,7 @@ t12963823	CREATE TABLE `t12963823` (
   KEY `ndx_n` (`n`(500)),
   KEY `ndx_o` (`o`(500)),
   KEY `ndx_p` (`p`(500))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci ROW_FORMAT=DYNAMIC
 # Bug#12547647 UPDATE LOGGING COULD EXCEED LOG PAGE SIZE
 SET SESSION innodb_strict_mode = ON;
 CREATE TABLE bug12547647(

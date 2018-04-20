@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2018, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -31,6 +31,7 @@
 #include <sys/types.h>
 #include <atomic>
 
+#include "mysql/components/services/psi_stage_bits.h"
 #include "storage/perfschema/pfs_events.h"
 #include "storage/perfschema/pfs_global.h"
 
@@ -40,8 +41,7 @@ struct PFS_user;
 struct PFS_host;
 
 /** A stage record. */
-struct PFS_events_stages : public PFS_events
-{
+struct PFS_events_stages : public PFS_events {
   PSI_stage_progress m_progress;
 };
 

@@ -162,7 +162,7 @@ show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `t` varchar(4) CHARACTER SET cp1251 DEFAULT NULL
-) ENGINE=ENGINE DEFAULT CHARSET=utf8mb4
+) ENGINE=ENGINE DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 drop table t1;
 select
 cast(_latin1'ab'  AS char)    as c1,
@@ -181,8 +181,6 @@ cast(1000 as CHAR(3))
 Warnings:
 Warning	1292	Truncated incorrect BINARY(3) value: '1000'
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 create table t1 select
 cast(_latin1'ab'  AS char)    as c1,
 cast(_latin1'a '  AS char)    as c2,
@@ -203,7 +201,7 @@ t1	CREATE TABLE `t1` (
   `c3` varbinary(2) NOT NULL DEFAULT '',
   `c4` varbinary(2) NOT NULL DEFAULT '',
   `c5` varbinary(2) NOT NULL DEFAULT ''
-) ENGINE=ENGINE DEFAULT CHARSET=utf8mb4
+) ENGINE=ENGINE DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 drop table t1;
 select
 cast(_koi8r'��'  AS nchar)    as c1,
@@ -214,6 +212,11 @@ cast(_koi8r'�'   AS nchar(2)) as c5;
 c1	c2	c3	c4	c5
 фг	ф 	фг	ф 	ф
 Warnings:
+Warning	3720	NATIONAL/NCHAR/NVARCHAR implies the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using CHAR(x) CHARACTER SET UTF8MB4 in order to be unambiguous.
+Warning	3720	NATIONAL/NCHAR/NVARCHAR implies the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using CHAR(x) CHARACTER SET UTF8MB4 in order to be unambiguous.
+Warning	3720	NATIONAL/NCHAR/NVARCHAR implies the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using CHAR(x) CHARACTER SET UTF8MB4 in order to be unambiguous.
+Warning	3720	NATIONAL/NCHAR/NVARCHAR implies the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using CHAR(x) CHARACTER SET UTF8MB4 in order to be unambiguous.
+Warning	3720	NATIONAL/NCHAR/NVARCHAR implies the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using CHAR(x) CHARACTER SET UTF8MB4 in order to be unambiguous.
 Warning	1292	Truncated incorrect CHAR(4) value: 'фгх'
 Warning	1292	Truncated incorrect CHAR(3) value: 'ф  '
 create table t1 select
@@ -223,6 +226,11 @@ cast(_koi8r'���' AS nchar(2)) as c3,
 cast(_koi8r'�  ' AS nchar(2)) as c4,
 cast(_koi8r'�'   AS nchar(2)) as c5;
 Warnings:
+Warning	3720	NATIONAL/NCHAR/NVARCHAR implies the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using CHAR(x) CHARACTER SET UTF8MB4 in order to be unambiguous.
+Warning	3720	NATIONAL/NCHAR/NVARCHAR implies the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using CHAR(x) CHARACTER SET UTF8MB4 in order to be unambiguous.
+Warning	3720	NATIONAL/NCHAR/NVARCHAR implies the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using CHAR(x) CHARACTER SET UTF8MB4 in order to be unambiguous.
+Warning	3720	NATIONAL/NCHAR/NVARCHAR implies the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using CHAR(x) CHARACTER SET UTF8MB4 in order to be unambiguous.
+Warning	3720	NATIONAL/NCHAR/NVARCHAR implies the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using CHAR(x) CHARACTER SET UTF8MB4 in order to be unambiguous.
 Warning	1292	Truncated incorrect CHAR(4) value: 'фгх'
 Warning	1292	Truncated incorrect CHAR(3) value: 'ф  '
 select * from t1;
@@ -236,7 +244,7 @@ t1	CREATE TABLE `t1` (
   `c3` varchar(2) CHARACTER SET utf8 NOT NULL DEFAULT '',
   `c4` varchar(2) CHARACTER SET utf8 NOT NULL DEFAULT '',
   `c5` varchar(2) CHARACTER SET utf8 NOT NULL DEFAULT ''
-) ENGINE=ENGINE DEFAULT CHARSET=utf8mb4
+) ENGINE=ENGINE DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 drop table t1;
 #
 # Bug #24934161: FAILURE OF SYNONYMY OF NCHAR AND NATIONAL CHAR
@@ -250,6 +258,11 @@ CAST(_gb2312 x'CAFD'         AS NATIONAL CHAR(2)) AS c5;
 c1	c2	c3	c4	c5
 数据	数 	数据	数 	数
 Warnings:
+Warning	3720	NATIONAL/NCHAR/NVARCHAR implies the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using CHAR(x) CHARACTER SET UTF8MB4 in order to be unambiguous.
+Warning	3720	NATIONAL/NCHAR/NVARCHAR implies the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using CHAR(x) CHARACTER SET UTF8MB4 in order to be unambiguous.
+Warning	3720	NATIONAL/NCHAR/NVARCHAR implies the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using CHAR(x) CHARACTER SET UTF8MB4 in order to be unambiguous.
+Warning	3720	NATIONAL/NCHAR/NVARCHAR implies the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using CHAR(x) CHARACTER SET UTF8MB4 in order to be unambiguous.
+Warning	3720	NATIONAL/NCHAR/NVARCHAR implies the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using CHAR(x) CHARACTER SET UTF8MB4 in order to be unambiguous.
 Warning	1292	Truncated incorrect CHAR(6) value: '数据库'
 Warning	1292	Truncated incorrect CHAR(4) value: '数  '
 CREATE TABLE t1 SELECT
@@ -259,6 +272,11 @@ CAST(_gb2312 x'CAFDBEDDBFE2' AS NATIONAL CHAR(2)) AS c3,
 CAST(_gb2312 x'CAFD2020'     AS NATIONAL CHAR(2)) AS c4,
 CAST(_gb2312 x'CAFD'         AS NATIONAL CHAR(2)) AS c5;
 Warnings:
+Warning	3720	NATIONAL/NCHAR/NVARCHAR implies the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using CHAR(x) CHARACTER SET UTF8MB4 in order to be unambiguous.
+Warning	3720	NATIONAL/NCHAR/NVARCHAR implies the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using CHAR(x) CHARACTER SET UTF8MB4 in order to be unambiguous.
+Warning	3720	NATIONAL/NCHAR/NVARCHAR implies the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using CHAR(x) CHARACTER SET UTF8MB4 in order to be unambiguous.
+Warning	3720	NATIONAL/NCHAR/NVARCHAR implies the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using CHAR(x) CHARACTER SET UTF8MB4 in order to be unambiguous.
+Warning	3720	NATIONAL/NCHAR/NVARCHAR implies the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using CHAR(x) CHARACTER SET UTF8MB4 in order to be unambiguous.
 Warning	1292	Truncated incorrect CHAR(6) value: '数据库'
 Warning	1292	Truncated incorrect CHAR(4) value: '数  '
 SELECT * FROM t1;
@@ -272,7 +290,7 @@ t1	CREATE TABLE `t1` (
   `c3` varchar(2) CHARACTER SET utf8 NOT NULL DEFAULT '',
   `c4` varchar(2) CHARACTER SET utf8 NOT NULL DEFAULT '',
   `c5` varchar(2) CHARACTER SET utf8 NOT NULL DEFAULT ''
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 DROP TABLE t1;
 SET sql_mode = default;
 create table t1 (a binary(4), b char(4) character set koi8r);
@@ -494,6 +512,8 @@ SELECT CONVERT(t2.a USING UTF8) FROM t1, t1 t2 LIMIT 1
 ) AS s LIMIT 1;
 1
 1
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 DROP TABLE t1;
 #
 # Bug #11765023: 57934: DOS POSSIBLE SINCE BINARY CASTING 
@@ -548,8 +568,6 @@ ERROR 42000: Display width out of range for column 'cast as char' (max = 4294967
 # Bug#13581962 HIGH MEMORY USAGE ATTEMPT, THEN CRASH WITH LONGTEXT, UNION, USER VARIABLE
 #
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 CREATE TABLE t1 AS SELECT CONCAT(CAST(REPEAT('9', 1000) AS SIGNED)),
 CONCAT(CAST(REPEAT('9', 1000) AS UNSIGNED));
 Warnings:
@@ -560,7 +578,7 @@ Table	Create Table
 t1	CREATE TABLE `t1` (
   `CONCAT(CAST(REPEAT('9', 1000) AS SIGNED))` varchar(21) CHARACTER SET latin1 NOT NULL DEFAULT '',
   `CONCAT(CAST(REPEAT('9', 1000) AS UNSIGNED))` varchar(21) CHARACTER SET latin1 NOT NULL DEFAULT ''
-) ENGINE=ENGINE DEFAULT CHARSET=utf8mb4
+) ENGINE=ENGINE DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 DROP TABLE t1;
 SET sql_mode = default;
 End of 5.5 tests

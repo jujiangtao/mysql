@@ -1,7 +1,4 @@
 set @orig_sql_mode= @@sql_mode;
-set sql_mode= (select replace(@@sql_mode,'NO_AUTO_CREATE_USER',''));
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 DROP TABLE IF EXISTS t0,t1,t2,t3,t4,t5;
 DROP VIEW IF EXISTS v1;
 SET SESSION information_schema_stats_expiry=0;
@@ -16,20 +13,17 @@ ROUTINES	int	int(10) unsigned
 show variables where variable_name like "skip_show_database";
 Variable_name	Value
 skip_show_database	OFF
+create user mysqltest_1@localhost, mysqltest_2@localhost;
 grant select, update, execute on test.* to mysqltest_2@localhost;
-Warnings:
-Warning	1287	Using GRANT for creating new user is deprecated and will be removed in future release. Create new user with CREATE USER statement.
 grant select, update on test.* to mysqltest_1@localhost;
-Warnings:
-Warning	1287	Using GRANT for creating new user is deprecated and will be removed in future release. Create new user with CREATE USER statement.
 create user mysqltest_3@localhost;
 create user mysqltest_3;
 select * from information_schema.SCHEMATA where schema_name > 'm' ORDER BY SCHEMA_NAME;
 CATALOG_NAME	SCHEMA_NAME	DEFAULT_CHARACTER_SET_NAME	DEFAULT_COLLATION_NAME	SQL_PATH
 def	mtr	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	mysql	utf8mb4	utf8mb4_0900_ai_ci	NULL
-def	performance_schema	utf8	utf8_general_ci	NULL
-def	sys	utf8	utf8_general_ci	NULL
+def	performance_schema	utf8mb4	utf8mb4_0900_ai_ci	NULL
+def	sys	utf8mb4	utf8mb4_0900_ai_ci	NULL
 def	test	utf8mb4	utf8mb4_0900_ai_ci	NULL
 select schema_name from information_schema.schemata ORDER BY schema_name;
 SCHEMA_NAME
@@ -75,6 +69,7 @@ COLUMN_STATISTICS
 ENGINES
 EVENTS
 FILES
+KEYWORDS
 KEY_COLUMN_USAGE
 OPTIMIZER_TRACE
 PARAMETERS
@@ -341,7 +336,7 @@ Function	sql_mode	Create Function	character_set_client	collation_connection	Data
 sub1	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	NULL	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
 show create function sub2;
 Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
-sub2	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`mysqltest_1`@`localhost` FUNCTION `sub2`(i int) RETURNS int(11)
+sub2	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`mysqltest_1`@`localhost` FUNCTION `sub2`(i int) RETURNS int(11)
 return i+1	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
 show function status like "sub2";
 Db	Name	Type	Definer	Modified	Created	Security_type	Comment	character_set_client	collation_connection	Database Collation
@@ -469,7 +464,7 @@ t1	CREATE TABLE `t1` (
   UNIQUE KEY `constraint_1` (`a`),
   UNIQUE KEY `key_1` (`a`),
   UNIQUE KEY `key_2` (`a`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 select * from information_schema.TABLE_CONSTRAINTS where
 TABLE_SCHEMA= "test" order by constraint_name;
 CONSTRAINT_CATALOG	CONSTRAINT_SCHEMA	CONSTRAINT_NAME	TABLE_SCHEMA	TABLE_NAME	CONSTRAINT_TYPE
@@ -477,6 +472,9 @@ def	test	constraint_1	test	t1	UNIQUE
 def	test	key_1	test	t1	UNIQUE
 def	test	key_2	test	t1	UNIQUE
 def	test	PRIMARY	test	t1	PRIMARY KEY
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 select * from information_schema.key_column_usage where
 TABLE_SCHEMA= "test" order by constraint_name;
 CONSTRAINT_CATALOG	CONSTRAINT_SCHEMA	CONSTRAINT_NAME	TABLE_CATALOG	TABLE_SCHEMA	TABLE_NAME	COLUMN_NAME	ORDINAL_POSITION	POSITION_IN_UNIQUE_CONSTRAINT	REFERENCED_TABLE_SCHEMA	REFERENCED_TABLE_NAME	REFERENCED_COLUMN_NAME
@@ -484,6 +482,9 @@ def	test	constraint_1	def	test	t1	a	1	NULL	NULL	NULL	NULL
 def	test	key_1	def	test	t1	a	1	NULL	NULL	NULL	NULL
 def	test	key_2	def	test	t1	a	1	NULL	NULL	NULL	NULL
 def	test	PRIMARY	def	test	t1	a	1	NULL	NULL	NULL	NULL
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 select table_name from information_schema.TABLES where table_schema like "test%" order by table_name;
 TABLE_NAME
 t1
@@ -503,6 +504,7 @@ create table t1(a int);
 create view v1 (c) as select a from t1 with check option;
 create view v2 (c) as select a from t1 WITH LOCAL CHECK OPTION;
 create view v3 (c) as select a from t1 WITH CASCADED CHECK OPTION;
+create user joe@localhost;
 select * from information_schema.views where table_schema !=
 'sys' order by table_name;
 TABLE_CATALOG	TABLE_SCHEMA	TABLE_NAME	VIEW_DEFINITION	CHECK_OPTION	IS_UPDATABLE	DEFINER	SECURITY_TYPE	CHARACTER_SET_CLIENT	COLLATION_CONNECTION
@@ -510,8 +512,6 @@ def	test	v1	select `test`.`t1`.`a` AS `a` from `test`.`t1`	CASCADED	YES	root@loc
 def	test	v2	select `test`.`t1`.`a` AS `a` from `test`.`t1`	LOCAL	YES	root@localhost	DEFINER	utf8mb4	utf8mb4_0900_ai_ci
 def	test	v3	select `test`.`t1`.`a` AS `a` from `test`.`t1`	CASCADED	YES	root@localhost	DEFINER	utf8mb4	utf8mb4_0900_ai_ci
 grant select (a) on test.t1 to joe@localhost with grant option;
-Warnings:
-Warning	1287	Using GRANT for creating new user is deprecated and will be removed in future release. Create new user with CREATE USER statement.
 select * from INFORMATION_SCHEMA.COLUMN_PRIVILEGES WHERE table_schema != 'sys';
 GRANTEE	TABLE_CATALOG	TABLE_SCHEMA	TABLE_NAME	COLUMN_NAME	PRIVILEGE_TYPE	IS_GRANTABLE
 'joe'@'localhost'	def	test	t1	a	SELECT	YES
@@ -556,6 +556,8 @@ select * from t1;
 CHARACTER_SET_NAME	DEFAULT_COLLATE_NAME	DESCRIPTION	MAXLEN
 latin1	latin1_swedish_ci	cp1252 West European	1
 alter table t1 default character set utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
@@ -601,9 +603,15 @@ Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_par
 select * from information_schema.TABLE_CONSTRAINTS where
 TABLE_NAME= "vo";
 CONSTRAINT_CATALOG	CONSTRAINT_SCHEMA	CONSTRAINT_NAME	TABLE_SCHEMA	TABLE_NAME	CONSTRAINT_TYPE
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 select * from information_schema.key_column_usage where
 TABLE_NAME= "vo";
 CONSTRAINT_CATALOG	CONSTRAINT_SCHEMA	CONSTRAINT_NAME	TABLE_CATALOG	TABLE_SCHEMA	TABLE_NAME	COLUMN_NAME	ORDINAL_POSITION	POSITION_IN_UNIQUE_CONSTRAINT	REFERENCED_TABLE_SCHEMA	REFERENCED_TABLE_NAME	REFERENCED_COLUMN_NAME
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 drop view vo;
 select TABLE_NAME,TABLE_TYPE,ENGINE
 from information_schema.tables
@@ -703,6 +711,9 @@ f1_key
 select constraint_name from information_schema.table_constraints
 where table_schema='test' order by constraint_name;
 constraint_name
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 show create view v2;
 View	Create View	character_set_client	collation_connection
 v2	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v2` (`c`) AS select `t1`.`f1` AS `f1` from `t1`	latin1	latin1_swedish_ci
@@ -813,9 +824,8 @@ x_numeric	NULL	NULL
 x_real	NULL	NULL
 x_smallint	NULL	NULL
 drop table t1;
+create user mysqltest_4@localhost;
 grant select on test.* to mysqltest_4@localhost;
-Warnings:
-Warning	1287	Using GRANT for creating new user is deprecated and will be removed in future release. Create new user with CREATE USER statement.
 SELECT TABLE_NAME, COLUMN_NAME, PRIVILEGES FROM INFORMATION_SCHEMA.COLUMNS
 where COLUMN_NAME='TABLE_NAME' ORDER BY TABLE_NAME COLLATE UTF8_GENERAL_CI;
 TABLE_NAME	COLUMN_NAME	PRIVILEGES
@@ -844,7 +854,7 @@ table_schema IN ('mysql', 'information_schema', 'test', 'mysqltest')
 AND table_name not like 'ndb%' AND table_name COLLATE utf8_general_ci not like 'innodb_%'
 GROUP BY TABLE_SCHEMA;
 TABLE_SCHEMA	count(*)
-information_schema	31
+information_schema	32
 mysql	31
 create table t1 (i int, j int);
 create trigger trg1 before insert on t1 for each row
@@ -906,18 +916,11 @@ drop table t1;
 create database mysqltest;
 create table mysqltest.t1 (f1 int, f2 int);
 create table mysqltest.t2 (f1 int);
+create user user1@localhost, user2@localhost, user3@localhost, user4@localhost;
 grant select (f1) on mysqltest.t1 to user1@localhost;
-Warnings:
-Warning	1287	Using GRANT for creating new user is deprecated and will be removed in future release. Create new user with CREATE USER statement.
 grant select on mysqltest.t2 to user2@localhost;
-Warnings:
-Warning	1287	Using GRANT for creating new user is deprecated and will be removed in future release. Create new user with CREATE USER statement.
 grant select on mysqltest.* to user3@localhost;
-Warnings:
-Warning	1287	Using GRANT for creating new user is deprecated and will be removed in future release. Create new user with CREATE USER statement.
 grant select on *.* to user4@localhost;
-Warnings:
-Warning	1287	Using GRANT for creating new user is deprecated and will be removed in future release. Create new user with CREATE USER statement.
 select * from information_schema.column_privileges order by grantee;
 GRANTEE	TABLE_CATALOG	TABLE_SCHEMA	TABLE_NAME	COLUMN_NAME	PRIVILEGE_TYPE	IS_GRANTABLE
 'user1'@'localhost'	def	mysqltest	t1	f1	SELECT	NO
@@ -1156,15 +1159,16 @@ varchar(7)	information_schema.INNODB_TABLESPACES_BRIEF,information_schema.VIEWS	
 varchar(20)	information_schema.PLUGINS,information_schema.PLUGINS,information_schema.PLUGINS,information_schema.PROFILING	4
 create table t1(f1 char(1) not null, f2 char(9) not null)
 default character set utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 select CHARACTER_MAXIMUM_LENGTH, CHARACTER_OCTET_LENGTH from
 information_schema.columns where table_schema='test' and table_name = 't1';
 CHARACTER_MAXIMUM_LENGTH	CHARACTER_OCTET_LENGTH
 1	3
 9	27
 drop table t1;
+create user mysqltest_1@localhost;
 grant select on test.* to mysqltest_1@localhost;
-Warnings:
-Warning	1287	Using GRANT for creating new user is deprecated and will be removed in future release. Create new user with CREATE USER statement.
 create table t1 (id int);
 create view v1 as select * from t1;
 create definer = mysqltest_1@localhost
@@ -1300,6 +1304,7 @@ COLUMN_STATISTICS	information_schema.COLUMN_STATISTICS	1
 ENGINES	information_schema.ENGINES	1
 EVENTS	information_schema.EVENTS	1
 FILES	information_schema.FILES	1
+KEYWORDS	information_schema.KEYWORDS	1
 KEY_COLUMN_USAGE	information_schema.KEY_COLUMN_USAGE	1
 OPTIMIZER_TRACE	information_schema.OPTIMIZER_TRACE	1
 PARAMETERS	information_schema.PARAMETERS	1
@@ -1337,13 +1342,12 @@ alter database;
 ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '' at line 1
 alter database test;
 ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '' at line 1
+create user mysqltest_1@localhost;
 create database mysqltest;
 create table mysqltest.t1(a int, b int, c int);
 create trigger mysqltest.t1_ai after insert on mysqltest.t1
 for each row set @a = new.a + new.b + new.c;
 grant select(b) on mysqltest.t1 to mysqltest_1@localhost;
-Warnings:
-Warning	1287	Using GRANT for creating new user is deprecated and will be removed in future release. Create new user with CREATE USER statement.
 select trigger_name from information_schema.triggers
 where event_object_table='t1';
 TRIGGER_NAME
@@ -1407,6 +1411,9 @@ FROM tables ta
 JOIN collations co ON ( co.collation_name = CONVERT(ta.table_catalog using utf8))
 JOIN character_sets cs ON ( cs.character_set_name = CONVERT(ta.table_catalog using utf8));
 TABLE_CATALOG	TABLE_SCHEMA	TABLE_NAME	TABLE_TYPE	ENGINE	VERSION	ROW_FORMAT	TABLE_ROWS	AVG_ROW_LENGTH	DATA_LENGTH	MAX_DATA_LENGTH	INDEX_LENGTH	DATA_FREE	AUTO_INCREMENT	CREATE_TIME	UPDATE_TIME	CHECK_TIME	TABLE_COLLATION	CHECKSUM	CREATE_OPTIONS	TABLE_COMMENT	COLLATION_NAME	CHARACTER_SET_NAME	ID	IS_DEFAULT	IS_COMPILED	SORTLEN	PAD_ATTRIBUTE	CHARACTER_SET_NAME	DEFAULT_COLLATE_NAME	DESCRIPTION	MAXLEN
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 DROP TABLE test.t1;
 SET max_heap_table_size = DEFAULT;
 USE test;
@@ -1414,9 +1421,8 @@ End of 5.0 tests.
 select * from information_schema.engines WHERE ENGINE="MyISAM";
 ENGINE	SUPPORT	COMMENT	TRANSACTIONS	XA	SAVEPOINTS
 MyISAM	YES	MyISAM storage engine	NO	NO	NO
+create user user3148@localhost;
 grant select on *.* to user3148@localhost;
-Warnings:
-Warning	1287	Using GRANT for creating new user is deprecated and will be removed in future release. Create new user with CREATE USER statement.
 select user,db from information_schema.processlist;
 user	db
 user3148	test
@@ -1486,8 +1492,14 @@ select * from `information_schema`.`COLUMNS` where `TABLE_NAME` = NULL;
 TABLE_CATALOG	TABLE_SCHEMA	TABLE_NAME	COLUMN_NAME	ORDINAL_POSITION	COLUMN_DEFAULT	IS_NULLABLE	DATA_TYPE	CHARACTER_MAXIMUM_LENGTH	CHARACTER_OCTET_LENGTH	NUMERIC_PRECISION	NUMERIC_SCALE	DATETIME_PRECISION	CHARACTER_SET_NAME	COLLATION_NAME	COLUMN_TYPE	COLUMN_KEY	EXTRA	PRIVILEGES	COLUMN_COMMENT	GENERATION_EXPRESSION	SRS_ID
 select * from `information_schema`.`key_column_usage` where `TABLE_SCHEMA` = NULL;
 CONSTRAINT_CATALOG	CONSTRAINT_SCHEMA	CONSTRAINT_NAME	TABLE_CATALOG	TABLE_SCHEMA	TABLE_NAME	COLUMN_NAME	ORDINAL_POSITION	POSITION_IN_UNIQUE_CONSTRAINT	REFERENCED_TABLE_SCHEMA	REFERENCED_TABLE_NAME	REFERENCED_COLUMN_NAME
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 select * from `information_schema`.`key_column_usage` where `TABLE_NAME` = NULL;
 CONSTRAINT_CATALOG	CONSTRAINT_SCHEMA	CONSTRAINT_NAME	TABLE_CATALOG	TABLE_SCHEMA	TABLE_NAME	COLUMN_NAME	ORDINAL_POSITION	POSITION_IN_UNIQUE_CONSTRAINT	REFERENCED_TABLE_SCHEMA	REFERENCED_TABLE_NAME	REFERENCED_COLUMN_NAME
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 select * from `information_schema`.`PARTITIONS` where `TABLE_SCHEMA` = NULL;
 TABLE_CATALOG	TABLE_SCHEMA	TABLE_NAME	PARTITION_NAME	SUBPARTITION_NAME	PARTITION_ORDINAL_POSITION	SUBPARTITION_ORDINAL_POSITION	PARTITION_METHOD	SUBPARTITION_METHOD	PARTITION_EXPRESSION	SUBPARTITION_EXPRESSION	PARTITION_DESCRIPTION	TABLE_ROWS	AVG_ROW_LENGTH	DATA_LENGTH	MAX_DATA_LENGTH	INDEX_LENGTH	DATA_FREE	CREATE_TIME	UPDATE_TIME	CHECK_TIME	CHECKSUM	PARTITION_COMMENT	NODEGROUP	TABLESPACE_NAME
 select * from `information_schema`.`PARTITIONS` where `TABLE_NAME` = NULL;
@@ -1510,8 +1522,14 @@ select * from information_schema.tables where table_name = NULL;
 TABLE_CATALOG	TABLE_SCHEMA	TABLE_NAME	TABLE_TYPE	ENGINE	VERSION	ROW_FORMAT	TABLE_ROWS	AVG_ROW_LENGTH	DATA_LENGTH	MAX_DATA_LENGTH	INDEX_LENGTH	DATA_FREE	AUTO_INCREMENT	CREATE_TIME	UPDATE_TIME	CHECK_TIME	TABLE_COLLATION	CHECKSUM	CREATE_OPTIONS	TABLE_COMMENT
 select * from `information_schema`.`TABLE_CONSTRAINTS` where `TABLE_SCHEMA` = NULL;
 CONSTRAINT_CATALOG	CONSTRAINT_SCHEMA	CONSTRAINT_NAME	TABLE_SCHEMA	TABLE_NAME	CONSTRAINT_TYPE
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 select * from `information_schema`.`TABLE_CONSTRAINTS` where `TABLE_NAME` = NULL;
 CONSTRAINT_CATALOG	CONSTRAINT_SCHEMA	CONSTRAINT_NAME	TABLE_SCHEMA	TABLE_NAME	CONSTRAINT_TYPE
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 select * from `information_schema`.`TRIGGERS` where `EVENT_OBJECT_SCHEMA` = NULL;
 TRIGGER_CATALOG	TRIGGER_SCHEMA	TRIGGER_NAME	EVENT_MANIPULATION	EVENT_OBJECT_CATALOG	EVENT_OBJECT_SCHEMA	EVENT_OBJECT_TABLE	ACTION_ORDER	ACTION_CONDITION	ACTION_STATEMENT	ACTION_ORIENTATION	ACTION_TIMING	ACTION_REFERENCE_OLD_TABLE	ACTION_REFERENCE_NEW_TABLE	ACTION_REFERENCE_OLD_ROW	ACTION_REFERENCE_NEW_ROW	CREATED	SQL_MODE	DEFINER	CHARACTER_SET_CLIENT	COLLATION_CONNECTION	DATABASE_COLLATION
 select * from `information_schema`.`TRIGGERS` where `EVENT_OBJECT_TABLE` = NULL;
@@ -1774,6 +1792,9 @@ USING (TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME)
 WHERE COLUMNS.TABLE_SCHEMA = 'test'
 AND COLUMNS.TABLE_NAME = 't1';
 TABLE_SCHEMA	TABLE_NAME	COLUMN_NAME	CONSTRAINT_CATALOG	CONSTRAINT_SCHEMA	CONSTRAINT_NAME	TABLE_CATALOG	ORDINAL_POSITION	POSITION_IN_UNIQUE_CONSTRAINT	REFERENCED_TABLE_SCHEMA	REFERENCED_TABLE_NAME	REFERENCED_COLUMN_NAME	TABLE_CATALOG	ORDINAL_POSITION	COLUMN_DEFAULT	IS_NULLABLE	DATA_TYPE	CHARACTER_MAXIMUM_LENGTH	CHARACTER_OCTET_LENGTH	NUMERIC_PRECISION	NUMERIC_SCALE	DATETIME_PRECISION	CHARACTER_SET_NAME	COLLATION_NAME	COLUMN_TYPE	COLUMN_KEY	EXTRA	PRIVILEGES	COLUMN_COMMENT	GENERATION_EXPRESSION	SRS_ID
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 #
 # A test case for Bug#56540 "Exception (crash) in sql_show.cc
 # during rqg_info_schema test on Windows"
@@ -2057,6 +2078,8 @@ F1
 # WL#2284: Increase the length of a user name
 #
 set names utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 CREATE USER user_name_len_22_01234@localhost;
 GRANT SELECT ON *.* TO user_name_len_22_01234@localhost;
 SELECT user,db FROM information_schema.processlist;
@@ -2072,8 +2095,6 @@ DROP USER очень_очень_очень_длинный_юзер__@localhost;
 set names default;
 SET SESSION information_schema_stats_expiry=default;
 set sql_mode= @orig_sql_mode;
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 #
 # WL#6599: New Data Dictionary and I_S Integration.
 #
@@ -2246,7 +2267,7 @@ t2	CREATE TABLE `t2` (
   `TABLE_SCHEMA` varchar(64) CHARACTER SET utf8 COLLATE utf8_tolower_ci DEFAULT NULL,
   `TABLE_NAME` varchar(64) CHARACTER SET utf8 COLLATE utf8_tolower_ci DEFAULT NULL,
   `COLUMN_NAME` varchar(64) CHARACTER SET utf8 COLLATE utf8_tolower_ci DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 DROP TABLE t1, t2;
 DROP VIEW v1;
 #
@@ -2262,7 +2283,7 @@ WHERE TABLE_SCHEMA='test' AND TABLE_NAME='t1'
   ORDER BY COLUMN_NAME;
 TABLE_CATALOG	TABLE_SCHEMA	TABLE_NAME	COLUMN_NAME	SRS_NAME	SRS_ID	GEOMETRY_TYPE_NAME
 def	test	t1	g	NULL	NULL	geometry
-def	test	t1	gc	NULL	NULL	geometrycollection
+def	test	t1	gc	NULL	NULL	geomcollection
 def	test	t1	ls	NULL	NULL	linestring
 def	test	t1	mls	NULL	NULL	multilinestring
 def	test	t1	mpt	NULL	NULL	multipoint
@@ -2427,6 +2448,7 @@ COLUMN_STATISTICS	SCHEMA_NAME
 ENGINES	ENGINE
 EVENTS	EVENT_SCHEMA
 FILES	TABLE_SCHEMA
+KEYWORDS	WORD
 KEY_COLUMN_USAGE	CONSTRAINT_SCHEMA
 OPTIMIZER_TRACE	QUERY
 PARAMETERS	SPECIFIC_SCHEMA
@@ -2477,6 +2499,7 @@ COLUMN_STATISTICS	SCHEMA_NAME
 ENGINES	ENGINE
 EVENTS	EVENT_SCHEMA
 FILES	TABLE_SCHEMA
+KEYWORDS	WORD
 KEY_COLUMN_USAGE	CONSTRAINT_SCHEMA
 OPTIMIZER_TRACE	QUERY
 PARAMETERS	SPECIFIC_SCHEMA

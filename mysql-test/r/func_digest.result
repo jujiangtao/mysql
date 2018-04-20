@@ -1421,6 +1421,8 @@ def					sha2('1',224)	253	56	56	Y	128	31	63
 sha2('1',224)
 e25388fde8290dc286a6164fa2d97e551b53498dcbf7bc378eb1f178
 SET NAMES utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT sha2('1',224);
 Catalog	Database	Table	Table_alias	Column	Column_alias	Type	Length	Max length	Is_null	Flags	Decimals	Charsetnr
 def					sha2('1',224)	253	168	56	Y	0	31	33
@@ -1436,6 +1438,8 @@ e25388fde8290dc286a6164fa2d97e551b53498dcbf7bc378eb1f178
 # Bug#13812875 ILLEGAL MIX OF COLLATIONS WITH FUNCTIONS THAT USED TO WORK
 #
 SET NAMES utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 CREATE TABLE t1 (a varchar(1));
 SELECT * FROM t1 WHERE a=sha1('a');
 a
@@ -1522,8 +1526,6 @@ ERROR HY000: Could not parse argument to digest function: "You have an error in 
 SELECT statement_digest( statement_digest( 'SELECT ?' ) );
 ERROR HY000: Could not parse argument to digest function: "You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '?' at line 1".
 SET sql_mode = '';
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 CREATE TABLE t1 ( g GEOMETRY NOT NULL );
 INSERT INTO t1 VALUES ( POINT(1,2) );
 SELECT concat( statement_digest(g), 'x' ) FROM t1;
@@ -1534,9 +1536,6 @@ DROP TABLE t1;
 SELECT statement_digest( "INSERT DELAYED INTO t1 VALUES(1)" );
 statement_digest( "INSERT DELAYED INTO t1 VALUES(1)" )
 e8055293a3d5e4859175a0b1f34f15aa68491c502afc95477b90ce9c19465ce5
-SELECT statement_digest( "SET PASSWORD = PASSWORD('foo')" );
-statement_digest( "SET PASSWORD = PASSWORD('foo')" )
-d5076b934abf42ee7389ca68fccd43d3b5798f25eee0ce76ebcf7e23f3a37c1e
 #
 # Test queries.
 #
@@ -1554,7 +1553,9 @@ UNION
 SELECT statement_digest_text( "SELECT 1" ), 'YES'
 FROM (SELECT 1) a1 JOIN (SELECT @ps_protocol) a2;
 digest_text	digest_is_correct
-SELECT ? 	YES
+SELECT ?	YES
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT a + b, a - b FROM t1, t2, t3 WHERE a = c;
 a + b	a - b
 SELECT digest_text, IF( @the_digest = digest, 'YES', 'NO' )
@@ -1565,7 +1566,9 @@ UNION
 SELECT statement_digest_text( "SELECT a + b, a - b FROM t1, t2, t3 WHERE a = c" ), 'YES'
 FROM (SELECT 1) a1 JOIN (SELECT @ps_protocol) a2;
 digest_text	digest_is_correct
-SELECT `a` + `b` , `a` - `b` FROM `t1` , `t2` , `t3` WHERE `a` = `c` 	YES
+SELECT `a` + `b` , `a` - `b` FROM `t1` , `t2` , `t3` WHERE `a` = `c`	YES
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 # The first NULL should be treated as a literal and not influence the
 # digest. The second NULL is a NULL token, however.
 # In order to know, the string must be parsed.
@@ -1580,7 +1583,9 @@ UNION
 SELECT statement_digest_text( "SELECT NULL IS NULL" ), 'YES'
 FROM (SELECT 1) a1 JOIN (SELECT @ps_protocol) a2;
 digest_text	digest_is_correct
-SELECT ? IS NULL 	YES
+SELECT ? IS NULL	YES
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT 2;
 2
 2
@@ -1592,7 +1597,9 @@ UNION
 SELECT statement_digest_text( "SELECT 2" ), 'YES'
 FROM (SELECT 1) a1 JOIN (SELECT @ps_protocol) a2;
 digest_text	digest_is_correct
-SELECT ? 	YES
+SELECT ?	YES
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 DROP TABLE t1, t2, t3;
 #
 # Let's make sure that our 'borrowing' the token buffer does not upset
@@ -1611,7 +1618,9 @@ UNION
 SELECT statement_digest_text( "SELECT statement_digest( 'SELECT something FROM DUAL WHERE something' ) IS NULL" ), 'YES'
 FROM (SELECT 1) a1 JOIN (SELECT @ps_protocol) a2;
 digest_text	digest_is_correct
-SELECT `statement_digest` (?) IS NULL 	YES
+SELECT `statement_digest` (?) IS NULL	YES
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 #
 # Test of the data type.
 #
@@ -1620,7 +1629,7 @@ SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `digest` varchar(64) CHARACTER SET latin1 DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 DROP TABLE t1;
 #
 # It cannot be used as a generated column.
@@ -1655,7 +1664,7 @@ SELECT statement_digest_text( "SELECT 1; SELECT 2" );
 ERROR HY000: Could not parse argument to digest function: "You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'SELECT 2' at line 1".
 SELECT statement_digest_text( "SELECT 1;" );
 statement_digest_text( "SELECT 1;" )
-SELECT ? ; 
+SELECT ? ;
 SELECT statement_digest_text( repeat( 'a', character_maximum_length ) ) IS NULL
 FROM information_schema.columns
 WHERE table_name = 'events_statements_history' AND column_name = 'digest';
@@ -1687,8 +1696,6 @@ ERROR HY000: Could not parse argument to digest function: "You have an error in 
 SELECT statement_digest_text( statement_digest_text( 'SELECT ?' ) );
 ERROR HY000: Could not parse argument to digest function: "You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '?' at line 1".
 SET sql_mode = '';
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 CREATE TABLE t1 ( g GEOMETRY NOT NULL );
 INSERT INTO t1 VALUES ( POINT(1,2) );
 SELECT concat( statement_digest_text(g), 'x' ) FROM t1;
@@ -1698,10 +1705,7 @@ DROP TABLE t1;
 # Let's check that warnings in the parser are silenced.
 SELECT statement_digest_text( "INSERT DELAYED INTO t1 VALUES(1)" );
 statement_digest_text( "INSERT DELAYED INTO t1 VALUES(1)" )
-INSERT DELAYED INTO `t1` VALUES (?) 
-SELECT statement_digest_text( "SET PASSWORD = PASSWORD('foo')" );
-statement_digest_text( "SET PASSWORD = PASSWORD('foo')" )
-SET PASSWORD = PASSWORD (?) 
+INSERT DELAYED INTO `t1` VALUES (?)
 #
 # Test queries.
 #
@@ -1719,7 +1723,9 @@ UNION
 SELECT statement_digest_text( "SELECT 1" ), 'YES'
 FROM (SELECT 1) a1 JOIN (SELECT @ps_protocol) a2;
 digest_text	digest_is_correct
-SELECT ? 	YES
+SELECT ?	YES
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT a + b, a - b FROM t1, t2, t3 WHERE a = c;
 a + b	a - b
 SELECT digest_text, IF( @the_digest = digest_text, 'YES', 'NO' )
@@ -1730,7 +1736,9 @@ UNION
 SELECT statement_digest_text( "SELECT a + b, a - b FROM t1, t2, t3 WHERE a = c" ), 'YES'
 FROM (SELECT 1) a1 JOIN (SELECT @ps_protocol) a2;
 digest_text	digest_is_correct
-SELECT `a` + `b` , `a` - `b` FROM `t1` , `t2` , `t3` WHERE `a` = `c` 	YES
+SELECT `a` + `b` , `a` - `b` FROM `t1` , `t2` , `t3` WHERE `a` = `c`	YES
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT 2;
 2
 2
@@ -1742,7 +1750,9 @@ UNION
 SELECT statement_digest_text( "SELECT 2" ), 'YES'
 FROM (SELECT 1) a1 JOIN (SELECT @ps_protocol) a2;
 digest_text	digest_is_correct
-SELECT ? 	YES
+SELECT ?	YES
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 DROP TABLE t1, t2, t3;
 #
 # Test of the data type.
@@ -1753,7 +1763,7 @@ SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `digest` longtext
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 DROP TABLE t1;
 SET NAMES latin1;
 CREATE TABLE t1 AS SELECT statement_digest_text( 'select 1, 2, 3' ) AS digest;
@@ -1761,7 +1771,7 @@ SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `digest` longtext CHARACTER SET latin1
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 DROP TABLE t1;
 SET NAMES DEFAULT;
 #
@@ -1786,13 +1796,13 @@ ERROR HY000: Expression of generated column 'digest' contains a disallowed funct
 SET NAMES utf8mb4;
 SELECT statement_digest_text("CREATE TABLE åäö( a int )");
 statement_digest_text("CREATE TABLE åäö( a int )")
-CREATE TABLE `åäö` ( `a` INTEGER ) 
+CREATE TABLE `åäö` ( `a` INTEGER )
 SELECT statement_digest_text("CREATE TABLE 日本語( a int )");
 statement_digest_text("CREATE TABLE 日本語( a int )")
-CREATE TABLE `日本語` ( `a` INTEGER ) 
+CREATE TABLE `日本語` ( `a` INTEGER )
 SELECT statement_digest_text("CREATE TABLE  𩸽( a int )");
 statement_digest_text("CREATE TABLE  ?( a int )")
-CREATE TABLE ( `a` INTEGER ) 
+CREATE TABLE ( `a` INTEGER )
 # We get warnings here for the supplementary plane characters when
 # Performance Schema scans the table. They don't show up under
 # --ps-protocol for obvious reasons (see compare_digests.inc), so we
@@ -1806,7 +1816,7 @@ UNION
 SELECT statement_digest_text( "CREATE TABLE åäö( a int )" ), 'YES'
 FROM (SELECT 1) a1 JOIN (SELECT @ps_protocol) a2;
 digest_text	digest_is_correct
-CREATE TABLE `åäö` ( `a` INTEGER ) 	YES
+CREATE TABLE `åäö` ( `a` INTEGER )	YES
 CREATE TABLE 日本語( a int );
 SELECT digest_text, IF( @the_digest = digest_text, 'YES', 'NO' )
 AS digest_is_correct
@@ -1816,7 +1826,7 @@ UNION
 SELECT statement_digest_text( "CREATE TABLE 日本語( a int )" ), 'YES'
 FROM (SELECT 1) a1 JOIN (SELECT @ps_protocol) a2;
 digest_text	digest_is_correct
-CREATE TABLE `日本語` ( `a` INTEGER ) 	YES
+CREATE TABLE `日本語` ( `a` INTEGER )	YES
 CREATE TABLE  𩸽( a int );
 SELECT digest_text, IF( @the_digest = digest_text, 'YES', 'NO' )
 AS digest_is_correct
@@ -1826,7 +1836,7 @@ UNION
 SELECT statement_digest_text( "CREATE TABLE  𩸽( a int )" ), 'YES'
 FROM (SELECT 1) a1 JOIN (SELECT @ps_protocol) a2;
 digest_text	digest_is_correct
-CREATE TABLE ( `a` INTEGER ) 	YES
+CREATE TABLE ( `a` INTEGER )	YES
 DROP TABLE åäö, 日本語,  𩸽;
 Warnings:
 Warning	1300	Invalid utf8mb4 character string: '\xF0\xA9\xB8\xBD'
@@ -1844,7 +1854,7 @@ END;
 //
 SELECT f1();
 f1()
-DROP TABLE `t` 
+DROP TABLE `t`
 DROP FUNCTION f1;
 #
 # Bug#27015951: WL#9637 ASSERTION `M_BASE_OPTIONS == 0 &&
@@ -1927,8 +1937,6 @@ statement_digest( "LOCK TABLE t1 READ" ) IS NULL
 #  M_ACTIVE_OPTIONS == 0' FAILED
 #
 SET sql_mode = 'PIPES_AS_CONCAT';
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 SELECT statement_digest( " CREATE ALGORITHM = MERGE VIEW v1 AS " ||
 "SELECT a FROM ( SELECT a1 FROM v2 ) AS SELECT1" );
 statement_digest( " CREATE ALGORITHM = MERGE VIEW v1 AS " ||

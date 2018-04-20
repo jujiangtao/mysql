@@ -1,4 +1,4 @@
-# Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2016, 2018, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -22,6 +22,8 @@
 
 INCLUDE(${MYSQL_CMAKE_SCRIPT_DIR}/compile_flags.cmake)
 
+ADD_DEFINITIONS(-DLOG_COMPONENT_TAG="keyring_file")
+
 SET (KEYRING_FILE_SOURCES
      common/keyring_key.cc
      common/keys_container.cc
@@ -32,6 +34,7 @@ SET (KEYRING_FILE_SOURCES
      keyring.cc
      hash_to_buffer_serializer.cc
      buffered_file_io.cc
+     converter.cc
      buffer.cc
      digest.cc
      checker/checker_ver_1_0.cc

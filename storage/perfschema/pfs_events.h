@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2018, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -34,8 +34,7 @@
 struct PFS_instr_class;
 
 /** An event record. */
-struct PFS_events
-{
+struct PFS_events {
   /** THREAD_ID. */
   ulonglong m_thread_internal_id;
   /** EVENT_ID. */

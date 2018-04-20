@@ -26,13 +26,16 @@
 
 #include <mysql/plugin.h>
 
+#include "my_compiler.h"
 #include "my_dbug.h"
 #include "sql/current_thd.h"
 #include "sql/derror.h"     // ER_THD
+#include "sql/field.h"
 #include "sql/ndb_log.h"
 #include "sql/ndb_tdc.h"
 #include "sql/sql_class.h"
 #include "sql/sql_table.h"  // build_table_filename
+#include "sql/table.h"
 #include "storage/ndb/src/ndbapi/NdbInfo.hpp"
 #include "sql/ndb_dummy_ts.h"
 
@@ -109,8 +112,7 @@ static bool opt_ndbinfo_offline;
 
 static
 void
-offline_update(THD* thd, struct st_mysql_sys_var* var,
-               void* var_ptr, const void* save)
+offline_update(THD*, SYS_VAR*, void*, const void* save)
 {
   DBUG_ENTER("offline_update");
 
@@ -313,6 +315,11 @@ generate_sql(const NdbInfo::Table* ndb_tab, BaseString& sql)
 static void
 warn_incompatible(const NdbInfo::Table* ndb_tab, bool fatal,
              const char* format, ...)
+  MY_ATTRIBUTE((format(printf, 3, 4)));
+
+static void
+warn_incompatible(const NdbInfo::Table* ndb_tab, bool fatal,
+             const char* format, ...)
 {
   BaseString msg;
   DBUG_ENTER("warn_incompatible");
@@ -322,7 +329,7 @@ warn_incompatible(const NdbInfo::Table* ndb_tab, bool fatal,
   va_list args;
   char explanation[128];
   va_start(args,format);
-  my_vsnprintf(explanation, sizeof(explanation), format, args);
+  vsnprintf(explanation, sizeof(explanation), format, args);
   va_end(args);
 
   msg.assfmt("Table '%s%s' is defined differently in NDB, %s. The "
@@ -337,13 +344,9 @@ warn_incompatible(const NdbInfo::Table* ndb_tab, bool fatal,
   DBUG_VOID_RETURN;
 }
 
-int ha_ndbinfo::create(const char *name, TABLE *form,
-                       HA_CREATE_INFO *create_info,
-                       dd::Table *)
+int ha_ndbinfo::create(const char*, TABLE*, HA_CREATE_INFO*, dd::Table*)
 {
   DBUG_ENTER("ha_ndbinfo::create");
-  DBUG_PRINT("enter", ("name: %s", name));
-
   DBUG_RETURN(0);
 }
 
@@ -357,8 +360,7 @@ bool ha_ndbinfo::is_offline(void) const
   return m_impl.m_offline;
 }
 
-int ha_ndbinfo::open(const char *name, int mode, uint test_if_locked,
-                     const dd::Table *)
+int ha_ndbinfo::open(const char* name, int mode, uint, const dd::Table*)
 {
   DBUG_ENTER("ha_ndbinfo::open");
   DBUG_PRINT("enter", ("name: %s, mode: %d", name, mode));
@@ -684,10 +686,9 @@ void ha_ndbinfo::position(const uchar *record)
   DBUG_VOID_RETURN;
 }
 
-int ha_ndbinfo::info(uint flag)
+int ha_ndbinfo::info(uint)
 {
   DBUG_ENTER("ha_ndbinfo::info");
-  DBUG_PRINT("enter", ("flag: %d", flag));
   DBUG_RETURN(0);
 }
 
@@ -861,7 +862,7 @@ ndbinfo_init(void *plugin)
 
 static
 int
-ndbinfo_deinit(void *plugin)
+ndbinfo_deinit(void*)
 {
   DBUG_ENTER("ndbinfo_deinit");
 
@@ -874,7 +875,7 @@ ndbinfo_deinit(void *plugin)
   DBUG_RETURN(0);
 }
 
-struct st_mysql_sys_var* ndbinfo_system_variables[]= {
+SYS_VAR* ndbinfo_system_variables[]= {
   MYSQL_SYSVAR(max_rows),
   MYSQL_SYSVAR(max_bytes),
   MYSQL_SYSVAR(show_hidden),

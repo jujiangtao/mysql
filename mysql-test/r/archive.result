@@ -11132,7 +11132,7 @@ t2	CREATE TABLE `t2` (
   `fld3` char(30) NOT NULL DEFAULT '',
   `fld4` char(35) NOT NULL DEFAULT '',
   `fld5` char(35) NOT NULL DEFAULT ''
-) ENGINE=ARCHIVE DEFAULT CHARSET=utf8mb4
+) ENGINE=ARCHIVE DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 SELECT * FROM t2 WHERE auto != 100000;
 auto	fld1	companynr	fld3	fld4	fld5
 1	000001	00	Omaha	teethe	neat
@@ -12770,6 +12770,8 @@ DROP TABLE t1;
 SET sort_buffer_size=32804;
 CREATE TABLE t1(a INT, b CHAR(255), c CHAR(255), d CHAR(255),
 e CHAR(255), f INT) ENGINE=ARCHIVE DEFAULT CHARSET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 INSERT INTO t1 VALUES(-1,'b','c','d','e',1);
 INSERT INTO t1 SELECT * FROM t1;
 INSERT INTO t1 SELECT * FROM t1;
@@ -12786,8 +12788,6 @@ DROP TABLE IF EXISTS t1;
 CREATE TABLE t1 (c1 decimal(19,14) NOT NULL) ENGINE=ARCHIVE;
 CALL mtr.add_suppression("Found wrong key definition in #sql.* Please do \"ALTER TABLE `#sql.*` FORCE \" to fix it!");
 SET sql_mode='NO_ENGINE_SUBSTITUTION';
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 CREATE INDEX i1 ON t1(c1);
 Got one of the listed errors
 SET sql_mode= default;

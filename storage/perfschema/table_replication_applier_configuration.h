@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2013, 2017, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2013, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -32,15 +32,16 @@
 #include <sys/types.h>
 #include <time.h>
 
-#include "mysql_com.h"
+#include "my_base.h"
 #include "sql/rpl_info.h" /*CHANNEL_NAME_LENGTH*/
-#include "sql/rpl_mi.h"
-#include "sql/rpl_msr.h"
-#include "storage/perfschema/pfs_column_types.h"
 #include "storage/perfschema/pfs_engine_table.h"
 #include "storage/perfschema/table_helper.h"
 
+class Field;
 class Master_info;
+class Plugin_table;
+struct TABLE;
+struct THR_LOCK;
 
 /**
   @addtogroup performance_schema_tables
@@ -48,36 +49,31 @@ class Master_info;
 */
 
 /** A row in the table*/
-struct st_row_applier_config
-{
+struct st_row_applier_config {
   char channel_name[CHANNEL_NAME_LENGTH];
   uint channel_name_length;
   time_t desired_delay;
   bool desired_delay_is_set;
 };
 
-class PFS_index_rpl_applier_config : public PFS_engine_index
-{
-public:
+class PFS_index_rpl_applier_config : public PFS_engine_index {
+ public:
   PFS_index_rpl_applier_config()
-    : PFS_engine_index(&m_key), m_key("CHANNEL_NAME")
-  {
-  }
+      : PFS_engine_index(&m_key), m_key("CHANNEL_NAME") {}
 
-  ~PFS_index_rpl_applier_config()
-  {
-  }
+  ~PFS_index_rpl_applier_config() {}
 
   virtual bool match(Master_info *mi);
 
-private:
+ private:
   PFS_key_name m_key;
 };
 
 /** Table PERFORMANCE_SCHEMA.replication_applier_configuration */
-class table_replication_applier_configuration : public PFS_engine_table
-{
-private:
+class table_replication_applier_configuration : public PFS_engine_table {
+  typedef PFS_simple_index pos_t;
+
+ private:
   int make_row(Master_info *mi);
 
   /** Table share lock. */
@@ -88,11 +84,11 @@ private:
   /** Current row */
   st_row_applier_config m_row;
   /** Current position. */
-  PFS_simple_index m_pos;
+  pos_t m_pos;
   /** Next position. */
-  PFS_simple_index m_next_pos;
+  pos_t m_next_pos;
 
-protected:
+ protected:
   /**
     Read the current row values.
     @param table            Table handle
@@ -101,14 +97,12 @@ protected:
     @param read_all         true if all columns are read.
   */
 
-  virtual int read_row_values(TABLE *table,
-                              unsigned char *buf,
-                              Field **fields,
+  virtual int read_row_values(TABLE *table, unsigned char *buf, Field **fields,
                               bool read_all);
 
   table_replication_applier_configuration();
 
-public:
+ public:
   ~table_replication_applier_configuration();
 
   /** Table share. */
@@ -124,7 +118,7 @@ public:
   virtual int index_init(uint idx, bool sorted);
   virtual int index_next();
 
-private:
+ private:
   PFS_index_rpl_applier_config *m_opened_index;
 };
 

@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2016, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -28,30 +28,37 @@
 #include <string>
 #include <vector>
 
+#include "my_alloc.h"
 #include "my_inttypes.h"
 #include "my_psi_config.h"
 #include "mysql/components/services/mysql_mutex_bits.h"
-#include "mysql/psi/mysql_file.h"
+#include "mysql/psi/psi_base.h"
+#include "sql/json_dom.h"
 #include "sql_string.h"
 
 class THD;
 class set_var;
 class sys_var;
+struct MYSQL_FILE;
 
-using std::string;
-using std::map;
-using std::vector;
+/**
+  STRUCT st_persist_var
 
-struct st_persist_var
-{
-  string key;
-  string value;
-  st_persist_var() {}
-  st_persist_var(const string key, const string value)
-  {
-    this->key= key;
-    this->value= value;
-  }
+  This structure represents information of a variable which is to
+  be persisted in mysql-auto.cnf file.
+*/
+struct st_persist_var {
+  std::string key;
+  std::string value;
+  ulonglong timestamp;
+  std::string user;
+  std::string host;
+  st_persist_var();
+  st_persist_var(THD *thd);
+  st_persist_var(const st_persist_var &var);
+  st_persist_var(const std::string key, const std::string value,
+                 const ulonglong timestamp, const std::string user,
+                 const std::string host);
 };
 
 /**
@@ -75,11 +82,10 @@ struct st_persist_var
 void my_init_persist_psi_keys(void);
 #endif /* HAVE_PSI_INTERFACE */
 
-class Persisted_variables_cache
-{
-public:
+class Persisted_variables_cache {
+ public:
   int init(int *argc, char ***argv);
-  static Persisted_variables_cache* get_instance();
+  static Persisted_variables_cache *get_instance();
   /**
     Update in-memory copy for every SET PERSIST statement
   */
@@ -99,58 +105,78 @@ public:
   /**
     Set persisted options
   */
-  bool set_persist_options(bool plugin_options= FALSE);
+  bool set_persist_options(bool plugin_options = false);
   /**
     Reset persisted options
   */
-  bool reset_persisted_variables(THD *thd, const char* name, bool if_exists);
+  bool reset_persisted_variables(THD *thd, const char *name, bool if_exists);
   /**
     Get persisted variables
   */
-  vector<st_persist_var>* get_persisted_variables();
+  std::vector<st_persist_var> *get_persisted_variables();
   /**
     Get persisted static variables
   */
-  map<string, string>* get_persist_ro_variables();
+  std::map<std::string, st_persist_var> *get_persist_ro_variables();
   /**
-    Append read only persisted variables to command line options with a
+    append read only persisted variables to command line options with a
     separator.
   */
   bool append_read_only_variables(int *argc, char ***argv,
-    bool plugin_options= FALSE);
+                                  bool plugin_options = false);
   void cleanup();
 
-private:
-  /* Helper function to get variable value */
-  static String* get_variable_value(THD *thd,
-    sys_var *system_var, String *str);
-  /* Helper function to get variable name */
-  static const char* get_variable_name(sys_var *system_var);
+  /**
+    Acquire lock on m_persist_variables/m_persist_ro_variables
+  */
+  void lock() { mysql_mutex_lock(&m_LOCK_persist_variables); }
+  /**
+    Release lock on m_persist_variables/m_persist_ro_variables
+  */
+  void unlock() { mysql_mutex_unlock(&m_LOCK_persist_variables); }
+  /**
+    Assert caller that owns lock on m_persist_variables/m_persist_ro_variables
+  */
+  void assert_lock_owner() {
+    mysql_mutex_assert_owner(&m_LOCK_persist_variables);
+  }
 
-private:
+ private:
+  /* Helper function to get variable value */
+  static String *get_variable_value(THD *thd, sys_var *system_var, String *str);
+  /* Helper function to get variable name */
+  static const char *get_variable_name(sys_var *system_var);
+  /* Helper function to construct json formatted string */
+  static String *construct_json_string(std::string name, std::string value,
+                                       ulonglong timestamp, std::string user,
+                                       std::string host, String *dest);
+  /* Helper function to extract variables from json formatted string */
+  bool extract_variables_from_json(Json_dom *dom, bool is_read_only = false);
+
+ private:
   /* Helper functions for file IO */
   bool open_persist_file(int flag);
   void close_persist_file();
 
-private:
+ private:
   /* In memory copy of persistent config file */
-  vector<st_persist_var> m_persist_variables;
-  /* Copy of plugin variables whose plugin is not yet installed */
-  vector<st_persist_var> m_persist_plugin_variables;
+  std::vector<st_persist_var> m_persist_variables;
+  /* copy of plugin variables whose plugin is not yet installed */
+  std::vector<st_persist_var> m_persist_plugin_variables;
   /* In memory copy of read only persistent variables */
-  map<string, string> m_persist_ro_variables;
+  std::map<std::string, st_persist_var> m_persist_ro_variables;
 
   mysql_mutex_t m_LOCK_persist_variables;
-  static Persisted_variables_cache* m_instance;
+  static Persisted_variables_cache *m_instance;
 
   /* File handler members */
   MYSQL_FILE *m_fd;
-  string m_persist_filename;
+  std::string m_persist_filename;
   mysql_mutex_t m_LOCK_persist_file;
-  /* Read only persisted options */
-  char** ro_persisted_argv;
-  /* Read only persisted plugin options */
-  char** ro_persisted_plugin_argv;
+  /* Memory for read only persisted options */
+  MEM_ROOT ro_persisted_argv_alloc{PSI_NOT_INSTRUMENTED, 512};
+  /* Memory for read only persisted plugin options */
+  MEM_ROOT ro_persisted_plugin_argv_alloc{PSI_NOT_INSTRUMENTED, 512};
 };
 
 #endif /* PERSISTED_VARIABLE_H_INCLUDED */

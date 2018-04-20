@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2011, 2017, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2011, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -41,6 +41,7 @@ bool Ndb_local_schema::Base::mdl_try_lock(void) const
   MDL_request global_request;
   MDL_request schema_request;
   MDL_request mdl_request;
+  MDL_request backup_lock_request;
 
   MDL_REQUEST_INIT(&global_request,
                    MDL_key::GLOBAL, "", "", MDL_INTENTION_EXCLUSIVE,
@@ -51,6 +52,10 @@ bool Ndb_local_schema::Base::mdl_try_lock(void) const
   MDL_REQUEST_INIT(&mdl_request,
                    MDL_key::TABLE, m_db, m_name, MDL_SHARED,
                    MDL_TRANSACTION);
+  MDL_REQUEST_INIT(&backup_lock_request,
+                   MDL_key::BACKUP_LOCK, "", "", MDL_INTENTION_EXCLUSIVE,
+                   MDL_TRANSACTION);
+  mdl_requests.push_front(&backup_lock_request);
 
   mdl_requests.push_front(&mdl_request);
   mdl_requests.push_front(&schema_request);
@@ -84,7 +89,7 @@ void Ndb_local_schema::Base::log_warning(const char* fmt, ...) const
   char buf[1024];
   va_list args;
   va_start(args, fmt);
-  my_vsnprintf(buf, sizeof(buf), fmt, args);
+  vsnprintf(buf, sizeof(buf), fmt, args);
   va_end(args);
 
   if (m_push_warnings)
@@ -202,9 +207,9 @@ Ndb_local_schema::Table::remove_table(void) const
   }
 
   // Remove the table from DD
-  if (!ndb_dd_drop_table(m_thd, m_db, m_name))
+  if (!ndb_dd_remove_table(m_thd, m_db, m_name))
   {
-    log_warning("Failed to drop table from DD");
+    log_warning("Failed to remove table from DD");
     return;
   }
 

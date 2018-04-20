@@ -24,13 +24,7 @@ let $restart_file= $MYSQLTEST_VARDIR/tmp/mysqld.1.expect;
 --shutdown_server
 --source include/wait_until_disconnected.inc
 
-perl;
-my $filetodelete = "$ENV{'MYSQLTEST_VARDIR'}/log/mysqld.1.err";
-while (-e $filetodelete) {
-  unlink $filetodelete;
-  sleep 1;
-}
-EOF
+--remove_file $server_log 25
 
 --echo # Copy SSL certificates before restarting.
 --echo # They should be picked up automatically by server.
@@ -53,7 +47,7 @@ let SEARCH_PATTERN= CA certificate .* is self signed.;
 
 --echo # Try to establish SSL connection : This must succeed.
 connect (ssl_root_1,localhost,root,,,,,SSL);
---replace_result ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER
+--replace_result ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
 SHOW STATUS LIKE 'Ssl_cipher';
 SHOW VARIABLES LIKE 'have_ssl';
 
@@ -67,7 +61,7 @@ connection default;
 disconnect ssl_root_1;
 
 --echo # Connect using mysql client : This must succeed.
---replace_result ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER
+--replace_result ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
 --exec $MYSQL -uroot --ssl-mode=REQUIRED -e "show status like 'Ssl_cipher';"
 
 
@@ -82,13 +76,7 @@ let $restart_file= $MYSQLTEST_VARDIR/tmp/mysqld.1.expect;
 --shutdown_server
 --source include/wait_until_disconnected.inc
 
-perl;
-my $filetodelete = "$ENV{'MYSQLTEST_VARDIR'}/log/mysqld.1.err";
-while (-e $filetodelete) {
-  unlink $filetodelete;
-  sleep 1;
-}
-EOF
+--remove_file $server_log 25
 
 --echo # Remove one of the certificates/keys.
 --remove_file $DATADIR_LOCATION/server-key.pem

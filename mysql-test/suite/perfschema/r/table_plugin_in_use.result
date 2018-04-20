@@ -44,7 +44,7 @@ pfs_example_employee_name	CREATE TABLE `pfs_example_employee_name` (
   `LAST_NAME` varchar(20) DEFAULT NULL,
   PRIMARY KEY (`EMPLOYEE_NUMBER`),
   KEY `FIRST_NAME` (`FIRST_NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 select * from performance_schema.pfs_example_employee_name;
 EMPLOYEE_NUMBER	FIRST_NAME	LAST_NAME
 1	foo1	bar1
@@ -70,9 +70,9 @@ EMPLOYEE_NUMBER	FIRST_NAME	LAST_NAME
 UNINSTALL PLUGIN pfs_example_plugin_employee;
 "===== Check table lock status "
 OBJECT_TYPE	OBJECT_SCHEMA	OBJECT_NAME	OWNER_THREAD_ID	INTERNAL_LOCK	EXTERNAL_LOCK
-TABLE	performance_schema	pfs_example_employee_name	0	NULL	NULL
-TABLE	performance_schema	pfs_example_employee_name	0	NULL	NULL
-TABLE	performance_schema	pfs_example_employee_name	0	NULL	NULL
+TABLE	performance_schema	pfs_example_employee_name	NULL	NULL	NULL
+TABLE	performance_schema	pfs_example_employee_name	NULL	NULL	NULL
+TABLE	performance_schema	pfs_example_employee_name	NULL	NULL	NULL
 "===== Check Thread Status for default connection "
 NAME	PROCESSLIST_COMMAND	PROCESSLIST_STATE	PROCESSLIST_INFO
 thread/sql/one_connection	Query	Waiting for table metadata lock	UNINSTALL PLUGIN pfs_example_plugin_employee
@@ -94,9 +94,9 @@ EMPLOYEE_NUMBER	FIRST_NAME	LAST_NAME
 3	foo3	bar3
 "===== Check table lock status "
 OBJECT_TYPE	OBJECT_SCHEMA	OBJECT_NAME	OWNER_THREAD_ID	INTERNAL_LOCK	EXTERNAL_LOCK
-TABLE	performance_schema	pfs_example_employee_name	0	NULL	NULL
-TABLE	performance_schema	pfs_example_employee_name	0	NULL	NULL
-TABLE	performance_schema	pfs_example_employee_name	0	NULL	NULL
+TABLE	performance_schema	pfs_example_employee_name	NULL	NULL	NULL
+TABLE	performance_schema	pfs_example_employee_name	NULL	NULL	NULL
+TABLE	performance_schema	pfs_example_employee_name	NULL	NULL	NULL
 "===== Check Thread Status for default connection "
 NAME	PROCESSLIST_COMMAND	PROCESSLIST_STATE	PROCESSLIST_INFO
 thread/sql/one_connection	Query	Waiting for table metadata lock	UNINSTALL PLUGIN pfs_example_plugin_employee
@@ -156,7 +156,7 @@ pfs_example_employee_name	CREATE TABLE `pfs_example_employee_name` (
   `LAST_NAME` varchar(20) DEFAULT NULL,
   PRIMARY KEY (`EMPLOYEE_NUMBER`),
   KEY `FIRST_NAME` (`FIRST_NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 select * from performance_schema.pfs_example_employee_name;
 EMPLOYEE_NUMBER	FIRST_NAME	LAST_NAME
 1	foo1	bar1
@@ -182,9 +182,9 @@ EMPLOYEE_NUMBER	FIRST_NAME	LAST_NAME
 UNINSTALL PLUGIN pfs_example_plugin_employee;
 "===== Check table lock status "
 OBJECT_TYPE	OBJECT_SCHEMA	OBJECT_NAME	OWNER_THREAD_ID	INTERNAL_LOCK	EXTERNAL_LOCK
-TABLE	performance_schema	pfs_example_employee_name	0	NULL	NULL
-TABLE	performance_schema	pfs_example_employee_name	0	NULL	NULL
-TABLE	performance_schema	pfs_example_employee_name	0	NULL	NULL
+TABLE	performance_schema	pfs_example_employee_name	NULL	NULL	NULL
+TABLE	performance_schema	pfs_example_employee_name	NULL	NULL	NULL
+TABLE	performance_schema	pfs_example_employee_name	NULL	NULL	NULL
 "===== Check Thread Status for default connection "
 NAME	PROCESSLIST_COMMAND	PROCESSLIST_STATE	PROCESSLIST_INFO
 thread/sql/one_connection	Query	Waiting for table metadata lock	UNINSTALL PLUGIN pfs_example_plugin_employee
@@ -206,9 +206,9 @@ EMPLOYEE_NUMBER	FIRST_NAME	LAST_NAME
 3	foo3	bar3
 "===== Check table lock status "
 OBJECT_TYPE	OBJECT_SCHEMA	OBJECT_NAME	OWNER_THREAD_ID	INTERNAL_LOCK	EXTERNAL_LOCK
-TABLE	performance_schema	pfs_example_employee_name	0	NULL	NULL
-TABLE	performance_schema	pfs_example_employee_name	0	NULL	NULL
-TABLE	performance_schema	pfs_example_employee_name	0	NULL	NULL
+TABLE	performance_schema	pfs_example_employee_name	NULL	NULL	NULL
+TABLE	performance_schema	pfs_example_employee_name	NULL	NULL	NULL
+TABLE	performance_schema	pfs_example_employee_name	NULL	NULL	NULL
 "===== Check Thread Status for default connection "
 NAME	PROCESSLIST_COMMAND	PROCESSLIST_STATE	PROCESSLIST_INFO
 thread/sql/one_connection	Query	Waiting for table metadata lock	UNINSTALL PLUGIN pfs_example_plugin_employee
@@ -264,7 +264,7 @@ pfs_example_employee_name	CREATE TABLE `pfs_example_employee_name` (
   `LAST_NAME` varchar(20) DEFAULT NULL,
   PRIMARY KEY (`EMPLOYEE_NUMBER`),
   KEY `FIRST_NAME` (`FIRST_NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 select * from performance_schema.pfs_example_employee_name;
 EMPLOYEE_NUMBER	FIRST_NAME	LAST_NAME
 1	foo1	bar1

@@ -792,7 +792,7 @@ comment 'Characteristics procedure test'
   insert into t1 values ("chistics", 1)|
 show create procedure chistics|
 Procedure	sql_mode	Create Procedure	character_set_client	collation_connection	Database Collation
-chistics	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` PROCEDURE `chistics`()
+chistics	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` PROCEDURE `chistics`()
     MODIFIES SQL DATA
     COMMENT 'Characteristics procedure test'
 insert into t1 values ("chistics", 1)	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
@@ -804,7 +804,7 @@ delete from t1|
 alter procedure chistics sql security invoker|
 show create procedure chistics|
 Procedure	sql_mode	Create Procedure	character_set_client	collation_connection	Database Collation
-chistics	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` PROCEDURE `chistics`()
+chistics	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` PROCEDURE `chistics`()
     MODIFIES SQL DATA
     SQL SECURITY INVOKER
     COMMENT 'Characteristics procedure test'
@@ -819,7 +819,7 @@ comment 'Characteristics procedure test'
   return 42|
 show create function chistics|
 Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
-chistics	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `chistics`() RETURNS int(11)
+chistics	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `chistics`() RETURNS int(11)
     DETERMINISTIC
     SQL SECURITY INVOKER
     COMMENT 'Characteristics procedure test'
@@ -832,7 +832,7 @@ no sql
 comment 'Characteristics function test'|
 show create function chistics|
 Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
-chistics	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `chistics`() RETURNS int(11)
+chistics	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `chistics`() RETURNS int(11)
     NO SQL
     DETERMINISTIC
     SQL SECURITY INVOKER
@@ -841,8 +841,6 @@ return 42	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
 drop function chistics|
 insert into t1 values ("foo", 1), ("bar", 2), ("zip", 3)|
 set @@sql_mode = 'ANSI'|
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 drop procedure if exists modes$
 create procedure modes(out c1 int, out c2 int)
 begin
@@ -2303,7 +2301,7 @@ show create table t3|
 Table	Create Table
 t3	CREATE TABLE `t3` (
   `bug2773()` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 drop table t3|
 drop function bug2773|
 drop procedure if exists bug3788|
@@ -2363,9 +2361,9 @@ Table	Create Table
 t1	CREATE TABLE `t1` (
   `id` char(16) NOT NULL DEFAULT '',
   `data` int(11) NOT NULL
-) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4
+) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 Database	Create Database
-test	CREATE DATABASE `test` /*!40100 DEFAULT CHARACTER SET utf8mb4 */
+test	CREATE DATABASE `test` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci */
 Database (foo)
 Level	Code	Message
 Field	Type	Null	Key	Default	Extra
@@ -2384,9 +2382,9 @@ Table	Create Table
 t1	CREATE TABLE `t1` (
   `id` char(16) NOT NULL DEFAULT '',
   `data` int(11) NOT NULL
-) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4
+) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 Database	Create Database
-test	CREATE DATABASE `test` /*!40100 DEFAULT CHARACTER SET utf8mb4 */
+test	CREATE DATABASE `test` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci */
 Database (foo)
 Level	Code	Message
 Field	Type	Null	Key	Default	Extra
@@ -3644,8 +3642,6 @@ drop procedure if exists bug6127|
 create table t3 (s1 int unique)|
 set @sm=@@sql_mode|
 set sql_mode='traditional'|
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 create procedure bug6127()
 begin
 declare continue handler for sqlstate '23000'
@@ -3669,8 +3665,6 @@ s1
 0
 1
 set sql_mode=@sm|
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 drop table t3|
 drop procedure bug6127|
 drop procedure if exists bug12589_1|
@@ -3705,17 +3699,17 @@ call bug12589_1()|
 Table	Create Table
 tm1	CREATE TEMPORARY TABLE `tm1` (
   `spv1` decimal(3,3) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 call bug12589_2()|
 Table	Create Table
 tm1	CREATE TEMPORARY TABLE `tm1` (
   `spv1` decimal(6,3) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 call bug12589_3()|
 Table	Create Table
 tm1	CREATE TEMPORARY TABLE `tm1` (
   `spv1` decimal(6,3) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 drop procedure bug12589_1|
 drop procedure bug12589_2|
 drop procedure bug12589_3|
@@ -4776,7 +4770,7 @@ show create table t3|
 Table	Create Table
 t3	CREATE TABLE `t3` (
   `i` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 select * from t3|
 i
 0
@@ -4787,7 +4781,7 @@ show create table t3|
 Table	Create Table
 t3	CREATE TABLE `t3` (
   `j` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 select * from t3|
 j
 0
@@ -4875,7 +4869,11 @@ mysqltest1.bug18444(i)
 3
 drop database mysqltest1|
 create database mysqltest1 charset=utf8|
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 create database mysqltest2 charset=utf8|
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 create procedure mysqltest1.p1()
 begin
 -- alters the default collation of database test 
@@ -4890,6 +4888,8 @@ show create database mysqltest2|
 Database	Create Database
 mysqltest2	CREATE DATABASE `mysqltest2` /*!40100 DEFAULT CHARACTER SET utf8 */
 alter database mysqltest1 character set utf8|
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 use mysqltest2|
 call mysqltest1.p1()|
 show create database mysqltest1|
@@ -4937,7 +4937,11 @@ DROP PROCEDURE bug21013 |
 DROP DATABASE IF EXISTS mysqltest1|
 DROP DATABASE IF EXISTS mysqltest2|
 CREATE DATABASE mysqltest1 DEFAULT CHARACTER SET utf8|
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 CREATE DATABASE mysqltest2 DEFAULT CHARACTER SET utf8|
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 use mysqltest1|
 CREATE FUNCTION bug16211_f1() RETURNS CHAR(10)
 RETURN ""|
@@ -4986,12 +4990,16 @@ char(10)
 SELECT CHARSET(bug16211_f1())|
 CHARSET(bug16211_f1())
 utf8
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT CHARSET(bug16211_f2())|
 CHARSET(bug16211_f2())
 koi8r
 SELECT CHARSET(mysqltest2.bug16211_f3())|
 CHARSET(mysqltest2.bug16211_f3())
 utf8
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT CHARSET(mysqltest2.bug16211_f4())|
 CHARSET(mysqltest2.bug16211_f4())
 koi8r
@@ -5050,6 +5058,8 @@ DROP DATABASE mysqltest1|
 DROP DATABASE mysqltest2|
 DROP DATABASE IF EXISTS mysqltest1|
 CREATE DATABASE mysqltest1 DEFAULT CHARACTER SET utf8|
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 use mysqltest1|
 CREATE PROCEDURE bug16676_p1(
 IN p1 CHAR(10),
@@ -5078,6 +5088,10 @@ CHARSET(p2)	COLLATION(p2)
 utf8	utf8_general_ci
 CHARSET(p3)	COLLATION(p3)
 utf8	utf8_general_ci
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 CALL bug16676_p2('a', @v2, @v3)|
 CHARSET(p1)	COLLATION(p1)
 koi8r	koi8r_general_ci
@@ -5389,8 +5403,6 @@ Warning	1329	No data - zero rows fetched, selected, or processed
 call proc_20028_c()|
 ERROR 22012: Division by 0
 SET sql_mode='TRADITIONAL'|
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 drop function func_20028_a|
 drop function func_20028_b|
 drop function func_20028_c|
@@ -5446,8 +5458,6 @@ Warnings:
 Warning	1329	No data - zero rows fetched, selected, or processed
 call proc_20028_c()|
 SET @@sql_mode=@save_sql_mode|
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 drop function func_20028_a|
 drop function func_20028_b|
 drop function func_20028_c|
@@ -6029,7 +6039,7 @@ examplebug20777	CREATE TABLE `examplebug20777` (
   `2**64-2` bigint(20) unsigned DEFAULT NULL,
   `2**64-1` bigint(20) unsigned DEFAULT NULL,
   `2**64` bigint(20) unsigned DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 select * from examplebug20777 order by i;
 i	2**63-2	2**63-1	2**63	2**63+1	2**64-2	2**64-1	2**64
 0	9223372036854775806	9223372036854775807	9223372036854775808	9223372036854775809	18446744073709551614	18446744073709551615	18446744073709551615
@@ -6404,7 +6414,7 @@ SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `v` datetime DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 
 DROP TABLE t1;
 
@@ -6415,7 +6425,7 @@ SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `v` datetime DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 
 DROP TABLE t1;
 
@@ -6424,7 +6434,7 @@ SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `v` bigint(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 
 DROP TABLE t1;
 
@@ -6435,7 +6445,7 @@ SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `v` bigint(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 
 DROP TABLE t1;
 
@@ -6742,7 +6752,13 @@ declare `str` text charset utf8;
 set `str` := `a`;
 select substr(`str`, `pos`+ 1 ) into `str`;
 end $
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 call `p2`('s s s s s s');
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 drop procedure `p2`;
 drop table if exists t1;
 drop procedure if exists p1;
@@ -6862,15 +6878,11 @@ DROP FUNCTION f1;
 
 drop procedure if exists p;
 set @old_mode= @@sql_mode;
-set @@sql_mode= cast(pow(2,33)-1 as unsigned integer);
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
+set @@sql_mode= cast(pow(2,33)-1 as unsigned integer) & ~0x1003ff00;
 select @@sql_mode into @full_mode;
 create procedure p() begin end;
 call p();
 set @@sql_mode= @old_mode;
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 select replace(@full_mode, ',,,', ',NOT_USED,') into @full_mode;
 select replace(@full_mode, 'ALLOW_INVALID_DATES', 'INVALID_DATES') into @full_mode;
 select routine_name from information_schema.routines where routine_name = 'p' and sql_mode = @full_mode;
@@ -7447,6 +7459,8 @@ DROP PROCEDURE p1;
 DROP TABLE IF EXISTS t1;
 DROP PROCEDURE IF EXISTS p1;
 CREATE TABLE t1 (s1 CHAR(5) CHARACTER SET utf8);
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 INSERT INTO t1 VALUES ('a');
 CREATE PROCEDURE p1(dt DATETIME, i INT)
 BEGIN
@@ -7470,6 +7484,10 @@ WHEN _latin1'a' THEN _latin1'b'
     END AS x4
 FROM t1;
 END|
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 
 CALL p1('2011-04-03 05:14:10', 1);
 x1
@@ -7480,6 +7498,10 @@ x3
 A
 x4
 b
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 CALL p1('2011-04-03 05:14:11', 2);
 x1
 2011-04-03 05:14:11
@@ -7867,7 +7889,7 @@ ERROR 42S02: Table 'mysql.proc' doesn't exist
 # Metadata of stored function f1.
 SELECT * FROM INFORMATION_SCHEMA.ROUTINES WHERE ROUTINE_NAME = 'f1';
 SPECIFIC_NAME	ROUTINE_CATALOG	ROUTINE_SCHEMA	ROUTINE_NAME	ROUTINE_TYPE	DATA_TYPE	CHARACTER_MAXIMUM_LENGTH	CHARACTER_OCTET_LENGTH	NUMERIC_PRECISION	NUMERIC_SCALE	DATETIME_PRECISION	CHARACTER_SET_NAME	COLLATION_NAME	DTD_IDENTIFIER	ROUTINE_BODY	ROUTINE_DEFINITION	EXTERNAL_NAME	EXTERNAL_LANGUAGE	PARAMETER_STYLE	IS_DETERMINISTIC	SQL_DATA_ACCESS	SQL_PATH	SECURITY_TYPE	CREATED	LAST_ALTERED	SQL_MODE	ROUTINE_COMMENT	DEFINER	CHARACTER_SET_CLIENT	COLLATION_CONNECTION	DATABASE_COLLATION
-f1	def	test	f1	FUNCTION	int	NULL	NULL	10	0	NULL	NULL	NULL	int(11)	SQL	return 1	NULL	NULL	SQL	NO	CONTAINS SQL	NULL	DEFINER	<created>	<modified>	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION		root@localhost	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+f1	def	test	f1	FUNCTION	int	NULL	NULL	10	0	NULL	NULL	NULL	int(11)	SQL	return 1	NULL	SQL	SQL	NO	CONTAINS SQL	NULL	DEFINER	<created>	<modified>	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION		root@localhost	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
 SELECT * FROM INFORMATION_SCHEMA.PARAMETERS WHERE SPECIFIC_NAME = 'f1';
 SPECIFIC_CATALOG	SPECIFIC_SCHEMA	SPECIFIC_NAME	ORDINAL_POSITION	PARAMETER_MODE	PARAMETER_NAME	DATA_TYPE	CHARACTER_MAXIMUM_LENGTH	CHARACTER_OCTET_LENGTH	NUMERIC_PRECISION	NUMERIC_SCALE	DATETIME_PRECISION	CHARACTER_SET_NAME	COLLATION_NAME	DTD_IDENTIFIER	ROUTINE_TYPE
 def	test	f1	0	NULL	NULL	int	NULL	NULL	10	0	NULL	NULL	NULL	int(11)	FUNCTION
@@ -7875,7 +7897,7 @@ def	test	f1	1	IN	a	int	NULL	NULL	10	0	NULL	NULL	NULL	int(11)	FUNCTION
 # Metadata of stored procedure p1.
 SELECT * FROM INFORMATION_SCHEMA.ROUTINES WHERE ROUTINE_NAME = 'p1';
 SPECIFIC_NAME	ROUTINE_CATALOG	ROUTINE_SCHEMA	ROUTINE_NAME	ROUTINE_TYPE	DATA_TYPE	CHARACTER_MAXIMUM_LENGTH	CHARACTER_OCTET_LENGTH	NUMERIC_PRECISION	NUMERIC_SCALE	DATETIME_PRECISION	CHARACTER_SET_NAME	COLLATION_NAME	DTD_IDENTIFIER	ROUTINE_BODY	ROUTINE_DEFINITION	EXTERNAL_NAME	EXTERNAL_LANGUAGE	PARAMETER_STYLE	IS_DETERMINISTIC	SQL_DATA_ACCESS	SQL_PATH	SECURITY_TYPE	CREATED	LAST_ALTERED	SQL_MODE	ROUTINE_COMMENT	DEFINER	CHARACTER_SET_CLIENT	COLLATION_CONNECTION	DATABASE_COLLATION
-p1	def	test	p1	PROCEDURE		NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	SQL	select 1	NULL	NULL	SQL	NO	CONTAINS SQL	NULL	DEFINER	<created>	<modified>	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION		root@localhost	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+p1	def	test	p1	PROCEDURE		NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	SQL	select 1	NULL	SQL	SQL	NO	CONTAINS SQL	NULL	DEFINER	<created>	<modified>	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION		root@localhost	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
 SELECT * FROM INFORMATION_SCHEMA.PARAMETERS WHERE SPECIFIC_NAME = 'p1';
 SPECIFIC_CATALOG	SPECIFIC_SCHEMA	SPECIFIC_NAME	ORDINAL_POSITION	PARAMETER_MODE	PARAMETER_NAME	DATA_TYPE	CHARACTER_MAXIMUM_LENGTH	CHARACTER_OCTET_LENGTH	NUMERIC_PRECISION	NUMERIC_SCALE	DATETIME_PRECISION	CHARACTER_SET_NAME	COLLATION_NAME	DTD_IDENTIFIER	ROUTINE_TYPE
 def	test	p1	1	IN	a	int	NULL	NULL	10	0	NULL	NULL	NULL	int(11)	PROCEDURE
@@ -7948,8 +7970,6 @@ call bug6807()|
 ERROR 70100: Query execution was interrupted
 drop procedure bug6807|
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION'|
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 drop function if exists bug10100f|
 drop procedure if exists bug10100p|
 drop procedure if exists bug10100t|
@@ -8059,16 +8079,8 @@ drop table t3|
 SET sql_mode = default;
 drop procedure if exists bug15298_1;
 drop procedure if exists bug15298_2;
-set @orig_sql_mode= @@sql_mode;
-set sql_mode= (select replace(@@sql_mode,'NO_AUTO_CREATE_USER',''));
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
+create user 'mysqltest_1'@'localhost';
 grant all privileges on test.* to 'mysqltest_1'@'localhost';
-Warnings:
-Warning	1287	Using GRANT for creating new user is deprecated and will be removed in future release. Create new user with CREATE USER statement.
-set sql_mode= @orig_sql_mode;
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 create procedure 15298_1 () sql security definer show grants for current_user;
 create procedure 15298_2 () sql security definer show grants;
 call 15298_1();
@@ -8183,8 +8195,6 @@ USE test;
 # Bug#11763507 - 56224: FUNCTION NAME IS CASE-SENSITIVE
 #
 SET @@SQL_MODE = '';
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 CREATE EVENT teste_bug11763507 ON SCHEDULE AT CURRENT_TIMESTAMP + INTERVAL 1 HOUR
 DO SELECT 1 $
 SHOW EVENTS LIKE 'teste_bug11763507';

@@ -1,4 +1,4 @@
-# Copyright (c) 2017, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2017, 2018, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -28,23 +28,20 @@ SET (DEB_RULES_DEBUG_CMAKE
 		-DCMAKE_INSTALL_PREFIX=/usr \\
 		-DCMAKE_BUILD_TYPE=Debug \\
 		-DINSTALL_DOCDIR=share/mysql/docs \\
-		-DINSTALL_DOCREADMEDIR=share/mysql \\
 		-DINSTALL_INCLUDEDIR=include/mysql \\
 		-DINSTALL_INFODIR=share/mysql/docs \\
 		-DINSTALL_LIBDIR=lib/$(DEB_HOST_MULTIARCH) \\
 		-DINSTALL_MANDIR=share/man \\
-		-DINSTALL_MYSQLSHAREDIR=share/mysql \\
 		-DINSTALL_MYSQLTESTDIR=lib/mysql-test \\
 		-DINSTALL_PLUGINDIR=lib/mysql/plugin \\
 		-DINSTALL_SBINDIR=sbin \\
-		-DINSTALL_SUPPORTFILESDIR=share/mysql \\
 		-DSYSCONFDIR=/etc/mysql \\
 		-DMYSQL_UNIX_ADDR=/var/run/mysqld/mysqld.sock \\
 		-DWITH_SSL=bundled \\
 		-DWITH_INNODB_MEMCACHED=1 \\
 		-DWITH_MECAB=system \\
 		-DWITH_NUMA=ON \\
-		-DCOMPILATION_COMMENT=\"MySQL ${DEB_PRODUCTNAMEC} Server (${DEB_LICENSENAME})\" \\
+		-DCOMPILATION_COMMENT=\"MySQL ${DEB_PRODUCTNAMEC} Server - ${DEB_LICENSENAME} - Debug\" \\
 		-DINSTALL_LAYOUT=DEB \\
 		-DDEB_PRODUCT=${DEB_PRODUCT} \\
 		${DEB_CMAKE_EXTRAS}
@@ -88,7 +85,6 @@ usr/lib/mysql/plugin/debug/libpluginmecab.so
 usr/lib/mysql/plugin/debug/locking_service.so
 usr/lib/mysql/plugin/debug/mypluglib.so
 usr/lib/mysql/plugin/debug/mysql_no_login.so
-usr/lib/mysql/plugin/debug/mysqlx.so
 usr/lib/mysql/plugin/debug/rewriter.so
 usr/lib/mysql/plugin/debug/semisync_master.so
 usr/lib/mysql/plugin/debug/semisync_slave.so
@@ -168,4 +164,5 @@ usr/lib/mysql/plugin/debug/component_test_sys_var_service_str.so
 usr/lib/mysql/plugin/debug/component_test_backup_lock_service.so
 usr/lib/mysql/plugin/debug/pfs_example_plugin_employee.so
 usr/lib/mysql/plugin/debug/component_pfs_example.so
+usr/lib/mysql/plugin/debug/component_mysqlx_global_reset.so
 ")

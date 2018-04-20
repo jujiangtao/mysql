@@ -24,8 +24,9 @@
 
 #include "sql/ndb_repl_tab.h"
 
+#include <stdio.h>
+
 #include "mf_wcomp.h"
-#include "mysql/service_my_snprintf.h"
 #include "sql/ha_ndbcluster_tables.h"
 #include "sql/mysqld.h"                // system_charset_info
 #include "sql/ndb_share.h"
@@ -171,7 +172,6 @@ Ndb_rep_tab_reader::Ndb_rep_tab_reader()
 }
 
 int Ndb_rep_tab_reader::check_schema(const NdbDictionary::Table* reptab,
-                                     NdbDictionary::Dictionary* dict,
                                      const char** error_str)
 {
   DBUG_ENTER("check_schema");
@@ -329,7 +329,7 @@ Ndb_rep_tab_reader::scan_candidates(Ndb* ndb,
         {
           ambiguous_match = true;
           /* Ambiguous matches...*/
-          my_snprintf(warning_msg_buffer, sizeof(warning_msg_buffer),
+          snprintf(warning_msg_buffer, sizeof(warning_msg_buffer),
                       "Ambiguous matches in %s.%s for %s.%s (%u)."
                       "Candidates : %s.%s (%u), %s.%s (%u).",
                       ndb_rep_db, ndb_replication_table,
@@ -385,7 +385,7 @@ Ndb_rep_tab_reader::scan_candidates(Ndb* ndb,
 
   if (ndberror.code != 0)
   {
-    my_snprintf(warning_msg_buffer, sizeof(warning_msg_buffer),
+    snprintf(warning_msg_buffer, sizeof(warning_msg_buffer),
                 "Unable to retrieve %s.%s, logging and "
                 "conflict resolution may not function "
                 "as intended (ndberror %u)",
@@ -438,15 +438,12 @@ Ndb_rep_tab_reader::lookup(Ndb* ndb,
       }
     }
 
-    if ((error= check_schema(reptab,
-                             dict,
-                             &error_str)) != 0)
+    if ((error = check_schema(reptab, &error_str)) != 0)
     {
       DBUG_PRINT("info", ("check_schema failed : %u, error_str : %s",
                           error, error_str));
       break;
     }
-
 
     Ndb_rep_tab_row best_match_row;
 
@@ -506,7 +503,7 @@ Ndb_rep_tab_reader::lookup(Ndb* ndb,
   {
     if (ndberror.code != 0)
     {
-      my_snprintf(warning_msg_buffer, sizeof(warning_msg_buffer),
+      snprintf(warning_msg_buffer, sizeof(warning_msg_buffer),
                   "Unable to retrieve %s.%s, logging and "
                   "conflict resolution may not function "
                   "as intended (ndberror %u)",
@@ -521,11 +518,11 @@ Ndb_rep_tab_reader::lookup(Ndb* ndb,
     switch (error)
     {
     case -1:
-      my_snprintf(warning_msg_buffer, sizeof(warning_msg_buffer),
+      snprintf(warning_msg_buffer, sizeof(warning_msg_buffer),
                   "Missing or wrong type for column '%s'", error_str);
       break;
     case -2:
-      my_snprintf(warning_msg_buffer, sizeof(warning_msg_buffer), "%s", error_str);
+      snprintf(warning_msg_buffer, sizeof(warning_msg_buffer), "%s", error_str);
       break;
     case -3:
       /* Message already set */
@@ -542,7 +539,7 @@ Ndb_rep_tab_reader::lookup(Ndb* ndb,
                                              "NULL")));
 
   DBUG_RETURN(error);
-};
+}
 
 Uint32
 Ndb_rep_tab_reader::get_binlog_flags() const

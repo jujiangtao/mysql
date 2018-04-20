@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
+  Copyright (c) 2016, 2018, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -31,18 +31,20 @@
 
 #include <sys/types.h>
 
-#include "my_io.h"
+#include "my_base.h"
+#include "my_inttypes.h"
 #include "mysql_com.h"
-#include "sql/rpl_info.h" /* CHANNEL_NAME_LENGTH*/
-#include "sql/rpl_mi.h"
-#include "sql/rpl_msr.h"
-#include "storage/perfschema/pfs_column_types.h"
+#include "sql/rpl_filter.h"
+#include "sql_string.h"
 #include "storage/perfschema/pfs_engine_table.h"
-#include "storage/perfschema/table_helper.h"
+
+class Field;
+class Plugin_table;
+struct TABLE;
+struct THR_LOCK;
 
 /** A row in the table */
-struct st_row_applier_global_filters
-{
+struct st_row_applier_global_filters {
   /*
     REPLICATE_DO_DB, REPLICATE_IGNORE_DB, REPLICATE_DO_TABLE,
     REPLICATE_IGNORE_TABLE, REPLICATE_WILD_DO_TABLE,
@@ -71,9 +73,10 @@ struct st_row_applier_global_filters
 };
 
 /** Table PERFORMANCE_SCHEMA.replication_applier_global_filters */
-class table_replication_applier_global_filters : public PFS_engine_table
-{
-private:
+class table_replication_applier_global_filters : public PFS_engine_table {
+  typedef PFS_simple_index pos_t;
+
+ private:
   /**
     Make a row by an object of Rpl_pfs_filter.
 
@@ -91,11 +94,11 @@ private:
   /** True is the current row exists. */
   bool m_row_exists;
   /** Current position. */
-  PFS_simple_index m_pos;
+  pos_t m_pos;
   /** Next position. */
-  PFS_simple_index m_next_pos;
+  pos_t m_next_pos;
 
-protected:
+ protected:
   /**
     Read the current row values.
     @param table            Table handle
@@ -105,14 +108,12 @@ protected:
 
     @retval 0 if HAVE_REPLICATION is defined, else HA_ERR_RECORD_DELETED.
   */
-  virtual int read_row_values(TABLE *table,
-                              unsigned char *buf,
-                              Field **fields,
+  virtual int read_row_values(TABLE *table, unsigned char *buf, Field **fields,
                               bool read_all);
 
   table_replication_applier_global_filters();
 
-public:
+ public:
   ~table_replication_applier_global_filters();
 
   /** Table share. */

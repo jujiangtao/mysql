@@ -2,6 +2,7 @@
 # Check the file open/close LRU code
 #
 
+--source include/have_debug.inc
 --source include/big_test.inc
 --source include/have_innodb_max_16k.inc
 
@@ -79,5 +80,5 @@ DROP PROCEDURE sel;
 DROP DATABASE lru_test;
 
 --disable_query_log
-call mtr.add_suppression("InnoDB: Too many .* files are open the maximum allowed value is .*");
+call mtr.add_suppression("Too many .* files are open the maximum allowed value is .*");
 --enable_query_log

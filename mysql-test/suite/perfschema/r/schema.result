@@ -3,7 +3,7 @@ Database (performance_schema)
 performance_schema
 show create database performance_schema;
 Database	Create Database
-performance_schema	CREATE DATABASE `performance_schema` /*!40100 DEFAULT CHARACTER SET utf8 */
+performance_schema	CREATE DATABASE `performance_schema` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci */
 use performance_schema;
 show tables;
 Tables_in_performance_schema
@@ -60,6 +60,7 @@ global_status
 global_variables
 host_cache
 hosts
+log_status
 memory_summary_by_account_by_event_name
 memory_summary_by_host_by_event_name
 memory_summary_by_thread_by_event_name
@@ -111,12 +112,12 @@ variables_info
 show create table accounts;
 Table	Create Table
 accounts	CREATE TABLE `accounts` (
-  `USER` char(32) CHARACTER SET utf8 COLLATE utf8_bin DEFAULT NULL,
-  `HOST` char(60) CHARACTER SET utf8 COLLATE utf8_bin DEFAULT NULL,
+  `USER` char(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
+  `HOST` char(60) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `CURRENT_CONNECTIONS` bigint(20) NOT NULL,
   `TOTAL_CONNECTIONS` bigint(20) NOT NULL,
   UNIQUE KEY `ACCOUNT` (`USER`,`HOST`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table cond_instances;
 Table	Create Table
 cond_instances	CREATE TABLE `cond_instances` (
@@ -124,7 +125,7 @@ cond_instances	CREATE TABLE `cond_instances` (
   `OBJECT_INSTANCE_BEGIN` bigint(20) unsigned NOT NULL,
   PRIMARY KEY (`OBJECT_INSTANCE_BEGIN`),
   KEY `NAME` (`NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table events_stages_current;
 Table	Create Table
 events_stages_current	CREATE TABLE `events_stages_current` (
@@ -141,7 +142,7 @@ events_stages_current	CREATE TABLE `events_stages_current` (
   `NESTING_EVENT_ID` bigint(20) unsigned DEFAULT NULL,
   `NESTING_EVENT_TYPE` enum('TRANSACTION','STATEMENT','STAGE','WAIT') DEFAULT NULL,
   PRIMARY KEY (`THREAD_ID`,`EVENT_ID`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table events_stages_history;
 Table	Create Table
 events_stages_history	CREATE TABLE `events_stages_history` (
@@ -158,7 +159,7 @@ events_stages_history	CREATE TABLE `events_stages_history` (
   `NESTING_EVENT_ID` bigint(20) unsigned DEFAULT NULL,
   `NESTING_EVENT_TYPE` enum('TRANSACTION','STATEMENT','STAGE','WAIT') DEFAULT NULL,
   PRIMARY KEY (`THREAD_ID`,`EVENT_ID`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table events_stages_history_long;
 Table	Create Table
 events_stages_history_long	CREATE TABLE `events_stages_history_long` (
@@ -174,11 +175,11 @@ events_stages_history_long	CREATE TABLE `events_stages_history_long` (
   `WORK_ESTIMATED` bigint(20) unsigned DEFAULT NULL,
   `NESTING_EVENT_ID` bigint(20) unsigned DEFAULT NULL,
   `NESTING_EVENT_TYPE` enum('TRANSACTION','STATEMENT','STAGE','WAIT') DEFAULT NULL
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table events_stages_summary_by_host_by_event_name;
 Table	Create Table
 events_stages_summary_by_host_by_event_name	CREATE TABLE `events_stages_summary_by_host_by_event_name` (
-  `HOST` char(60) CHARACTER SET utf8 COLLATE utf8_bin DEFAULT NULL,
+  `HOST` char(60) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `EVENT_NAME` varchar(128) NOT NULL,
   `COUNT_STAR` bigint(20) unsigned NOT NULL,
   `SUM_TIMER_WAIT` bigint(20) unsigned NOT NULL,
@@ -186,7 +187,7 @@ events_stages_summary_by_host_by_event_name	CREATE TABLE `events_stages_summary_
   `AVG_TIMER_WAIT` bigint(20) unsigned NOT NULL,
   `MAX_TIMER_WAIT` bigint(20) unsigned NOT NULL,
   UNIQUE KEY `HOST` (`HOST`,`EVENT_NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table events_stages_summary_by_thread_by_event_name;
 Table	Create Table
 events_stages_summary_by_thread_by_event_name	CREATE TABLE `events_stages_summary_by_thread_by_event_name` (
@@ -198,11 +199,11 @@ events_stages_summary_by_thread_by_event_name	CREATE TABLE `events_stages_summar
   `AVG_TIMER_WAIT` bigint(20) unsigned NOT NULL,
   `MAX_TIMER_WAIT` bigint(20) unsigned NOT NULL,
   PRIMARY KEY (`THREAD_ID`,`EVENT_NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table events_stages_summary_by_user_by_event_name;
 Table	Create Table
 events_stages_summary_by_user_by_event_name	CREATE TABLE `events_stages_summary_by_user_by_event_name` (
-  `USER` char(32) CHARACTER SET utf8 COLLATE utf8_bin DEFAULT NULL,
+  `USER` char(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `EVENT_NAME` varchar(128) NOT NULL,
   `COUNT_STAR` bigint(20) unsigned NOT NULL,
   `SUM_TIMER_WAIT` bigint(20) unsigned NOT NULL,
@@ -210,12 +211,12 @@ events_stages_summary_by_user_by_event_name	CREATE TABLE `events_stages_summary_
   `AVG_TIMER_WAIT` bigint(20) unsigned NOT NULL,
   `MAX_TIMER_WAIT` bigint(20) unsigned NOT NULL,
   UNIQUE KEY `USER` (`USER`,`EVENT_NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table events_stages_summary_by_account_by_event_name;
 Table	Create Table
 events_stages_summary_by_account_by_event_name	CREATE TABLE `events_stages_summary_by_account_by_event_name` (
-  `USER` char(32) CHARACTER SET utf8 COLLATE utf8_bin DEFAULT NULL,
-  `HOST` char(60) CHARACTER SET utf8 COLLATE utf8_bin DEFAULT NULL,
+  `USER` char(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
+  `HOST` char(60) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `EVENT_NAME` varchar(128) NOT NULL,
   `COUNT_STAR` bigint(20) unsigned NOT NULL,
   `SUM_TIMER_WAIT` bigint(20) unsigned NOT NULL,
@@ -223,7 +224,7 @@ events_stages_summary_by_account_by_event_name	CREATE TABLE `events_stages_summa
   `AVG_TIMER_WAIT` bigint(20) unsigned NOT NULL,
   `MAX_TIMER_WAIT` bigint(20) unsigned NOT NULL,
   UNIQUE KEY `ACCOUNT` (`USER`,`HOST`,`EVENT_NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table events_stages_summary_global_by_event_name;
 Table	Create Table
 events_stages_summary_global_by_event_name	CREATE TABLE `events_stages_summary_global_by_event_name` (
@@ -234,7 +235,7 @@ events_stages_summary_global_by_event_name	CREATE TABLE `events_stages_summary_g
   `AVG_TIMER_WAIT` bigint(20) unsigned NOT NULL,
   `MAX_TIMER_WAIT` bigint(20) unsigned NOT NULL,
   PRIMARY KEY (`EVENT_NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table events_statements_current;
 Table	Create Table
 events_statements_current	CREATE TABLE `events_statements_current` (
@@ -280,7 +281,7 @@ events_statements_current	CREATE TABLE `events_statements_current` (
   `NESTING_EVENT_TYPE` enum('TRANSACTION','STATEMENT','STAGE','WAIT') DEFAULT NULL,
   `NESTING_EVENT_LEVEL` int(11) DEFAULT NULL,
   PRIMARY KEY (`THREAD_ID`,`EVENT_ID`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table events_statements_history;
 Table	Create Table
 events_statements_history	CREATE TABLE `events_statements_history` (
@@ -326,7 +327,7 @@ events_statements_history	CREATE TABLE `events_statements_history` (
   `NESTING_EVENT_TYPE` enum('TRANSACTION','STATEMENT','STAGE','WAIT') DEFAULT NULL,
   `NESTING_EVENT_LEVEL` int(11) DEFAULT NULL,
   PRIMARY KEY (`THREAD_ID`,`EVENT_ID`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table events_statements_history_long;
 Table	Create Table
 events_statements_history_long	CREATE TABLE `events_statements_history_long` (
@@ -371,7 +372,7 @@ events_statements_history_long	CREATE TABLE `events_statements_history_long` (
   `NESTING_EVENT_ID` bigint(20) unsigned DEFAULT NULL,
   `NESTING_EVENT_TYPE` enum('TRANSACTION','STATEMENT','STAGE','WAIT') DEFAULT NULL,
   `NESTING_EVENT_LEVEL` int(11) DEFAULT NULL
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table events_statements_summary_by_digest;
 Table	Create Table
 events_statements_summary_by_digest	CREATE TABLE `events_statements_summary_by_digest` (
@@ -411,11 +412,11 @@ events_statements_summary_by_digest	CREATE TABLE `events_statements_summary_by_d
   `QUERY_SAMPLE_SEEN` timestamp(6) NOT NULL DEFAULT '0000-00-00 00:00:00.000000',
   `QUERY_SAMPLE_TIMER_WAIT` bigint(20) unsigned NOT NULL,
   UNIQUE KEY `SCHEMA_NAME` (`SCHEMA_NAME`,`DIGEST`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table events_statements_summary_by_host_by_event_name;
 Table	Create Table
 events_statements_summary_by_host_by_event_name	CREATE TABLE `events_statements_summary_by_host_by_event_name` (
-  `HOST` char(60) CHARACTER SET utf8 COLLATE utf8_bin DEFAULT NULL,
+  `HOST` char(60) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `EVENT_NAME` varchar(128) NOT NULL,
   `COUNT_STAR` bigint(20) unsigned NOT NULL,
   `SUM_TIMER_WAIT` bigint(20) unsigned NOT NULL,
@@ -442,7 +443,7 @@ events_statements_summary_by_host_by_event_name	CREATE TABLE `events_statements_
   `SUM_NO_INDEX_USED` bigint(20) unsigned NOT NULL,
   `SUM_NO_GOOD_INDEX_USED` bigint(20) unsigned NOT NULL,
   UNIQUE KEY `HOST` (`HOST`,`EVENT_NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table events_statements_summary_by_thread_by_event_name;
 Table	Create Table
 events_statements_summary_by_thread_by_event_name	CREATE TABLE `events_statements_summary_by_thread_by_event_name` (
@@ -473,11 +474,11 @@ events_statements_summary_by_thread_by_event_name	CREATE TABLE `events_statement
   `SUM_NO_INDEX_USED` bigint(20) unsigned NOT NULL,
   `SUM_NO_GOOD_INDEX_USED` bigint(20) unsigned NOT NULL,
   PRIMARY KEY (`THREAD_ID`,`EVENT_NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table events_statements_summary_by_user_by_event_name;
 Table	Create Table
 events_statements_summary_by_user_by_event_name	CREATE TABLE `events_statements_summary_by_user_by_event_name` (
-  `USER` char(32) CHARACTER SET utf8 COLLATE utf8_bin DEFAULT NULL,
+  `USER` char(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `EVENT_NAME` varchar(128) NOT NULL,
   `COUNT_STAR` bigint(20) unsigned NOT NULL,
   `SUM_TIMER_WAIT` bigint(20) unsigned NOT NULL,
@@ -504,12 +505,12 @@ events_statements_summary_by_user_by_event_name	CREATE TABLE `events_statements_
   `SUM_NO_INDEX_USED` bigint(20) unsigned NOT NULL,
   `SUM_NO_GOOD_INDEX_USED` bigint(20) unsigned NOT NULL,
   UNIQUE KEY `USER` (`USER`,`EVENT_NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table events_statements_summary_by_account_by_event_name;
 Table	Create Table
 events_statements_summary_by_account_by_event_name	CREATE TABLE `events_statements_summary_by_account_by_event_name` (
-  `USER` char(32) CHARACTER SET utf8 COLLATE utf8_bin DEFAULT NULL,
-  `HOST` char(60) CHARACTER SET utf8 COLLATE utf8_bin DEFAULT NULL,
+  `USER` char(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
+  `HOST` char(60) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `EVENT_NAME` varchar(128) NOT NULL,
   `COUNT_STAR` bigint(20) unsigned NOT NULL,
   `SUM_TIMER_WAIT` bigint(20) unsigned NOT NULL,
@@ -536,7 +537,7 @@ events_statements_summary_by_account_by_event_name	CREATE TABLE `events_statemen
   `SUM_NO_INDEX_USED` bigint(20) unsigned NOT NULL,
   `SUM_NO_GOOD_INDEX_USED` bigint(20) unsigned NOT NULL,
   UNIQUE KEY `ACCOUNT` (`USER`,`HOST`,`EVENT_NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table events_statements_summary_global_by_event_name;
 Table	Create Table
 events_statements_summary_global_by_event_name	CREATE TABLE `events_statements_summary_global_by_event_name` (
@@ -566,7 +567,7 @@ events_statements_summary_global_by_event_name	CREATE TABLE `events_statements_s
   `SUM_NO_INDEX_USED` bigint(20) unsigned NOT NULL,
   `SUM_NO_GOOD_INDEX_USED` bigint(20) unsigned NOT NULL,
   PRIMARY KEY (`EVENT_NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table events_transactions_current;
 Table	Create Table
 events_transactions_current	CREATE TABLE `events_transactions_current` (
@@ -595,7 +596,7 @@ events_transactions_current	CREATE TABLE `events_transactions_current` (
   `NESTING_EVENT_ID` bigint(20) unsigned DEFAULT NULL,
   `NESTING_EVENT_TYPE` enum('TRANSACTION','STATEMENT','STAGE','WAIT') DEFAULT NULL,
   PRIMARY KEY (`THREAD_ID`,`EVENT_ID`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table events_transactions_history;
 Table	Create Table
 events_transactions_history	CREATE TABLE `events_transactions_history` (
@@ -624,7 +625,7 @@ events_transactions_history	CREATE TABLE `events_transactions_history` (
   `NESTING_EVENT_ID` bigint(20) unsigned DEFAULT NULL,
   `NESTING_EVENT_TYPE` enum('TRANSACTION','STATEMENT','STAGE','WAIT') DEFAULT NULL,
   PRIMARY KEY (`THREAD_ID`,`EVENT_ID`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table events_transactions_history_long;
 Table	Create Table
 events_transactions_history_long	CREATE TABLE `events_transactions_history_long` (
@@ -652,11 +653,11 @@ events_transactions_history_long	CREATE TABLE `events_transactions_history_long`
   `OBJECT_INSTANCE_BEGIN` bigint(20) unsigned DEFAULT NULL,
   `NESTING_EVENT_ID` bigint(20) unsigned DEFAULT NULL,
   `NESTING_EVENT_TYPE` enum('TRANSACTION','STATEMENT','STAGE','WAIT') DEFAULT NULL
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table events_transactions_summary_by_host_by_event_name;
 Table	Create Table
 events_transactions_summary_by_host_by_event_name	CREATE TABLE `events_transactions_summary_by_host_by_event_name` (
-  `HOST` char(60) CHARACTER SET utf8 COLLATE utf8_bin DEFAULT NULL,
+  `HOST` char(60) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `EVENT_NAME` varchar(128) NOT NULL,
   `COUNT_STAR` bigint(20) unsigned NOT NULL,
   `SUM_TIMER_WAIT` bigint(20) unsigned NOT NULL,
@@ -674,7 +675,7 @@ events_transactions_summary_by_host_by_event_name	CREATE TABLE `events_transacti
   `AVG_TIMER_READ_ONLY` bigint(20) unsigned NOT NULL,
   `MAX_TIMER_READ_ONLY` bigint(20) unsigned NOT NULL,
   UNIQUE KEY `HOST` (`HOST`,`EVENT_NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table events_transactions_summary_by_thread_by_event_name;
 Table	Create Table
 events_transactions_summary_by_thread_by_event_name	CREATE TABLE `events_transactions_summary_by_thread_by_event_name` (
@@ -696,11 +697,11 @@ events_transactions_summary_by_thread_by_event_name	CREATE TABLE `events_transac
   `AVG_TIMER_READ_ONLY` bigint(20) unsigned NOT NULL,
   `MAX_TIMER_READ_ONLY` bigint(20) unsigned NOT NULL,
   PRIMARY KEY (`THREAD_ID`,`EVENT_NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table events_transactions_summary_by_user_by_event_name;
 Table	Create Table
 events_transactions_summary_by_user_by_event_name	CREATE TABLE `events_transactions_summary_by_user_by_event_name` (
-  `USER` char(32) CHARACTER SET utf8 COLLATE utf8_bin DEFAULT NULL,
+  `USER` char(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `EVENT_NAME` varchar(128) NOT NULL,
   `COUNT_STAR` bigint(20) unsigned NOT NULL,
   `SUM_TIMER_WAIT` bigint(20) unsigned NOT NULL,
@@ -718,12 +719,12 @@ events_transactions_summary_by_user_by_event_name	CREATE TABLE `events_transacti
   `AVG_TIMER_READ_ONLY` bigint(20) unsigned NOT NULL,
   `MAX_TIMER_READ_ONLY` bigint(20) unsigned NOT NULL,
   UNIQUE KEY `USER` (`USER`,`EVENT_NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table events_transactions_summary_by_account_by_event_name;
 Table	Create Table
 events_transactions_summary_by_account_by_event_name	CREATE TABLE `events_transactions_summary_by_account_by_event_name` (
-  `USER` char(32) CHARACTER SET utf8 COLLATE utf8_bin DEFAULT NULL,
-  `HOST` char(60) CHARACTER SET utf8 COLLATE utf8_bin DEFAULT NULL,
+  `USER` char(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
+  `HOST` char(60) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `EVENT_NAME` varchar(128) NOT NULL,
   `COUNT_STAR` bigint(20) unsigned NOT NULL,
   `SUM_TIMER_WAIT` bigint(20) unsigned NOT NULL,
@@ -741,7 +742,7 @@ events_transactions_summary_by_account_by_event_name	CREATE TABLE `events_transa
   `AVG_TIMER_READ_ONLY` bigint(20) unsigned NOT NULL,
   `MAX_TIMER_READ_ONLY` bigint(20) unsigned NOT NULL,
   UNIQUE KEY `ACCOUNT` (`USER`,`HOST`,`EVENT_NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table events_transactions_summary_global_by_event_name;
 Table	Create Table
 events_transactions_summary_global_by_event_name	CREATE TABLE `events_transactions_summary_global_by_event_name` (
@@ -762,7 +763,7 @@ events_transactions_summary_global_by_event_name	CREATE TABLE `events_transactio
   `AVG_TIMER_READ_ONLY` bigint(20) unsigned NOT NULL,
   `MAX_TIMER_READ_ONLY` bigint(20) unsigned NOT NULL,
   PRIMARY KEY (`EVENT_NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table events_waits_current;
 Table	Create Table
 events_waits_current	CREATE TABLE `events_waits_current` (
@@ -786,7 +787,7 @@ events_waits_current	CREATE TABLE `events_waits_current` (
   `NUMBER_OF_BYTES` bigint(20) DEFAULT NULL,
   `FLAGS` int(10) unsigned DEFAULT NULL,
   PRIMARY KEY (`THREAD_ID`,`EVENT_ID`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table events_waits_history;
 Table	Create Table
 events_waits_history	CREATE TABLE `events_waits_history` (
@@ -810,7 +811,7 @@ events_waits_history	CREATE TABLE `events_waits_history` (
   `NUMBER_OF_BYTES` bigint(20) DEFAULT NULL,
   `FLAGS` int(10) unsigned DEFAULT NULL,
   PRIMARY KEY (`THREAD_ID`,`EVENT_ID`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table events_waits_history_long;
 Table	Create Table
 events_waits_history_long	CREATE TABLE `events_waits_history_long` (
@@ -833,11 +834,11 @@ events_waits_history_long	CREATE TABLE `events_waits_history_long` (
   `OPERATION` varchar(32) NOT NULL,
   `NUMBER_OF_BYTES` bigint(20) DEFAULT NULL,
   `FLAGS` int(10) unsigned DEFAULT NULL
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table events_waits_summary_by_host_by_event_name;
 Table	Create Table
 events_waits_summary_by_host_by_event_name	CREATE TABLE `events_waits_summary_by_host_by_event_name` (
-  `HOST` char(60) CHARACTER SET utf8 COLLATE utf8_bin DEFAULT NULL,
+  `HOST` char(60) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `EVENT_NAME` varchar(128) NOT NULL,
   `COUNT_STAR` bigint(20) unsigned NOT NULL,
   `SUM_TIMER_WAIT` bigint(20) unsigned NOT NULL,
@@ -845,7 +846,7 @@ events_waits_summary_by_host_by_event_name	CREATE TABLE `events_waits_summary_by
   `AVG_TIMER_WAIT` bigint(20) unsigned NOT NULL,
   `MAX_TIMER_WAIT` bigint(20) unsigned NOT NULL,
   UNIQUE KEY `HOST` (`HOST`,`EVENT_NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table events_waits_summary_by_instance;
 Table	Create Table
 events_waits_summary_by_instance	CREATE TABLE `events_waits_summary_by_instance` (
@@ -858,7 +859,7 @@ events_waits_summary_by_instance	CREATE TABLE `events_waits_summary_by_instance`
   `MAX_TIMER_WAIT` bigint(20) unsigned NOT NULL,
   PRIMARY KEY (`OBJECT_INSTANCE_BEGIN`),
   KEY `EVENT_NAME` (`EVENT_NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table events_waits_summary_by_thread_by_event_name;
 Table	Create Table
 events_waits_summary_by_thread_by_event_name	CREATE TABLE `events_waits_summary_by_thread_by_event_name` (
@@ -870,11 +871,11 @@ events_waits_summary_by_thread_by_event_name	CREATE TABLE `events_waits_summary_
   `AVG_TIMER_WAIT` bigint(20) unsigned NOT NULL,
   `MAX_TIMER_WAIT` bigint(20) unsigned NOT NULL,
   PRIMARY KEY (`THREAD_ID`,`EVENT_NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table events_waits_summary_by_user_by_event_name;
 Table	Create Table
 events_waits_summary_by_user_by_event_name	CREATE TABLE `events_waits_summary_by_user_by_event_name` (
-  `USER` char(32) CHARACTER SET utf8 COLLATE utf8_bin DEFAULT NULL,
+  `USER` char(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `EVENT_NAME` varchar(128) NOT NULL,
   `COUNT_STAR` bigint(20) unsigned NOT NULL,
   `SUM_TIMER_WAIT` bigint(20) unsigned NOT NULL,
@@ -882,12 +883,12 @@ events_waits_summary_by_user_by_event_name	CREATE TABLE `events_waits_summary_by
   `AVG_TIMER_WAIT` bigint(20) unsigned NOT NULL,
   `MAX_TIMER_WAIT` bigint(20) unsigned NOT NULL,
   UNIQUE KEY `USER` (`USER`,`EVENT_NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table events_waits_summary_by_account_by_event_name;
 Table	Create Table
 events_waits_summary_by_account_by_event_name	CREATE TABLE `events_waits_summary_by_account_by_event_name` (
-  `USER` char(32) CHARACTER SET utf8 COLLATE utf8_bin DEFAULT NULL,
-  `HOST` char(60) CHARACTER SET utf8 COLLATE utf8_bin DEFAULT NULL,
+  `USER` char(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
+  `HOST` char(60) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `EVENT_NAME` varchar(128) NOT NULL,
   `COUNT_STAR` bigint(20) unsigned NOT NULL,
   `SUM_TIMER_WAIT` bigint(20) unsigned NOT NULL,
@@ -895,7 +896,7 @@ events_waits_summary_by_account_by_event_name	CREATE TABLE `events_waits_summary
   `AVG_TIMER_WAIT` bigint(20) unsigned NOT NULL,
   `MAX_TIMER_WAIT` bigint(20) unsigned NOT NULL,
   UNIQUE KEY `ACCOUNT` (`USER`,`HOST`,`EVENT_NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table events_waits_summary_global_by_event_name;
 Table	Create Table
 events_waits_summary_global_by_event_name	CREATE TABLE `events_waits_summary_global_by_event_name` (
@@ -906,11 +907,11 @@ events_waits_summary_global_by_event_name	CREATE TABLE `events_waits_summary_glo
   `AVG_TIMER_WAIT` bigint(20) unsigned NOT NULL,
   `MAX_TIMER_WAIT` bigint(20) unsigned NOT NULL,
   PRIMARY KEY (`EVENT_NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table memory_summary_by_host_by_event_name;
 Table	Create Table
 memory_summary_by_host_by_event_name	CREATE TABLE `memory_summary_by_host_by_event_name` (
-  `HOST` char(60) CHARACTER SET utf8 COLLATE utf8_bin DEFAULT NULL,
+  `HOST` char(60) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `EVENT_NAME` varchar(128) NOT NULL,
   `COUNT_ALLOC` bigint(20) unsigned NOT NULL,
   `COUNT_FREE` bigint(20) unsigned NOT NULL,
@@ -923,7 +924,7 @@ memory_summary_by_host_by_event_name	CREATE TABLE `memory_summary_by_host_by_eve
   `CURRENT_NUMBER_OF_BYTES_USED` bigint(20) NOT NULL,
   `HIGH_NUMBER_OF_BYTES_USED` bigint(20) NOT NULL,
   UNIQUE KEY `HOST` (`HOST`,`EVENT_NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table memory_summary_by_thread_by_event_name;
 Table	Create Table
 memory_summary_by_thread_by_event_name	CREATE TABLE `memory_summary_by_thread_by_event_name` (
@@ -940,11 +941,11 @@ memory_summary_by_thread_by_event_name	CREATE TABLE `memory_summary_by_thread_by
   `CURRENT_NUMBER_OF_BYTES_USED` bigint(20) NOT NULL,
   `HIGH_NUMBER_OF_BYTES_USED` bigint(20) NOT NULL,
   PRIMARY KEY (`THREAD_ID`,`EVENT_NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table memory_summary_by_user_by_event_name;
 Table	Create Table
 memory_summary_by_user_by_event_name	CREATE TABLE `memory_summary_by_user_by_event_name` (
-  `USER` char(32) CHARACTER SET utf8 COLLATE utf8_bin DEFAULT NULL,
+  `USER` char(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `EVENT_NAME` varchar(128) NOT NULL,
   `COUNT_ALLOC` bigint(20) unsigned NOT NULL,
   `COUNT_FREE` bigint(20) unsigned NOT NULL,
@@ -957,12 +958,12 @@ memory_summary_by_user_by_event_name	CREATE TABLE `memory_summary_by_user_by_eve
   `CURRENT_NUMBER_OF_BYTES_USED` bigint(20) NOT NULL,
   `HIGH_NUMBER_OF_BYTES_USED` bigint(20) NOT NULL,
   UNIQUE KEY `USER` (`USER`,`EVENT_NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table memory_summary_by_account_by_event_name;
 Table	Create Table
 memory_summary_by_account_by_event_name	CREATE TABLE `memory_summary_by_account_by_event_name` (
-  `USER` char(32) CHARACTER SET utf8 COLLATE utf8_bin DEFAULT NULL,
-  `HOST` char(60) CHARACTER SET utf8 COLLATE utf8_bin DEFAULT NULL,
+  `USER` char(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
+  `HOST` char(60) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `EVENT_NAME` varchar(128) NOT NULL,
   `COUNT_ALLOC` bigint(20) unsigned NOT NULL,
   `COUNT_FREE` bigint(20) unsigned NOT NULL,
@@ -975,7 +976,7 @@ memory_summary_by_account_by_event_name	CREATE TABLE `memory_summary_by_account_
   `CURRENT_NUMBER_OF_BYTES_USED` bigint(20) NOT NULL,
   `HIGH_NUMBER_OF_BYTES_USED` bigint(20) NOT NULL,
   UNIQUE KEY `ACCOUNT` (`USER`,`HOST`,`EVENT_NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table memory_summary_global_by_event_name;
 Table	Create Table
 memory_summary_global_by_event_name	CREATE TABLE `memory_summary_global_by_event_name` (
@@ -991,7 +992,7 @@ memory_summary_global_by_event_name	CREATE TABLE `memory_summary_global_by_event
   `CURRENT_NUMBER_OF_BYTES_USED` bigint(20) NOT NULL,
   `HIGH_NUMBER_OF_BYTES_USED` bigint(20) NOT NULL,
   PRIMARY KEY (`EVENT_NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table metadata_locks;
 Table	Create Table
 metadata_locks	CREATE TABLE `metadata_locks` (
@@ -1009,7 +1010,7 @@ metadata_locks	CREATE TABLE `metadata_locks` (
   PRIMARY KEY (`OBJECT_INSTANCE_BEGIN`),
   KEY `OBJECT_TYPE` (`OBJECT_TYPE`,`OBJECT_SCHEMA`,`OBJECT_NAME`,`COLUMN_NAME`),
   KEY `OWNER_THREAD_ID` (`OWNER_THREAD_ID`,`OWNER_EVENT_ID`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table file_instances;
 Table	Create Table
 file_instances	CREATE TABLE `file_instances` (
@@ -1018,7 +1019,7 @@ file_instances	CREATE TABLE `file_instances` (
   `OPEN_COUNT` int(10) unsigned NOT NULL,
   PRIMARY KEY (`FILE_NAME`),
   KEY `EVENT_NAME` (`EVENT_NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table file_summary_by_event_name;
 Table	Create Table
 file_summary_by_event_name	CREATE TABLE `file_summary_by_event_name` (
@@ -1046,7 +1047,7 @@ file_summary_by_event_name	CREATE TABLE `file_summary_by_event_name` (
   `AVG_TIMER_MISC` bigint(20) unsigned NOT NULL,
   `MAX_TIMER_MISC` bigint(20) unsigned NOT NULL,
   PRIMARY KEY (`EVENT_NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table file_summary_by_instance;
 Table	Create Table
 file_summary_by_instance	CREATE TABLE `file_summary_by_instance` (
@@ -1078,12 +1079,12 @@ file_summary_by_instance	CREATE TABLE `file_summary_by_instance` (
   PRIMARY KEY (`OBJECT_INSTANCE_BEGIN`),
   KEY `FILE_NAME` (`FILE_NAME`),
   KEY `EVENT_NAME` (`EVENT_NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table host_cache;
 Table	Create Table
 host_cache	CREATE TABLE `host_cache` (
   `IP` varchar(64) NOT NULL,
-  `HOST` varchar(255) CHARACTER SET utf8 COLLATE utf8_bin DEFAULT NULL,
+  `HOST` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `HOST_VALIDATED` enum('YES','NO') NOT NULL,
   `SUM_CONNECT_ERRORS` bigint(20) NOT NULL,
   `COUNT_HOST_BLOCKED_ERRORS` bigint(20) NOT NULL,
@@ -1113,15 +1114,15 @@ host_cache	CREATE TABLE `host_cache` (
   `LAST_ERROR_SEEN` timestamp NULL DEFAULT '0000-00-00 00:00:00',
   PRIMARY KEY (`IP`),
   KEY `HOST` (`HOST`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table hosts;
 Table	Create Table
 hosts	CREATE TABLE `hosts` (
-  `HOST` char(60) CHARACTER SET utf8 COLLATE utf8_bin DEFAULT NULL,
+  `HOST` char(60) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `CURRENT_CONNECTIONS` bigint(20) NOT NULL,
   `TOTAL_CONNECTIONS` bigint(20) NOT NULL,
   UNIQUE KEY `HOST` (`HOST`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table mutex_instances;
 Table	Create Table
 mutex_instances	CREATE TABLE `mutex_instances` (
@@ -1131,7 +1132,7 @@ mutex_instances	CREATE TABLE `mutex_instances` (
   PRIMARY KEY (`OBJECT_INSTANCE_BEGIN`),
   KEY `NAME` (`NAME`),
   KEY `LOCKED_BY_THREAD_ID` (`LOCKED_BY_THREAD_ID`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table objects_summary_global_by_type;
 Table	Create Table
 objects_summary_global_by_type	CREATE TABLE `objects_summary_global_by_type` (
@@ -1144,7 +1145,7 @@ objects_summary_global_by_type	CREATE TABLE `objects_summary_global_by_type` (
   `AVG_TIMER_WAIT` bigint(20) unsigned NOT NULL,
   `MAX_TIMER_WAIT` bigint(20) unsigned NOT NULL,
   UNIQUE KEY `OBJECT` (`OBJECT_TYPE`,`OBJECT_SCHEMA`,`OBJECT_NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table performance_timers;
 Table	Create Table
 performance_timers	CREATE TABLE `performance_timers` (
@@ -1152,7 +1153,7 @@ performance_timers	CREATE TABLE `performance_timers` (
   `TIMER_FREQUENCY` bigint(20) DEFAULT NULL,
   `TIMER_RESOLUTION` bigint(20) DEFAULT NULL,
   `TIMER_OVERHEAD` bigint(20) DEFAULT NULL
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table data_locks;
 Table	Create Table
 data_locks	CREATE TABLE `data_locks` (
@@ -1170,12 +1171,12 @@ data_locks	CREATE TABLE `data_locks` (
   `LOCK_TYPE` varchar(32) NOT NULL,
   `LOCK_MODE` varchar(32) NOT NULL,
   `LOCK_STATUS` varchar(32) NOT NULL,
-  `LOCK_DATA` varchar(8192) CHARACTER SET utf8mb4 DEFAULT NULL,
+  `LOCK_DATA` varchar(8192) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL,
   PRIMARY KEY (`ENGINE_LOCK_ID`,`ENGINE`),
   KEY `ENGINE_TRANSACTION_ID` (`ENGINE_TRANSACTION_ID`,`ENGINE`),
   KEY `THREAD_ID` (`THREAD_ID`,`EVENT_ID`),
   KEY `OBJECT_SCHEMA` (`OBJECT_SCHEMA`,`OBJECT_NAME`,`PARTITION_NAME`,`SUBPARTITION_NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table data_lock_waits;
 Table	Create Table
 data_lock_waits	CREATE TABLE `data_lock_waits` (
@@ -1196,7 +1197,7 @@ data_lock_waits	CREATE TABLE `data_lock_waits` (
   KEY `BLOCKING_ENGINE_TRANSACTION_ID` (`BLOCKING_ENGINE_TRANSACTION_ID`,`ENGINE`),
   KEY `REQUESTING_THREAD_ID` (`REQUESTING_THREAD_ID`,`REQUESTING_EVENT_ID`),
   KEY `BLOCKING_THREAD_ID` (`BLOCKING_THREAD_ID`,`BLOCKING_EVENT_ID`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table rwlock_instances;
 Table	Create Table
 rwlock_instances	CREATE TABLE `rwlock_instances` (
@@ -1207,24 +1208,24 @@ rwlock_instances	CREATE TABLE `rwlock_instances` (
   PRIMARY KEY (`OBJECT_INSTANCE_BEGIN`),
   KEY `NAME` (`NAME`),
   KEY `WRITE_LOCKED_BY_THREAD_ID` (`WRITE_LOCKED_BY_THREAD_ID`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table setup_actors;
 Table	Create Table
 setup_actors	CREATE TABLE `setup_actors` (
-  `HOST` char(60) CHARACTER SET utf8 COLLATE utf8_bin NOT NULL DEFAULT '%',
-  `USER` char(32) CHARACTER SET utf8 COLLATE utf8_bin NOT NULL DEFAULT '%',
-  `ROLE` char(32) CHARACTER SET utf8 COLLATE utf8_bin NOT NULL DEFAULT '%',
+  `HOST` char(60) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '%',
+  `USER` char(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '%',
+  `ROLE` char(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '%',
   `ENABLED` enum('YES','NO') NOT NULL DEFAULT 'YES',
   `HISTORY` enum('YES','NO') NOT NULL DEFAULT 'YES',
   PRIMARY KEY (`HOST`,`USER`,`ROLE`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table setup_consumers;
 Table	Create Table
 setup_consumers	CREATE TABLE `setup_consumers` (
   `NAME` varchar(64) NOT NULL,
   `ENABLED` enum('YES','NO') NOT NULL,
   PRIMARY KEY (`NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table setup_instruments;
 Table	Create Table
 setup_instruments	CREATE TABLE `setup_instruments` (
@@ -1235,7 +1236,7 @@ setup_instruments	CREATE TABLE `setup_instruments` (
   `VOLATILITY` int(11) NOT NULL,
   `DOCUMENTATION` longtext,
   PRIMARY KEY (`NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table setup_objects;
 Table	Create Table
 setup_objects	CREATE TABLE `setup_objects` (
@@ -1245,7 +1246,7 @@ setup_objects	CREATE TABLE `setup_objects` (
   `ENABLED` enum('YES','NO') NOT NULL DEFAULT 'YES',
   `TIMED` enum('YES','NO') NOT NULL DEFAULT 'YES',
   UNIQUE KEY `OBJECT` (`OBJECT_TYPE`,`OBJECT_SCHEMA`,`OBJECT_NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table socket_instances;
 Table	Create Table
 socket_instances	CREATE TABLE `socket_instances` (
@@ -1260,7 +1261,7 @@ socket_instances	CREATE TABLE `socket_instances` (
   KEY `THREAD_ID` (`THREAD_ID`),
   KEY `SOCKET_ID` (`SOCKET_ID`),
   KEY `IP` (`IP`,`PORT`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table socket_summary_by_instance;
 Table	Create Table
 socket_summary_by_instance	CREATE TABLE `socket_summary_by_instance` (
@@ -1290,7 +1291,7 @@ socket_summary_by_instance	CREATE TABLE `socket_summary_by_instance` (
   `MAX_TIMER_MISC` bigint(20) unsigned NOT NULL,
   PRIMARY KEY (`OBJECT_INSTANCE_BEGIN`),
   KEY `EVENT_NAME` (`EVENT_NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table socket_summary_by_event_name;
 Table	Create Table
 socket_summary_by_event_name	CREATE TABLE `socket_summary_by_event_name` (
@@ -1318,7 +1319,7 @@ socket_summary_by_event_name	CREATE TABLE `socket_summary_by_event_name` (
   `AVG_TIMER_MISC` bigint(20) unsigned NOT NULL,
   `MAX_TIMER_MISC` bigint(20) unsigned NOT NULL,
   PRIMARY KEY (`EVENT_NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table table_handles;
 Table	Create Table
 table_handles	CREATE TABLE `table_handles` (
@@ -1333,7 +1334,7 @@ table_handles	CREATE TABLE `table_handles` (
   PRIMARY KEY (`OBJECT_INSTANCE_BEGIN`),
   KEY `OBJECT_TYPE` (`OBJECT_TYPE`,`OBJECT_SCHEMA`,`OBJECT_NAME`),
   KEY `OWNER_THREAD_ID` (`OWNER_THREAD_ID`,`OWNER_EVENT_ID`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table table_io_waits_summary_by_index_usage;
 Table	Create Table
 table_io_waits_summary_by_index_usage	CREATE TABLE `table_io_waits_summary_by_index_usage` (
@@ -1377,7 +1378,7 @@ table_io_waits_summary_by_index_usage	CREATE TABLE `table_io_waits_summary_by_in
   `AVG_TIMER_DELETE` bigint(20) unsigned NOT NULL,
   `MAX_TIMER_DELETE` bigint(20) unsigned NOT NULL,
   UNIQUE KEY `OBJECT` (`OBJECT_TYPE`,`OBJECT_SCHEMA`,`OBJECT_NAME`,`INDEX_NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table table_io_waits_summary_by_table;
 Table	Create Table
 table_io_waits_summary_by_table	CREATE TABLE `table_io_waits_summary_by_table` (
@@ -1420,7 +1421,7 @@ table_io_waits_summary_by_table	CREATE TABLE `table_io_waits_summary_by_table` (
   `AVG_TIMER_DELETE` bigint(20) unsigned NOT NULL,
   `MAX_TIMER_DELETE` bigint(20) unsigned NOT NULL,
   UNIQUE KEY `OBJECT` (`OBJECT_TYPE`,`OBJECT_SCHEMA`,`OBJECT_NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table table_lock_waits_summary_by_table;
 Table	Create Table
 table_lock_waits_summary_by_table	CREATE TABLE `table_lock_waits_summary_by_table` (
@@ -1493,7 +1494,7 @@ table_lock_waits_summary_by_table	CREATE TABLE `table_lock_waits_summary_by_tabl
   `AVG_TIMER_WRITE_EXTERNAL` bigint(20) unsigned NOT NULL,
   `MAX_TIMER_WRITE_EXTERNAL` bigint(20) unsigned NOT NULL,
   UNIQUE KEY `OBJECT` (`OBJECT_TYPE`,`OBJECT_SCHEMA`,`OBJECT_NAME`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table threads;
 Table	Create Table
 threads	CREATE TABLE `threads` (
@@ -1522,12 +1523,12 @@ threads	CREATE TABLE `threads` (
   KEY `PROCESSLIST_ACCOUNT` (`PROCESSLIST_USER`,`PROCESSLIST_HOST`),
   KEY `PROCESSLIST_HOST` (`PROCESSLIST_HOST`),
   KEY `RESOURCE_GROUP` (`RESOURCE_GROUP`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create table users;
 Table	Create Table
 users	CREATE TABLE `users` (
-  `USER` char(32) CHARACTER SET utf8 COLLATE utf8_bin DEFAULT NULL,
+  `USER` char(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `CURRENT_CONNECTIONS` bigint(20) NOT NULL,
   `TOTAL_CONNECTIONS` bigint(20) NOT NULL,
   UNIQUE KEY `USER` (`USER`)
-) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8
+) ENGINE=PERFORMANCE_SCHEMA DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci

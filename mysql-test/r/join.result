@@ -73,8 +73,6 @@ Warnings:
 Note	1003	/* select#1 */ select `test`.`t1`.`id` AS `id`,`test`.`t2`.`id` AS `id` from `test`.`t1` join `test`.`t2` where ((`test`.`t1`.`id` < 0) and (`test`.`t1`.`id` > 0) and multiple equal(`test`.`t2`.`id`, `test`.`t1`.`id`))
 drop table t1,t2;
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 CREATE TABLE t1 (
 id int(11) NOT NULL auto_increment,
 token varchar(100) DEFAULT '' NOT NULL,
@@ -1465,6 +1463,8 @@ col_datetime datetime DEFAULT NULL,
 PRIMARY KEY (pk),
 KEY col_date_key (col_date_key)
 ) charset latin1 ENGINE=MyISAM;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 INSERT INTO t1 VALUES
 (8,9,'h','FDUMQ',-1356726272,'2007-09-02 05:48:23','she','2002-04-02','2002-12-20 17:54:07');
 CREATE TABLE t2

@@ -179,7 +179,7 @@ show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `round(1, 6)` int(1) NOT NULL DEFAULT '0'
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 select * from t1;
 round(1, 6)
 1
@@ -264,8 +264,6 @@ NULL
 Warnings:
 Warning	3020	Invalid argument for logarithm
 set sql_mode='';
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 select round(111,-10);
 round(111,-10)
 0
@@ -282,17 +280,23 @@ select truncate(15000111000111000155,-1);
 truncate(15000111000111000155,-1)
 15000111000111000150
 set names utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 create table t1
 (f1 varchar(32) not null,
 f2 smallint(5) unsigned not null,
 f3 int(10) unsigned not null default '0')
 default charset=utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 insert into t1 values ('zombie',0,0),('gold',1,10000),('silver',2,10000);
 create table t2
 (f1 int(10) unsigned not null,
 f2 int(10) unsigned not null,
 f3 smallint(5) unsigned not null)
 default charset=utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 insert into t2 values (16777216,16787215,1),(33554432,33564431,2);
 select format(t2.f2-t2.f1+1,0) from t1,t2
 where t1.f2 = t2.f3 order by t1.f1;
@@ -531,7 +535,7 @@ SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `C` varchar(22) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 DROP TABLE t1;
 #
 # Bug#11764994  57900: CREATE TABLE .. SELECT ASSERTS SCALE >= 0 && PRECISION > 0 && SCALE <= PR
@@ -776,7 +780,7 @@ select 5.9 div 2, 1.23456789e3 DIV 2, 1.23456789e9 DIV 2, 1.23456789e19 DIV 2;
 # Bug#50507 Behavior of logarithmic functions depends on
 #              ERROR_FOR_DIVISION_BY_ZERO
 CREATE TABLE t1(a DOUBLE);
-SET sql_mode='NO_AUTO_CREATE_USER';
+SET sql_mode='';
 INSERT INTO t1 VALUES (ln(1));
 INSERT INTO t1 VALUES (ln(0));
 Warnings:
@@ -841,7 +845,7 @@ NULL
 NULL
 0
 0
-SET sql_mode='NO_AUTO_CREATE_USER';
+SET sql_mode='';
 UPDATE t1 SET a = ln(0);
 Warnings:
 Warning	3020	Invalid argument for logarithm
@@ -875,7 +879,7 @@ NULL
 NULL
 NULL
 NULL
-SET sql_mode='NO_AUTO_CREATE_USER';
+SET sql_mode='';
 DELETE FROM t1 WHERE a <=> ln(0);
 Warnings:
 Warning	3020	Invalid argument for logarithm
@@ -1336,8 +1340,14 @@ CRC32(?)
 3904355907
 DEALLOCATE PREPARE stmt;
 SET NAMES utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 CREATE TABLE t1 (a TEXT) CHARACTER SET = utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 LOAD DATA INFILE '../../std_data/loaddata_utf8.dat' INTO TABLE t1 CHARACTER SET utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT HEX(a), CRC32(a) from t1;
 HEX(a)	CRC32(a)
 E4B880E4BA8CE4B889	1785250883

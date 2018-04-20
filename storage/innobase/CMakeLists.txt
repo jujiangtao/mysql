@@ -1,4 +1,4 @@
-# Copyright (c) 2006, 2017, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2006, 2018, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -24,6 +24,8 @@
 
 INCLUDE(innodb.cmake)
 INCLUDE(${MYSQL_CMAKE_SCRIPT_DIR}/compile_flags.cmake)
+
+ADD_DEFINITIONS(-DLOG_SUBSYSTEM_TAG="InnoDB")
 
 # TODO: Fix up all non-canonical include paths and remove this.
 INCLUDE_DIRECTORIES(
@@ -129,9 +131,13 @@ SET(INNOBASE_SOURCES
 	lock/lock0prdt.cc
 	lock/lock0lock.cc
 	lock/lock0wait.cc
+	log/log0buf.cc
+	log/log0chkp.cc
+	log/log0ddl.cc
 	log/log0log.cc
 	log/log0recv.cc
-	log/log0ddl.cc
+	log/log0test.cc
+	log/log0write.cc
 	mach/mach0data.cc
 	mtr/mtr0log.cc
 	mtr/mtr0mtr.cc
@@ -199,8 +205,8 @@ IF(WITH_INNODB)
 ENDIF()
 
 ADD_LIBRARY(innodb_zipdecompress STATIC ${INNOBASE_ZIP_DECOMPRESS_SOURCES})
-SET_TARGET_PROPERTIES(innodb_zipdecompress PROPERTIES
-  COMPILE_DEFINITIONS "UNIV_LIBRARY")
+TARGET_COMPILE_DEFINITIONS(
+  innodb_zipdecompress PRIVATE UNIV_LIBRARY UNIV_NO_ERR_MSGS)
 ADD_DEPENDENCIES(innodb_zipdecompress GenError)
 
 UNSET(NUMA_LIBRARY)
@@ -238,6 +244,11 @@ IF(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     INCLUDE(${MYSQL_CMAKE_SCRIPT_DIR}/compile_flags.cmake)
     ADD_COMPILE_FLAGS(fts/fts0pars.cc
                       COMPILE_FLAGS "-Wno-logical-op")
+  ENDIF()
+  MY_CHECK_CXX_COMPILER_FLAG("-Wcast-function-type" HAVE_CAST_FUNCTION_TYPE)
+  IF(HAVE_CAST_FUNCTION_TYPE)
+    ADD_COMPILE_FLAGS(fts/fts0pars.cc
+                      COMPILE_FLAGS "-Wno-cast-function-type")
   ENDIF()
 ENDIF()
 

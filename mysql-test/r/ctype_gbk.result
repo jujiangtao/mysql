@@ -72,6 +72,8 @@ select 1 from t1 order by cast(a as char(1));
 1
 drop table t1;
 set names utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 create table t1 (
 name varchar(10),
 level smallint unsigned);
@@ -324,7 +326,7 @@ alter table t1 change c1 c1 mediumtext  character set gbk not null;
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `c1` mediumtext NOT NULL,
+  `c1` mediumtext CHARACTER SET gbk COLLATE gbk_chinese_ci NOT NULL,
   `c2` text NOT NULL
 ) ENGINE=default_engine DEFAULT CHARSET=gbk
 drop table t1;
@@ -343,6 +345,8 @@ End of 5.0 tests
 # Testing WL#4583 Case conversion in Asian character sets 
 #
 SET NAMES utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SET collation_connection=gbk_chinese_ci;
 CREATE TABLE t1 (b VARCHAR(2));
 INSERT INTO t1 VALUES ('0'),('1'),('2'),('3'),('4'),('5'),('6'),('7');
@@ -361,7 +365,7 @@ Table	Create Table
 t1	CREATE TABLE `t1` (
   `code` varchar(8) DEFAULT NULL,
   `a` varchar(1) CHARACTER SET gbk NOT NULL DEFAULT ''
-) ENGINE=default_engine DEFAULT CHARSET=utf8mb4
+) ENGINE=default_engine DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 SET @@session.max_error_count = 64;
 UPDATE IGNORE t1 SET a=unhex(code) ORDER BY code;
 Warnings:
@@ -627,6 +631,9 @@ HEX(LOWER(CAST(a AS CHAR CHARACTER SET utf8))) ORDER BY code;
 code	a
 A2FB	Ⅺ
 A2FC	Ⅻ
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT * FROM t1
 WHERE HEX(CAST(UPPER(a) AS CHAR CHARACTER SET utf8)) <>
 HEX(UPPER(CAST(a AS CHAR CHARACTER SET utf8))) ORDER BY code;
@@ -659,6 +666,9 @@ A8B9	ü
 A8BA	ê
 A8BD	ń
 A8BE	ň
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 DROP TABLE t1;
 #
 # End of 5.5 tests

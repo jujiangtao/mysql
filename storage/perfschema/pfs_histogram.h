@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2016, 2018, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -34,29 +34,19 @@
 /** Number of buckets used in histograms. */
 #define NUMBER_OF_BUCKETS 450
 
-struct PFS_histogram
-{
-public:
+struct PFS_histogram {
+ public:
   void reset();
 
-  void
-  increment_bucket(uint bucket_index)
-  {
-    m_bucket[bucket_index]++;
-  }
+  void increment_bucket(uint bucket_index) { m_bucket[bucket_index]++; }
 
-  ulonglong
-  read_bucket(uint bucket_index)
-  {
-    return m_bucket[bucket_index];
-  }
+  ulonglong read_bucket(uint bucket_index) { return m_bucket[bucket_index]; }
 
-private:
+ private:
   std::atomic<ulonglong> m_bucket[NUMBER_OF_BUCKETS];
 };
 
-struct PFS_histogram_timers
-{
+struct PFS_histogram_timers {
   ulonglong m_bucket_timer[NUMBER_OF_BUCKETS + 1];
 
   void init();

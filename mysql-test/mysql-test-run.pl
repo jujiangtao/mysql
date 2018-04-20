@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 # -*- cperl -*-
 
-# Copyright (c) 2004, 2017, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2004, 2018, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -94,6 +94,8 @@ $SIG{INT}= sub { mtr_error("Got ^C signal"); };
 
 our $mysql_version_id;
 our $mysql_version_extra;
+my $mysql_base_version;
+
 our $glob_mysql_test_dir;
 our $basedir;
 our $bindir;
@@ -148,7 +150,7 @@ our $opt_vs_config = $ENV{'MTR_VS_CONFIG'};
 
 # If you add a new suite, please check TEST_DIRS in Makefile.am.
 #
-my $DEFAULT_SUITES= "main,sys_vars,binlog,binlog_gtid,binlog_nogtid,federated,gis,rpl,rpl_gtid,rpl_nogtid,innodb,innodb_gis,innodb_fts,innodb_zip,innodb_undo,perfschema,funcs_1,opt_trace,parts,auth_sec,query_rewrite_plugins,gcol,sysschema,test_service_sql_api,json,connection_control,test_services,collations,service_udf_registration,service_sys_var_registration,service_status_var_registration";
+my $DEFAULT_SUITES= "main,sys_vars,binlog,binlog_gtid,binlog_nogtid,federated,gis,rpl,rpl_gtid,rpl_nogtid,innodb,innodb_gis,innodb_fts,innodb_zip,innodb_undo,perfschema,funcs_1,opt_trace,parts,auth_sec,query_rewrite_plugins,gcol,sysschema,test_service_sql_api,json,connection_control,test_services,collations,service_udf_registration,service_sys_var_registration,service_status_var_registration,x";
 my $opt_suites;
 
 # Verbose output, enable with --verbose
@@ -170,6 +172,8 @@ our @opt_mysqld_envs;
 our @opt_extra_mysqltest_opt;
 
 our @opt_extra_bootstrap_opt;
+
+our @share_locations;
 
 my $opt_stress;
 
@@ -251,6 +255,9 @@ my $opt_mysqlx_baseport = $ENV{'MYSQLXPLUGIN_PORT'} || "auto";
 my $opt_build_thread= $ENV{'MTR_BUILD_THREAD'} || "auto";
 my $opt_port_base= $ENV{'MTR_PORT_BASE'} || "auto";
 my $build_thread= 0;
+
+our $build_thread_id_dir;
+our $build_thread_id_file;
 
 my $previous_test_had_bootstrap_opts = 0;
 
@@ -375,6 +382,15 @@ sub main {
 
   command_line_setup();
 
+  # Create build thread id directory
+  create_unique_id_dir();
+  $build_thread_id_file = "$build_thread_id_dir/". $$ . "_unique_ids.log";
+
+  open(FH, ">>", $build_thread_id_file) or
+    die "Can't open file $build_thread_id_file: $!";
+  print FH "# Unique id file paths\n";
+  close(FH);
+
   # --help will not reach here, so now it's safe to assume we have binaries
   My::SafeProcess::find_bin();
 
@@ -437,14 +453,15 @@ sub main {
   if ( $opt_report_features ) {
     # Put "report features" as the first test to run
     my $tinfo = My::Test->new
-      (
-       name           => 'report_features',
-       # No result_file => Prints result
-       path           => 'include/report-features.test',
-       template_path  => "include/default_my.cnf",
-       master_opt     => [],
-       slave_opt      => [],
-      );
+    (
+      name           => 'report_features',
+      shortname      => 'report_features',
+      # No result file, prints the output on console.
+      path           => 'include/report-features.test',
+      template_path  => "include/default_my.cnf",
+      master_opt     => [],
+      slave_opt      => [],
+    );
     unshift(@$tests, $tinfo);
   }
 
@@ -627,9 +644,12 @@ sub main {
   if ($opt_valgrind_mysqld or $opt_sanitize) {
     # Create minimalistic "test" for the reporting
     my $tinfo = My::Test->new
-      (
-       name => $opt_valgrind_mysqld ? 'valgrind_report' : 'sanitize_report',
-      );
+    (
+      name      => $opt_valgrind_mysqld ?
+                   'valgrind_report' : 'sanitize_report',
+      shortname => $opt_valgrind_mysqld ?
+                   'valgrind_report' : 'sanitize_report',
+    );
     # Set dummy worker id to align report with normal tests
     $tinfo->{worker} = 0 if $opt_parallel > 1;
     if ($valgrind_reports) {
@@ -658,6 +678,9 @@ sub main {
     print "$ctest_report\n";
     mtr_print_line();
   }
+
+  # Cleanup the build thread id files
+  clean_unique_id_dir();
 
   print_total_times($opt_parallel) if $opt_report_times;
 
@@ -739,22 +762,24 @@ sub run_test_server ($$$) {
 	      mtr_report(" - skipping '$worker_savedir/'");
 	      rmtree($worker_savedir);
 	    }
-	    else {
-	      rename($worker_savedir, $savedir);
-              #look for the test.log file and put in savedir
-	      my $logf= "$result->{shortname}" . ".log";
-              my $logfilepath= dirname($worker_savedir); 
-              move($logfilepath . "/" . $logf, $savedir);
+            else
+            {
+              rename($worker_savedir, $savedir) if $worker_savedir ne $savedir;
+
+              # Look for the test log file and put that in savedir location
+              my $logfile= "$result->{shortname}" . ".log";
+              my $logfilepath= dirname($worker_savedir) . "/" . $logfile;
+              move($logfilepath, $savedir);
 
               if ($opt_check_testcases && !defined $result->{'result_file'})
               {
                 mtr_report("Mysqltest client output from logfile");
                 mtr_report("----------- MYSQLTEST OUTPUT START -----------\n");
-                mtr_printfile($savedir . "/" . $logf);
+                mtr_printfile($savedir . "/" . $logfile);
                 mtr_report("\n------------ MYSQLTEST OUTPUT END ------------\n");
               }
 
-              mtr_report(" - the logfile can be found in '$savedir/$logf'");
+              mtr_report(" - the logfile can be found in '$savedir/$logfile'");
 
 	      # Move any core files from e.g. mysqltest
 	      foreach my $coref (glob("core*"), glob("*.dmp"))
@@ -824,21 +849,17 @@ sub run_test_server ($$$) {
 	    # too many times already
 	    my $tname= $result->{name};
 	    my $failures= $result->{failures};
-	    if ($opt_retry > 1 and $failures >= $opt_retry_failure){
+	    if ($opt_retry > 1 and $failures >= $opt_retry_failure)
+            {
 	      mtr_report("\nTest $tname has failed $failures times,",
 			 "no more retries!\n");
 	    }
-	    else {
+	    else
+            {
 	      mtr_report("\nRetrying test $tname, ".
 			 "attempt($retries/$opt_retry)...\n");
-              #saving the log file as filename.failed in case of retry
-              if ( $result->is_failed() ) {
-                my $worker_logdir= $result->{savedir};
-                my $log_file_name=dirname($worker_logdir)."/".$result->{shortname}.".log";
-                rename $log_file_name,$log_file_name.".failed";
-              }
 	      delete($result->{result});
-	      $result->{retries}= $retries+1;
+	      $result->{retries}= $retries + 1;
 	      $result->write_test($sock, 'TESTCASE');
 	      next;
 	    }
@@ -1112,8 +1133,65 @@ sub run_worker ($) {
   }
 
   stop_all_servers();
-
   exit(1);
+}
+
+
+## Create a directory to store build thread id files
+sub create_unique_id_dir()
+{
+  if(IS_WINDOWS)
+  {
+    # Try to use machine-wide directory location for unique IDs,
+    # $ALLUSERSPROFILE . IF it is not available, fallback to $TEMP
+    # which is typically a per-user temporary directory
+    if (exists $ENV{'ALLUSERSPROFILE'} && -w $ENV{'ALLUSERSPROFILE'})
+    {
+      $build_thread_id_dir= $ENV{'ALLUSERSPROFILE'}."/mysql-unique-ids";
+    }
+    else
+    {
+      $build_thread_id_dir= $ENV{'TEMP'}."/mysql-unique-ids";
+    }
+  }
+  else
+  {
+    $build_thread_id_dir= "/tmp/mysql-unique-ids";
+  }
+
+  # Check if directory already exists
+  if (! -d $build_thread_id_dir)
+  {
+    # If there is a file with the reserved directory name, just
+    # delete the file.
+    if (-e $build_thread_id_dir)
+    {
+      unlink($build_thread_id_dir);
+    }
+
+    mkdir $build_thread_id_dir;
+    chmod 0777, $build_thread_id_dir;
+
+    die "Can't create directory $build_thread_id_dir: $!"
+      if (! -d $build_thread_id_dir);
+  }
+}
+
+
+## Remove all the unique files created to reserve ports.
+sub clean_unique_id_dir ()
+{
+  open (FH, "<", $build_thread_id_file) or
+    die "Can't open file $build_thread_id_file: $!";
+  while (<FH>)
+  {
+    chomp ($_);
+    next if ($_ =~ /# Unique id file paths/);
+    unlink $_ or warn "Cannot unlink file $_ : $!";
+  }
+  close (FH);
+  unlink($build_thread_id_file) or
+    die "Can't delete file $build_thread_id_file: $!";
 }
 
 
@@ -1432,6 +1510,17 @@ sub command_line_setup {
   # build directory in out-of-source builds.
   $bindir=$ENV{MTR_BINDIR}||$basedir;
   
+  if (using_extern())
+  {
+    # Connect to the running mysqld and find out what it supports
+    collect_mysqld_features_from_running_server();
+  }
+  else
+  {
+    # Run the mysqld to find out what features are available
+    collect_mysqld_features();
+  }
+
   # Look for the client binaries directory
   if ($path_client_bindir)
   {
@@ -1449,8 +1538,12 @@ sub command_line_setup {
   $path_language= mtr_path_exists("$bindir/share/mysql",
                                   "$bindir/share");
   my $path_share= $path_language;
-  $path_charsetsdir= mtr_path_exists("$basedir/share/mysql/charsets",
-                                     "$basedir/share/charsets");
+
+  @share_locations= ("share/mysql",
+                     "share/mysql-" . $mysql_base_version,
+                     "share");
+
+  $path_charsetsdir= my_find_dir($basedir, \@share_locations, "charsets");
 
   ($auth_plugin)= find_plugin("auth_test_plugin", "plugin_output_directory");
 
@@ -1465,17 +1558,6 @@ sub command_line_setup {
 
   # --debug[-common] implies we run debug server
   $opt_debug_server= 1 if $opt_debug || $opt_debug_common;
-
-  if (using_extern())
-  {
-    # Connect to the running mysqld and find out what it supports
-    collect_mysqld_features_from_running_server();
-  }
-  else
-  {
-    # Run the mysqld to find out what features are available
-    collect_mysqld_features();
-  }
 
   if ( $opt_comment )
   {
@@ -2035,15 +2117,22 @@ sub set_build_thread_ports($) {
 
   if ( lc($opt_build_thread) eq 'auto' )
   {
-    my $found_free = 0;
-    # Start attempts from here
-    $build_thread = 300;
-
+    # Start searching for build thread ids from here
+    $build_thread= 300;
     my $max_parallel= $opt_parallel * $build_threads_per_thread;
-    my $build_thread_upper = $build_thread + ($max_parallel > 39
-                             ? $max_parallel + int($max_parallel / 2)
-                             : 49);
 
+    # Calucalte the upper limit value for build thread id
+    my $build_thread_upper= $max_parallel > 39 ?
+                            $max_parallel + int($max_parallel / 2) : 49;
+
+    # Check the number of available processors and accordingly set
+    # the upper limit value for the build thread id.
+    $build_thread_upper= $build_thread +
+                         ($ENV{NUMBER_OF_CPUS} > $build_thread_upper ?
+                          $ENV{NUMBER_OF_CPUS} + int($ENV{NUMBER_OF_CPUS} / 2) :
+                          $build_thread_upper);
+
+    my $found_free= 0;
     while (!$found_free)
     {
       $build_thread= mtr_get_unique_id($build_thread, $build_thread_upper,
@@ -2167,6 +2256,9 @@ sub collect_mysqld_features {
       {
 	#print "Major: $1 Minor: $2 Build: $3\n";
 	$mysql_version_id= $1*10000 + $2*100 + $3;
+	# Some paths might be version specific
+	$mysql_base_version= int($mysql_version_id / 10000) . "." .
+                             int(($mysql_version_id % 10000)/100);
 	#print "mysql_version_id: $mysql_version_id\n";
 	mtr_report("MySQL Version $1.$2.$3");
 	$mysql_version_extra= $4;
@@ -2312,13 +2404,13 @@ sub executable_setup () {
     # Look for single threaded NDB
     $exe_ndbd=
       my_find_bin($bindir,
-		  ["storage/ndb/src/kernel", "libexec", "sbin", "bin"],
+		  ["runtime_output_directory", "libexec", "sbin", "bin"],
 		  "ndbd");
 
     # Look for multi threaded NDB
     $exe_ndbmtd=
       my_find_bin($bindir,
-		  ["storage/ndb/src/kernel", "libexec", "sbin", "bin"],
+		  ["runtime_output_directory", "libexec", "sbin", "bin"],
 		  "ndbmtd", NOT_REQUIRED);
     if ($exe_ndbmtd)
     {
@@ -2337,17 +2429,17 @@ sub executable_setup () {
 
     $exe_ndb_mgmd=
       my_find_bin($bindir,
-		  ["storage/ndb/src/mgmsrv", "libexec", "sbin", "bin"],
+		  ["runtime_output_directory", "libexec", "sbin", "bin"],
 		  "ndb_mgmd");
 
     $exe_ndb_mgm=
       my_find_bin($bindir,
-                  ["storage/ndb/src/mgmclient", "bin"],
+                  ["runtime_output_directory", "bin"],
                   "ndb_mgm");
 
     $exe_ndb_waiter=
       my_find_bin($bindir,
-		  ["storage/ndb/tools/", "bin"],
+		  ["runtime_output_directory", "bin"],
 		  "ndb_waiter");
 
   }
@@ -2680,10 +2772,10 @@ sub environment_setup {
   $ENV{'LC_COLLATE'}=         "C";
   $ENV{'USE_RUNNING_SERVER'}= using_extern();
   $ENV{'MYSQL_TEST_DIR'}=     $glob_mysql_test_dir;
-  $ENV{'ABS_MYSQL_TEST_DIR'}= getcwd();
   $ENV{'DEFAULT_MASTER_PORT'}= $mysqld_variables{'port'};
   $ENV{'MYSQL_TMP_DIR'}=      $opt_tmpdir;
   $ENV{'MYSQLTEST_VARDIR'}=   $opt_vardir;
+  $ENV{'MYSQL_TEST_DIR_ABS'}= getcwd();
   $ENV{'MYSQL_BINDIR'}=       "$bindir";
   $ENV{'MYSQL_SHAREDIR'}=     $path_language;
   $ENV{'MYSQL_CHARSETSDIR'}=  $path_charsetsdir;
@@ -2708,39 +2800,39 @@ sub environment_setup {
   {
     $ENV{'NDB_MGM'}=
       my_find_bin($bindir,
-		  ["storage/ndb/src/mgmclient", "bin"],
+		  ["runtime_output_directory", "bin"],
 		  "ndb_mgm");
 
     $ENV{'NDB_WAITER'}= $exe_ndb_waiter;
 
     $ENV{'NDB_RESTORE'}=
       my_find_bin($bindir,
-		  ["storage/ndb/tools", "bin"],
+		  ["runtime_output_directory", "bin"],
 		  "ndb_restore");
 
     $ENV{'NDB_CONFIG'}=
       my_find_bin($bindir,
-		  ["storage/ndb/tools", "bin"],
+		  ["runtime_output_directory", "bin"],
 		  "ndb_config");
 
     $ENV{'NDB_SELECT_ALL'}=
       my_find_bin($bindir,
-		  ["storage/ndb/tools", "bin"],
+		  ["runtime_output_directory", "bin"],
 		  "ndb_select_all");
 
     $ENV{'NDB_DROP_TABLE'}=
       my_find_bin($bindir,
-		  ["storage/ndb/tools", "bin"],
+		  ["runtime_output_directory", "bin"],
 		  "ndb_drop_table");
 
     $ENV{'NDB_DESC'}=
       my_find_bin($bindir,
-		  ["storage/ndb/tools", "bin"],
+		  ["runtime_output_directory", "bin"],
 		  "ndb_desc");
 
     $ENV{'NDB_SHOW_TABLES'}=
       my_find_bin($bindir,
-		  ["storage/ndb/tools", "bin"],
+		  ["runtime_output_directory", "bin"],
 		  "ndb_show_tables");
 
       
@@ -4048,6 +4140,7 @@ sub mysql_install_db {
 
   my $path_sql= my_find_file($install_basedir,
 			     ["mysql", "share/mysql",
+			      "share/mysql-" . $mysql_base_version,
 			      "share", "scripts"],
 			      "mysql_system_tables.sql",
 			     NOT_REQUIRED);
@@ -7455,9 +7548,10 @@ sub run_ctest() {
 
   # Create minimalistic "test" for the reporting
   $tinfo = My::Test->new
-    (
-     name           => 'unit_tests',
-    );
+  (
+    name      => 'unit_tests',
+    shortname => 'unit_tests',
+  );
   # Set dummy worker id to align report with normal tests
   $tinfo->{worker} = 0 if $opt_parallel > 1;
 

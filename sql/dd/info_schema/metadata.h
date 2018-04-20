@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2017, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,9 +23,9 @@
 #ifndef SQL_DD_METADATA_H
 #define SQL_DD_METADATA_H
 
-#include <mysql/plugin.h>            // st_plugin_int
+#include <mysql/plugin.h>  // st_plugin_int
 
-#include "sql/dd/string_type.h"      // dd::String_type
+#include "sql/dd/string_type.h"  // dd::String_type
 
 class THD;
 struct st_plugin_int;
@@ -44,9 +44,30 @@ namespace info_schema {
   of the first MySQL version that published a given database schema.
   The format is Mmmdd with M=Major, m=minor, d=dot,
   so that MySQL 8.0.4 is encoded as 80004.
+
+  Historical I_S version number published:
+
+  1: Published in 8.0.3-RC.
+  ------------------------
+  Introduced in MySQL 8.0.0 by WL#6599. Never published in a GA version.
+
+  80011: Current. Published in 8.0 GA.
+  ------------------------------------
+  Changes from version 1:
+
+  - Bug#27309116: Add a new column `external_language` to `mysql`.`routines`
+    and update `information_schema`.`routines` to reflect this column.
+
+  - Bug#27593348: INFORMATION_SCHEMA.STATISTICS FIELD TYPE CHANGE.
+    Changes the column I_S.STATISTICS.NON_UNIQUE type from VARCHAR
+    to INT.
+
+  80012: Next I_S version number to use when there is change.
+  -----------------------------------------------------------
+  No changes yet, hence this number is not used yet.
 */
 
-static const uint IS_DD_VERSION= 80004;
+static const uint IS_DD_VERSION = 80011;
 
 /**
   Initialize INFORMATION_SCHEMA system views.
@@ -57,7 +78,6 @@ static const uint IS_DD_VERSION= 80004;
 */
 bool initialize(THD *thd);
 
-
 /**
   Create INFORMATION_SCHEMA system views.
 
@@ -66,7 +86,6 @@ bool initialize(THD *thd);
   @return       Upon failure, return true, otherwise false.
 */
 bool create_system_views(THD *thd);
-
 
 /**
   Store the server I_S table metadata into dictionary, once during MySQL
@@ -78,7 +97,6 @@ bool create_system_views(THD *thd);
 */
 bool store_server_I_S_metadata(THD *thd);
 
-
 /**
   Store I_S table metadata into dictionary, during MySQL server startup.
 
@@ -87,7 +105,6 @@ bool store_server_I_S_metadata(THD *thd);
   @return       Upon failure, return true, otherwise false.
 */
 bool update_I_S_metadata(THD *thd);
-
 
 /**
   Store dynamic I_S plugin table metadata into dictionary, during INSTALL
@@ -98,9 +115,7 @@ bool update_I_S_metadata(THD *thd);
 
   @return       Upon failure, return true, otherwise false.
 */
-bool store_dynamic_plugin_I_S_metadata(THD *thd,
-                                       st_plugin_int *plugin_int);
-
+bool store_dynamic_plugin_I_S_metadata(THD *thd, st_plugin_int *plugin_int);
 
 /**
   Remove I_S view metadata from dictionary. This is used
@@ -111,10 +126,9 @@ bool store_dynamic_plugin_I_S_metadata(THD *thd,
 
   @return       Upon failure, return true, otherwise false.
 */
-bool remove_I_S_view_metadata(THD *thd,
-                              const dd::String_type &view_name);
+bool remove_I_S_view_metadata(THD *thd, const dd::String_type &view_name);
 
-}
-}
+}  // namespace info_schema
+}  // namespace dd
 
-#endif // SQL_DD_METADATA_H
+#endif  // SQL_DD_METADATA_H

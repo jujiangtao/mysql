@@ -1,4 +1,4 @@
-// Copyright (c) 2017, Oracle and/or its affiliates. All rights reserved.
+// Copyright (c) 2017, 2018, Oracle and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License, version 2.0,
@@ -454,7 +454,13 @@ bool parse_geometry(THD *thd, const char *func_name, const String *str,
 
   // Flip polygon rings so that the exterior ring is counter-clockwise and
   // interior rings are clockwise.
-  gis::Ring_flip_visitor rfv;
+  double semi_major = 1.0;
+  double semi_minor = 1.0;
+  if (*srs && (*srs)->is_geographic()) {
+    semi_major = (*srs)->semi_major_axis();
+    semi_minor = (*srs)->semi_minor_axis();
+  }
+  gis::Ring_flip_visitor rfv(semi_major, semi_minor);
   (*geometry)->accept(&rfv);
   if (rfv.invalid()) {
     // There's something wrong with a polygon in the geometry.
@@ -481,4 +487,4 @@ bool parse_geometry(THD *thd, const char *func_name, const String *str,
   return false;
 }
 
-}  // gis
+}  // namespace gis

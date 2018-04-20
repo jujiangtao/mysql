@@ -58,7 +58,6 @@ let $MYSQLD_DATADIR= `select @@datadir`;
 --enable_reconnect
 --source include/wait_until_connected_again.inc
 
-CALL mtr.add_suppression("InnoDB: *");
 CALL mtr.add_suppression("You need to use --log-bin to make --log-slave-updates work.");
 
 --echo # default values
@@ -142,11 +141,9 @@ SELECT @@global.innodb_log_file_size;
 SELECT @@global.log_slave_updates;
 
 --echo # check contents of persistent config file
---cat_file $MYSQLD_DATADIR/mysqld-auto.cnf
 --echo
 SET @@persist_only.max_connections=99;
 SET PERSIST_ONLY table_open_cache_instances= 8;
---cat_file $MYSQLD_DATADIR/mysqld-auto.cnf
 
 --echo # try persist_only for dynamic variables
 SELECT @@global.max_connections, @@global.session_track_system_variables;
@@ -180,10 +177,6 @@ SELECT VARIABLE_NAME FROM performance_schema.variables_info
 --exec echo "restart:--persisted-globals-load=0" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
 --enable_reconnect
 --source include/wait_until_connected_again.inc
-
---echo # check contents of persistent config file
---cat_file $MYSQLD_DATADIR/mysqld-auto.cnf
---echo
 
 --echo # should have values different from persistent config file
 SELECT @@global.max_connections, @@global.session_track_system_variables;

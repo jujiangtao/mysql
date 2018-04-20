@@ -1,4 +1,4 @@
-# Copyright (c) 2010, 2017, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2010, 2018, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -189,24 +189,15 @@ SET(GMOCK_INCLUDE_DIRS
   CACHE INTERNAL "")
 
 # Build gmock/gtest libraries.
-INCLUDE_DIRECTORIES(
+INCLUDE_DIRECTORIES(SYSTEM
   ${GMOCK_SOURCE_DIR}
   ${GMOCK_SOURCE_DIR}/include
   ${GTEST_SOURCE_DIR}
   ${GTEST_SOURCE_DIR}/include
 )
 
-# Turn off some warning flags when compiling GUnit
-IF(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-undef")
-  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-missing-field-initializers")
-  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-missing-format-attribute")
-
-  MY_CHECK_CXX_COMPILER_FLAG("-Wunused-local-typedefs" HAVE_UNUSED_TYPEDEFS)
-  IF(HAVE_UNUSED_TYPEDEFS)
-    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unused-local-typedefs")
-  ENDIF()
-ENDIF()
+# Some tests require Boost.
+INCLUDE_DIRECTORIES(SYSTEM ${BOOST_PATCHES_DIR} ${BOOST_INCLUDE_DIR})
 
 MY_CHECK_CXX_COMPILER_FLAG("-fno-builtin-memcmp" HAVE_NO_BUILTIN_MEMCMP)
 
@@ -233,10 +224,6 @@ SET(DISABLE_PSI_OPTIONS
 
 IF(SSL_DEFINES)
   ADD_DEFINITIONS(${SSL_DEFINES})
-ENDIF()
-
-IF (WITH_SSL STREQUAL "bundled")
-  ADD_SUBDIRECTORY(yassl)
 ENDIF()
 
 INCLUDE_DIRECTORIES(
@@ -328,8 +315,8 @@ SET(TESTS
   mysys_my_pwrite
   mysys_my_rdtsc
   mysys_my_symlink
-  mysys_my_vsnprintf
   mysys_my_write
+  mysys_pathfuncs
   nullable
   opt_recperkey
   partitioned_rwlock
@@ -337,10 +324,10 @@ SET(TESTS
   prealloced_array
   priority_queue
   record_buffer
+  sql_class_header
   sql_list
   sql_plist
   sql_string
-  stdcxx
   stl_alloc
   strings_skip_trailing
   strings_strnxfrm
@@ -369,16 +356,17 @@ ENDFOREACH()
 
 # Add tests (link them with gunit/gmock libraries and the server libraries) 
 SET(SERVER_TESTS
+  character_set_deprecation
   copy_info
   create_field
+  dd_cache
   dd_column_statistics
   dd_info_schema_native_func
   dd_properties
-  dd_sdi
   dd_schema
+  dd_sdi
   dd_string_type
   dd_table
-  dd_cache
   debug_sync
   explain_filename
   field
@@ -419,6 +407,7 @@ SET(SERVER_TESTS
   opt_range
   opt_ref
   opt_trace
+  regexp_engine
   regexp_facade
   security_context
   segfault
@@ -478,11 +467,11 @@ IF (MERGE_UNITTESTS)
   MYSQL_ADD_EXECUTABLE(merge_large_tests-t ${ALL_LARGE_TESTS}
     ADD_TEST merge_large_tests)
   TARGET_LINK_LIBRARIES(merge_large_tests-t sql_main binlog rpl master slave)
-  TARGET_LINK_LIBRARIES(merge_large_tests-t sql_main sql_gis)
+  TARGET_LINK_LIBRARIES(merge_large_tests-t sql_main sql_gis sql_dd)
   TARGET_LINK_LIBRARIES(merge_large_tests-t
     gunit_large strings dbug mysys ${ICU_LIBRARIES})
   TARGET_LINK_LIBRARIES(merge_large_tests-t
-    sql_main binlog rpl master slave sql_gis sql_main)
+    sql_main binlog rpl master slave sql_gis sql_main sql_dd)
 
   IF(WITH_PERFSCHEMA_STORAGE_ENGINE)
     TARGET_LINK_LIBRARIES(merge_large_tests-t perfschema)
@@ -514,23 +503,6 @@ IF(HAVE_NO_BUILTIN_MEMCMP)
     )
 ENDIF()
 
-## BOOST_HEAP_ASSERT generates if () ; else ;
-## Also Boost has unused parameter warnings.
-IF(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  ADD_COMPILE_FLAGS(
-    bounded_queue-t.cc
-    COMPILE_FLAGS "-Wno-empty-body -Wno-unused-parameter"
-    )
-ENDIF()
-ADD_COMPILE_FLAGS(
-  bounded_queue-t.cc
-  COMPILE_FLAGS -I${BOOST_PATCHES_DIR} -I${BOOST_INCLUDE_DIR}
-  )
-ADD_COMPILE_FLAGS(
-  pump_object_filter-t.cc
-  COMPILE_FLAGS -I${BOOST_PATCHES_DIR} -I${BOOST_INCLUDE_DIR}
-  )
-
 FOREACH(test ${SERVER_TESTS})
   SET(SRC_FILES ${test}-t.cc)
   IF(WIN32)
@@ -541,10 +513,10 @@ FOREACH(test ${SERVER_TESTS})
   ENDIF()
   MYSQL_ADD_EXECUTABLE(${test}-t ${SRC_FILES} SKIP_INSTALL ${EXCLUDE_FROM_ALL})
   TARGET_LINK_LIBRARIES(${test}-t sql_main binlog rpl master slave sql_main)
-  TARGET_LINK_LIBRARIES(${test}-t sql_main sql_gis)
+  TARGET_LINK_LIBRARIES(${test}-t sql_main sql_gis sql_dd)
   TARGET_LINK_LIBRARIES(${test}-t gunit_large strings dbug mysys)
   TARGET_LINK_LIBRARIES(${test}-t
-    sql_main binlog rpl master slave sql_gis sql_main)
+    sql_main binlog rpl master slave sql_gis sql_main sql_dd)
   TARGET_LINK_LIBRARIES(${test}-t ${ICU_LIBRARIES})
 
   IF(WITH_PERFSCHEMA_STORAGE_ENGINE)
@@ -559,3 +531,6 @@ ENDFOREACH()
 ADD_SUBDIRECTORY(innodb)
 ADD_SUBDIRECTORY(keyring)
 ADD_SUBDIRECTORY(components/mysql_server)
+ADD_SUBDIRECTORY(xplugin)
+ADD_SUBDIRECTORY(group_replication)
+ADD_SUBDIRECTORY(libmysqlgcs)

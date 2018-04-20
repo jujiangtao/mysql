@@ -36,7 +36,7 @@ g	multipolygon	YES		NULL
 SHOW FIELDS FROM gis_geometrycollection;
 Field	Type	Null	Key	Default	Extra
 fid	int(11)	NO	PRI	NULL	
-g	geometrycollection	YES		NULL	
+g	geomcollection	YES		NULL	
 SHOW FIELDS FROM gis_geometry;
 Field	Type	Null	Key	Default	Extra
 fid	int(11)	NO	PRI	NULL	
@@ -333,7 +333,7 @@ g	multipolygon	YES		NULL
 SHOW FIELDS FROM gis_geometrycollection;
 Field	Type	Null	Key	Default	Extra
 fid	int(11)	NO	PRI	NULL	
-g	geometrycollection	YES		NULL	
+g	geomcollection	YES		NULL	
 SHOW FIELDS FROM gis_geometry;
 Field	Type	Null	Key	Default	Extra
 fid	int(11)	NO	PRI	NULL	
@@ -376,7 +376,7 @@ c3	3	polygon	polygon
 c4	4	multipoint	multipoint
 c5	5	multilinestring	multilinestring
 c6	6	multipolygon	multipolygon
-c7	7	geometrycollection	geometrycollection
+c7	7	geomcollection	geomcollection
 c8	8	geometry	geometry
 SET @c1 = ST_GEOMFROMTEXT('POINT(10 10)');
 SET @c2 = ST_GEOMFROMTEXT('LINESTRING(10 10,20 20,30 30)');
@@ -438,9 +438,9 @@ tab2	CREATE TABLE `tab2` (
   `c4` multipoint DEFAULT NULL,
   `c5` multilinestring DEFAULT NULL,
   `c6` multipolygon DEFAULT NULL,
-  `c7` geometrycollection DEFAULT NULL,
+  `c7` geomcollection DEFAULT NULL,
   `c8` geometry DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 # Create a tigger and populate the values into tab2
 CREATE TRIGGER geom_trigger AFTER INSERT ON tab
 FOR EACH ROW
@@ -538,7 +538,7 @@ geom_index	CREATE TABLE `geom_index` (
   `g` geometry NOT NULL /*!80003 SRID 0 */,
   PRIMARY KEY (`fid`),
   SPATIAL KEY `g` (`g`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 SET @polygon = ST_GEOMFROMTEXT('POLYGON((0 0,0 10,10 10,10 0,0 0))');
 # Sptail index query
 SELECT fid, ST_ASTEXT(g) FROM geom_index WHERE MBRCONTAINS(@polygon, g) ORDER BY fid;

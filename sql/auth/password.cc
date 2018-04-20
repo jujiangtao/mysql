@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -71,23 +71,22 @@
 
 *****************************************************************************/
 
-#include <stdbool.h>
 #include <string.h>
 #include <sys/types.h>
 
 #include "crypt_genhash_impl.h"
 #include "m_string.h"
 #include "my_inttypes.h"
-#include "mysql/udf_registration_types.h"
+#include "my_macros.h"
 #include "mysql_com.h"
 #include "sha1.h"
 
-void randominit(struct rand_struct *rand_st, ulong seed1, ulong seed2)
-{                                               /* For mysql 3.21.# */
-  rand_st->max_value= 0x3FFFFFFFL;
-  rand_st->max_value_dbl=(double) rand_st->max_value;
-  rand_st->seed1=seed1%rand_st->max_value ;
-  rand_st->seed2=seed2%rand_st->max_value;
+void randominit(struct rand_struct *rand_st, ulong seed1,
+                ulong seed2) { /* For mysql 3.21.# */
+  rand_st->max_value = 0x3FFFFFFFL;
+  rand_st->max_value_dbl = (double)rand_st->max_value;
+  rand_st->seed1 = seed1 % rand_st->max_value;
+  rand_st->seed2 = seed2 % rand_st->max_value;
 }
 
 /*
@@ -100,34 +99,32 @@ void randominit(struct rand_struct *rand_st, ulong seed1, ulong seed2)
     password_len IN  password length (password may be not null-terminated)
 */
 
-void hash_password(ulong *result, const char *password, uint password_len)
-{
-  ulong nr=1345345333L, add=7, nr2=0x12345671L;
+void hash_password(ulong *result, const char *password, uint password_len) {
+  ulong nr = 1345345333L, add = 7, nr2 = 0x12345671L;
   ulong tmp;
-  const char *password_end= password + password_len;
-  for (; password < password_end; password++)
-  {
+  const char *password_end = password + password_len;
+  for (; password < password_end; password++) {
     if (*password == ' ' || *password == '\t')
-      continue;                                 /* skip space in password */
-    tmp= (ulong) (uchar) *password;
-    nr^= (((nr & 63)+add)*tmp)+ (nr << 8);
-    nr2+=(nr2 << 8) ^ nr;
-    add+=tmp;
+      continue; /* skip space in password */
+    tmp = (ulong)(uchar)*password;
+    nr ^= (((nr & 63) + add) * tmp) + (nr << 8);
+    nr2 += (nr2 << 8) ^ nr;
+    add += tmp;
   }
-  result[0]=nr & (((ulong) 1L << 31) -1L); /* Don't use sign bit (str2int) */;
-  result[1]=nr2 & (((ulong) 1L << 31) -1L);
+  result[0] = nr & (((ulong)1L << 31) - 1L); /* Don't use sign bit (str2int) */
+  ;
+  result[1] = nr2 & (((ulong)1L << 31) - 1L);
 }
 
-static inline uint8 char_val(uint8 X)
-{
-  return (uint) (X >= '0' && X <= '9' ? X - '0' :
-                 X >= 'A' && X <= 'Z' ? X - 'A' + 10 : X - 'a' + 10);
+static inline uint8 char_val(uint8 X) {
+  return (uint)(X >= '0' && X <= '9'
+                    ? X - '0'
+                    : X >= 'A' && X <= 'Z' ? X - 'A' + 10 : X - 'a' + 10);
 }
 
-/* Character to use as version identifier for version 4.1 */
+  /* Character to use as version identifier for version 4.1 */
 
 #define PVERSION41_CHAR '*'
-
 
 /*
     Convert given octet sequence to asciiz string of hex characters;
@@ -141,18 +138,15 @@ static inline uint8 char_val(uint8 X)
     buf+len*2
 */
 
-char *octet2hex(char *to, const char *str, uint len)
-{
-  const char *str_end= str + len;
-  for (; str != str_end; ++str)
-  {
-    *to++= _dig_vec_upper[((uchar) *str) >> 4];
-    *to++= _dig_vec_upper[((uchar) *str) & 0x0F];
+char *octet2hex(char *to, const char *str, uint len) {
+  const char *str_end = str + len;
+  for (; str != str_end; ++str) {
+    *to++ = _dig_vec_upper[((uchar)*str) >> 4];
+    *to++ = _dig_vec_upper[((uchar)*str) & 0x0F];
   }
-  *to= '\0';
+  *to = '\0';
   return to;
 }
-
 
 /*
     Convert given asciiz string of hex (0..9 a..f) characters to octet
@@ -164,17 +158,13 @@ char *octet2hex(char *to, const char *str, uint len)
                   overlap; len % 2 == 0
 */
 
-static void
-hex2octet(uint8 *to, const char *str, uint len)
-{
-  const char *str_end= str + len;
-  while (str < str_end)
-  {
-    char tmp= char_val(*str++);
-    *to++= (tmp << 4) | char_val(*str++);
+static void hex2octet(uint8 *to, const char *str, uint len) {
+  const char *str_end = str + len;
+  while (str < str_end) {
+    char tmp = char_val(*str++);
+    *to++ = (tmp << 4) | char_val(*str++);
   }
 }
-
 
 /*
     Encrypt/Decrypt function used for password encryption in authentication.
@@ -188,32 +178,19 @@ hex2octet(uint8 *to, const char *str, uint len)
     len     IN  length of s1 and s2
 */
 
-static void
-my_crypt(char *to, const uchar *s1, const uchar *s2, uint len)
-{
-  const uint8 *s1_end= s1 + len;
-  while (s1 < s1_end)
-    *to++= *s1++ ^ *s2++;
+static void my_crypt(char *to, const uchar *s1, const uchar *s2, uint len) {
+  const uint8 *s1_end = s1 + len;
+  while (s1 < s1_end) *to++ = *s1++ ^ *s2++;
 }
 
 #if defined(HAVE_OPENSSL)
-C_MODE_START
-void my_make_scrambled_password(char *to, const char *password,
-                                size_t pass_len)
-{
-
+extern "C" void my_make_scrambled_password(char *to, const char *password,
+                                           size_t pass_len) {
   char salt[CRYPT_SALT_LENGTH + 1];
 
   generate_user_salt(salt, CRYPT_SALT_LENGTH + 1);
-  my_crypt_genhash(to,
-                     CRYPT_MAX_PASSWORD_SIZE,
-                     password,
-                     pass_len,
-                     salt,
-                     0);
-
+  my_crypt_genhash(to, CRYPT_MAX_PASSWORD_SIZE, password, pass_len, salt, 0);
 }
-C_MODE_END
 #endif
 /**
   Compute two stage SHA1 hash of the password :
@@ -227,18 +204,16 @@ C_MODE_END
   @param [out] hash_stage2   sha1(hash_stage1)
 */
 
-inline static
-void compute_two_stage_sha1_hash(const char *password, size_t pass_len,
-                                 uint8 *hash_stage1, uint8 *hash_stage2)
-{
+inline static void compute_two_stage_sha1_hash(const char *password,
+                                               size_t pass_len,
+                                               uint8 *hash_stage1,
+                                               uint8 *hash_stage2) {
   /* Stage 1: hash password */
   compute_sha1_hash(hash_stage1, password, pass_len);
 
   /* Stage 2 : hash first stage's output. */
-  compute_sha1_hash(hash_stage2, (const char *) hash_stage1, SHA1_HASH_SIZE);
+  compute_sha1_hash(hash_stage2, (const char *)hash_stage1, SHA1_HASH_SIZE);
 }
-
-C_MODE_START
 
 /*
     MySQL 4.1.1 password hashing: SHA conversion (see RFC 2289, 3174) twice
@@ -254,19 +229,16 @@ C_MODE_START
 */
 
 void my_make_scrambled_password_sha1(char *to, const char *password,
-                                     size_t pass_len)
-{
+                                     size_t pass_len) {
   uint8 hash_stage2[SHA1_HASH_SIZE];
 
   /* Two stage SHA1 hash of the password. */
-  compute_two_stage_sha1_hash(password, pass_len, (uint8 *) to, hash_stage2);
+  compute_two_stage_sha1_hash(password, pass_len, (uint8 *)to, hash_stage2);
 
   /* convert hash_stage2 to hex string */
-  *to++= PVERSION41_CHAR;
-  octet2hex(to, (const char*) hash_stage2, SHA1_HASH_SIZE);
+  *to++ = PVERSION41_CHAR;
+  octet2hex(to, (const char *)hash_stage2, SHA1_HASH_SIZE);
 }
-
-C_MODE_END
 
 /*
   Wrapper around my_make_scrambled_password() to maintain client lib ABI
@@ -279,13 +251,11 @@ C_MODE_END
     password  IN  NULL-terminated password string
 */
 
-void make_scrambled_password(char *to, const char *password)
-{
+void make_scrambled_password(char *to, const char *password) {
   my_make_scrambled_password_sha1(to, password, strlen(password));
 }
 
-
-/*
+/**
     Produce an obscure octet sequence from password and random
     string, received from the server. This sequence corresponds to the
     password, but password can not be easily restored from it. The sequence
@@ -293,18 +263,15 @@ void make_scrambled_password(char *to, const char *password)
     in the buf as it is not needed.
     This function is used by client to create authenticated reply to the
     server's greeting.
-  SYNOPSIS
-    scramble()
-    buf       OUT store scrambled string here. The buf must be at least
-                  SHA1_HASH_SIZE bytes long.
-    message   IN  random message, must be exactly SCRAMBLE_LENGTH long and
-                  NULL-terminated.
-    password  IN  users' password
+
+    @param[out] to   store scrambled string here. The buf must be at least
+                     SHA1_HASH_SIZE bytes long.
+    @param message   random message, must be exactly SCRAMBLE_LENGTH long and
+                     NULL-terminated.
+    @param password  users' password, NULL-terminated
 */
 
-void
-scramble(char *to, const char *message, const char *password)
-{
+void scramble(char *to, const char *message, const char *password) {
   uint8 hash_stage1[SHA1_HASH_SIZE];
   uint8 hash_stage2[SHA1_HASH_SIZE];
 
@@ -313,55 +280,48 @@ scramble(char *to, const char *message, const char *password)
                               hash_stage2);
 
   /* create crypt string as sha1(message, hash_stage2) */;
-  compute_sha1_hash_multi((uint8 *) to, message, SCRAMBLE_LENGTH,
-                          (const char *) hash_stage2, SHA1_HASH_SIZE);
-  my_crypt(to, (const uchar *) to, hash_stage1, SCRAMBLE_LENGTH);
+  compute_sha1_hash_multi((uint8 *)to, message, SCRAMBLE_LENGTH,
+                          (const char *)hash_stage2, SHA1_HASH_SIZE);
+  my_crypt(to, (const uchar *)to, hash_stage1, SCRAMBLE_LENGTH);
 }
 
+/**
+    Check that scrambled message corresponds to the password.
 
-/*
-    Check that scrambled message corresponds to the password; the function
-    is used by server to check that received reply is authentic.
+    The function is used by server to check that received reply is authentic.
     This function does not check lengths of given strings: message must be
     null-terminated, reply and hash_stage2 must be at least SHA1_HASH_SIZE
     long (if not, something fishy is going on).
-  SYNOPSIS
-    check_scramble_sha1()
-    scramble     clients' reply, presumably produced by scramble()
-    message      original random string, previously sent to client
-                 (presumably second argument of scramble()), must be
-                 exactly SCRAMBLE_LENGTH long and NULL-terminated.
-    hash_stage2  hex2octet-decoded database entry
-    All params are IN.
 
-  RETURN VALUE
-    false  password is correct
-    true   password is invalid
+    @param scramble_arg  clients' reply, presumably produced by scramble()
+    @param message       original random string, previously sent to client
+                         (presumably second argument of scramble()), must be
+                         exactly SCRAMBLE_LENGTH long and NULL-terminated.
+    @param hash_stage2   hex2octet-decoded database entry
+
+    @retval false  password is correct
+    Wretval true   password is invalid
 */
 
-static bool
-check_scramble_sha1(const uchar *scramble_arg, const char *message,
-                    const uint8 *hash_stage2)
-{
+static bool check_scramble_sha1(const uchar *scramble_arg, const char *message,
+                                const uint8 *hash_stage2) {
   uint8 buf[SHA1_HASH_SIZE];
   uint8 hash_stage2_reassured[SHA1_HASH_SIZE];
 
   /* create key to encrypt scramble */
   compute_sha1_hash_multi(buf, message, SCRAMBLE_LENGTH,
-                          (const char *) hash_stage2, SHA1_HASH_SIZE);
+                          (const char *)hash_stage2, SHA1_HASH_SIZE);
   /* encrypt scramble */
-  my_crypt((char *) buf, buf, scramble_arg, SCRAMBLE_LENGTH);
+  my_crypt((char *)buf, buf, scramble_arg, SCRAMBLE_LENGTH);
 
   /* now buf supposedly contains hash_stage1: so we can get hash_stage2 */
-  compute_sha1_hash(hash_stage2_reassured, (const char *) buf, SHA1_HASH_SIZE);
+  compute_sha1_hash(hash_stage2_reassured, (const char *)buf, SHA1_HASH_SIZE);
 
   return (memcmp(hash_stage2, hash_stage2_reassured, SHA1_HASH_SIZE) != 0);
 }
 
-bool
-check_scramble(const uchar *scramble_arg, const char *message,
-               const uint8 *hash_stage2)
-{
+bool check_scramble(const uchar *scramble_arg, const char *message,
+                    const uint8 *hash_stage2) {
   return check_scramble_sha1(scramble_arg, message, hash_stage2);
 }
 
@@ -375,22 +335,18 @@ check_scramble(const uchar *scramble_arg, const char *message,
     password  IN  4.1.1 version value of user.password
 */
 
-void get_salt_from_password(uint8 *hash_stage2, const char *password)
-{
-  hex2octet(hash_stage2, password+1 /* skip '*' */, SHA1_HASH_SIZE * 2);
+void get_salt_from_password(uint8 *hash_stage2, const char *password) {
+  hex2octet(hash_stage2, password + 1 /* skip '*' */, SHA1_HASH_SIZE * 2);
 }
 
-/*
-    Convert scrambled password from binary form to asciiz hex string.
-  SYNOPSIS
-    make_password_from_salt()
-    to    OUT store resulting string here, 2*SHA1_HASH_SIZE+2 bytes
-    salt  IN  password in salt format
+/**
+  Convert scrambled password from binary form to asciiz hex string.
+
+  @param [out] to     store resulting string here, 2*SHA1_HASH_SIZE+2 bytes
+  @param hash_stage2  password in salt format
 */
 
-void make_password_from_salt(char *to, const uint8 *hash_stage2)
-{
-  *to++= PVERSION41_CHAR;
-  octet2hex(to, (const char*) hash_stage2, SHA1_HASH_SIZE);
+void make_password_from_salt(char *to, const uint8 *hash_stage2) {
+  *to++ = PVERSION41_CHAR;
+  octet2hex(to, (const char *)hash_stage2, SHA1_HASH_SIZE);
 }
-

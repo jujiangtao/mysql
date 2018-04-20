@@ -1,4 +1,5 @@
 # Test need anonymous user when connection are made as "zedjzlcsjhd"
+
 source include/add_anonymous_users.inc;
 -- source include/master-slave.inc
 -- source include/have_myisam.inc
@@ -349,7 +350,7 @@ source include/delete_anonymous_users.inc;
 connection slave;
 
 FLUSH PRIVILEGES;
-GRANT USAGE   ON *.* TO user43748@127.0.0.1 IDENTIFIED BY 'meow';
+CREATE USER user43748@127.0.0.1 IDENTIFIED BY 'meow';
 GRANT PROCESS ON *.* TO user43748@127.0.0.1;
 
 --echo -- try to KILL system-thread as that non-privileged user (on slave).

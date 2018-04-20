@@ -1230,8 +1230,6 @@ c25= 'blob', c26= 'text', c27= 'mediumblob', c28= 'mediumtext',
 c29= 'longblob', c30= 'longtext', c31='two', c32= 'tuesday';
 commit ;
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 prepare stmt1 from 'delete from t1 where a=2' ;
 execute stmt1;
 select a,b from t1 where a=2;
@@ -1655,8 +1653,6 @@ c1	c21
 set @arg00= @arg00 + 1 ;
 SET sql_mode = default;
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 drop table if exists t5 ;
 set @arg01= 8;
 set @arg02= 8.0;
@@ -1723,7 +1719,7 @@ t5	CREATE TABLE `t5` (
   `param13` decimal(65,30) DEFAULT NULL,
   `param14` longtext,
   `param15` longblob
-) ENGINE=ENGINE DEFAULT CHARSET=utf8mb4
+) ENGINE=ENGINE DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 select * from t5 ;
 Catalog	Database	Table	Table_alias	Column	Column_alias	Type	Length	Max length	Is_null	Flags	Decimals	Charsetnr
 def	test	t5	t5	const01	const01	3	1	1	N	32769	0	63
@@ -4256,8 +4252,6 @@ c25= 'blob', c26= 'text', c27= 'mediumblob', c28= 'mediumtext',
 c29= 'longblob', c30= 'longtext', c31='two', c32= 'tuesday';
 commit ;
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 prepare stmt1 from 'delete from t1 where a=2' ;
 execute stmt1;
 select a,b from t1 where a=2;
@@ -4681,8 +4675,6 @@ c1	c21
 set @arg00= @arg00 + 1 ;
 SET sql_mode = default;
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 drop table if exists t5 ;
 set @arg01= 8;
 set @arg02= 8.0;
@@ -4749,7 +4741,7 @@ t5	CREATE TABLE `t5` (
   `param13` decimal(65,30) DEFAULT NULL,
   `param14` longtext,
   `param15` longblob
-) ENGINE=ENGINE DEFAULT CHARSET=utf8mb4
+) ENGINE=ENGINE DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 select * from t5 ;
 Catalog	Database	Table	Table_alias	Column	Column_alias	Type	Length	Max length	Is_null	Flags	Decimals	Charsetnr
 def	test	t5	t5	const01	const01	3	1	1	N	32769	0	63

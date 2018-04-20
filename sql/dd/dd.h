@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,25 +23,19 @@
 #ifndef DD__DD_INCLUDED
 #define DD__DD_INCLUDED
 
-#ifndef LOG_SUBSYSTEM_TAG
-#define LOG_SUBSYSTEM_TAG "data_dictionary"
-#endif
-
 namespace dd {
 
 ///////////////////////////////////////////////////////////////////////////
 
 // enum type to pass to init() function.
-enum class enum_dd_init_type
-{
-  DD_INITIALIZE= 1,
+enum class enum_dd_init_type {
+  DD_INITIALIZE = 1,
   DD_INITIALIZE_SYSTEM_VIEWS,
   DD_RESTART_OR_UPGRADE,
   DD_POPULATE_UPGRADE,
   DD_DELETE,
   DD_UPDATE_I_S_METADATA
 };
-
 
 /**
   Initialize data dictionary upon server startup, server startup on old
@@ -55,7 +49,6 @@ enum class enum_dd_init_type
 */
 bool init(enum_dd_init_type dd_init);
 
-
 /**
   Shuts down the data dictionary instance by deleting
   the instance of dd::Dictionary_impl* upon server shutdown.
@@ -66,7 +59,6 @@ bool init(enum_dd_init_type dd_init);
 */
 bool shutdown();
 
-
 /**
   Get the data dictionary instance.
 
@@ -75,7 +67,6 @@ bool shutdown();
            initialized.
 */
 class Dictionary *get_dictionary();
-
 
 /**
   Create a instance of data dictionary object of type X.
@@ -88,6 +79,6 @@ X *create_object();
 
 ///////////////////////////////////////////////////////////////////////////
 
-}
+}  // namespace dd
 
-#endif // DD__DD_INCLUDED
+#endif  // DD__DD_INCLUDED

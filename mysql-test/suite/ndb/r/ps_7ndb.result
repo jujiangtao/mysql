@@ -1185,8 +1185,6 @@ c25= 'blob', c26= 'text', c27= 'mediumblob', c28= 'mediumtext',
 c29= 'longblob', c30= 'longtext', c31='two', c32= 'tuesday';
 commit ;
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 prepare stmt1 from 'delete from t1 where a=2' ;
 execute stmt1;
 select a,b from t1 where a=2;
@@ -1716,8 +1714,6 @@ a	b
 103	three
 drop table t2;
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 drop table if exists t5 ;
 set @arg01= 8;
 set @arg02= 8.0;
@@ -1784,7 +1780,7 @@ t5	CREATE TABLE `t5` (
   `param13` decimal(65,30) DEFAULT NULL,
   `param14` longtext,
   `param15` longblob
-) ENGINE=ENGINE DEFAULT CHARSET=utf8mb4
+) ENGINE=ENGINE DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 select * from t5 ;
 Catalog	Database	Table	Table_alias	Column	Column_alias	Type	Length	Max length	Is_null	Flags	Decimals	Charsetnr
 def	test	t5	t5	const01	const01	3	1	1	N	32769	0	63
@@ -1792,7 +1788,7 @@ def	test	t5	t5	param01	param01	8	20	1	Y	32768	0	63
 def	test	t5	t5	const02	const02	246	4	3	N	32769	1	63
 def	test	t5	t5	param02	param02	246	67	32	Y	32768	30	63
 def	test	t5	t5	const03	const03	5	17	1	N	32769	31	63
-def	test	t5	t5	param03	param03	5	23	1	Y	32768	31	63
+def	test	t5	t5	param03	param03	5	22	1	Y	32768	31	63
 def	test	t5	t5	const04	const04	253	12	3	N	1	0	255
 def	test	t5	t5	param04	param04	252	4294967295	3	Y	16	0	255
 def	test	t5	t5	const05	const05	253	12	3	N	129	0	63

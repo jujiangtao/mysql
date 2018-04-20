@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2018, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -34,12 +34,14 @@
 
 #include "lf.h"
 #include "my_inttypes.h"
+#include "mysql_com.h"
 #include "storage/perfschema/pfs_con_slice.h"
 #include "storage/perfschema/pfs_global.h"
 #include "storage/perfschema/pfs_lock.h"
 
 struct PFS_global_param;
 struct PFS_memory_stat_delta;
+struct PFS_memory_shared_stat;
 struct PFS_thread;
 
 /**
@@ -48,8 +50,7 @@ struct PFS_thread;
 */
 
 /** Hash key for a host. */
-struct PFS_host_key
-{
+struct PFS_host_key {
   /**
     Hash search key.
     This has to be a string for @c LF_HASH,
@@ -60,32 +61,15 @@ struct PFS_host_key
 };
 
 /** Per host statistics. */
-struct PFS_ALIGNED PFS_host : PFS_connection_slice
-{
-public:
-  inline void
-  init_refcount(void)
-  {
-    m_refcount.store(1);
-  }
+struct PFS_ALIGNED PFS_host : PFS_connection_slice {
+ public:
+  inline void init_refcount(void) { m_refcount.store(1); }
 
-  inline int
-  get_refcount(void)
-  {
-    return m_refcount.load();
-  }
+  inline int get_refcount(void) { return m_refcount.load(); }
 
-  inline void
-  inc_refcount(void)
-  {
-    ++m_refcount;
-  }
+  inline void inc_refcount(void) { ++m_refcount; }
 
-  inline void
-  dec_refcount(void)
-  {
-    --m_refcount;
-  }
+  inline void dec_refcount(void) { --m_refcount; }
 
   void aggregate(bool alive);
   void aggregate_waits(void);
@@ -98,7 +82,30 @@ public:
   void aggregate_stats(void);
   void release(void);
 
+  /** Reset all memory statistics. */
+  void rebase_memory_stats();
+
   void carry_memory_stat_delta(PFS_memory_stat_delta *delta, uint index);
+
+  void set_instr_class_memory_stats(PFS_memory_shared_stat *array) {
+    m_has_memory_stats = false;
+    m_instr_class_memory_stats = array;
+  }
+
+  const PFS_memory_shared_stat *read_instr_class_memory_stats() const {
+    if (!m_has_memory_stats) {
+      return NULL;
+    }
+    return m_instr_class_memory_stats;
+  }
+
+  PFS_memory_shared_stat *write_instr_class_memory_stats() {
+    if (!m_has_memory_stats) {
+      rebase_memory_stats();
+      m_has_memory_stats = true;
+    }
+    return m_instr_class_memory_stats;
+  }
 
   /* Internal lock. */
   pfs_lock m_lock;
@@ -108,8 +115,16 @@ public:
 
   ulonglong m_disconnected_count;
 
-private:
+ private:
   std::atomic<int> m_refcount;
+
+  /**
+    Per host memory aggregated statistics.
+    This member holds the data for the table
+    PERFORMANCE_SCHEMA.MEMORY_SUMMARY_BY_HOST_BY_EVENT_NAME.
+    Immutable, safe to use without internal lock.
+  */
+  PFS_memory_shared_stat *m_instr_class_memory_stats;
 };
 
 int init_host(const PFS_global_param *param);
@@ -117,8 +132,7 @@ void cleanup_host(void);
 int init_host_hash(const PFS_global_param *param);
 void cleanup_host_hash(void);
 
-PFS_host *find_or_create_host(PFS_thread *thread,
-                              const char *hostname,
+PFS_host *find_or_create_host(PFS_thread *thread, const char *hostname,
                               uint hostname_length);
 
 PFS_host *sanitize_host(PFS_host *unsafe);

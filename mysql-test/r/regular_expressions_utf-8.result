@@ -97,7 +97,7 @@ SELECT regexp_instr( 'a', 'a+', 1, 1, -1 );
 ERROR HY000: Incorrect arguments to regexp_instr: return_option must be 1 or 0.
 SELECT regexp_instr( 'a', 'a+', 1, 1, NULL );
 regexp_instr( 'a', 'a+', 1, 1, NULL )
-1
+NULL
 SELECT regexp_instr( 'abcabcabc', 'a+', 1, 1, 0 );
 regexp_instr( 'abcabcabc', 'a+', 1, 1, 0 )
 1
@@ -125,7 +125,7 @@ SELECT regexp_instr( 'a', 'a+', 1, 1, 1, 'x' );
 ERROR HY000: Incorrect arguments to regexp_instr
 SELECT regexp_instr( 'a', 'a+', 1, 1, 1, NULL );
 regexp_instr( 'a', 'a+', 1, 1, 1, NULL )
-2
+NULL
 #
 # REGEXP_LIKE
 #
@@ -179,7 +179,7 @@ SELECT regexp_like( 'a', 'a+', 'cmnux' );
 ERROR HY000: Incorrect arguments to regexp_like
 SELECT regexp_like( 'a', 'a+', NULL );
 regexp_like( 'a', 'a+', NULL )
-1
+NULL
 # REGEXP_LIKE(), illegal types.
 SELECT regexp_like( 1, 'a' );
 regexp_like( 1, 'a' )
@@ -334,8 +334,6 @@ ab
 SELECT regexp_substr('a', '[[:invalid_bracket_expression:]]');
 ERROR HY000: Illegal argument to a regular expression.
 SET sql_mode = '';
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 CREATE TABLE t2 ( g GEOMETRY NOT NULL );
 INSERT INTO t2 VALUES ( POINT(1,2) );
 SELECT concat( regexp_like(g, g), 'x' ) FROM t2;
@@ -374,6 +372,8 @@ SELECT regexp_instr( _utf8mb4'aöb', _utf8mb4'ö' );
 regexp_instr( _utf8mb4'aöb', _utf8mb4'ö' )
 2
 SET NAMES utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT regexp_instr( 'aöb', 'ö' );
 regexp_instr( 'aöb', 'ö' )
 2
@@ -382,6 +382,8 @@ SET NAMES DEFAULT;
 # Bug#30241: Regular expression problems
 #
 SET NAMES utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 SELECT regexp_instr( 'אב רק', /*k*/'^[^ב]' );
 regexp_instr( 'אב רק', /*k*/'^[^ב]' )
 1
@@ -660,9 +662,7 @@ SELECT @buf_sz_utf16;
 512.000000000
 SELECT length(regexp_replace( repeat('a', @buf_sz_utf16), 'a', 'b' ));
 length(regexp_replace( repeat('a', @buf_sz_utf16), 'a', 'b' ))
-1024
-Warnings:
-Warning	3684	An output string could not be zero-terminated because the length exceeds the buffer capacity.
+1022
 SELECT length(regexp_replace( repeat('a', @buf_sz_utf16 + 1), 'a', 'b' ));
 ERROR HY000: The result string is larger than the result buffer.
 SELECT length(regexp_replace( repeat('a', @buf_sz_utf16), 'a', 'bb' ));
@@ -753,3 +753,73 @@ ERROR 70100: Query execution was interrupted
 disconnect conn1;
 connection default;
 SET GLOBAL regexp_time_limit = DEFAULT;
+#
+# Bug#27252630: REGEXP FUNCTIONS IGNORE NULLS
+#
+SELECT regexp_instr ( 'a', 'a', NULL );
+regexp_instr ( 'a', 'a', NULL )
+NULL
+SELECT regexp_instr ( 'a', 'a', 1, NULL );
+regexp_instr ( 'a', 'a', 1, NULL )
+NULL
+SELECT regexp_instr ( 'a', 'a', 1, 0, NULL );
+regexp_instr ( 'a', 'a', 1, 0, NULL )
+NULL
+SELECT regexp_instr ( 'a', 'a', 1, 0, 0, NULL );
+regexp_instr ( 'a', 'a', 1, 0, 0, NULL )
+NULL
+SELECT regexp_like ( 'a', 'a', NULL );
+regexp_like ( 'a', 'a', NULL )
+NULL
+SELECT regexp_replace ( 'a', 'a', 'a', NULL );
+regexp_replace ( 'a', 'a', 'a', NULL )
+NULL
+SELECT regexp_replace ( 'a', 'a', 'a', 1, NULL );
+regexp_replace ( 'a', 'a', 'a', 1, NULL )
+NULL
+SELECT regexp_replace ( 'a', 'a', 'a', 1, 0, NULL );
+regexp_replace ( 'a', 'a', 'a', 1, 0, NULL )
+NULL
+SELECT regexp_substr ( 'a', 'a', NULL );
+regexp_substr ( 'a', 'a', NULL )
+NULL
+SELECT regexp_substr ( 'a', 'a', 1, NULL );
+regexp_substr ( 'a', 'a', 1, NULL )
+NULL
+SELECT regexp_substr ( 'a', 'a', 1, 0, NULL );
+regexp_substr ( 'a', 'a', 1, 0, NULL )
+NULL
+#
+# Bug#27232647: REGEX: ASSERTION FAILED: !STR || STR != M_PTR
+#
+SELECT regexp_like( reverse(''), 123 );
+regexp_like( reverse(''), 123 )
+0
+SELECT regexp_like( soundex(@v1), 'abc' );
+regexp_like( soundex(@v1), 'abc' )
+NULL
+SELECT regexp_like( left('', ''), 'abc' );
+regexp_like( left('', ''), 'abc' )
+0
+Warnings:
+Warning	1292	Truncated incorrect INTEGER value: ''
+Warning	1292	Truncated incorrect INTEGER value: ''
+SELECT regexp_like( repeat(@v1, 'abc'), 'abc' );
+regexp_like( repeat(@v1, 'abc'), 'abc' )
+NULL
+Warnings:
+Warning	1292	Truncated incorrect INTEGER value: 'abc'
+Warning	1292	Truncated incorrect INTEGER value: 'abc'
+#
+# Bug#27597980: ADD ERROR MESSAGE FOR INVALID CAPTURE GROUP NAME
+#
+SELECT regexp_replace((' F' ) ,'^ ','[,$' );
+ERROR HY000: A capture group has an invalid name.
+SELECT regexp_replace(24031 ,''*' ','$>$' );
+ERROR HY000: A capture group has an invalid name.
+SELECT regexp_replace('e C' ,'. ','$ ' );
+ERROR HY000: A capture group has an invalid name.
+SELECT regexp_replace('%* ' ,'. ',' A*#$?$@^-' );
+ERROR HY000: A capture group has an invalid name.
+SELECT regexp_replace(' 0(' ,'^ ','3$!' );
+ERROR HY000: A capture group has an invalid name.

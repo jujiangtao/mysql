@@ -1,7 +1,5 @@
 drop table if exists t1,t2,t3;
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 CREATE TABLE t1 (
 id int(6) DEFAULT '0' NOT NULL,
 idservice int(5),
@@ -2837,6 +2835,8 @@ KEY (b, c),
 KEY (b, a, c)
 )
 DEFAULT CHARSET = utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 INSERT INTO t1 VALUES 
 (1,  1, 1),
 (2,  2, 2),
@@ -3188,11 +3188,11 @@ SHOW CREATE TABLE z2;
 Table	Create Table
 z2	CREATE TABLE `z2` (
   `c05` time DEFAULT NULL
-) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4
+) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 SHOW CREATE TABLE z3;
 Table	Create Table
 z3	CREATE TABLE `z3` (
   `c05` time DEFAULT NULL
-) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4
+) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 DROP TABLE z1, z2, z3;
 set optimizer_switch=default;

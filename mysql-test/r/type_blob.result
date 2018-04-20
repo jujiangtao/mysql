@@ -1,7 +1,5 @@
 drop table if exists t1,t2,t3,t4,t5,t6,t7;
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 CREATE TABLE t1 (a blob, b text, c blob(250), d text(70000), e text(70000000));
 show columns from t1;
 Field	Type	Null	Key	Default	Extra
@@ -16,6 +14,7 @@ Note	1246	Converting column 'b' from VARBINARY to BLOB
 Note	1246	Converting column 'c' from VARCHAR to TEXT
 CREATE TABLE t4 (c varchar(65530) character set utf8 not null);
 Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 Note	1246	Converting column 'c' from VARCHAR to TEXT
 show columns from t2;
 Field	Type	Null	Key	Default	Extra
@@ -28,12 +27,12 @@ Table	Create Table
 t3	CREATE TABLE `t3` (
   `a` mediumtext,
   `b` mediumblob
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 show create TABLE t4;
 Table	Create Table
 t4	CREATE TABLE `t4` (
-  `c` mediumtext CHARACTER SET utf8 NOT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `c` mediumtext CHARACTER SET utf8 COLLATE utf8_general_ci NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 drop table t1,t2,t3,t4;
 CREATE TABLE t1 (a char(257) default "hello");
 ERROR 42000: Column length too big for column 'a' (max = 255); use BLOB or TEXT instead
@@ -369,7 +368,7 @@ Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` text,
   KEY `a` (`a`(250))
-) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4
+) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 drop table t1;
 CREATE TABLE t1 (
 t1_id bigint(21) NOT NULL auto_increment,
@@ -717,7 +716,7 @@ t1	CREATE TABLE `t1` (
   `e` int(11) DEFAULT NULL,
   PRIMARY KEY (`a`,`b`,`c`(255),`d`),
   KEY `a` (`a`,`b`,`d`,`e`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 drop table t1;
 CREATE table t1 (a blob);
 insert into t1 values ('b'),('a\0'),('a'),('a '),('aa'),(NULL);
@@ -796,20 +795,16 @@ show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` text
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 insert into t1 values (default);
 select * from t1;
 a
 NULL
 drop table t1;
 set @@sql_mode='TRADITIONAL';
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 create table t1 (a text default '');
 ERROR 42000: BLOB, TEXT, GEOMETRY or JSON column 'a' can't have a default value
 set @@sql_mode='';
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 CREATE TABLE t (c TEXT CHARSET ASCII);
 INSERT INTO t (c) VALUES (REPEAT('1',65537));
 Warnings:
@@ -909,6 +904,7 @@ cast(null as char(4294967295))	longtext	YES		NULL
 drop table b15776;
 CREATE TABLE b15776 select cast(null as nchar(4294967295));
 Warnings:
+Warning	3720	NATIONAL/NCHAR/NVARCHAR implies the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using CHAR(x) CHARACTER SET UTF8MB4 in order to be unambiguous.
 Warning	1301	Result of cast_as_char() was larger than max_allowed_packet (67108864) - truncated
 show columns from b15776;
 Field	Type	Null	Key	Default	Extra
@@ -930,6 +926,7 @@ explain select cast(1 as nchar(4294967295));
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
 Warnings:
+Warning	3720	NATIONAL/NCHAR/NVARCHAR implies the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using CHAR(x) CHARACTER SET UTF8MB4 in order to be unambiguous.
 Note	1003	/* select#1 */ select cast(1 as char(4294967295) charset utf8) AS `cast(1 as nchar(4294967295))`
 explain select cast(1 as binary(4294967295));
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
@@ -968,6 +965,7 @@ explain select convert(1, nchar(4294967295));
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
 Warnings:
+Warning	3720	NATIONAL/NCHAR/NVARCHAR implies the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using CHAR(x) CHARACTER SET UTF8MB4 in order to be unambiguous.
 Note	1003	/* select#1 */ select cast(1 as char(4294967295) charset utf8) AS `convert(1, nchar(4294967295))`
 explain select convert(1, nchar(4294967296));
 ERROR 42000: Display width out of range for column 'cast as char' (max = 4294967295)
@@ -1215,8 +1213,6 @@ select @g1 > @g3;
 #              LEAD TO CRASH LATER
 #
 set sql_mode="";
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 CREATE TABLE t1(a LONGBLOB NOT NULL) engine=innodb default charset=latin1;
 INSERT INTO t1 VALUES (''),(''),(''),('');
 CREATE TABLE t2 (b LONGTEXT) engine=innodb default charset=latin1;

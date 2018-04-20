@@ -1,4 +1,4 @@
-# Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2015, 2018, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -33,7 +33,12 @@
 #   protobuf-2.6.1/m4/
 #   protobuf-2.6.1/vsprojects/
 
+INCLUDE(${MYSQL_CMAKE_SCRIPT_DIR}/compile_flags.cmake)
+
 SET(PROTOBUF_MSVC_DISABLED_WARNINGS "/wd4018 /wd4005 /wd4244 /wd4267 /wd4065")
+IF(WIN32_CLANG)
+  SET(PROTOBUF_MSVC_DISABLED_WARNINGS "-Wno-sign-compare")
+ENDIF()
 
 # Turn off some warning flags when compiling protobuf
 IF(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")

@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2018, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -35,19 +35,16 @@
 #include "storage/perfschema/pfs_setup_actor.h"
 #include "storage/perfschema/pfs_setup_object.h"
 
-void
-install_default_setup(PSI_thread_bootstrap *thread_boot)
-{
+void install_default_setup(PSI_thread_bootstrap *thread_boot) {
   void *service = thread_boot->get_interface(PSI_CURRENT_THREAD_VERSION);
-  if (service == NULL)
-  {
+  if (service == NULL) {
     return;
   }
 
 #ifdef HAVE_PSI_THREAD_INTERFACE
   static PSI_thread_key thread_key;
-  static PSI_thread_info thread_info = {
-    &thread_key, "setup", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME};
+  static PSI_thread_info thread_info = {&thread_key, "setup",
+                                        PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME};
 
   const char *pfs_category = "performance_schema";
 
@@ -56,18 +53,17 @@ install_default_setup(PSI_thread_bootstrap *thread_boot)
   psi->register_thread(pfs_category, &thread_info, 1);
   PSI_thread *psi_thread = psi->new_thread(thread_key, NULL, 0);
 
-  if (psi_thread != NULL)
-  {
+  if (psi_thread != NULL) {
     /* LF_HASH needs a thread, for PINS */
     psi->set_thread(psi_thread);
 
-    String percent("%", 1, &my_charset_utf8_bin);
+    String percent("%", 1, &my_charset_utf8mb4_bin);
     /* Enable all users on all hosts by default */
     insert_setup_actor(&percent, &percent, &percent, true, true);
 
-    String mysql_db("mysql", 5, &my_charset_utf8_bin);
-    String PS_db("performance_schema", 18, &my_charset_utf8_bin);
-    String IS_db("information_schema", 18, &my_charset_utf8_bin);
+    String mysql_db("mysql", 5, &my_charset_utf8mb4_bin);
+    String PS_db("performance_schema", 18, &my_charset_utf8mb4_bin);
+    String IS_db("information_schema", 18, &my_charset_utf8mb4_bin);
 
     /* Disable sp by default in mysql. */
     insert_setup_object(OBJECT_TYPE_EVENT, &mysql_db, &percent, false, false);
@@ -78,8 +74,8 @@ install_default_setup(PSI_thread_bootstrap *thread_boot)
     insert_setup_object(OBJECT_TYPE_EVENT, &percent, &percent, true, true);
 
     /* Disable sp by default in mysql. */
-    insert_setup_object(
-      OBJECT_TYPE_FUNCTION, &mysql_db, &percent, false, false);
+    insert_setup_object(OBJECT_TYPE_FUNCTION, &mysql_db, &percent, false,
+                        false);
     /* Disable sp in performance/information schema. */
     insert_setup_object(OBJECT_TYPE_FUNCTION, &PS_db, &percent, false, false);
     insert_setup_object(OBJECT_TYPE_FUNCTION, &IS_db, &percent, false, false);
@@ -87,8 +83,8 @@ install_default_setup(PSI_thread_bootstrap *thread_boot)
     insert_setup_object(OBJECT_TYPE_FUNCTION, &percent, &percent, true, true);
 
     /* Disable sp by default in mysql. */
-    insert_setup_object(
-      OBJECT_TYPE_PROCEDURE, &mysql_db, &percent, false, false);
+    insert_setup_object(OBJECT_TYPE_PROCEDURE, &mysql_db, &percent, false,
+                        false);
     /* Disable sp in performance/information schema. */
     insert_setup_object(OBJECT_TYPE_PROCEDURE, &PS_db, &percent, false, false);
     insert_setup_object(OBJECT_TYPE_PROCEDURE, &IS_db, &percent, false, false);

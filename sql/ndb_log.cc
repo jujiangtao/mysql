@@ -24,17 +24,18 @@
 
 #include "sql/ndb_log.h"
 
+#include <stdio.h>
+
+#include "my_dbug.h"
+#include "mysqld_error.h"
 /*
   Implements a logging interface for the ndbcluster
   plugin using the LogEvent class as defined in log_builtins.h
+  Beware, the #include ordering here matters!
 */
 #include "sql/log.h"
 #include <mysql/components/services/log_builtins.h>
 
-#include "my_dbug.h"
-#include "mysqld_error.h"
-
-#include <mysql/service_my_snprintf.h>
 
 /*
   Print message to MySQL Server's error log(s)
@@ -58,7 +59,7 @@ ndb_log_print(enum ndb_log_loglevel loglevel,
 
   // Assemble the message
   char msg_buf[512];
-  (void)my_vsnprintf(msg_buf, sizeof(msg_buf), fmt, args);
+  (void)vsnprintf(msg_buf, sizeof(msg_buf), fmt, args);
 
   // Print message to MySQL error log
   switch (loglevel)
@@ -122,13 +123,6 @@ ndb_log_detect_prefix(const char* fmt,
   DBUG_ENTER("ndb_log_detect_prefix");
   DBUG_PRINT("enter", ("fmt: '%s'", fmt));
 
-  // Check if string starts with prefix "NDB:", this prefix is redundant
-  // since all log messages will be prefixed by NDB: anyway (unless
-  // using a subsystem prefix it will be "NDB <subsystem>:").
-  // Crash in debug compile, caller should fix by removing "NDB: " from
-  // the printout
-  DBUG_ASSERT(strncmp(fmt, "NDB:", 4) != 0);
-
   // Check if string starts with "NDB <subsystem>:" by reading
   // at most 15 chars whithout colon, then a colon and space
   char subsystem[16], colon[2];
@@ -170,6 +164,13 @@ ndb_log_detect_prefix(const char* fmt,
     // over to use the Ndb_component log functions.
     DBUG_ASSERT(false);
   }
+
+  // Check if string starts with prefix "NDB", this prefix is redundant
+  // since all log messages will be prefixed with NDB anyway (unless
+  // using a subsystem prefix it will be "NDB <subsystem>:").
+  // Crash in debug compile, caller should fix by removing prefix "NDB"
+  // from the printout
+  DBUG_ASSERT(strncmp(fmt, "NDB", 3) != 0);
 
   // Format string specifier accepted as is and no prefix was used
   // this would be the default case

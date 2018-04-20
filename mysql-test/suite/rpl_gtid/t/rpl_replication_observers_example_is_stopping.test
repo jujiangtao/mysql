@@ -62,6 +62,11 @@
 --echo ############################################################
 --echo # 1. Install the plug-in and add error suppressions on slave
 
+--source include/rpl_connection_master.inc
+SET SESSION sql_log_bin= 0;
+CALL mtr.add_suppression(".*Cannot replicate.*purged required binary logs.*");
+SET SESSION sql_log_bin= 1;
+
 --source include/rpl_connection_slave.inc
 SET SESSION sql_log_bin= 0;
 CALL mtr.add_suppression("Table 't1' already exists");
@@ -185,7 +190,7 @@ SET SESSION sql_log_bin= 0;
 # Wait until the plug-in has stated the I/O thread
 SET DEBUG_SYNC='now WAIT_FOR reached_io_thread_started';
 
---let $slave_io_errno= convert_error(ER_MASTER_FATAL_ERROR_READING_BINLOG)
+--let $slave_io_errno= convert_error(ER_SERVER_MASTER_FATAL_ERROR_READING_BINLOG)
 --let $rpl_channel_name= 'example_channel'
 --source include/wait_for_slave_io_error.inc
 

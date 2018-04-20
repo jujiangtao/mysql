@@ -1,6 +1,4 @@
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 DROP TABLE IF EXISTS t1, t2;
 CREATE TABLE t1 (
 fid INT NOT NULL AUTO_INCREMENT PRIMARY KEY, 
@@ -14,7 +12,7 @@ t1	CREATE TABLE `t1` (
   `g` geometry NOT NULL /*!80003 SRID 0 */,
   PRIMARY KEY (`fid`),
   SPATIAL KEY `g` (`g`)
-) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4
+) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 INSERT INTO t1 (g) VALUES (ST_GeomFromText('LineString(150 150, 150 150)'));
 INSERT INTO t1 (g) VALUES (ST_GeomFromText('LineString(149 149, 151 151)'));
 INSERT INTO t1 (g) VALUES (ST_GeomFromText('LineString(148 148, 152 152)'));
@@ -299,7 +297,7 @@ t2	CREATE TABLE `t2` (
   `g` geometry NOT NULL /*!80003 SRID 0 */,
   PRIMARY KEY (`fid`),
   SPATIAL KEY `g` (`g`)
-) ENGINE=MyISAM AUTO_INCREMENT=101 DEFAULT CHARSET=utf8mb4
+) ENGINE=MyISAM AUTO_INCREMENT=101 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 SELECT count(*) FROM t2;
 count(*)
 100
@@ -883,6 +881,8 @@ spatial_point point NOT NULL SRID 0,
 PRIMARY KEY(id),
 SPATIAL KEY (spatial_point)
 )ENGINE=MyISAM DEFAULT CHARSET=utf8 COLLATE=utf8_bin;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 INSERT INTO t1 (c2, c1, c3, spatial_point) VALUES
 ('y', 's', 'j', ST_GeomFromText('POINT(167 74)')),
 ('r', 'n', 'd', ST_GeomFromText('POINT(215 118)')),

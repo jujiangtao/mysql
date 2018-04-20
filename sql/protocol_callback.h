@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -29,19 +29,15 @@
   service as proxy protocol.
 */
 
-
 #include <stddef.h>
 #include <sys/types.h>
 
+#include "m_ctype.h"
 #include "my_command.h"
 #include "my_inttypes.h"
 #include "mysql/service_command.h"
-#include "mysql/udf_registration_types.h"
 #include "mysql_time.h"
-#include "sql/my_decimal.h"
 #include "sql/protocol.h"
-#include "sql/thr_malloc.h"
-#include "sql_string.h"
 #include "violite.h"
 
 class Item_param;
@@ -49,21 +45,20 @@ class Proto_field;
 class Send_field;
 class String;
 class my_decimal;
-template <class T> class List;
+template <class T>
+class List;
 union COM_DATA;
 
-class Protocol_callback : public Protocol
-{
-public:
+class Protocol_callback : public Protocol {
+ public:
   Protocol_callback(const struct st_command_service_cbs *cbs,
-                    enum cs_text_or_binary t_or_b, void *cbs_ctx) :
-    callbacks_ctx(cbs_ctx),
-    callbacks(*cbs),
-    client_capabilities(0),
-    client_capabilities_set(false),
-    text_or_binary(t_or_b),
-    in_meta_sending(false)
-    {}
+                    enum cs_text_or_binary t_or_b, void *cbs_ctx)
+      : callbacks_ctx(cbs_ctx),
+        callbacks(*cbs),
+        client_capabilities(0),
+        client_capabilities_set(false),
+        text_or_binary(t_or_b),
+        in_meta_sending(false) {}
 
   /**
     Forces read of packet from the connection
@@ -91,7 +86,6 @@ public:
       true   failure
   */
   virtual enum enum_protocol_type type() { return PROTOCOL_PLUGIN; }
-
 
   /**
     Returns the type of the connection
@@ -164,7 +158,7 @@ public:
       false  success
       true   failure
   */
-  virtual bool store_decimal(const my_decimal * d, uint, uint);
+  virtual bool store_decimal(const my_decimal *d, uint, uint);
 
   /**
     Sends string (CHAR/VARCHAR/TEXT/BLOB) value
@@ -297,7 +291,7 @@ public:
     0   success
     !0  failure
   */
-  virtual int shutdown(bool server_shutdown= false);
+  virtual int shutdown(bool server_shutdown = false);
 
   /**
     This function always returns true as in many places in the server this
@@ -307,11 +301,6 @@ public:
       true   alive
   */
   virtual bool connection_alive();
-
-  /**
-    Returns SSL info
-  */
-  virtual SSL_handle get_ssl();
 
   /**
     Should return protocol's reading/writing status. Returns 0 (idle) as it
@@ -416,11 +405,11 @@ public:
   virtual bool store_ps_status(ulong stmt_id, uint column_count,
                                uint param_count, ulong cond_count);
 
-  virtual bool send_parameters(List <Item_param> *parameters,
+  virtual bool send_parameters(List<Item_param> *parameters,
                                bool is_sql_prepare);
   virtual bool flush();
 
-private:
+ private:
   void *callbacks_ctx;
   struct st_command_service_cbs callbacks;
   unsigned long client_capabilities;

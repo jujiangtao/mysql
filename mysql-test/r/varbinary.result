@@ -36,13 +36,13 @@ show create table table_28127_a;
 Table	Create Table
 table_28127_a	CREATE TABLE `table_28127_a` (
   `0b02` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 create table table_28127_b(0b2 int);
 show create table table_28127_b;
 Table	Create Table
 table_28127_b	CREATE TABLE `table_28127_b` (
   `0b2` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 drop table table_28127_a;
 drop table table_28127_b;
 select 0b01000001;
@@ -60,9 +60,15 @@ A	65
 select N'abc', length(N'abc');
 abc	length(N'abc')
 abc	3
+Warnings:
+Warning	3720	NATIONAL/NCHAR/NVARCHAR implies the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using CHAR(x) CHARACTER SET UTF8MB4 in order to be unambiguous.
+Warning	3720	NATIONAL/NCHAR/NVARCHAR implies the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using CHAR(x) CHARACTER SET UTF8MB4 in order to be unambiguous.
 select N'', length(N'');
 	length(N'')
 	0
+Warnings:
+Warning	3720	NATIONAL/NCHAR/NVARCHAR implies the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using CHAR(x) CHARACTER SET UTF8MB4 in order to be unambiguous.
+Warning	3720	NATIONAL/NCHAR/NVARCHAR implies the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using CHAR(x) CHARACTER SET UTF8MB4 in order to be unambiguous.
 select '', length('');
 	length('')
 	0
@@ -662,8 +668,6 @@ FROM t1 WHERE gid = 2;
 d * (vb | vb)	f * (vb | vb)	dd * (vb | vb)	(vb | vb) / d	(vb | vb) / f	(vb | vb) / dd	d * (i | i)	f * (i | i)	dd * (i | i)	(i | i) / d	(i | i) / f	(i | i) / dd
 -98765.23	-98765.23	-98765.23	-98765.230000	-98765.230000	-98765.230000	98765.00	98765.00	98765.00	98765.0000	98765.000000	98765.000000
 SET sql_mode='';
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 SELECT
 d + BIT_OR(vb), f + BIT_OR(vb), dd + BIT_OR(vb), CAST(BIT_OR(vb) AS DECIMAL(10,2)),
 d + BIT_OR(i), f + BIT_OR(i), dd + BIT_OR(i), CAST(BIT_OR(i) AS DECIMAL(10,2))

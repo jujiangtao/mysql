@@ -295,8 +295,6 @@ user_id	name	phone	ref_email	detail
 10291	sanjeev	29153373	sansh777@hotmail.com	xxx
 drop table t1;
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 CREATE TABLE t1 (a int not null, b int not null,c int not null,
 key(a),primary key(a,b), unique(c),key(a),unique(b)) ENGINE = MyISAM;
 Warnings:
@@ -766,7 +764,7 @@ Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` char(20) DEFAULT NULL,
   KEY `a` (`a`(5))
-) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4
+) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 drop table t1;
 create temporary table t1 (a int not null auto_increment, primary key(a)) engine=MyISAM;
 insert into t1 values (NULL),(NULL),(NULL);
@@ -897,8 +895,6 @@ Field	Type	Null	Key	Default	Extra
 t	int(11)	NO	MUL	1	
 drop table t1;
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 CREATE TABLE t1 (
 number bigint(20) NOT NULL default '0',
 cname char(15) NOT NULL default '',
@@ -1354,7 +1350,7 @@ show create table t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
   `a` int(11) DEFAULT NULL
-) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4
+) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 drop table t1,t2;
 flush status;
 show status like "binlog_cache_use";
@@ -1499,7 +1495,7 @@ t1	CREATE TABLE `t1` (
   `v` varchar(10) DEFAULT NULL,
   `c` char(10) DEFAULT NULL,
   `t` text
-) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4
+) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 create table t2 like t1;
 show create table t2;
 Table	Create Table
@@ -1507,7 +1503,7 @@ t2	CREATE TABLE `t2` (
   `v` varchar(10) DEFAULT NULL,
   `c` char(10) DEFAULT NULL,
   `t` text
-) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4
+) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 create table t3 select * from t1;
 show create table t3;
 Table	Create Table
@@ -1515,7 +1511,7 @@ t3	CREATE TABLE `t3` (
   `v` varchar(10) DEFAULT NULL,
   `c` char(10) DEFAULT NULL,
   `t` text
-) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4
+) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 alter table t1 modify c varchar(10);
 show create table t1;
 Table	Create Table
@@ -1523,7 +1519,7 @@ t1	CREATE TABLE `t1` (
   `v` varchar(10) DEFAULT NULL,
   `c` varchar(10) DEFAULT NULL,
   `t` text
-) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4
+) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 alter table t1 modify v char(10);
 show create table t1;
 Table	Create Table
@@ -1531,7 +1527,7 @@ t1	CREATE TABLE `t1` (
   `v` char(10) DEFAULT NULL,
   `c` varchar(10) DEFAULT NULL,
   `t` text
-) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4
+) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 alter table t1 modify t varchar(10);
 Warnings:
 Note	1265	Data truncated for column 't' at row 2
@@ -1541,7 +1537,7 @@ t1	CREATE TABLE `t1` (
   `v` char(10) DEFAULT NULL,
   `c` varchar(10) DEFAULT NULL,
   `t` varchar(10) DEFAULT NULL
-) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4
+) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 select concat('*',v,'*',c,'*',t,'*') from t1;
 concat('*',v,'*',c,'*',t,'*')
 *+*+*+ *
@@ -1909,7 +1905,7 @@ Warnings:
 Note	1003	/* select#1 */ select count(0) AS `count(*)` from `test`.`t1` where (`test`.`t1`.`v` = 'a  ')
 explain select count(*) from t1 where v like 'a%';
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t1	NULL	range	v	v	33	NULL	#	100.00	Using where
+1	SIMPLE	t1	NULL	range	v	v	33	NULL	#	100.00	Using where; Using index
 Warnings:
 Note	1003	/* select#1 */ select count(0) AS `count(*)` from `test`.`t1` where (`test`.`t1`.`v` like 'a%')
 explain select count(*) from t1 where v between 'a' and 'a ';
@@ -2053,14 +2049,16 @@ t1	CREATE TABLE `t1` (
   KEY `v` (`v`(5)),
   KEY `c` (`c`(5)),
   KEY `t` (`t`(5))
-) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4
+) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 drop table t1;
 create table t1 (v char(10) character set utf8);
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `v` char(10) CHARACTER SET utf8 DEFAULT NULL
-) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4
+  `v` char(10) CHARACTER SET utf8 COLLATE utf8_general_ci DEFAULT NULL
+) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 drop table t1;
 create table t1 (v varchar(10), c char(10)) row_format=fixed;
 show create table t1;
@@ -2068,7 +2066,7 @@ Table	Create Table
 t1	CREATE TABLE `t1` (
   `v` varchar(10) DEFAULT NULL,
   `c` char(10) DEFAULT NULL
-) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 ROW_FORMAT=FIXED
+) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci ROW_FORMAT=FIXED
 insert into t1 values('a','a'),('a ','a ');
 select concat('*',v,'*',c,'*') from t1;
 concat('*',v,'*',c,'*')
@@ -2093,8 +2091,6 @@ a	b
 20	NULL
 drop table t1;
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 create table t1 (v varchar(65530), key(v)) charset latin1;
 Warnings:
 Warning	1071	Specified key was too long; max key length is 1000 bytes
@@ -2106,16 +2102,17 @@ show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `v` mediumtext
-) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4
+) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 drop table t1;
 create table t1 (v varchar(65530) character set utf8);
 Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 Note	1246	Converting column 'v' from VARCHAR to TEXT
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `v` mediumtext CHARACTER SET utf8
-) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4
+  `v` mediumtext CHARACTER SET utf8 COLLATE utf8_general_ci
+) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 drop table t1;
 SET sql_mode = default;
 set default_storage_engine=MEMORY;

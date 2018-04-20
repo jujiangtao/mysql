@@ -30,8 +30,8 @@
    This special exception was added by the Free Software Foundation in
    version 2.2 of Bison.  */
 
-#ifndef YY_MYSQL_EXPORT_HOME2_PB2_BUILD_SB_2_26780768_1516291061_39_DIST_GPL_SQL_SQL_YACC_H_INCLUDED
-# define YY_MYSQL_EXPORT_HOME2_PB2_BUILD_SB_2_26780768_1516291061_39_DIST_GPL_SQL_SQL_YACC_H_INCLUDED
+#ifndef YY_MYSQL_EXPORT_HOME2_PB2_BUILD_SB_2_28121909_1523169989_5_DIST_GPL_SQL_SQL_YACC_H_INCLUDED
+# define YY_MYSQL_EXPORT_HOME2_PB2_BUILD_SB_2_28121909_1523169989_5_DIST_GPL_SQL_SQL_YACC_H_INCLUDED
 /* Enabling traces.  */
 #ifndef YYDEBUG
 # define YYDEBUG 0
@@ -1516,10 +1516,10 @@ int MYSQLparse ();
 #endif
 #else /* ! YYPARSE_PARAM */
 #if defined __STDC__ || defined __cplusplus
-int MYSQLparse (class THD *YYTHD);
+int MYSQLparse (class THD *YYTHD, class Parse_tree_root **parse_tree);
 #else
 int MYSQLparse ();
 #endif
 #endif /* ! YYPARSE_PARAM */
 
-#endif /* !YY_MYSQL_EXPORT_HOME2_PB2_BUILD_SB_2_26780768_1516291061_39_DIST_GPL_SQL_SQL_YACC_H_INCLUDED  */
+#endif /* !YY_MYSQL_EXPORT_HOME2_PB2_BUILD_SB_2_28121909_1523169989_5_DIST_GPL_SQL_SQL_YACC_H_INCLUDED  */

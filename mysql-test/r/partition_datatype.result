@@ -85,12 +85,16 @@ a
 2001
 drop table t1;
 create table t1 (a varchar(10) character set utf8 not null) partition by key (a);
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 insert into t1 values ('abc');
 select * from t1 where a = 'abc';
 a
 abc
 drop table t1;
 create table t1 (a varchar(300) character set utf8 not null) partition by key (a);
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 insert into t1 values ('abc');
 select * from t1 where a = 'abc';
 a
@@ -109,6 +113,8 @@ a
 abc
 drop table t1;
 create table t1 (a char(10) character set utf8 not null) partition by key (a);
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 insert into t1 values ('abc');
 select * from t1 where a = 'abc';
 a
@@ -226,12 +232,16 @@ a
 2001
 drop table t1;
 create table t1 (a varchar(10) character set utf8) partition by key (a);
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 insert into t1 values ('abc');
 select * from t1 where a = 'abc';
 a
 abc
 drop table t1;
 create table t1 (a varchar(300) character set utf8) partition by key (a);
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 insert into t1 values ('abc');
 select * from t1 where a = 'abc';
 a
@@ -250,6 +260,8 @@ a
 abc
 drop table t1;
 create table t1 (a char(10) character set utf8) partition by key (a);
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 insert into t1 values ('abc');
 select * from t1 where a = 'abc';
 a
@@ -328,7 +340,7 @@ Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` bit(27) NOT NULL,
   PRIMARY KEY (`a`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 /*!50100 PARTITION BY HASH (`a`)
 (PARTITION p0 ENGINE = InnoDB,
  PARTITION p1 ENGINE = InnoDB,
@@ -358,8 +370,6 @@ PARTITION `p-2012-MSK-2` VALUES LESS THAN (UNIX_TIMESTAMP('2012-03-24 23:00:00')
 PARTITION `pEnd` VALUES LESS THAN (UNIX_TIMESTAMP('2038-01-19 03:14:07')),
 PARTITION `pMax` VALUES LESS THAN MAXVALUE);
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 # Test 'odd' values
 INSERT INTO t1 VALUES (NULL, 'UTC');
 INSERT INTO t1 VALUES ('0000-00-00 00:00:00', 'UTC');
@@ -861,7 +871,7 @@ Table	Create Table
 t2	CREATE TABLE `t2` (
   `a` timestamp NULL DEFAULT NULL,
   `tz` varchar(16) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 /*!50100 PARTITION BY RANGE (unix_timestamp(`a`))
 (PARTITION p0 VALUES LESS THAN (0) ENGINE = InnoDB,
  PARTITION `p-2000` VALUES LESS THAN (946684800) ENGINE = InnoDB,
@@ -1365,7 +1375,7 @@ Table	Create Table
 t2	CREATE TABLE `t2` (
   `a` timestamp NULL DEFAULT NULL,
   `tz` varchar(16) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 /*!50100 PARTITION BY RANGE (unix_timestamp(`a`))
 (PARTITION p0 VALUES LESS THAN (0) ENGINE = InnoDB,
  PARTITION `p-2000` VALUES LESS THAN (946684800) ENGINE = InnoDB,

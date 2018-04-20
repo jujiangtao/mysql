@@ -84,7 +84,7 @@ have_mecab.inc
 fix_priv_tables.test
 
 # 4.4
-# Test with yassl is supported only on community build.
+# Test with wolfssl is supported only on community build.
 # Test will openssl is supported only on commercial build.
 have_yassl.inc
 have_openssl.inc
@@ -163,6 +163,7 @@ check_plugin_dir.inc
 
 # 12.0 Tests that do/don't need group replication plugin.
 have_group_replication_plugin.inc
+have_group_replication_plugin_base.inc
 not_group_replication_plugin.inc
 
 # 13.0 Memcached plugin is not available on all PB2 builds. Only supported by
@@ -182,6 +183,7 @@ not_mts_slave_parallel_workers.inc
 have_slave_repository_type_table.inc
 not_relay_log_info_file.inc
 not_master_info_file.inc
+have_transaction_write_set_extraction.inc
 
 # 16.0 Thread stack overrun on debug/sparc when built with Developer Studio
 not_sparc_debug.inc
@@ -190,9 +192,10 @@ statement_digest_long_query.test
 # few test cannot run on Solaris discover
 not_discover.inc
 
-# 17.0 Reason for inclusion: the extra JSON cause on ndb builds is hard to
+# 17.0 Reason for inclusion: the extra JSON cause on builds with other
+# storage engines than InnoDB is hard to
 # separate. see innodb.sdi test
-have_no_ndb.inc
+have_only_innodb.inc
 
 # 18.0 Test to be run on local machine
 # This file is used by test scenarios that depend on time and it isn't possible
@@ -210,3 +213,8 @@ have_mac_os.inc
 # This file skips test for certain features in versions of the library where
 # the feature is missing.
 require_icu_version.inc
+
+#21.0 fips realted test will be run only on system where opensssl fips module is installed
+# currently we are checking via this env $OPENSSL_FIPS_INSTALLED
+not_have_fips.inc
+have_fips.inc

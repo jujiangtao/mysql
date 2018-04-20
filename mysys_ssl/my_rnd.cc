@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2012, 2017, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2012, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -31,28 +31,15 @@
 */
 
 #include "my_rnd.h"
-
-#if defined(HAVE_YASSL)
-
-#if defined(YASSL_PREFIX)
-#define RAND_bytes yaRAND_bytes
-#endif /* YASSL_PREFIX */
-
-#include <openssl/ssl.h>
-
-#elif defined(HAVE_OPENSSL)
 #include <openssl/err.h>
 #include <openssl/rand.h>
-#endif /* HAVE_YASSL */
-
+#if !defined(HAVE_OPENSSL)
+#error not using an SSL library not supported
+#endif
 
 /*
-  A wrapper to use OpenSSL/yaSSL PRNGs.
+  A wrapper to use OpenSSL/wolfSSL PRNGs.
 */
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 /**
   Generate random number.
@@ -62,14 +49,11 @@ extern "C" {
   @retval                Generated pseudo random number.
 */
 
-double my_rnd(struct rand_struct *rand_st)
-{
-  rand_st->seed1= (rand_st->seed1*3+rand_st->seed2) % rand_st->max_value;
-  rand_st->seed2= (rand_st->seed1+rand_st->seed2+33) % rand_st->max_value;
-  return (((double) rand_st->seed1) / rand_st->max_value_dbl);
+double my_rnd(struct rand_struct *rand_st) {
+  rand_st->seed1 = (rand_st->seed1 * 3 + rand_st->seed2) % rand_st->max_value;
+  rand_st->seed2 = (rand_st->seed1 + rand_st->seed2 + 33) % rand_st->max_value;
+  return (((double)rand_st->seed1) / rand_st->max_value_dbl);
 }
-
-
 
 /**
 Fill a buffer with random bytes using the SSL library routines
@@ -80,32 +64,19 @@ Fill a buffer with random bytes using the SSL library routines
 @retval      1  error occurred.
 @retval      0  OK
 */
-int
-my_rand_buffer(unsigned char *buffer, size_t buffer_size)
-{
+int my_rand_buffer(unsigned char *buffer, size_t buffer_size) {
   int rc;
-#if defined(HAVE_YASSL) /* YaSSL */
-  rc= yaSSL::RAND_bytes(buffer, buffer_size);
+  rc = RAND_bytes(buffer, (int)buffer_size);
 
-  if (!rc)
-    return 1;
-#elif defined(HAVE_OPENSSL)
-  rc= RAND_bytes(buffer, buffer_size);
-
-  if (!rc)
-  {
+  if (!rc) {
     ERR_clear_error();
     return 1;
   }
-#else /* no SSL */
-#error not using an SSL library not supported
-#endif
   return 0;
 }
 
-
 /**
-  Generate a random number using the OpenSSL/yaSSL supplied
+  Generate a random number using the OpenSSL/wolfSSL supplied
   random number generator if available.
 
   @param [in,out] rand_st Structure used for number generation
@@ -115,17 +86,11 @@ my_rand_buffer(unsigned char *buffer, size_t buffer_size)
   @retval                Generated random number.
 */
 
-double my_rnd_ssl(struct rand_struct *rand_st)
-{
+double my_rnd_ssl(struct rand_struct *rand_st) {
   unsigned int res;
 
-  if (my_rand_buffer((unsigned char *) &res, sizeof(res)))
+  if (my_rand_buffer((unsigned char *)&res, sizeof(res)))
     return my_rnd(rand_st);
 
   return (double)res / (double)UINT_MAX;
 }
-
-
-#ifdef __cplusplus
-}
-#endif

@@ -588,8 +588,6 @@ kvw5601	0
 kvw6000	2
 drop table t1,t2;
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
-Warnings:
-Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
 CREATE TABLE t1 (
 id int(11),
 pid int(11),
@@ -826,6 +824,8 @@ flag_name varchar(64) default NULL,
 flag_value text,
 UNIQUE KEY ts_id (ts_id,inst_id,flag_name)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 CREATE TABLE t2 (
 ts_id bigint(20) default NULL,
 inst_id tinyint(4) default NULL,
@@ -833,6 +833,8 @@ flag_name varchar(64) default NULL,
 flag_value text,
 UNIQUE KEY ts_id (ts_id,inst_id,flag_name)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 INSERT INTO t1 VALUES
 (111056548820001, 0, 'flag1', NULL),
 (111056548820001, 0, 'flag2', NULL),
@@ -1921,6 +1923,8 @@ CREATE TABLE t5 (
 col_int int(11) DEFAULT NULL,
 col_varchar_10_utf8_key varchar(10) CHARACTER SET utf8 DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+Warnings:
+Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 INSERT INTO t5 VALUES (1,'1');
 CREATE TABLE t6 (
 col_int_key int(11) DEFAULT NULL,

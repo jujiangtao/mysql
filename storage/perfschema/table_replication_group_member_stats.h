@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2014, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -29,16 +29,21 @@
   Table replication_group_member_stats (declarations).
 */
 
-#include <mysql/plugin_group_replication.h>
+#include <stddef.h>
 #include <sys/types.h>
 
+#include "my_base.h"
 #include "my_inttypes.h"
 #include "mysql_com.h"
 #include "sql/rpl_gtid.h"
 #include "sql/rpl_info.h"
 #include "sql/sql_const.h"  // UUID_LENGTH
-#include "storage/perfschema/pfs_column_types.h"
 #include "storage/perfschema/pfs_engine_table.h"
+
+class Field;
+class Plugin_table;
+struct TABLE;
+struct THR_LOCK;
 
 /**
   @addtogroup performance_schema_tables
@@ -50,8 +55,7 @@
   length field denoted by @<field_name@>_length.
 */
 
-struct st_row_group_member_stats
-{
+struct st_row_group_member_stats {
   char channel_name[CHANNEL_NAME_LENGTH];
   uint channel_name_length;
   char view_id[HOSTNAME_LENGTH];
@@ -73,9 +77,10 @@ struct st_row_group_member_stats
 };
 
 /** Table PERFORMANCE_SCHEMA.REPLICATION_GROUP_MEMBER_STATS. */
-class table_replication_group_member_stats : public PFS_engine_table
-{
-private:
+class table_replication_group_member_stats : public PFS_engine_table {
+  typedef PFS_simple_index pos_t;
+
+ private:
   int make_row(uint index);
 
   /** Table share lock. */
@@ -86,11 +91,11 @@ private:
   /** Current row */
   st_row_group_member_stats m_row;
   /** Current position. */
-  PFS_simple_index m_pos;
+  pos_t m_pos;
   /** Next position. */
-  PFS_simple_index m_next_pos;
+  pos_t m_next_pos;
 
-protected:
+ protected:
   /**
     Read the current row values.
     @param table            Table handle
@@ -99,14 +104,12 @@ protected:
     @param read_all         true if all columns are read.
   */
 
-  virtual int read_row_values(TABLE *table,
-                              unsigned char *buf,
-                              Field **fields,
+  virtual int read_row_values(TABLE *table, unsigned char *buf, Field **fields,
                               bool read_all);
 
   table_replication_group_member_stats();
 
-public:
+ public:
   ~table_replication_group_member_stats();
 
   /** Table share. */

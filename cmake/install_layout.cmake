@@ -1,4 +1,4 @@
-# Copyright (c) 2010, 2016, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2010, 2018, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -335,9 +335,9 @@ SET(INSTALL_INFODIR_RPM                 "share/info")
 SET(INSTALL_MANDIR_RPM                  "share/man")
 #
 SET(INSTALL_SHAREDIR_RPM                "share")
-SET(INSTALL_MYSQLSHAREDIR_RPM           "share/mysql")
+SET(INSTALL_MYSQLSHAREDIR_RPM           "share/mysql-${MYSQL_BASE_VERSION}")
 SET(INSTALL_MYSQLTESTDIR_RPM            "share/mysql-test")
-SET(INSTALL_SUPPORTFILESDIR_RPM         "share/mysql")
+SET(INSTALL_SUPPORTFILESDIR_RPM         "share/mysql-${MYSQL_BASE_VERSION}")
 #
 SET(INSTALL_MYSQLDATADIR_RPM            "/var/lib/mysql")
 SET(INSTALL_MYSQLKEYRINGDIR_RPM         "/var/lib/mysql-keyring")
@@ -386,15 +386,15 @@ SET(INSTALL_PLUGINDIR_DEB               "lib/plugin")
 #
 SET(INSTALL_INCLUDEDIR_DEB              "include")
 #
-SET(INSTALL_DOCDIR_DEB                  "docs")
-SET(INSTALL_DOCREADMEDIR_DEB            ".")
+SET(INSTALL_DOCDIR_DEB                  "share/mysql-${MYSQL_BASE_VERSION}/docs")
+SET(INSTALL_DOCREADMEDIR_DEB            "share/mysql-${MYSQL_BASE_VERSION}")
 SET(INSTALL_MANDIR_DEB                  "man")
-SET(INSTALL_INFODIR_DEB                 "docs")
+SET(INSTALL_INFODIR_DEB                 "share/mysql-${MYSQL_BASE_VERSION}/docs")
 #
 SET(INSTALL_SHAREDIR_DEB                "share")
-SET(INSTALL_MYSQLSHAREDIR_DEB           "share")
+SET(INSTALL_MYSQLSHAREDIR_DEB           "share/mysql-${MYSQL_BASE_VERSION}")
 SET(INSTALL_MYSQLTESTDIR_DEB            "mysql-test")
-SET(INSTALL_SUPPORTFILESDIR_DEB         "support-files")
+SET(INSTALL_SUPPORTFILESDIR_DEB         "share/mysql-${MYSQL_BASE_VERSION}")
 #
 SET(INSTALL_MYSQLDATADIR_DEB            "/var/lib/mysql")
 SET(INSTALL_MYSQLKEYRINGDIR_DEB         "/var/lib/mysql-keyring")

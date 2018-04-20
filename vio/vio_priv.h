@@ -1,4 +1,4 @@
-/* Copyright (c) 2003, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2003, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -36,8 +36,6 @@
 #include "mysql/psi/psi_memory.h"
 #include "violite.h"
 
-C_MODE_START
-
 extern PSI_memory_key key_memory_vio;
 extern PSI_memory_key key_memory_vio_read_buffer;
 
@@ -45,17 +43,23 @@ extern PSI_memory_key key_memory_vio_read_buffer;
 extern PSI_memory_key key_memory_vio_ssl_fd;
 #endif
 
+#ifdef HAVE_WOLFSSL
+
+#ifdef ERROR /* check for conflicting ERROR macro from wingdi.h */
+#undef ERROR
+#endif
+#endif
 
 #ifdef _WIN32
-size_t vio_read_pipe(Vio *vio, uchar * buf, size_t size);
-size_t vio_write_pipe(Vio *vio, const uchar * buf, size_t size);
+size_t vio_read_pipe(Vio *vio, uchar *buf, size_t size);
+size_t vio_write_pipe(Vio *vio, const uchar *buf, size_t size);
 bool vio_is_connected_pipe(Vio *vio);
-int vio_shutdown_pipe(Vio * vio);
+int vio_shutdown_pipe(Vio *vio);
 
-size_t vio_read_shared_memory(Vio *vio, uchar * buf, size_t size);
-size_t vio_write_shared_memory(Vio *vio, const uchar * buf, size_t size);
+size_t vio_read_shared_memory(Vio *vio, uchar *buf, size_t size);
+size_t vio_write_shared_memory(Vio *vio, const uchar *buf, size_t size);
 bool vio_is_connected_shared_memory(Vio *vio);
-int vio_shutdown_shared_memory(Vio * vio);
+int vio_shutdown_shared_memory(Vio *vio);
 void vio_delete_shared_memory(Vio *vio);
 #endif /* _WIN32 */
 
@@ -64,8 +68,8 @@ int vio_socket_io_wait(Vio *vio, enum enum_vio_io_event event);
 int vio_socket_timeout(Vio *vio, uint which, bool old_mode);
 
 #ifdef HAVE_OPENSSL
-size_t	vio_ssl_read(Vio *vio,uchar* buf,	size_t size);
-size_t	vio_ssl_write(Vio *vio,const uchar* buf, size_t size);
+size_t vio_ssl_read(Vio *vio, uchar *buf, size_t size);
+size_t vio_ssl_write(Vio *vio, const uchar *buf, size_t size);
 
 /* When the workday is over... */
 int vio_ssl_shutdown(Vio *vio);
@@ -73,7 +77,5 @@ void vio_ssl_delete(Vio *vio);
 bool vio_ssl_has_data(Vio *vio);
 
 #endif /* HAVE_OPENSSL */
-
-C_MODE_END
 
 #endif /* VIO_PRIV_INCLUDED */

@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2016, 2018, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -30,19 +30,24 @@
 
 #include <sys/types.h>
 
+#include "my_base.h"
+#include "my_inttypes.h"
+#include "mysql/components/services/system_variable_source_type.h"
+#include "mysql_com.h"
 #include "storage/perfschema/pfs_column_types.h"
 #include "storage/perfschema/pfs_engine_table.h"
-#include "storage/perfschema/pfs_instr.h"
-#include "storage/perfschema/pfs_instr_class.h"
 #include "storage/perfschema/pfs_variable.h"
-#include "storage/perfschema/table_helper.h"
+
+class Field;
+class Plugin_table;
+struct TABLE;
+struct THR_LOCK;
 
 /**
   A row of table
   PERFORMANCE_SCHEMA.VARIABLES_INFO.
 */
-struct row_variables_info
-{
+struct row_variables_info {
   /** Column VARIABLE_NAME. */
   char m_variable_name[COL_SOURCE_SIZE];
   uint m_variable_name_length;
@@ -68,11 +73,10 @@ struct row_variables_info
 };
 
 /** Table PERFORMANCE_SCHEMA.VARIABLES_INFO. */
-class table_variables_info : public PFS_engine_table
-{
+class table_variables_info : public PFS_engine_table {
   typedef PFS_simple_index pos_t;
 
-public:
+ public:
   /** Table share */
   static PFS_engine_table_share m_share;
   static PFS_engine_table *create(PFS_engine_table_share *);
@@ -83,22 +87,18 @@ public:
   virtual int rnd_pos(const void *pos);
   virtual void reset_position(void);
 
-protected:
-  virtual int read_row_values(TABLE *table,
-                              unsigned char *buf,
-                              Field **fields,
+ protected:
+  virtual int read_row_values(TABLE *table, unsigned char *buf, Field **fields,
                               bool read_all);
   table_variables_info();
 
-public:
-  ~table_variables_info()
-  {
-  }
+ public:
+  ~table_variables_info() {}
 
-protected:
+ protected:
   int make_row(const System_variable *system_var);
 
-private:
+ private:
   /** Table share lock. */
   static THR_LOCK m_table_lock;
   /** Table definition. */

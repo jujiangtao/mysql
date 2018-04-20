@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2013, 2017, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2013, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -31,18 +31,21 @@
 
 #include <sys/types.h>
 
+#include "my_base.h"
 #include "my_inttypes.h"
-#include "mysql_com.h"
+#include "sql/rpl_gtid.h"
 #include "sql/rpl_info.h" /*CHANNEL_NAME_LENGTH*/
-#include "sql/rpl_mi.h"
-#include "sql/rpl_msr.h"
-#include "sql/rpl_rli_pdb.h"
-#include "storage/perfschema/pfs_column_types.h"
+#include "sql/rpl_reporting.h"
 #include "storage/perfschema/pfs_engine_table.h"
 #include "storage/perfschema/table_helper.h"
 
-class Slave_worker;
+class Field;
 class Master_info;
+class Plugin_table;
+class Slave_worker;
+struct TABLE;
+struct THR_LOCK;
+struct mysql_mutex_t;
 
 /**
   @addtogroup performance_schema_tables
@@ -52,8 +55,7 @@ class Master_info;
 #ifndef ENUM_RPL_YES_NO
 #define ENUM_RPL_YES_NO
 /** enumerated values for service_state of worker thread*/
-enum enum_rpl_yes_no
-{
+enum enum_rpl_yes_no {
   PS_RPL_YES = 1, /* service_state= on */
   PS_RPL_NO       /* service_state= off */
 };
@@ -63,8 +65,7 @@ enum enum_rpl_yes_no
   A row in worker's table. The fields with string values have an additional
   length field denoted by <field_name>_length.
 */
-struct st_row_worker
-{
+struct st_row_worker {
   char channel_name[CHANNEL_NAME_LENGTH];
   uint channel_name_length;
   /*
@@ -94,93 +95,89 @@ struct st_row_worker
 };
 
 /**
-  Index 1 for replication channel
-  Index 2 for worker
+  Position in table replication_applier_status_by_worker.
+  Index 1 for replication channel.
+  Index 2 for worker:
+  - position [0] is for Single Thread Slave (Master_info)
+  - position [1] .. [N] is for Multi Thread Slave (Slave_worker)
 */
-struct workers_per_channel : public PFS_double_index
-{
-  workers_per_channel() : PFS_double_index(0, 0)
-  {
-  }
+struct pos_replication_applier_status_by_worker : public PFS_double_index {
+  pos_replication_applier_status_by_worker() : PFS_double_index(0, 0) {}
 
-  inline void
-  reset(void)
-  {
+  inline void reset(void) {
     m_index_1 = 0;
     m_index_2 = 0;
   }
 
-  inline bool
-  has_more_channels(uint num)
-  {
-    return (m_index_1 < num);
+  inline bool has_more_channels(uint num) { return (m_index_1 < num); }
+
+  inline void next_channel(void) {
+    m_index_1++;
+    m_index_2 = 0;
   }
 
-  inline void
-  next_channel(void)
-  {
-    m_index_1++;
+  inline void next_worker() { m_index_2++; }
+
+  inline void set_channel_after(
+      const pos_replication_applier_status_by_worker *other) {
+    m_index_1 = other->m_index_1 + 1;
     m_index_2 = 0;
   }
 };
 
-class PFS_index_rpl_applier_status_by_worker : public PFS_engine_index
-{
-public:
+class PFS_index_rpl_applier_status_by_worker : public PFS_engine_index {
+ public:
   PFS_index_rpl_applier_status_by_worker(PFS_engine_key *key)
-    : PFS_engine_index(key)
-  {
-  }
+      : PFS_engine_index(key) {}
 
-  ~PFS_index_rpl_applier_status_by_worker()
-  {
-  }
+  PFS_index_rpl_applier_status_by_worker(PFS_engine_key *key_1,
+                                         PFS_engine_key *key_2)
+      : PFS_engine_index(key_1, key_2) {}
+
+  ~PFS_index_rpl_applier_status_by_worker() {}
 
   virtual bool match(Master_info *mi) = 0;
+  virtual bool match(Master_info *mi, Slave_worker *w) = 0;
 };
 
 class PFS_index_rpl_applier_status_by_worker_by_channel
-  : public PFS_index_rpl_applier_status_by_worker
-{
-public:
+    : public PFS_index_rpl_applier_status_by_worker {
+ public:
   PFS_index_rpl_applier_status_by_worker_by_channel()
-    : PFS_index_rpl_applier_status_by_worker(&m_key), m_key("CHANNEL_NAME")
-  {
-  }
+      : PFS_index_rpl_applier_status_by_worker(&m_key_1, &m_key_2),
+        m_key_1("CHANNEL_NAME"),
+        m_key_2("WORKER_ID") {}
 
-  ~PFS_index_rpl_applier_status_by_worker_by_channel()
-  {
-  }
+  ~PFS_index_rpl_applier_status_by_worker_by_channel() {}
 
   virtual bool match(Master_info *mi);
+  virtual bool match(Master_info *mi, Slave_worker *w);
 
-private:
-  PFS_key_name m_key;
+ private:
+  PFS_key_name m_key_1;
+  PFS_key_worker_id m_key_2;
 };
 
 class PFS_index_rpl_applier_status_by_worker_by_thread
-  : public PFS_index_rpl_applier_status_by_worker
-{
-public:
+    : public PFS_index_rpl_applier_status_by_worker {
+ public:
   PFS_index_rpl_applier_status_by_worker_by_thread()
-    : PFS_index_rpl_applier_status_by_worker(&m_key), m_key("THREAD_ID")
-  {
-  }
+      : PFS_index_rpl_applier_status_by_worker(&m_key), m_key("THREAD_ID") {}
 
-  ~PFS_index_rpl_applier_status_by_worker_by_thread()
-  {
-  }
+  ~PFS_index_rpl_applier_status_by_worker_by_thread() {}
 
   virtual bool match(Master_info *mi);
+  virtual bool match(Master_info *mi, Slave_worker *w);
 
-private:
+ private:
   PFS_key_thread_id m_key;
 };
 
 /** Table PERFORMANCE_SCHEMA.replication_applier_status_by_worker */
-class table_replication_applier_status_by_worker : public PFS_engine_table
-{
-private:
+class table_replication_applier_status_by_worker : public PFS_engine_table {
+  typedef pos_replication_applier_status_by_worker pos_t;
+
+ private:
   int make_row(Slave_worker *);
   /*
     Master_info to construct a row to display SQL Thread's status
@@ -194,18 +191,14 @@ private:
   /** Table definition. */
   static Plugin_table m_table_def;
 
-  /** current row*/
+  /** current row. */
   st_row_worker m_row;
   /** Current position. */
-  workers_per_channel m_pos;
+  pos_t m_pos;
   /** Next position. */
-  workers_per_channel m_next_pos;
-  /** Current position. */
-  PFS_simple_index m_applier_pos;
-  /** Next position. */
-  PFS_simple_index m_applier_next_pos;
+  pos_t m_next_pos;
 
-protected:
+ protected:
   /**
     Read the current row values.
     @param table            Table handle
@@ -214,14 +207,12 @@ protected:
     @param read_all         true if all columns are read.
   */
 
-  virtual int read_row_values(TABLE *table,
-                              unsigned char *buf,
-                              Field **fields,
+  virtual int read_row_values(TABLE *table, unsigned char *buf, Field **fields,
                               bool read_all);
 
   table_replication_applier_status_by_worker();
 
-public:
+ public:
   ~table_replication_applier_status_by_worker();
 
   /** Table share. */
@@ -236,7 +227,7 @@ public:
   virtual int index_init(uint idx, bool sorted);
   virtual int index_next();
 
-private:
+ private:
   PFS_index_rpl_applier_status_by_worker *m_opened_index;
 };
 

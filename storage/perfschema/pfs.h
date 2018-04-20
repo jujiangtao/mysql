@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2008, 2018, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -65,8 +65,7 @@ extern thread_local PFS_thread *THR_PFS;
 /**
   Performance schema Thread Local Storage keys; indexes into THR_PFS_contexts.
 */
-enum THR_PFS_key
-{
+enum THR_PFS_key {
   THR_PFS_SV,   // session_variables
   THR_PFS_VG,   // global_variables
   THR_PFS_VBT,  // variables_by_thread
