@@ -2,6 +2,7 @@ mysql-defaults (1.0.5) UNRELEASED; urgency=medium
 
   * Switch Vcs-* URLs to salsa.debian.org.
   * Use dpkg makefile snippets instead of manual changelog parsing.
+  * Sync debian/copyright with the current dh-make template.
 
  -- Andreas Beckmann <anbe@debian.org>  Mon, 23 Apr 2018 13:43:21 +0200
 
