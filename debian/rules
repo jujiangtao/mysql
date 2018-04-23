@@ -2,7 +2,7 @@
 
 #export DH_VERBOSE=1
 
-VERSION	:= $(shell dpkg-parsechangelog --show-field=Version)
+include /usr/share/dpkg/pkg-info.mk
 
 ifeq (Ubuntu,$(shell dpkg-vendor --derives-from Ubuntu && echo Ubuntu))
 default-mysql-client-core	 = mysql-client-core-5.7
@@ -24,7 +24,7 @@ endif
 	dh $@
 
 override_dh_gencontrol:
-	dh_gencontrol -pmysql-common -- -v5.8+$(VERSION)
+	dh_gencontrol -pmysql-common -- -v5.8+$(DEB_VERSION)
 	dh_gencontrol -Nmysql-common -- \
 		-Vdefault:mysql-client-core=$(default-mysql-client-core) \
 		-Vdefault:mysql-client=$(default-mysql-client) \
