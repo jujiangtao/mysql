@@ -26,6 +26,7 @@ binlog.binlog_server_start_options : Requires writable /usr
 main.ctype_uca : Requires writable /usr
 main.mysql_plugin: Requires writable /usr
 rpl.rpl_gtid_mode : Requires starting server as root ref http://bugs.mysql.com/bug.php?id=70517
+main.ssl_ca : Test is breaking on sid, ref https://bugs.mysql.com/bug.php?id=90749
 EOF
 
 cd /usr/lib/mysql-test
