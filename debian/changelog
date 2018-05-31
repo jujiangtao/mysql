@@ -11,6 +11,11 @@ mysql-5.7 (5.7.22-1) unstable; urgency=high (security fixes)
     - CVE-2018-2816 CVE-2018-2818 CVE-2018-2819 CVE-2018-2839
     - CVE-2018-2846
     (Closes: #895997)
+  * d/tests: Broken test main.ssl_ca disabled for dep8
+    Upstream report: https://bugs.mysql.com/bug.php?id=90749
+  * d/copyright: Added entry for new file .gitreview
+  * d/control: Replace obsolete build-dep on dh-systemd
+    Depdendency is replaced by debhelper (>= 9.20160709)
 
  -- Lars Tangvald <lars.tangvald@oracle.com>  Mon, 23 Apr 2018 08:20:42 +0200
 
