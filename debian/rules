@@ -138,10 +138,6 @@ build-stamp: $(EXPORTED_SOURCE_TARBALL)
 
 override_dh_auto_test:
 	@echo "RULES.$@"
-ifeq ($(findstring nocheck,$(DEB_BUILD_OPTIONS)),)
-	cp -r mysql-test/* $(builddir)/mysql-test/
-	cp -r sql/share/* $(builddir)/sql/share/
-	cp -r scripts/*sql $(builddir)/scripts/
 ifeq ($(ARCH_OS),hurd)
 	# Tests not fully working under Hurd, see
 	# http://bugs.mysql.com/bug.php?id=64685. Run unit tests only.
@@ -158,7 +154,6 @@ else
 	# Skip replication tests since they are timing sensitive and may
 	# result in false positives.
 	cd $(builddir)/mysql-test && ./mtr --report-unstable-tests --parallel=$(TESTJOBS) --skip-rpl $(MTR_SUITE) --force --skip-test-list=./skiplist || $(TESTSUITE_FAIL_CMD) ;
-endif
 endif
 
 override_dh_auto_install: auto_install-stamp
