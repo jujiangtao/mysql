@@ -176,7 +176,7 @@ auto_install-stamp:
 	set -e
 	install -d -m 0755 -o root -g root $(TMP)/usr/lib/mysql
 	mkdir -p $(TMP)/usr/share/doc/mysql-server-8.0
-	nm -n $(BUILDDIR)/sql/mysqld |gzip -n -9 > $(TMP)/usr/share/doc/mysql-server-8.0/mysqld.sym.gz
+	nm -n $(BUILDDIR)/bin/mysqld |gzip -n -9 > $(TMP)/usr/share/doc/mysql-server-8.0/mysqld.sym.gz
 	# This seems to be the only safe place to fix permissions issues
 	# not handled by dh_fixperms.
 	install -m 0755 debian/additions/echo_stderr $(TMP)/usr/share/mysql/
