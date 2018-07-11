@@ -109,16 +109,16 @@ test_mysqld_startup() {
   return $result
 }
 
-# Default config in 5.5 and older 5.6 installations contains two deprecated
-# options that were removed in 5.7. They were renamed, so we can fix this
-# automatically. We create a backup of the old file
+# The query cache feature has been removed in 8.0, but the 5.7 default config has settings
+# for it, causing errors when starting the 8.0 server.
+# To work around this we comment out these options if an old 5.7 config file is present.
 fix_old_config_options() {
   [ -f /etc/mysql/my.cnf.migrated ] || return 0
-  sed -e 's/[[:space:]]*key_buffer[[:space:]]*=/# Obsolete key_buffer option renamed to key_buffer_size by maintainer script\nkey_buffer_size\t\t=/' \
-      -e 's/[[:space:]]*myisam-recover[[:space:]]*=/# Obsolete myisam-recover option renamed to myisam_recover_options by maintainer script\nmyisam_recover_options\t=/' /etc/mysql/my.cnf.migrated --in-place=.bak
+  sed -e 's/[[:space:]]*query\_cache*/# Deprecated query cache option disabled by maintainer script\n#query\_cache/' \
+  /etc/mysql/mysql.conf.d/mysqld.cnf --in-place=.bak
   # If nothing was changed, remove the new file
-  if cmp -s /etc/mysql/my.cnf.migrated /etc/mysql/my.cnf.migrated.bak; then
-    mv /etc/mysql/my.cnf.migrated.bak /etc/mysql/my.cnf.migrated
+  if cmp -s /etc/mysql/mysql.conf.d/mysqld.cnf /etc/mysql/mysql.conf.d/mysqld.cnf.bak; then
+    mv /etc/mysql/mysql.conf.d/mysqld.cnf.bak /etc/mysql/mysql.conf.d/mysqld.cnf
   fi
 }
 
