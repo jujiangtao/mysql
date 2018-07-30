@@ -1,3 +1,19 @@
+mysql-5.7 (5.7.23-1) unstable; urgency=high (security fixes)
+
+  * Imported upstream version 5.7.23 to fix security issues:
+    - http://www.oracle.com/technetwork/security-advisory/cpujul2018-4258247.html
+    - CVE-2018-0739 CVE-2018-2767 CVE-2018-3054 CVE-2018-3056
+    - CVE-2018-3058 CVE-2018-3060 CVE-2018-3061 CVE-2018-3062
+    - CVE-2018-3064 CVE-2018-3065 CVE-2018-3066 CVE-2018-3070
+    - CVE-2018-3071 CVE-2018-3077 CVE-2018-3081
+    (Closes: #904121)
+  * Moved internal test binaries out of usr/bin
+    The client binaries mysqltest and mysql_client_test are only
+    meant to be used by the mysql test suite, and are no longer
+    installed in /usr/bin
+
+ -- Lars Tangvald <lars.tangvald@oracle.com>  Mon, 30 Jul 2018 09:13:54 +0200
+
 mysql-5.7 (5.7.22-1) unstable; urgency=high (security fixes)
 
   * Imported upstream version 5.7.22 to fix security issues:
