@@ -35,6 +35,6 @@ echo "starting mysql-test-run.pl..."
 # Pending upstream fix of mtr includes
 export PERLLIB=.
 ./mysql-test-run.pl --suite=main --vardir=$WORKDIR/var --tmpdir=$WORKDIR/tmp \
-    --skip-ndbcluster --parallel=auto --skip-rpl --report-features \
+    --skip-ndbcluster --parallel=auto --skip-rpl --report-features --client-bindir=/usr/lib/mysql-test/bin/ \
     --force --skip-test-list=$SKIP_TEST_LST --report-unstable-tests $@ 2>&1
 echo "run: OK"
