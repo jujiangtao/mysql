@@ -1,51 +1,46 @@
-mysql-5.7 (5.7.23-2) unstable; urgency=medium
+mysql-5.7 (5.7.23-0ubuntu2) cosmic; urgency=medium
 
-  [ Robie Basak ]
-  * Drop dependency on bsdutils
-  * Update Vcs-* URLs to salsa following migration
+  * debian/patches/disable_float_test.patch: disable test that is failing
+    on ppc64el due to float differences pending further investigation.
 
-  [ Lars Tangvald ]
-  * d/tests: Disable tests failing on ppc64el
-  * d/patches: Fix failing tests on ppc64el
+ -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Fri, 24 Aug 2018 11:57:50 -0400
 
- -- Robie Basak <robie.basak@ubuntu.com>  Fri, 14 Sep 2018 12:41:01 +0100
+mysql-5.7 (5.7.23-0ubuntu1) cosmic; urgency=medium
 
-mysql-5.7 (5.7.23-1) unstable; urgency=high (security fixes)
+  * SECURITY UPDATE: Update to 5.7.23 to fix security issues
+    - CVE-2018-2767, CVE-2018-3054, CVE-2018-3056, CVE-2018-3058,
+      CVE-2018-3060, CVE-2018-3061, CVE-2018-3062, CVE-2018-3064,
+      CVE-2018-3065, CVE-2018-3066, CVE-2018-3070, CVE-2018-3071,
+      CVE-2018-3077, CVE-2018-3081
 
-  * Imported upstream version 5.7.23 to fix security issues:
-    - http://www.oracle.com/technetwork/security-advisory/cpujul2018-4258247.html
-    - CVE-2018-0739 CVE-2018-2767 CVE-2018-3054 CVE-2018-3056
-    - CVE-2018-3058 CVE-2018-3060 CVE-2018-3061 CVE-2018-3062
-    - CVE-2018-3064 CVE-2018-3065 CVE-2018-3066 CVE-2018-3070
-    - CVE-2018-3071 CVE-2018-3077 CVE-2018-3081
-    (Closes: #904121)
-  * Moved internal test binaries out of usr/bin
-    The client binaries mysqltest and mysql_client_test are only
-    meant to be used by the mysql test suite, and are no longer
-    installed in /usr/bin
+ -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Fri, 27 Jul 2018 07:53:30 -0400
 
- -- Lars Tangvald <lars.tangvald@oracle.com>  Mon, 30 Jul 2018 09:13:54 +0200
+mysql-5.7 (5.7.22-0ubuntu18.04.1) bionic-security; urgency=medium
 
-mysql-5.7 (5.7.22-1) unstable; urgency=high (security fixes)
+  * SECURITY UPDATE: Update to 5.7.22 to fix security issues
+    - CVE-2018-2755, CVE-2018-2758, CVE-2018-2759, CVE-2018-2761,
+      CVE-2018-2762, CVE-2018-2766, CVE-2018-2769, CVE-2018-2771,
+      CVE-2018-2773, CVE-2018-2775, CVE-2018-2776, CVE-2018-2777,
+      CVE-2018-2778, CVE-2018-2779, CVE-2018-2780, CVE-2018-2781,
+      CVE-2018-2782, CVE-2018-2784, CVE-2018-2786, CVE-2018-2787,
+      CVE-2018-2810, CVE-2018-2812, CVE-2018-2813, CVE-2018-2816,
+      CVE-2018-2817, CVE-2018-2818, CVE-2018-2819, CVE-2018-2839,
+      CVE-2018-2846
+  * d/p/disable_tests.patch: disable partition_rename_longfilename test
+    which fails when building locally.
+  * debian/mysql-testsuite-5.7.manpages: removed, these manpages are no
+    longer shipped.
 
-  * Imported upstream version 5.7.22 to fix security issues:
-    - http://www.oracle.com/technetwork/security-advisory/cpuapr2018-3678067.html
-    - CVE-2018-2755 CVE-2018-2758 CVE-2018-2759 CVE-2018-2761
-    - CVE-2018-2762 CVE-2018-2766 CVE-2018-2769 CVE-2018-2771
-    - CVE-2018-2773 CVE-2018-2775 CVE-2018-2776 CVE-2018-2777
-    - CVE-2018-2778 CVE-2018-2779 CVE-2018-2780 CVE-2018-2781
-    - CVE-2018-2782 CVE-2018-2784 CVE-2018-2786 CVE-2018-2787
-    - CVE-2018-2810 CVE-2018-2812 CVE-2018-2813 CVE-2018-2817
-    - CVE-2018-2816 CVE-2018-2818 CVE-2018-2819 CVE-2018-2839
-    - CVE-2018-2846
-    (Closes: #895997)
-  * d/tests: Broken test main.ssl_ca disabled for dep8
-    Upstream report: https://bugs.mysql.com/bug.php?id=90749
-  * d/copyright: Added entry for new file .gitreview
-  * d/control: Replace obsolete build-dep on dh-systemd
-    Dependency is replaced by debhelper (>= 9.20160709)
+ -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Tue, 24 Apr 2018 08:11:43 -0400
 
- -- Lars Tangvald <lars.tangvald@oracle.com>  Mon, 23 Apr 2018 08:20:42 +0200
+mysql-5.7 (5.7.21-1ubuntu1) bionic; urgency=medium
+
+  * Merge from Debian.
+  * Remaining changes:
+    - Revert "Build with libmecab-dev" since libmecab-dev is in
+      universe.
+
+ -- Lars Tangvald <lars.tangvald@oracle.com>  Fri, 02 Feb 2018 11:58:04 +0100
 
 mysql-5.7 (5.7.21-1) unstable; urgency=high (security fixes)
 
@@ -60,6 +55,15 @@ mysql-5.7 (5.7.21-1) unstable; urgency=high (security fixes)
     (Closes: #887477)
 
  -- Lars Tangvald <lars.tangvald@oracle.com>  Fri, 19 Jan 2018 08:13:12 +0100
+
+mysql-5.7 (5.7.20-2ubuntu1) bionic; urgency=medium
+
+  * Merge from Debian.
+  * Remaining changes:
+    - Revert "Build with libmecab-dev" since libmecab-dev is in
+      universe.
+
+ -- Lars Tangvald <lars.tangvald@oracle.com>  Fri, 12 Jan 2018 13:53:00 +0100
 
 mysql-5.7 (5.7.20-2) unstable; urgency=medium
 
@@ -81,6 +85,32 @@ mysql-5.7 (5.7.20-2) unstable; urgency=medium
 
  -- Robie Basak <robie.basak@ubuntu.com>  Fri, 12 Jan 2018 11:06:00 +0000
 
+mysql-5.7 (5.7.20-1ubuntu1) bionic; urgency=medium
+
+  * Merge from Debian.
+    - Previous merge was 5.7.17-0ubuntu1.
+    - Most changes in Ubuntu since were simply new bringing in new
+      upstream versions. Since we're merging in from the same upstream
+      version in Debian that Ubuntu is currently on, these are no-ops in
+      this merge.
+  * Remaining changes:
+    - Revert "Build with libmecab-dev" since libmecab-dev is in
+      universe.
+  * Drop changes (all adopted in Debian or originally cherry-picked from
+    Debian):
+    - Dropping of patches included upstream also dropped in Debian VCS
+      commit dd7b6e7:
+      + debian/patches/fix_mysql_config_flags.patch
+      + debian/patches/fix_test_events_2.patch
+    - debian/mysql-server-5.7.install: added connection_control.so, also
+      added in Debian VCS commit c77f03f.
+    - debian/server-core.install: removed my-default.cnf, also dropped
+      in Debian VCS commit 1363efd.
+    - Drop debian/patches/removedojo.patch, also dropped in Debian VCS
+      commit 1324dae.
+
+ -- Robie Basak <robie.basak@ubuntu.com>  Mon, 04 Dec 2017 15:35:52 +0000
+
 mysql-5.7 (5.7.20-1) unstable; urgency=high (security fixes)
 
   [ Lars Tangvald ]
@@ -99,6 +129,18 @@ mysql-5.7 (5.7.20-1) unstable; urgency=high (security fixes)
   * Update translations (Closes: #856791, #863940, #871560, #845692)
 
  -- Robie Basak <robie.basak@canonical.com>  Thu, 30 Nov 2017 12:31:24 +0000
+
+mysql-5.7 (5.7.20-0ubuntu0.17.10.1) artful-security; urgency=medium
+
+  * SECURITY UPDATE: Update to 5.7.20 to fix security issues
+    - CVE-2017-10155, CVE-2017-10165, CVE-2017-10167, CVE-2017-10227,
+      CVE-2017-10268, CVE-2017-10276, CVE-2017-10283, CVE-2017-10286,
+      CVE-2017-10294, CVE-2017-10311, CVE-2017-10313, CVE-2017-10314,
+      CVE-2017-10320, CVE-2017-10379, CVE-2017-10384
+  * Removed patches included in new version:
+    - debian/patches/fix_failing_test.patch 
+
+ -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Wed, 18 Oct 2017 12:59:08 -0400
 
 mysql-5.7 (5.7.19-1) unstable; urgency=high (security fixes)
 
@@ -119,6 +161,20 @@ mysql-5.7 (5.7.19-1) unstable; urgency=high (security fixes)
     pass on retry
 
  -- Lars Tangvald <lars.tangvald@oracle.com>  Thu, 20 Jul 2017 18:21:38 +0200
+
+mysql-5.7 (5.7.19-0ubuntu1) artful; urgency=medium
+
+  * SECURITY UPDATE: Update to 5.7.19 to fix security issues
+    - CVE-2017-3529, CVE-2017-3633, CVE-2017-3634, CVE-2017-3635,
+      CVE-2017-3637, CVE-2017-3638, CVE-2017-3639, CVE-2017-3640,
+      CVE-2017-3641, CVE-2017-3642, CVE-2017-3643, CVE-2017-3644,
+      CVE-2017-3645, CVE-2017-3647, CVE-2017-3648, CVE-2017-3649,
+      CVE-2017-3650, CVE-2017-3651, CVE-2017-3652, CVE-2017-3653
+  * Removed patches included in new version:
+    - debian/patches/removedojo.patch
+    - fix_test_mysql_not_windows.patch
+
+ -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Tue, 01 Aug 2017 08:02:22 -0400
 
 mysql-5.7 (5.7.18-1) unstable; urgency=high (security fixes)
 
@@ -151,6 +207,38 @@ mysql-5.7 (5.7.18-1) unstable; urgency=high (security fixes)
 
  -- Lars Tangvald <lars.tangvald@oracle.com>  Wed, 19 Apr 2017 07:23:52 +0200
 
+mysql-5.7 (5.7.18-0ubuntu2) artful; urgency=medium
+
+  * No-change rebuild against libevent-core-2.1-6
+
+ -- Steve Langasek <steve.langasek@ubuntu.com>  Mon, 31 Jul 2017 01:29:15 +0000
+
+mysql-5.7 (5.7.18-0ubuntu1) artful; urgency=medium
+
+  * Fixed failing test main.mysql_not_windows
+    The test was failing because it expected the os limit on open
+    files to be less than 1M, but on Artful it's 1048576.
+    Patch ups the value to 10M.
+
+ -- Lars Tangvald <lars.tangvald@oracle.com>  Fri, 19 May 2017 07:55:55 +0200
+
+mysql-5.7 (5.7.18-0ubuntu0.17.04.1) zesty-security; urgency=medium
+
+  * SECURITY UPDATE: Update to 5.7.18 to fix security issues
+    - CVE-2017-3308, CVE-2017-3309, CVE-2017-3329, CVE-2017-3331,
+      CVE-2017-3450, CVE-2017-3453, CVE-2017-3454, CVE-2017-3455,
+      CVE-2017-3456, CVE-2017-3457, CVE-2017-3458, CVE-2017-3459,
+      CVE-2017-3460, CVE-2017-3461, CVE-2017-3462, CVE-2017-3463,
+      CVE-2017-3464, CVE-2017-3465, CVE-2017-3467, CVE-2017-3468,
+      CVE-2017-3599, CVE-2017-3600
+  * Removed patches included in new version:
+    - debian/patches/fix_mysql_config_flags.patch
+    - debian/patches/fix_test_events_2.patch
+  * debian/mysql-server-5.7.install: added connection_control.so
+  * debian/server-core.install: removed my-default.cnf
+
+ -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Wed, 26 Apr 2017 07:22:12 -0400
+
 mysql-5.7 (5.7.17-1) unstable; urgency=high (security fixes)
 
   [ Bjoern Boschman ]
@@ -178,6 +266,18 @@ mysql-5.7 (5.7.17-1) unstable; urgency=high (security fixes)
 
  -- Lars Tangvald <lars.tangvald@oracle.com>  Wed, 01 Feb 2017 01:12:18 +0100
 
+mysql-5.7 (5.7.17-0ubuntu1) zesty; urgency=medium
+
+  * Merge from Debian VCS 8305cfa. Remaining changes:
+    - Revert "Build with libmecab-dev" since libmecab-dev is in
+      universe.
+  * Additional changes picked up from Debian VCS since 5.7.16-2:
+    - [4a72d12] Merge new upstream release 5.7.17.
+    - [8305cfa] d/p/fix_mysql_config_flags.patch: update due to context
+      changes upstream.
+
+ -- Lars Tangvald <lars.tangvald@oracle.com>  Mon, 16 Jan 2017 13:07:55 +0100
+
 mysql-5.7 (5.7.16-2) unstable; urgency=medium
 
   * Fix the test main.grant_user_lock when run as root
@@ -204,7 +304,29 @@ mysql-5.7 (5.7.16-2) unstable; urgency=medium
 
  -- Lars Tangvald <lars.tangvald@oracle.com>  Tue, 03 Jan 2017 07:44:43 +0100
 
-mysql-5.7 (5.7.16-1) unstable; urgency=high (security fixes)
+mysql-5.7 (5.7.16-0ubuntu2) zesty; urgency=medium
+
+  * Merge from Debian VCS a733d9a. Remaining changes:
+    - Revert "Build with libmecab-dev" since libmecab-dev is in
+      universe.
+  * Drop changes (adopted in Debian):
+    - Drop obsolete initscripts dependency.
+    - Replace removed config options from 5.5 and old 5.6 installations.
+    - Remove patches included in new release.
+    - debian/rules: new version no longer ships unit.pl.
+    - Fix copy of soft-link datadir to /var/lib/mysql-upgrade if it already
+      exists there.
+    - Add support for custom datadir to systemd service.
+    - Build with DWITH_LZ4=system.
+    - Change mysql-testsuite dependency from python to libjson-perl.
+    - Set perl to include working dir for d/tests/upstream tests.
+    - Escape special characters in password.
+    - Removed always-false check on purge in postrm.
+    - Added sbuild/dep8 instructions to maintainer readme.
+
+ -- Robie Basak <robie.basak@ubuntu.com>  Tue, 01 Nov 2016 14:34:01 +0000
+
+mysql-5.7 (5.7.16-1) UNRELEASED; urgency=high (security fixes)
 
   * Imported upstream version 5.7.16 to fix security issues:
     - http://www.oracle.com/technetwork/security-advisory/cpuoct2016-2881722.html
@@ -215,6 +337,14 @@ mysql-5.7 (5.7.16-1) unstable; urgency=high (security fixes)
     (Closes: #841163)
 
  -- Lars Tangvald <lars.tangvald@oracle.com>  Fri, 21 Oct 2016 08:59:56 +0200
+
+mysql-5.7 (5.7.16-0ubuntu1) zesty; urgency=medium
+
+  * SECURITY UPDATE: Update to 5.7.16 to fix security issues
+    - CVE-2016-5584
+    - CVE-2016-7440
+
+ -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Tue, 25 Oct 2016 12:04:29 -0400
 
 mysql-5.7 (5.7.15-1) unstable; urgency=medium
 
@@ -268,6 +398,90 @@ mysql-5.7 (5.7.15-1) unstable; urgency=medium
 
  -- Lars Tangvald <lars.tangvald@oracle.com>  Wed, 05 Oct 2016 13:10:56 +0200
 
+mysql-5.7 (5.7.15-0ubuntu2) yakkety; urgency=medium
+
+  * Add working dir to perl lib path for dep8 upstream.
+    New versions of perl will no longer automatically include working dir in
+    the path. This was causing the mtr suite to fail to start.
+  * Change mysql-testsuite dependency from python to libjson-perl.
+    Tests written in python were rewritten in perl, so testsuite no longer
+    depends on python, but tests fail if libjson-perl is missing.
+  * Build with DWITH_LZ4=system
+    If the flag is not set the package will be built with a bundled liblz4
+    instead of the one provided by the liblz4-dev build-dep.
+  * Add support for custom datadir to systemd service (LP: #1574782)
+    The service was reporting errors if no database was found in /var/lib/mysql
+    It will now check the path specified in the config
+  * Fix support for soft-link datadir (LP: #1474212)
+    Upgrading more than once when datadir is soft-link was causing errors
+  * Escape special characters in password (LP: #1598992)
+    The password string was not escaped, causing SQL errors if certain special
+    characters such as apostrophes were included.
+  * Removed always-false check on purge in postrm (LP: #1602945)
+    Users were never seeing the query to remove data on a package purge
+
+ -- Lars Tangvald <lars.tangvald@oracle.com>  Fri, 16 Sep 2016 22:23:41 +0200
+
+mysql-5.7 (5.7.15-0ubuntu1) yakkety; urgency=medium
+
+  * SECURITY UPDATE: Update to 5.7.15 to fix security issues
+    - CVE-2016-6662
+  * Removed patches included in new release:
+    - debian/patches/fix-mtr-search-paths.patch
+    - debian/patches/mysql-atomic.patch
+    - debian/patches/mysql-atomic-link.patch
+    - debian/patches/mysql-atomic-innodb.patch
+    - debian/patches/allowemptyport.patch
+  * debian/rules: new version no longer ships unit.pl.
+
+ -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Thu, 15 Sep 2016 08:05:22 -0400
+
+mysql-5.7 (5.7.13-0ubuntu4) yakkety; urgency=medium
+
+  * Check that /etc/mysql/my.cnf.migrated exists before attempting to
+    amend it, so that it is properly idempotent. This fixes a postinst
+    failure in some known edge cases where the version match still
+    passes. Cherry-picked from Debian VCS 8672b6b.
+
+ -- Robie Basak <robie.basak@ubuntu.com>  Thu, 14 Jul 2016 14:14:56 +0100
+
+mysql-5.7 (5.7.13-0ubuntu3) yakkety; urgency=medium
+
+  * Automatically replace removed config options from 5.5 and old 5.6
+    installations (LP: #1571865). Cherry-picked from Debian VCS ef3f92b.
+    Thanks to Lars Tangvald.
+
+ -- Robie Basak <robie.basak@ubuntu.com>  Tue, 12 Jul 2016 17:45:00 +0100
+
+mysql-5.7 (5.7.13-0ubuntu2) yakkety; urgency=medium
+
+  * Drop obsolete initscripts dependency. Backported from Debian packaging
+    git. (Closes: #804992)
+
+ -- Martin Pitt <martin.pitt@ubuntu.com>  Thu, 23 Jun 2016 08:33:04 +0200
+
+mysql-5.7 (5.7.13-0ubuntu1) yakkety; urgency=medium
+
+  * Ubuntu merge from Debian VCS 1cdae6c. Remaining changes:
+    - Revert "Build with libmecab-dev" since libmecab-dev is in
+      universe.
+  * Drop changes:
+    - mysql-server-5.7: depend on apparmor (>= 2.10) for Trusty upgrade
+      path (all upgrade paths go through Xenial; in hindsight this
+      should have been a Breaks anyway).
+    - Upstreamed to Debian:
+      + d/p/allowemptyport.patch: update corresponding test
+      + postinst: ignore mysql_upgrade's exit status 2
+      + Export my_make_scrambled_password
+      + Client commands in postinst should ignore custom config
+      + Enable setting password for existing database if it was empty
+      + Quote $rootpw correctly
+      + Add libnuma-dev, libaio-dev to libmysqld-dev deps
+      + d/p/fix-man-page-links.patch: drop (fixed upstream)
+      + Add d/NEWS
+
+ -- Robie Basak <robie.basak@ubuntu.com>  Tue, 14 Jun 2016 16:15:59 +0100
+
 mysql-5.7 (5.7.13-1~exp1) experimental; urgency=medium
 
   * Update to new upstream version 5.7.13. This includes major packaging
@@ -304,6 +518,76 @@ mysql-5.7 (5.7.13-1~exp1) experimental; urgency=medium
   * Upload to experimental.
 
  -- Robie Basak <robie.basak@canonical.com>  Fri, 15 Jul 2016 03:15:14 +0200
+
+mysql-5.7 (5.7.12-0ubuntu2) yakkety; urgency=medium
+
+  * No change rebuild to fix miscompilation on s390x. LP: #1572613
+
+ -- Dimitri John Ledkov <xnox@ubuntu.com>  Tue, 26 Apr 2016 13:11:50 +0100
+
+mysql-5.7 (5.7.12-0ubuntu1) xenial-security; urgency=medium
+
+  * SECURITY UPDATE: Update to 5.7.12 to fix security issues (LP: #1572559)
+    - http://www.oracle.com/technetwork/security-advisory/cpuapr2016v3-2985753.html
+    - CVE-2016-0639
+    - CVE-2016-0642
+    - CVE-2016-0643
+    - CVE-2016-0647
+    - CVE-2016-0648
+    - CVE-2016-0655
+    - CVE-2016-0657
+    - CVE-2016-0659
+    - CVE-2016-0662
+    - CVE-2016-0666
+    - CVE-2016-0667
+    - CVE-2016-2047
+  * d/p/fix-manpage-links.patch: drop (fixed upstream).
+  * Add NEWS entry missed from my previous upload.
+
+ -- Robie Basak <robie.basak@ubuntu.com>  Thu, 21 Apr 2016 12:05:40 +0100
+
+mysql-5.7 (5.7.11-0ubuntu6) xenial; urgency=medium
+
+  [ Lars Tangvald ]
+  * Added patch for exporting my_make_scrambled_password to fix
+    pure-ftpd FTBFS.
+  * Client commands in d/postinst will ignore custom config (LP:
+    #1567695)
+  * Enable changing root password on install if previous db had empty
+    (LP: #1567098)
+
+  [ Robie Basak ]
+  * d/mysql-server-5.7.postinst: quote "$rootpw" correctly.
+  * d/control: add libnuma-dev and libaio-dev to libmysqld-dev
+    dependencies, since these are required according to "mysql_config
+    --libmysqld-libs". This fixes FTBFS of packages that use
+    libmysqld-dev.
+
+ -- Robie Basak <robie.basak@ubuntu.com>  Wed, 13 Apr 2016 17:34:08 +0100
+
+mysql-5.7 (5.7.11-0ubuntu5) xenial; urgency=medium
+
+  * d/mysql-server-5.7.postinst: ignore mysql_upgrade's exit status when
+    it is one that includes the indication that there is nothing to do
+    (LP: #1566406).
+
+ -- Robie Basak <robie.basak@ubuntu.com>  Thu, 07 Apr 2016 11:58:28 +0100
+
+mysql-5.7 (5.7.11-0ubuntu4) xenial; urgency=medium
+
+  * d/p/allowemptyport.patch: update corresponding test.
+
+ -- Robie Basak <robie.basak@ubuntu.com>  Wed, 06 Apr 2016 12:48:52 +0100
+
+mysql-5.7 (5.7.11-0ubuntu3) xenial; urgency=medium
+
+  * Ubuntu upload from Debian VCS c17404a.
+  * FFe update to MySQL 5.7 (LP: #1528583).
+  * Revert "Build with libmecab-dev" since libmecab-dev is in universe.
+  * mysql-server-5.7: depend on apparmor (>= 2.10) for Trusty upgrade
+    path.
+
+ -- Robie Basak <robie.basak@ubuntu.com>  Wed, 16 Mar 2016 14:01:31 +0000
 
 mysql-5.6 (5.6.28-1) unstable; urgency=medium
 

@@ -201,8 +201,7 @@ Comment: These files fall under the blanket license specified in the file
  of which version of the GPL is applied is otherwise unspecified.
 License: GPL-2
 
-Files: .gitreview
- BUILD/*
+Files: BUILD/*
  Docs/*
  client/*
  client/echo.c

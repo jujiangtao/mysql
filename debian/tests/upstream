@@ -26,10 +26,6 @@ binlog.binlog_server_start_options : Requires writable /usr
 main.ctype_uca : Requires writable /usr
 main.mysql_plugin: Requires writable /usr
 rpl.rpl_gtid_mode : Requires starting server as root ref http://bugs.mysql.com/bug.php?id=70517
-main.ssl_ca : Test is breaking on sid, ref https://bugs.mysql.com/bug.php?id=90749
-main.type_float : Test is breaking on ppc64el. Ref https://bugs.mysql.com/bug.php?id=92375
-main.type_newdecimal : Test is breaking on ppc64el. https://bugs.mysql.com/bug.php?id=92375
-main.type_ranges : Test is breaking on ppc64el. https://bugs.mysql.com/bug.php?id=92375
 EOF
 
 cd /usr/lib/mysql-test
@@ -38,6 +34,6 @@ echo "starting mysql-test-run.pl..."
 # Pending upstream fix of mtr includes
 export PERLLIB=.
 ./mysql-test-run.pl --suite=main --vardir=$WORKDIR/var --tmpdir=$WORKDIR/tmp \
-    --skip-ndbcluster --parallel=auto --skip-rpl --report-features --client-bindir=/usr/lib/mysql-test/bin/ \
+    --skip-ndbcluster --parallel=auto --skip-rpl --report-features \
     --force --skip-test-list=$SKIP_TEST_LST --report-unstable-tests $@ 2>&1
 echo "run: OK"
