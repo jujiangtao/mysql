@@ -151,6 +151,9 @@ else
 	# Tests that are known to be unstable on all platforms are skipped
 	# http://bugs.mysql.com/bug.php?id=83340
 	echo "main.xa_prepared_binlog_off	: unstable test" >> $(builddir)/mysql-test/skiplist
+	echo "main.type_float			: fails on ppc64el. Ref https://bugs.mysql.com/bug.php?id=92375" >> $(builddir)/mysql-test/skiplist
+	echo "main.type_newdecimal		: Same as above" >> $(builddir)/mysql-test/skiplist
+	echo "main.type_ranges			: Same as above" >> $(builddir)/mysql-test/skiplist
 
 	# Skip replication tests since they are timing sensitive and may
 	# result in false positives.

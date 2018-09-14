@@ -27,6 +27,9 @@ main.ctype_uca : Requires writable /usr
 main.mysql_plugin: Requires writable /usr
 rpl.rpl_gtid_mode : Requires starting server as root ref http://bugs.mysql.com/bug.php?id=70517
 main.ssl_ca : Test is breaking on sid, ref https://bugs.mysql.com/bug.php?id=90749
+main.type_float : Test is breaking on ppc64el. Ref https://bugs.mysql.com/bug.php?id=92375
+main.type_newdecimal : Test is breaking on ppc64el. https://bugs.mysql.com/bug.php?id=92375
+main.type_ranges : Test is breaking on ppc64el. https://bugs.mysql.com/bug.php?id=92375
 EOF
 
 cd /usr/lib/mysql-test
