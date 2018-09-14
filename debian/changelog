@@ -1,3 +1,15 @@
+mysql-5.7 (5.7.23-2) unstable; urgency=medium
+
+  [ Robie Basak ]
+  * Drop dependency on bsdutils
+  * Update Vcs-* URLs to salsa following migration
+
+  [ Lars Tangvald ]
+  * d/tests: Disable tests failing on ppc64el
+  * d/patches: Fix failing tests on ppc64el
+
+ -- Robie Basak <robie.basak@ubuntu.com>  Fri, 14 Sep 2018 12:41:01 +0100
+
 mysql-5.7 (5.7.23-1) unstable; urgency=high (security fixes)
 
   * Imported upstream version 5.7.23 to fix security issues:
