@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2011, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -391,7 +391,8 @@ Field *create_tmp_field(THD *thd, TABLE *table,Item *item, Item::Type type,
                                        modify_item);
     break;
   case Item::TYPE_HOLDER:  
-    result= ((Item_type_holder *)item)->make_field_by_type(table);
+    result= ((Item_type_holder *)item)->make_field_by_type(table,
+                                                           thd->is_strict_mode());
     if (!result)
       break;
     result->set_derivation(item->collation.derivation);
@@ -461,7 +462,7 @@ void Cache_temp_engine_properties::init(THD *thd)
   db_plugin= ha_lock_engine(0, heap_hton);
   handler= get_new_handler((TABLE_SHARE *)0, thd->mem_root, heap_hton);
   HEAP_MAX_KEY_LENGTH= handler->max_key_length();
-  HEAP_MAX_KEY_PART_LENGTH= handler->max_key_part_length();
+  HEAP_MAX_KEY_PART_LENGTH= handler->max_key_part_length(0);
   HEAP_MAX_KEY_PARTS= handler->max_key_parts();
   delete handler;
   plugin_unlock(0, db_plugin);
@@ -469,7 +470,7 @@ void Cache_temp_engine_properties::init(THD *thd)
   db_plugin= ha_lock_engine(0, myisam_hton);
   handler= get_new_handler((TABLE_SHARE *)0, thd->mem_root, myisam_hton);
   MYISAM_MAX_KEY_LENGTH= handler->max_key_length();
-  MYISAM_MAX_KEY_PART_LENGTH= handler->max_key_part_length();
+  MYISAM_MAX_KEY_PART_LENGTH= handler->max_key_part_length(0);
   MYISAM_MAX_KEY_PARTS= handler->max_key_parts();
   delete handler;
   plugin_unlock(0, db_plugin);
@@ -664,6 +665,12 @@ create_tmp_table(THD *thd, Temp_table_param *param, List<Item> &fields,
   uint  temp_pool_slot=MY_BIT_NONE;
   uint fieldnr= 0;
   ulong reclength, string_total_length, distinct_key_length= 0;
+  /**
+    When true, enforces unique constraint (by adding a hidden hash_field and
+    creating a key over this field) when:
+    (1) unique key is too long or
+    (2) number of key parts in distinct key is too big.
+  */
   bool  using_unique_constraint= false;
   bool  use_packed_rows= false;
   bool  not_all_columns= !(select_options & TMP_TABLE_ALL_COLUMNS);
@@ -797,7 +804,7 @@ create_tmp_table(THD *thd, Temp_table_param *param, List<Item> &fields,
   my_stpcpy(tmpname,path);
   /* make table according to fields */
 
-  memset(table, 0, sizeof(*table));
+  new (table) TABLE;
   memset(reg_field, 0, sizeof(Field*)*(field_count + 2));
   memset(default_field, 0, sizeof(Field*) * (field_count + 1));
   memset(from_field, 0, sizeof(Field*)*(field_count + 1));
@@ -1005,7 +1012,7 @@ update_hidden:
     /*
       Calculate length of distinct key. The goal is to decide what to use -
       key or unique constraint. As blobs force unique constraint on their
-      own, they aren't taken into account.
+      own due to their length, they aren't taken into account.
     */
     if (distinct && !using_unique_constraint && hidden_field_count <= 0 &&
         new_field)
@@ -1636,7 +1643,7 @@ TABLE *create_duplicate_weedout_tmp_table(THD *thd,
   my_stpcpy(tmpname,path);
 
   /* STEP 4: Create TABLE description */
-  memset(table, 0, sizeof(*table));
+  new (table) TABLE;
   memset(reg_field, 0, sizeof(Field*) * 3);
 
   table->mem_root= own_root;
@@ -1955,8 +1962,8 @@ TABLE *create_virtual_tmp_table(THD *thd, List<Create_field> &field_list)
                         NullS))
     return 0;
 
-  memset(table, 0, sizeof(*table));
-  memset(share, 0, sizeof(*share));
+  new (table) TABLE;
+  new (share) TABLE_SHARE;
   table->field= field;
   table->s= share;
   table->temp_pool_slot= MY_BIT_NONE;
@@ -2235,8 +2242,6 @@ bool create_innodb_tmp_table(TABLE *table, KEY *keyinfo)
   DBUG_ENTER("create_innodb_tmp_table");
 
   HA_CREATE_INFO create_info;
-
-  memset(&create_info, 0, sizeof(create_info));
 
   create_info.db_type= table->s->db_type();
   create_info.row_type= table->s->row_type;

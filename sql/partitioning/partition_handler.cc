@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2005, 2017, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2005, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License
@@ -3051,7 +3051,7 @@ int Partition_helper::handle_unordered_next(uchar *buf, bool is_next_same)
                                    m_start_key.key,
                                    m_start_key.length);
   }
-  else if ((m_index_scan_type == PARTITION_READ_RANGE))
+  else if (m_index_scan_type == PARTITION_READ_RANGE)
   {
     DBUG_ASSERT(buf == m_table->record[0]);
     error= read_range_next_in_part(m_part_spec.start_part, NULL);
@@ -3530,20 +3530,20 @@ int Partition_helper::handle_ordered_next(uchar *buf, bool is_next_same)
   else
     read_buf= rec_buf;
 
-
-  if (m_index_scan_type == PARTITION_READ_RANGE)
-  {
-    error= read_range_next_in_part(part_id,
-                                   read_buf == m_table->record[0]
-                                     ? NULL : read_buf);
-  }
-  else if (!is_next_same)
-    error= index_next_in_part(part_id, read_buf);
-  else
-    error= index_next_same_in_part(part_id,
+  if (is_next_same) {
+    error = index_next_same_in_part(part_id,
                                    read_buf,
                                    m_start_key.key,
                                    m_start_key.length);
+  } else if (m_index_scan_type == PARTITION_READ_RANGE) {
+    error = read_range_next_in_part(part_id,
+                                   read_buf == m_table->record[0]
+                                     ? NULL : read_buf);
+  }
+  else {
+    error = index_next_in_part(part_id, read_buf);
+  }
+
   if (error)
   {
     if (error == HA_ERR_END_OF_FILE)

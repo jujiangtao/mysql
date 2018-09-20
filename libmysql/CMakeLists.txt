@@ -1,4 +1,4 @@
-# Copyright (c) 2006, 2017, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2006, 2018, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -188,6 +188,7 @@ SET(CLIENT_SOURCES
   ../sql/net_serv.cc
   ../sql-common/pack.c 
   ../sql/auth/password.c
+  ../sql/auth/sha2_password_common.cc
 )
 
 IF (WIN32 AND OPENSSL_APPLINK_C)
@@ -239,8 +240,21 @@ MERGE_CONVENIENCE_LIBRARIES(mysqlclient ${LIBS} COMPONENT Development)
 
 # Visual Studio users need debug  static library for debug projects
 IF(MSVC)
- INSTALL_DEBUG_TARGET(mysqlclient DESTINATION ${INSTALL_LIBDIR}/debug)
- INSTALL_DEBUG_TARGET(clientlib DESTINATION ${INSTALL_LIBDIR}/debug)
+  INSTALL_DEBUG_TARGET(mysqlclient DESTINATION ${INSTALL_LIBDIR}/debug)
+
+  INSTALL_DEBUG_TARGET(auth_win_client DESTINATION ${INSTALL_LIBDIR}/debug)
+  INSTALL_DEBUG_TARGET(clientlib DESTINATION ${INSTALL_LIBDIR}/debug)
+  INSTALL_DEBUG_TARGET(mysys DESTINATION ${INSTALL_LIBDIR}/debug)
+  INSTALL_DEBUG_TARGET(mysys_ssl DESTINATION ${INSTALL_LIBDIR}/debug)
+  INSTALL_DEBUG_TARGET(strings DESTINATION ${INSTALL_LIBDIR}/debug)
+  INSTALL_DEBUG_TARGET(vio DESTINATION ${INSTALL_LIBDIR}/debug)
+  IF(WITH_SSL STREQUAL "bundled")
+    INSTALL_DEBUG_TARGET(taocrypt DESTINATION ${INSTALL_LIBDIR}/debug)
+    INSTALL_DEBUG_TARGET(yassl DESTINATION ${INSTALL_LIBDIR}/debug)
+  ENDIF()
+  IF(WITH_ZLIB STREQUAL "bundled")
+    INSTALL_DEBUG_TARGET(zlib DESTINATION ${INSTALL_LIBDIR}/debug)
+  ENDIF()
 ENDIF()
 
 IF(UNIX)

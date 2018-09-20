@@ -1,4 +1,4 @@
-/* Copyright (c) 2006, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2006, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -18,6 +18,7 @@
 #include "my_dir.h"                // MY_STAT
 #include "log.h"                   // sql_print_error
 #include "log_event.h"             // Log_event
+#include "m_string.h"
 #include "rpl_group_replication.h" // set_group_replication_retrieved_certifi...
 #include "rpl_info_factory.h"      // Rpl_info_factory
 #include "rpl_mi.h"                // Master_info
@@ -270,15 +271,18 @@ void Relay_log_info::reset_notified_relay_log_change()
 
     New seconds_behind_master timestamp is installed.
 
-   @param shift          number of bits to shift by Worker due to the
-                         current checkpoint change.
-   @param new_ts         new seconds_behind_master timestamp value
-                         unless zero. Zero could be due to FD event
-                         or fake rotate event.
-   @param need_data_lock False if caller has locked @c data_lock
+   @param shift            number of bits to shift by Worker due to the
+                           current checkpoint change.
+   @param new_ts           new seconds_behind_master timestamp value
+                           unless zero. Zero could be due to FD event
+                           or fake rotate event.
+   @param need_data_lock   False if caller has locked @c data_lock
+   @param update_timestamp if true, this function will update the
+                           rli->last_master_timestamp.
 */
 void Relay_log_info::reset_notified_checkpoint(ulong shift, time_t new_ts,
-                                               bool need_data_lock)
+                                               bool need_data_lock,
+                                               bool update_timestamp)
 {
   /*
     If this is not a parallel execution we return immediately.
@@ -324,7 +328,7 @@ void Relay_log_info::reset_notified_checkpoint(ulong shift, time_t new_ts,
   DBUG_PRINT("mts", ("reset_notified_checkpoint shift --> %lu, "
              "checkpoint_seqno --> %u.", shift, checkpoint_seqno));
 
-  if (new_ts)
+  if (update_timestamp)
   {
     if (need_data_lock)
       mysql_mutex_lock(&data_lock);
@@ -688,7 +692,8 @@ void Relay_log_info::fill_coord_err_buf(loglevel level, int err_code,
   if(level == ERROR_LEVEL)
   {
     m_last_error.number = err_code;
-    strncpy(m_last_error.message, buff_coord, MAX_SLAVE_ERRMSG);
+    my_snprintf(m_last_error.message, sizeof(m_last_error.message), "%.*s",
+                MAX_SLAVE_ERRMSG - 1, buff_coord);
     m_last_error.update_timestamp();
   }
 
@@ -3021,4 +3026,15 @@ void Relay_log_info::detach_engine_ha_data(THD *thd)
     */
   plugin_foreach(thd, detach_native_trx,
                  MYSQL_STORAGE_ENGINE_PLUGIN, NULL);
+}
+
+void Relay_log_info::reattach_engine_ha_data(THD *thd)
+{
+  is_engine_ha_data_detached = false;
+  /*
+    In case of slave thread applier or processing binlog by client,
+    reattach the engine ha_data ("native" engine transaction)
+    in favor of dynamically created.
+  */
+  plugin_foreach(thd, reattach_native_trx, MYSQL_STORAGE_ENGINE_PLUGIN, NULL);
 }

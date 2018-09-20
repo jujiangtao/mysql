@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -1183,6 +1183,7 @@ THD::THD(bool enable_plugins)
   peer_port= 0;					// For SHOW PROCESSLIST
   get_transaction()->m_flags.enabled= true;
   active_vio = 0;
+  m_SSL = NULL;
   mysql_mutex_init(key_LOCK_thd_data, &LOCK_thd_data, MY_MUTEX_INIT_FAST);
   mysql_mutex_init(key_LOCK_thd_query, &LOCK_thd_query, MY_MUTEX_INIT_FAST);
   mysql_mutex_init(key_LOCK_thd_sysvar, &LOCK_thd_sysvar, MY_MUTEX_INIT_FAST);
@@ -1583,6 +1584,8 @@ void THD::init(void)
   owned_gtid.clear();
   owned_sid.clear();
   owned_gtid.dbug_print(NULL, "set owned_gtid (clear) in THD::init");
+
+  rpl_thd_ctx.dependency_tracker_ctx().set_last_session_sequence_number(0);
 }
 
 
@@ -2546,7 +2549,7 @@ int THD::send_explain_fields(Query_result *result)
 enum_vio_type THD::get_vio_type()
 {
 #ifndef EMBEDDED_LIBRARY
-  DBUG_ENTER("shutdown_active_vio");
+  DBUG_ENTER("THD::get_vio_type");
   DBUG_RETURN(get_protocol()->connection_type());
 #else
   return NO_VIO_TYPE;
@@ -2562,6 +2565,7 @@ void THD::shutdown_active_vio()
   {
     vio_shutdown(active_vio);
     active_vio = 0;
+    m_SSL = NULL;
   }
 #endif
   DBUG_VOID_RETURN;
@@ -4774,6 +4778,18 @@ void THD::rpl_detach_engine_ha_data()
 #endif
 };
 
+void THD::rpl_reattach_engine_ha_data()
+{
+#ifdef HAVE_REPLICATION
+  Relay_log_info *rli =
+      is_binlog_applier() ? rli_fake : (slave_thread ? rli_slave : NULL);
+
+  DBUG_ASSERT(!rli_fake || !rli_fake->is_engine_ha_data_detached);
+  DBUG_ASSERT(!rli_slave || !rli_slave->is_engine_ha_data_detached);
+
+  if (rli) rli->reattach_engine_ha_data(this);
+#endif
+}
 
 bool THD::rpl_unflag_detached_engine_ha_data()
 {

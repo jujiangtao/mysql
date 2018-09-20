@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -31,6 +31,13 @@
 #include "sha2.h"
 
 #include "item_strfunc.h"
+
+#ifdef HAVE_UNISTD_H
+#include <unistd.h>
+#endif
+#ifdef HAVE_CRYPT_H
+#include <crypt.h>
+#endif
 
 #include "base64.h"                  // base64_encode_max_arg_length
 #include "my_aes.h"                  // MY_AES_IV_SIZE
@@ -3179,14 +3186,15 @@ String *Item_func_format::val_str_ascii(String *str)
       str_length >= dec_length + 1 + lc->grouping[0])
   {
     /* We need space for ',' between each group of digits as well. */
-    char buf[2 * FLOATING_POINT_BUFFER];
+    char buf[2 * FLOATING_POINT_BUFFER + 2] = {0};
     int count;
     const char *grouping= lc->grouping;
     char sign_length= *str->ptr() == '-' ? 1 : 0;
     const char *src= str->ptr() + str_length - dec_length - 1;
     const char *src_begin= str->ptr() + sign_length;
-    char *dst= buf + sizeof(buf);
-    
+    char *dst= buf + 2 * FLOATING_POINT_BUFFER;
+    char *start_dst = dst;
+
     /* Put the fractional part */
     if (dec)
     {
@@ -3218,7 +3226,8 @@ String *Item_func_format::val_str_ascii(String *str)
       *--dst= *str->ptr();
     
     /* Put the rest of the integer part without grouping */
-    str->copy(dst, buf + sizeof(buf) - dst, &my_charset_latin1);
+    size_t result_length = start_dst - dst;
+    str->copy(dst, result_length, &my_charset_latin1);
   }
   else if (dec_length && lc->decimal_point != '.')
   {

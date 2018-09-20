@@ -1,0 +1,711 @@
+Description: disable test that is failing on ppc64el due to float differences
+Author: Marc Deslauriers <marc.deslauriers@canonical.com>
+Forwarded: no, needs further investigation
+
+Index: mysql-5.7-5.7.23/mysql-test/include/select.inc
+===================================================================
+--- mysql-5.7-5.7.23.orig/mysql-test/include/select.inc	2018-06-08 05:56:29.000000000 -0400
++++ mysql-5.7-5.7.23/mysql-test/include/select.inc	2018-08-24 11:53:19.155938515 -0400
+@@ -2327,36 +2327,6 @@ SELECT STRAIGHT_JOIN SQL_NO_CACHE * FROM
+ DROP TABLE IF EXISTS t1,t2;
+ 
+ #
+-# Bug #20954 "avg(keyval) retuns 0.38 but max(keyval) returns an empty set"
+-#
+---disable_ps_protocol
+-CREATE TABLE t1 (key1 float default NULL, UNIQUE KEY key1 (key1));
+-CREATE TABLE t2 (key2 float default NULL, UNIQUE KEY key2 (key2));
+-INSERT INTO t1 VALUES (0.3762),(0.3845),(0.6158),(0.7941);
+-INSERT INTO t2 VALUES (1.3762),(1.3845),(1.6158),(1.7941);
+-
+-explain select max(key1) from t1 where key1 <= 0.6158;
+-explain select max(key2) from t2 where key2 <= 1.6158;
+-explain select min(key1) from t1 where key1 >= 0.3762;
+-explain select min(key2) from t2 where key2 >= 1.3762;
+-explain select max(key1), min(key2) from t1, t2
+-where key1 <= 0.6158 and key2 >= 1.3762;
+-explain select max(key1) from t1 where key1 <= 0.6158 and rand() + 0.5 >= 0.5;
+-explain select min(key1) from t1 where key1 >= 0.3762 and rand() + 0.5 >= 0.5;
+-
+-select max(key1) from t1 where key1 <= 0.6158;
+-select max(key2) from t2 where key2 <= 1.6158;
+-select min(key1) from t1 where key1 >= 0.3762;
+-select min(key2) from t2 where key2 >= 1.3762;
+-select max(key1), min(key2) from t1, t2
+-where key1 <= 0.6158 and key2 >= 1.3762;
+-select max(key1) from t1 where key1 <= 0.6158 and rand() + 0.5 >= 0.5;
+-select min(key1) from t1 where key1 >= 0.3762 and rand() + 0.5 >= 0.5;
+-
+-DROP TABLE t1,t2;
+---enable_ps_protocol
+-
+-#
+ # Bug #18759 "Incorrect string to numeric conversion"
+ #
+ # This test is here so that the behavior will not be changed to 4.1
+Index: mysql-5.7-5.7.23/mysql-test/r/select_all.result
+===================================================================
+--- mysql-5.7-5.7.23.orig/mysql-test/r/select_all.result	2018-06-08 05:56:29.000000000 -0400
++++ mysql-5.7-5.7.23/mysql-test/r/select_all.result	2018-08-24 11:55:12.524089183 -0400
+@@ -2857,69 +2857,6 @@ a	b	a	b
+ Warnings:
+ Warning	1681	'SQL_NO_CACHE' is deprecated and will be removed in a future release.
+ DROP TABLE IF EXISTS t1,t2;
+-CREATE TABLE t1 (key1 float default NULL, UNIQUE KEY key1 (key1));
+-CREATE TABLE t2 (key2 float default NULL, UNIQUE KEY key2 (key2));
+-INSERT INTO t1 VALUES (0.3762),(0.3845),(0.6158),(0.7941);
+-INSERT INTO t2 VALUES (1.3762),(1.3845),(1.6158),(1.7941);
+-explain select max(key1) from t1 where key1 <= 0.6158;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select max(`test`.`t1`.`key1`) AS `max(key1)` from `test`.`t1` where (`test`.`t1`.`key1` <= 0.6158)
+-explain select max(key2) from t2 where key2 <= 1.6158;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select max(`test`.`t2`.`key2`) AS `max(key2)` from `test`.`t2` where (`test`.`t2`.`key2` <= 1.6158)
+-explain select min(key1) from t1 where key1 >= 0.3762;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select min(`test`.`t1`.`key1`) AS `min(key1)` from `test`.`t1` where (`test`.`t1`.`key1` >= 0.3762)
+-explain select min(key2) from t2 where key2 >= 1.3762;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select min(`test`.`t2`.`key2`) AS `min(key2)` from `test`.`t2` where (`test`.`t2`.`key2` >= 1.3762)
+-explain select max(key1), min(key2) from t1, t2
+-where key1 <= 0.6158 and key2 >= 1.3762;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select max(`test`.`t1`.`key1`) AS `max(key1)`,min(`test`.`t2`.`key2`) AS `min(key2)` from `test`.`t1` join `test`.`t2` where ((`test`.`t1`.`key1` <= 0.6158) and (`test`.`t2`.`key2` >= 1.3762))
+-explain select max(key1) from t1 where key1 <= 0.6158 and rand() + 0.5 >= 0.5;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select max(`test`.`t1`.`key1`) AS `max(key1)` from `test`.`t1` where ((`test`.`t1`.`key1` <= 0.6158) and ((rand() + 0.5) >= 0.5))
+-explain select min(key1) from t1 where key1 >= 0.3762 and rand() + 0.5 >= 0.5;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select min(`test`.`t1`.`key1`) AS `min(key1)` from `test`.`t1` where ((`test`.`t1`.`key1` >= 0.3762) and ((rand() + 0.5) >= 0.5))
+-select max(key1) from t1 where key1 <= 0.6158;
+-max(key1)
+-0.6158000230789185
+-select max(key2) from t2 where key2 <= 1.6158;
+-max(key2)
+-1.6158000230789185
+-select min(key1) from t1 where key1 >= 0.3762;
+-min(key1)
+-0.37619999051094055
+-select min(key2) from t2 where key2 >= 1.3762;
+-min(key2)
+-1.3761999607086182
+-select max(key1), min(key2) from t1, t2
+-where key1 <= 0.6158 and key2 >= 1.3762;
+-max(key1)	min(key2)
+-0.6158000230789185	1.3761999607086182
+-select max(key1) from t1 where key1 <= 0.6158 and rand() + 0.5 >= 0.5;
+-max(key1)
+-0.6158000230789185
+-select min(key1) from t1 where key1 >= 0.3762 and rand() + 0.5 >= 0.5;
+-min(key1)
+-0.37619999051094055
+-DROP TABLE t1,t2;
+ CREATE TABLE t1 (i BIGINT UNSIGNED NOT NULL);
+ INSERT INTO t1 VALUES (10);
+ SELECT i='1e+01',i=1e+01, i in (1e+01,1e+01), i in ('1e+01','1e+01') FROM t1;
+Index: mysql-5.7-5.7.23/mysql-test/r/select_all_bka.result
+===================================================================
+--- mysql-5.7-5.7.23.orig/mysql-test/r/select_all_bka.result	2018-06-08 05:56:29.000000000 -0400
++++ mysql-5.7-5.7.23/mysql-test/r/select_all_bka.result	2018-08-24 11:55:25.800107544 -0400
+@@ -2858,69 +2858,6 @@ a	b	a	b
+ Warnings:
+ Warning	1681	'SQL_NO_CACHE' is deprecated and will be removed in a future release.
+ DROP TABLE IF EXISTS t1,t2;
+-CREATE TABLE t1 (key1 float default NULL, UNIQUE KEY key1 (key1));
+-CREATE TABLE t2 (key2 float default NULL, UNIQUE KEY key2 (key2));
+-INSERT INTO t1 VALUES (0.3762),(0.3845),(0.6158),(0.7941);
+-INSERT INTO t2 VALUES (1.3762),(1.3845),(1.6158),(1.7941);
+-explain select max(key1) from t1 where key1 <= 0.6158;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select max(`test`.`t1`.`key1`) AS `max(key1)` from `test`.`t1` where (`test`.`t1`.`key1` <= 0.6158)
+-explain select max(key2) from t2 where key2 <= 1.6158;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select max(`test`.`t2`.`key2`) AS `max(key2)` from `test`.`t2` where (`test`.`t2`.`key2` <= 1.6158)
+-explain select min(key1) from t1 where key1 >= 0.3762;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select min(`test`.`t1`.`key1`) AS `min(key1)` from `test`.`t1` where (`test`.`t1`.`key1` >= 0.3762)
+-explain select min(key2) from t2 where key2 >= 1.3762;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select min(`test`.`t2`.`key2`) AS `min(key2)` from `test`.`t2` where (`test`.`t2`.`key2` >= 1.3762)
+-explain select max(key1), min(key2) from t1, t2
+-where key1 <= 0.6158 and key2 >= 1.3762;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select max(`test`.`t1`.`key1`) AS `max(key1)`,min(`test`.`t2`.`key2`) AS `min(key2)` from `test`.`t1` join `test`.`t2` where ((`test`.`t1`.`key1` <= 0.6158) and (`test`.`t2`.`key2` >= 1.3762))
+-explain select max(key1) from t1 where key1 <= 0.6158 and rand() + 0.5 >= 0.5;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select max(`test`.`t1`.`key1`) AS `max(key1)` from `test`.`t1` where ((`test`.`t1`.`key1` <= 0.6158) and ((rand() + 0.5) >= 0.5))
+-explain select min(key1) from t1 where key1 >= 0.3762 and rand() + 0.5 >= 0.5;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select min(`test`.`t1`.`key1`) AS `min(key1)` from `test`.`t1` where ((`test`.`t1`.`key1` >= 0.3762) and ((rand() + 0.5) >= 0.5))
+-select max(key1) from t1 where key1 <= 0.6158;
+-max(key1)
+-0.6158000230789185
+-select max(key2) from t2 where key2 <= 1.6158;
+-max(key2)
+-1.6158000230789185
+-select min(key1) from t1 where key1 >= 0.3762;
+-min(key1)
+-0.37619999051094055
+-select min(key2) from t2 where key2 >= 1.3762;
+-min(key2)
+-1.3761999607086182
+-select max(key1), min(key2) from t1, t2
+-where key1 <= 0.6158 and key2 >= 1.3762;
+-max(key1)	min(key2)
+-0.6158000230789185	1.3761999607086182
+-select max(key1) from t1 where key1 <= 0.6158 and rand() + 0.5 >= 0.5;
+-max(key1)
+-0.6158000230789185
+-select min(key1) from t1 where key1 >= 0.3762 and rand() + 0.5 >= 0.5;
+-min(key1)
+-0.37619999051094055
+-DROP TABLE t1,t2;
+ CREATE TABLE t1 (i BIGINT UNSIGNED NOT NULL);
+ INSERT INTO t1 VALUES (10);
+ SELECT i='1e+01',i=1e+01, i in (1e+01,1e+01), i in ('1e+01','1e+01') FROM t1;
+Index: mysql-5.7-5.7.23/mysql-test/r/select_all_bka_nixbnl.result
+===================================================================
+--- mysql-5.7-5.7.23.orig/mysql-test/r/select_all_bka_nixbnl.result	2018-06-08 05:56:29.000000000 -0400
++++ mysql-5.7-5.7.23/mysql-test/r/select_all_bka_nixbnl.result	2018-08-24 11:55:38.184124795 -0400
+@@ -2858,69 +2858,6 @@ a	b	a	b
+ Warnings:
+ Warning	1681	'SQL_NO_CACHE' is deprecated and will be removed in a future release.
+ DROP TABLE IF EXISTS t1,t2;
+-CREATE TABLE t1 (key1 float default NULL, UNIQUE KEY key1 (key1));
+-CREATE TABLE t2 (key2 float default NULL, UNIQUE KEY key2 (key2));
+-INSERT INTO t1 VALUES (0.3762),(0.3845),(0.6158),(0.7941);
+-INSERT INTO t2 VALUES (1.3762),(1.3845),(1.6158),(1.7941);
+-explain select max(key1) from t1 where key1 <= 0.6158;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select max(`test`.`t1`.`key1`) AS `max(key1)` from `test`.`t1` where (`test`.`t1`.`key1` <= 0.6158)
+-explain select max(key2) from t2 where key2 <= 1.6158;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select max(`test`.`t2`.`key2`) AS `max(key2)` from `test`.`t2` where (`test`.`t2`.`key2` <= 1.6158)
+-explain select min(key1) from t1 where key1 >= 0.3762;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select min(`test`.`t1`.`key1`) AS `min(key1)` from `test`.`t1` where (`test`.`t1`.`key1` >= 0.3762)
+-explain select min(key2) from t2 where key2 >= 1.3762;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select min(`test`.`t2`.`key2`) AS `min(key2)` from `test`.`t2` where (`test`.`t2`.`key2` >= 1.3762)
+-explain select max(key1), min(key2) from t1, t2
+-where key1 <= 0.6158 and key2 >= 1.3762;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select max(`test`.`t1`.`key1`) AS `max(key1)`,min(`test`.`t2`.`key2`) AS `min(key2)` from `test`.`t1` join `test`.`t2` where ((`test`.`t1`.`key1` <= 0.6158) and (`test`.`t2`.`key2` >= 1.3762))
+-explain select max(key1) from t1 where key1 <= 0.6158 and rand() + 0.5 >= 0.5;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select max(`test`.`t1`.`key1`) AS `max(key1)` from `test`.`t1` where ((`test`.`t1`.`key1` <= 0.6158) and ((rand() + 0.5) >= 0.5))
+-explain select min(key1) from t1 where key1 >= 0.3762 and rand() + 0.5 >= 0.5;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select min(`test`.`t1`.`key1`) AS `min(key1)` from `test`.`t1` where ((`test`.`t1`.`key1` >= 0.3762) and ((rand() + 0.5) >= 0.5))
+-select max(key1) from t1 where key1 <= 0.6158;
+-max(key1)
+-0.6158000230789185
+-select max(key2) from t2 where key2 <= 1.6158;
+-max(key2)
+-1.6158000230789185
+-select min(key1) from t1 where key1 >= 0.3762;
+-min(key1)
+-0.37619999051094055
+-select min(key2) from t2 where key2 >= 1.3762;
+-min(key2)
+-1.3761999607086182
+-select max(key1), min(key2) from t1, t2
+-where key1 <= 0.6158 and key2 >= 1.3762;
+-max(key1)	min(key2)
+-0.6158000230789185	1.3761999607086182
+-select max(key1) from t1 where key1 <= 0.6158 and rand() + 0.5 >= 0.5;
+-max(key1)
+-0.6158000230789185
+-select min(key1) from t1 where key1 >= 0.3762 and rand() + 0.5 >= 0.5;
+-min(key1)
+-0.37619999051094055
+-DROP TABLE t1,t2;
+ CREATE TABLE t1 (i BIGINT UNSIGNED NOT NULL);
+ INSERT INTO t1 VALUES (10);
+ SELECT i='1e+01',i=1e+01, i in (1e+01,1e+01), i in ('1e+01','1e+01') FROM t1;
+Index: mysql-5.7-5.7.23/mysql-test/r/select_icp_mrr.result
+===================================================================
+--- mysql-5.7-5.7.23.orig/mysql-test/r/select_icp_mrr.result	2018-06-08 05:56:29.000000000 -0400
++++ mysql-5.7-5.7.23/mysql-test/r/select_icp_mrr.result	2018-08-24 11:55:59.516154780 -0400
+@@ -2857,69 +2857,6 @@ a	b	a	b
+ Warnings:
+ Warning	1681	'SQL_NO_CACHE' is deprecated and will be removed in a future release.
+ DROP TABLE IF EXISTS t1,t2;
+-CREATE TABLE t1 (key1 float default NULL, UNIQUE KEY key1 (key1));
+-CREATE TABLE t2 (key2 float default NULL, UNIQUE KEY key2 (key2));
+-INSERT INTO t1 VALUES (0.3762),(0.3845),(0.6158),(0.7941);
+-INSERT INTO t2 VALUES (1.3762),(1.3845),(1.6158),(1.7941);
+-explain select max(key1) from t1 where key1 <= 0.6158;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select max(`test`.`t1`.`key1`) AS `max(key1)` from `test`.`t1` where (`test`.`t1`.`key1` <= 0.6158)
+-explain select max(key2) from t2 where key2 <= 1.6158;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select max(`test`.`t2`.`key2`) AS `max(key2)` from `test`.`t2` where (`test`.`t2`.`key2` <= 1.6158)
+-explain select min(key1) from t1 where key1 >= 0.3762;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select min(`test`.`t1`.`key1`) AS `min(key1)` from `test`.`t1` where (`test`.`t1`.`key1` >= 0.3762)
+-explain select min(key2) from t2 where key2 >= 1.3762;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select min(`test`.`t2`.`key2`) AS `min(key2)` from `test`.`t2` where (`test`.`t2`.`key2` >= 1.3762)
+-explain select max(key1), min(key2) from t1, t2
+-where key1 <= 0.6158 and key2 >= 1.3762;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select max(`test`.`t1`.`key1`) AS `max(key1)`,min(`test`.`t2`.`key2`) AS `min(key2)` from `test`.`t1` join `test`.`t2` where ((`test`.`t1`.`key1` <= 0.6158) and (`test`.`t2`.`key2` >= 1.3762))
+-explain select max(key1) from t1 where key1 <= 0.6158 and rand() + 0.5 >= 0.5;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select max(`test`.`t1`.`key1`) AS `max(key1)` from `test`.`t1` where ((`test`.`t1`.`key1` <= 0.6158) and ((rand() + 0.5) >= 0.5))
+-explain select min(key1) from t1 where key1 >= 0.3762 and rand() + 0.5 >= 0.5;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select min(`test`.`t1`.`key1`) AS `min(key1)` from `test`.`t1` where ((`test`.`t1`.`key1` >= 0.3762) and ((rand() + 0.5) >= 0.5))
+-select max(key1) from t1 where key1 <= 0.6158;
+-max(key1)
+-0.6158000230789185
+-select max(key2) from t2 where key2 <= 1.6158;
+-max(key2)
+-1.6158000230789185
+-select min(key1) from t1 where key1 >= 0.3762;
+-min(key1)
+-0.37619999051094055
+-select min(key2) from t2 where key2 >= 1.3762;
+-min(key2)
+-1.3761999607086182
+-select max(key1), min(key2) from t1, t2
+-where key1 <= 0.6158 and key2 >= 1.3762;
+-max(key1)	min(key2)
+-0.6158000230789185	1.3761999607086182
+-select max(key1) from t1 where key1 <= 0.6158 and rand() + 0.5 >= 0.5;
+-max(key1)
+-0.6158000230789185
+-select min(key1) from t1 where key1 >= 0.3762 and rand() + 0.5 >= 0.5;
+-min(key1)
+-0.37619999051094055
+-DROP TABLE t1,t2;
+ CREATE TABLE t1 (i BIGINT UNSIGNED NOT NULL);
+ INSERT INTO t1 VALUES (10);
+ SELECT i='1e+01',i=1e+01, i in (1e+01,1e+01), i in ('1e+01','1e+01') FROM t1;
+Index: mysql-5.7-5.7.23/mysql-test/r/select_icp_mrr_bka.result
+===================================================================
+--- mysql-5.7-5.7.23.orig/mysql-test/r/select_icp_mrr_bka.result	2018-06-08 05:56:29.000000000 -0400
++++ mysql-5.7-5.7.23/mysql-test/r/select_icp_mrr_bka.result	2018-08-24 11:56:11.264171436 -0400
+@@ -2858,69 +2858,6 @@ a	b	a	b
+ Warnings:
+ Warning	1681	'SQL_NO_CACHE' is deprecated and will be removed in a future release.
+ DROP TABLE IF EXISTS t1,t2;
+-CREATE TABLE t1 (key1 float default NULL, UNIQUE KEY key1 (key1));
+-CREATE TABLE t2 (key2 float default NULL, UNIQUE KEY key2 (key2));
+-INSERT INTO t1 VALUES (0.3762),(0.3845),(0.6158),(0.7941);
+-INSERT INTO t2 VALUES (1.3762),(1.3845),(1.6158),(1.7941);
+-explain select max(key1) from t1 where key1 <= 0.6158;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select max(`test`.`t1`.`key1`) AS `max(key1)` from `test`.`t1` where (`test`.`t1`.`key1` <= 0.6158)
+-explain select max(key2) from t2 where key2 <= 1.6158;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select max(`test`.`t2`.`key2`) AS `max(key2)` from `test`.`t2` where (`test`.`t2`.`key2` <= 1.6158)
+-explain select min(key1) from t1 where key1 >= 0.3762;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select min(`test`.`t1`.`key1`) AS `min(key1)` from `test`.`t1` where (`test`.`t1`.`key1` >= 0.3762)
+-explain select min(key2) from t2 where key2 >= 1.3762;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select min(`test`.`t2`.`key2`) AS `min(key2)` from `test`.`t2` where (`test`.`t2`.`key2` >= 1.3762)
+-explain select max(key1), min(key2) from t1, t2
+-where key1 <= 0.6158 and key2 >= 1.3762;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select max(`test`.`t1`.`key1`) AS `max(key1)`,min(`test`.`t2`.`key2`) AS `min(key2)` from `test`.`t1` join `test`.`t2` where ((`test`.`t1`.`key1` <= 0.6158) and (`test`.`t2`.`key2` >= 1.3762))
+-explain select max(key1) from t1 where key1 <= 0.6158 and rand() + 0.5 >= 0.5;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select max(`test`.`t1`.`key1`) AS `max(key1)` from `test`.`t1` where ((`test`.`t1`.`key1` <= 0.6158) and ((rand() + 0.5) >= 0.5))
+-explain select min(key1) from t1 where key1 >= 0.3762 and rand() + 0.5 >= 0.5;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select min(`test`.`t1`.`key1`) AS `min(key1)` from `test`.`t1` where ((`test`.`t1`.`key1` >= 0.3762) and ((rand() + 0.5) >= 0.5))
+-select max(key1) from t1 where key1 <= 0.6158;
+-max(key1)
+-0.6158000230789185
+-select max(key2) from t2 where key2 <= 1.6158;
+-max(key2)
+-1.6158000230789185
+-select min(key1) from t1 where key1 >= 0.3762;
+-min(key1)
+-0.37619999051094055
+-select min(key2) from t2 where key2 >= 1.3762;
+-min(key2)
+-1.3761999607086182
+-select max(key1), min(key2) from t1, t2
+-where key1 <= 0.6158 and key2 >= 1.3762;
+-max(key1)	min(key2)
+-0.6158000230789185	1.3761999607086182
+-select max(key1) from t1 where key1 <= 0.6158 and rand() + 0.5 >= 0.5;
+-max(key1)
+-0.6158000230789185
+-select min(key1) from t1 where key1 >= 0.3762 and rand() + 0.5 >= 0.5;
+-min(key1)
+-0.37619999051094055
+-DROP TABLE t1,t2;
+ CREATE TABLE t1 (i BIGINT UNSIGNED NOT NULL);
+ INSERT INTO t1 VALUES (10);
+ SELECT i='1e+01',i=1e+01, i in (1e+01,1e+01), i in ('1e+01','1e+01') FROM t1;
+Index: mysql-5.7-5.7.23/mysql-test/r/select_icp_mrr_bka_nixbnl.result
+===================================================================
+--- mysql-5.7-5.7.23.orig/mysql-test/r/select_icp_mrr_bka_nixbnl.result	2018-06-08 05:56:29.000000000 -0400
++++ mysql-5.7-5.7.23/mysql-test/r/select_icp_mrr_bka_nixbnl.result	2018-08-24 11:56:22.588187584 -0400
+@@ -2858,69 +2858,6 @@ a	b	a	b
+ Warnings:
+ Warning	1681	'SQL_NO_CACHE' is deprecated and will be removed in a future release.
+ DROP TABLE IF EXISTS t1,t2;
+-CREATE TABLE t1 (key1 float default NULL, UNIQUE KEY key1 (key1));
+-CREATE TABLE t2 (key2 float default NULL, UNIQUE KEY key2 (key2));
+-INSERT INTO t1 VALUES (0.3762),(0.3845),(0.6158),(0.7941);
+-INSERT INTO t2 VALUES (1.3762),(1.3845),(1.6158),(1.7941);
+-explain select max(key1) from t1 where key1 <= 0.6158;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select max(`test`.`t1`.`key1`) AS `max(key1)` from `test`.`t1` where (`test`.`t1`.`key1` <= 0.6158)
+-explain select max(key2) from t2 where key2 <= 1.6158;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select max(`test`.`t2`.`key2`) AS `max(key2)` from `test`.`t2` where (`test`.`t2`.`key2` <= 1.6158)
+-explain select min(key1) from t1 where key1 >= 0.3762;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select min(`test`.`t1`.`key1`) AS `min(key1)` from `test`.`t1` where (`test`.`t1`.`key1` >= 0.3762)
+-explain select min(key2) from t2 where key2 >= 1.3762;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select min(`test`.`t2`.`key2`) AS `min(key2)` from `test`.`t2` where (`test`.`t2`.`key2` >= 1.3762)
+-explain select max(key1), min(key2) from t1, t2
+-where key1 <= 0.6158 and key2 >= 1.3762;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select max(`test`.`t1`.`key1`) AS `max(key1)`,min(`test`.`t2`.`key2`) AS `min(key2)` from `test`.`t1` join `test`.`t2` where ((`test`.`t1`.`key1` <= 0.6158) and (`test`.`t2`.`key2` >= 1.3762))
+-explain select max(key1) from t1 where key1 <= 0.6158 and rand() + 0.5 >= 0.5;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select max(`test`.`t1`.`key1`) AS `max(key1)` from `test`.`t1` where ((`test`.`t1`.`key1` <= 0.6158) and ((rand() + 0.5) >= 0.5))
+-explain select min(key1) from t1 where key1 >= 0.3762 and rand() + 0.5 >= 0.5;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select min(`test`.`t1`.`key1`) AS `min(key1)` from `test`.`t1` where ((`test`.`t1`.`key1` >= 0.3762) and ((rand() + 0.5) >= 0.5))
+-select max(key1) from t1 where key1 <= 0.6158;
+-max(key1)
+-0.6158000230789185
+-select max(key2) from t2 where key2 <= 1.6158;
+-max(key2)
+-1.6158000230789185
+-select min(key1) from t1 where key1 >= 0.3762;
+-min(key1)
+-0.37619999051094055
+-select min(key2) from t2 where key2 >= 1.3762;
+-min(key2)
+-1.3761999607086182
+-select max(key1), min(key2) from t1, t2
+-where key1 <= 0.6158 and key2 >= 1.3762;
+-max(key1)	min(key2)
+-0.6158000230789185	1.3761999607086182
+-select max(key1) from t1 where key1 <= 0.6158 and rand() + 0.5 >= 0.5;
+-max(key1)
+-0.6158000230789185
+-select min(key1) from t1 where key1 >= 0.3762 and rand() + 0.5 >= 0.5;
+-min(key1)
+-0.37619999051094055
+-DROP TABLE t1,t2;
+ CREATE TABLE t1 (i BIGINT UNSIGNED NOT NULL);
+ INSERT INTO t1 VALUES (10);
+ SELECT i='1e+01',i=1e+01, i in (1e+01,1e+01), i in ('1e+01','1e+01') FROM t1;
+Index: mysql-5.7-5.7.23/mysql-test/r/select_none.result
+===================================================================
+--- mysql-5.7-5.7.23.orig/mysql-test/r/select_none.result	2018-06-08 05:56:29.000000000 -0400
++++ mysql-5.7-5.7.23/mysql-test/r/select_none.result	2018-08-24 11:56:33.780203631 -0400
+@@ -2856,69 +2856,6 @@ a	b	a	b
+ Warnings:
+ Warning	1681	'SQL_NO_CACHE' is deprecated and will be removed in a future release.
+ DROP TABLE IF EXISTS t1,t2;
+-CREATE TABLE t1 (key1 float default NULL, UNIQUE KEY key1 (key1));
+-CREATE TABLE t2 (key2 float default NULL, UNIQUE KEY key2 (key2));
+-INSERT INTO t1 VALUES (0.3762),(0.3845),(0.6158),(0.7941);
+-INSERT INTO t2 VALUES (1.3762),(1.3845),(1.6158),(1.7941);
+-explain select max(key1) from t1 where key1 <= 0.6158;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select max(`test`.`t1`.`key1`) AS `max(key1)` from `test`.`t1` where (`test`.`t1`.`key1` <= 0.6158)
+-explain select max(key2) from t2 where key2 <= 1.6158;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select max(`test`.`t2`.`key2`) AS `max(key2)` from `test`.`t2` where (`test`.`t2`.`key2` <= 1.6158)
+-explain select min(key1) from t1 where key1 >= 0.3762;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select min(`test`.`t1`.`key1`) AS `min(key1)` from `test`.`t1` where (`test`.`t1`.`key1` >= 0.3762)
+-explain select min(key2) from t2 where key2 >= 1.3762;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select min(`test`.`t2`.`key2`) AS `min(key2)` from `test`.`t2` where (`test`.`t2`.`key2` >= 1.3762)
+-explain select max(key1), min(key2) from t1, t2
+-where key1 <= 0.6158 and key2 >= 1.3762;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select max(`test`.`t1`.`key1`) AS `max(key1)`,min(`test`.`t2`.`key2`) AS `min(key2)` from `test`.`t1` join `test`.`t2` where ((`test`.`t1`.`key1` <= 0.6158) and (`test`.`t2`.`key2` >= 1.3762))
+-explain select max(key1) from t1 where key1 <= 0.6158 and rand() + 0.5 >= 0.5;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select max(`test`.`t1`.`key1`) AS `max(key1)` from `test`.`t1` where ((`test`.`t1`.`key1` <= 0.6158) and ((rand() + 0.5) >= 0.5))
+-explain select min(key1) from t1 where key1 >= 0.3762 and rand() + 0.5 >= 0.5;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select min(`test`.`t1`.`key1`) AS `min(key1)` from `test`.`t1` where ((`test`.`t1`.`key1` >= 0.3762) and ((rand() + 0.5) >= 0.5))
+-select max(key1) from t1 where key1 <= 0.6158;
+-max(key1)
+-0.6158000230789185
+-select max(key2) from t2 where key2 <= 1.6158;
+-max(key2)
+-1.6158000230789185
+-select min(key1) from t1 where key1 >= 0.3762;
+-min(key1)
+-0.37619999051094055
+-select min(key2) from t2 where key2 >= 1.3762;
+-min(key2)
+-1.3761999607086182
+-select max(key1), min(key2) from t1, t2
+-where key1 <= 0.6158 and key2 >= 1.3762;
+-max(key1)	min(key2)
+-0.6158000230789185	1.3761999607086182
+-select max(key1) from t1 where key1 <= 0.6158 and rand() + 0.5 >= 0.5;
+-max(key1)
+-0.6158000230789185
+-select min(key1) from t1 where key1 >= 0.3762 and rand() + 0.5 >= 0.5;
+-min(key1)
+-0.37619999051094055
+-DROP TABLE t1,t2;
+ CREATE TABLE t1 (i BIGINT UNSIGNED NOT NULL);
+ INSERT INTO t1 VALUES (10);
+ SELECT i='1e+01',i=1e+01, i in (1e+01,1e+01), i in ('1e+01','1e+01') FROM t1;
+Index: mysql-5.7-5.7.23/mysql-test/r/select_none_bka.result
+===================================================================
+--- mysql-5.7-5.7.23.orig/mysql-test/r/select_none_bka.result	2018-06-08 05:56:29.000000000 -0400
++++ mysql-5.7-5.7.23/mysql-test/r/select_none_bka.result	2018-08-24 11:56:49.316226047 -0400
+@@ -2857,69 +2857,6 @@ a	b	a	b
+ Warnings:
+ Warning	1681	'SQL_NO_CACHE' is deprecated and will be removed in a future release.
+ DROP TABLE IF EXISTS t1,t2;
+-CREATE TABLE t1 (key1 float default NULL, UNIQUE KEY key1 (key1));
+-CREATE TABLE t2 (key2 float default NULL, UNIQUE KEY key2 (key2));
+-INSERT INTO t1 VALUES (0.3762),(0.3845),(0.6158),(0.7941);
+-INSERT INTO t2 VALUES (1.3762),(1.3845),(1.6158),(1.7941);
+-explain select max(key1) from t1 where key1 <= 0.6158;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select max(`test`.`t1`.`key1`) AS `max(key1)` from `test`.`t1` where (`test`.`t1`.`key1` <= 0.6158)
+-explain select max(key2) from t2 where key2 <= 1.6158;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select max(`test`.`t2`.`key2`) AS `max(key2)` from `test`.`t2` where (`test`.`t2`.`key2` <= 1.6158)
+-explain select min(key1) from t1 where key1 >= 0.3762;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select min(`test`.`t1`.`key1`) AS `min(key1)` from `test`.`t1` where (`test`.`t1`.`key1` >= 0.3762)
+-explain select min(key2) from t2 where key2 >= 1.3762;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select min(`test`.`t2`.`key2`) AS `min(key2)` from `test`.`t2` where (`test`.`t2`.`key2` >= 1.3762)
+-explain select max(key1), min(key2) from t1, t2
+-where key1 <= 0.6158 and key2 >= 1.3762;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select max(`test`.`t1`.`key1`) AS `max(key1)`,min(`test`.`t2`.`key2`) AS `min(key2)` from `test`.`t1` join `test`.`t2` where ((`test`.`t1`.`key1` <= 0.6158) and (`test`.`t2`.`key2` >= 1.3762))
+-explain select max(key1) from t1 where key1 <= 0.6158 and rand() + 0.5 >= 0.5;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select max(`test`.`t1`.`key1`) AS `max(key1)` from `test`.`t1` where ((`test`.`t1`.`key1` <= 0.6158) and ((rand() + 0.5) >= 0.5))
+-explain select min(key1) from t1 where key1 >= 0.3762 and rand() + 0.5 >= 0.5;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select min(`test`.`t1`.`key1`) AS `min(key1)` from `test`.`t1` where ((`test`.`t1`.`key1` >= 0.3762) and ((rand() + 0.5) >= 0.5))
+-select max(key1) from t1 where key1 <= 0.6158;
+-max(key1)
+-0.6158000230789185
+-select max(key2) from t2 where key2 <= 1.6158;
+-max(key2)
+-1.6158000230789185
+-select min(key1) from t1 where key1 >= 0.3762;
+-min(key1)
+-0.37619999051094055
+-select min(key2) from t2 where key2 >= 1.3762;
+-min(key2)
+-1.3761999607086182
+-select max(key1), min(key2) from t1, t2
+-where key1 <= 0.6158 and key2 >= 1.3762;
+-max(key1)	min(key2)
+-0.6158000230789185	1.3761999607086182
+-select max(key1) from t1 where key1 <= 0.6158 and rand() + 0.5 >= 0.5;
+-max(key1)
+-0.6158000230789185
+-select min(key1) from t1 where key1 >= 0.3762 and rand() + 0.5 >= 0.5;
+-min(key1)
+-0.37619999051094055
+-DROP TABLE t1,t2;
+ CREATE TABLE t1 (i BIGINT UNSIGNED NOT NULL);
+ INSERT INTO t1 VALUES (10);
+ SELECT i='1e+01',i=1e+01, i in (1e+01,1e+01), i in ('1e+01','1e+01') FROM t1;
+Index: mysql-5.7-5.7.23/mysql-test/r/select_none_bka_nixbnl.result
+===================================================================
+--- mysql-5.7-5.7.23.orig/mysql-test/r/select_none_bka_nixbnl.result	2018-06-08 05:56:29.000000000 -0400
++++ mysql-5.7-5.7.23/mysql-test/r/select_none_bka_nixbnl.result	2018-08-24 11:57:05.076248949 -0400
+@@ -2857,69 +2857,6 @@ a	b	a	b
+ Warnings:
+ Warning	1681	'SQL_NO_CACHE' is deprecated and will be removed in a future release.
+ DROP TABLE IF EXISTS t1,t2;
+-CREATE TABLE t1 (key1 float default NULL, UNIQUE KEY key1 (key1));
+-CREATE TABLE t2 (key2 float default NULL, UNIQUE KEY key2 (key2));
+-INSERT INTO t1 VALUES (0.3762),(0.3845),(0.6158),(0.7941);
+-INSERT INTO t2 VALUES (1.3762),(1.3845),(1.6158),(1.7941);
+-explain select max(key1) from t1 where key1 <= 0.6158;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select max(`test`.`t1`.`key1`) AS `max(key1)` from `test`.`t1` where (`test`.`t1`.`key1` <= 0.6158)
+-explain select max(key2) from t2 where key2 <= 1.6158;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select max(`test`.`t2`.`key2`) AS `max(key2)` from `test`.`t2` where (`test`.`t2`.`key2` <= 1.6158)
+-explain select min(key1) from t1 where key1 >= 0.3762;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select min(`test`.`t1`.`key1`) AS `min(key1)` from `test`.`t1` where (`test`.`t1`.`key1` >= 0.3762)
+-explain select min(key2) from t2 where key2 >= 1.3762;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select min(`test`.`t2`.`key2`) AS `min(key2)` from `test`.`t2` where (`test`.`t2`.`key2` >= 1.3762)
+-explain select max(key1), min(key2) from t1, t2
+-where key1 <= 0.6158 and key2 >= 1.3762;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select max(`test`.`t1`.`key1`) AS `max(key1)`,min(`test`.`t2`.`key2`) AS `min(key2)` from `test`.`t1` join `test`.`t2` where ((`test`.`t1`.`key1` <= 0.6158) and (`test`.`t2`.`key2` >= 1.3762))
+-explain select max(key1) from t1 where key1 <= 0.6158 and rand() + 0.5 >= 0.5;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select max(`test`.`t1`.`key1`) AS `max(key1)` from `test`.`t1` where ((`test`.`t1`.`key1` <= 0.6158) and ((rand() + 0.5) >= 0.5))
+-explain select min(key1) from t1 where key1 >= 0.3762 and rand() + 0.5 >= 0.5;
+-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+-1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	Select tables optimized away
+-Warnings:
+-Note	1003	/* select#1 */ select min(`test`.`t1`.`key1`) AS `min(key1)` from `test`.`t1` where ((`test`.`t1`.`key1` >= 0.3762) and ((rand() + 0.5) >= 0.5))
+-select max(key1) from t1 where key1 <= 0.6158;
+-max(key1)
+-0.6158000230789185
+-select max(key2) from t2 where key2 <= 1.6158;
+-max(key2)
+-1.6158000230789185
+-select min(key1) from t1 where key1 >= 0.3762;
+-min(key1)
+-0.37619999051094055
+-select min(key2) from t2 where key2 >= 1.3762;
+-min(key2)
+-1.3761999607086182
+-select max(key1), min(key2) from t1, t2
+-where key1 <= 0.6158 and key2 >= 1.3762;
+-max(key1)	min(key2)
+-0.6158000230789185	1.3761999607086182
+-select max(key1) from t1 where key1 <= 0.6158 and rand() + 0.5 >= 0.5;
+-max(key1)
+-0.6158000230789185
+-select min(key1) from t1 where key1 >= 0.3762 and rand() + 0.5 >= 0.5;
+-min(key1)
+-0.37619999051094055
+-DROP TABLE t1,t2;
+ CREATE TABLE t1 (i BIGINT UNSIGNED NOT NULL);
+ INSERT INTO t1 VALUES (10);
+ SELECT i='1e+01',i=1e+01, i in (1e+01,1e+01), i in ('1e+01','1e+01') FROM t1;

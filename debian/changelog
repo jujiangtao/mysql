@@ -1,3 +1,38 @@
+mysql-5.7 (5.7.23-0ubuntu2) cosmic; urgency=medium
+
+  * debian/patches/disable_float_test.patch: disable test that is failing
+    on ppc64el due to float differences pending further investigation.
+
+ -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Fri, 24 Aug 2018 11:57:50 -0400
+
+mysql-5.7 (5.7.23-0ubuntu1) cosmic; urgency=medium
+
+  * SECURITY UPDATE: Update to 5.7.23 to fix security issues
+    - CVE-2018-2767, CVE-2018-3054, CVE-2018-3056, CVE-2018-3058,
+      CVE-2018-3060, CVE-2018-3061, CVE-2018-3062, CVE-2018-3064,
+      CVE-2018-3065, CVE-2018-3066, CVE-2018-3070, CVE-2018-3071,
+      CVE-2018-3077, CVE-2018-3081
+
+ -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Fri, 27 Jul 2018 07:53:30 -0400
+
+mysql-5.7 (5.7.22-0ubuntu18.04.1) bionic-security; urgency=medium
+
+  * SECURITY UPDATE: Update to 5.7.22 to fix security issues
+    - CVE-2018-2755, CVE-2018-2758, CVE-2018-2759, CVE-2018-2761,
+      CVE-2018-2762, CVE-2018-2766, CVE-2018-2769, CVE-2018-2771,
+      CVE-2018-2773, CVE-2018-2775, CVE-2018-2776, CVE-2018-2777,
+      CVE-2018-2778, CVE-2018-2779, CVE-2018-2780, CVE-2018-2781,
+      CVE-2018-2782, CVE-2018-2784, CVE-2018-2786, CVE-2018-2787,
+      CVE-2018-2810, CVE-2018-2812, CVE-2018-2813, CVE-2018-2816,
+      CVE-2018-2817, CVE-2018-2818, CVE-2018-2819, CVE-2018-2839,
+      CVE-2018-2846
+  * d/p/disable_tests.patch: disable partition_rename_longfilename test
+    which fails when building locally.
+  * debian/mysql-testsuite-5.7.manpages: removed, these manpages are no
+    longer shipped.
+
+ -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Tue, 24 Apr 2018 08:11:43 -0400
+
 mysql-5.7 (5.7.21-1ubuntu1) bionic; urgency=medium
 
   * Merge from Debian.

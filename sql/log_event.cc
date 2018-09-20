@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -194,6 +194,8 @@ static void inline slave_rows_error_report(enum loglevel level, int ha_error,
                                            const char *log_name, ulong pos)
 {
   const char *handler_error= (ha_error ? HA_ERR(ha_error) : NULL);
+  bool is_group_replication_applier_channel=
+    channel_map.is_group_replication_channel_name((const_cast<Relay_log_info *>(rli))->get_channel(), true);
   char buff[MAX_SLAVE_ERRMSG], *slider;
   const char *buff_end= buff + sizeof(buff);
   size_t len;
@@ -209,21 +211,45 @@ static void inline slave_rows_error_report(enum loglevel level, int ha_error,
                      " %s, Error_code: %d;", err->message_text(),
                      err->mysql_errno());
   }
-
-  if (ha_error != 0)
-    rli->report(level, thd->is_error() ? thd->get_stmt_da()->mysql_errno() :
-                ER_UNKNOWN_ERROR, "Could not execute %s event on table %s.%s;"
-                "%s handler error %s; "
-                "the event's master log %s, end_log_pos %lu",
-                type, table->s->db.str, table->s->table_name.str,
-                buff, handler_error == NULL ? "<unknown>" : handler_error,
-                log_name, pos);
+  if (is_group_replication_applier_channel)
+  {
+    if (ha_error != 0)
+    {
+      rli->report(level, thd->is_error() ? thd->get_stmt_da()->mysql_errno() :
+                  ER_UNKNOWN_ERROR, "Could not execute %s event on table %s.%s;"
+                  "%s handler error %s",
+                  type, table->s->db.str, table->s->table_name.str,
+                  buff, handler_error == NULL ? "<unknown>" : handler_error);
+    }
+    else
+    {
+      rli->report(level, thd->is_error() ? thd->get_stmt_da()->mysql_errno() :
+                  ER_UNKNOWN_ERROR, "Could not execute %s event on table %s.%s;"
+                  "%s", type, table->s->db.str, table->s->table_name.str,
+                  buff);
+    }
+  }
   else
-    rli->report(level, thd->is_error() ? thd->get_stmt_da()->mysql_errno() :
-                ER_UNKNOWN_ERROR, "Could not execute %s event on table %s.%s;"
-                "%s the event's master log %s, end_log_pos %lu",
-                type, table->s->db.str, table->s->table_name.str,
-                buff, log_name, pos);
+  {
+    if (ha_error != 0)
+    {
+      rli->report(level, thd->is_error() ? thd->get_stmt_da()->mysql_errno() :
+                  ER_UNKNOWN_ERROR, "Could not execute %s event on table %s.%s;"
+                  "%s handler error %s; "
+                  "the event's master log %s, end_log_pos %lu",
+                  type, table->s->db.str, table->s->table_name.str,
+                  buff, handler_error == NULL ? "<unknown>" : handler_error,
+                  log_name, pos);
+    }
+    else
+    {
+      rli->report(level, thd->is_error() ? thd->get_stmt_da()->mysql_errno() :
+                  ER_UNKNOWN_ERROR, "Could not execute %s event on table %s.%s;"
+                  "%s the event's master log %s, end_log_pos %lu",
+                  type, table->s->db.str, table->s->table_name.str,
+                  buff, log_name, pos);
+    }
+  }
 }
 
 static void set_thd_db(THD *thd, const char *db, size_t db_len)
@@ -973,10 +999,19 @@ my_bool Log_event::need_checksum()
 
 bool Log_event::wrapper_my_b_safe_write(IO_CACHE* file, const uchar* buf, size_t size)
 {
+  DBUG_EXECUTE_IF("simulate_temp_file_write_error",
+                  {
+                    file->write_pos=file->write_end;
+                    DBUG_SET("+d,simulate_file_write_error");
+                  });
   if (need_checksum() && size != 0)
     crc= checksum_crc32(crc, buf, size);
-
-  return my_b_safe_write(file, buf, size);
+  bool ret = my_b_safe_write(file, buf, size);
+  DBUG_EXECUTE_IF("simulate_temp_file_write_error",
+                  {
+                    DBUG_SET("-d,simulate_file_write_error");
+                  });
+  return ret;
 }
 
 bool Log_event::write_footer(IO_CACHE* file) 
@@ -4160,7 +4195,7 @@ Query_log_event::Query_log_event(const char* buf, uint event_len,
   if (!(fill_data_buf(data_buf, buf_len)))
     DBUG_VOID_RETURN;
 
-  if(query != 0)
+  if (query != 0 && q_len > 0)
     is_valid_param= true;
 
   /**
@@ -4485,7 +4520,8 @@ int Query_log_event::do_apply_event(Relay_log_info const *rli,
   int expected_error,actual_error= 0;
   HA_CREATE_INFO db_options;
 
-  DBUG_PRINT("info", ("query=%s", query));
+  DBUG_PRINT("info", ("query=%s, q_len_arg=%lu",
+                      query, static_cast<unsigned long>(q_len_arg)));
 
   /*
     Colleagues: please never free(thd->catalog) in MySQL. This would
@@ -4502,6 +4538,25 @@ int Query_log_event::do_apply_event(Relay_log_info const *rli,
   }
   else
     thd->set_catalog(EMPTY_CSTR);
+
+  size_t valid_len;
+  bool len_error;
+  bool is_invalid_db_name= validate_string(system_charset_info, db, db_len,
+                                           &valid_len, &len_error);
+
+  DBUG_PRINT("debug",("is_invalid_db_name= %s, valid_len=%zu, len_error=%s",
+                      is_invalid_db_name ? "true" : "false",
+                      valid_len,
+                      len_error ? "true" : "false"));
+
+  if (is_invalid_db_name || len_error)
+  {
+    rli->report(ERROR_LEVEL, ER_SLAVE_FATAL_ERROR,
+                ER_THD(thd, ER_SLAVE_FATAL_ERROR),
+                "Invalid database name in Query event.");
+    thd->is_slave_error= true;
+    goto end;
+  }
 
   set_thd_db(thd, db, db_len);
 
@@ -4611,6 +4666,18 @@ int Query_log_event::do_apply_event(Relay_log_info const *rli,
             goto compare_errors;
           }
           thd->update_charset(); // for the charset change to take effect
+          /*
+            We cannot ask for parsing a statement using a character set
+            without state_maps (parser internal data).
+          */
+          if (!thd->variables.character_set_client->state_maps)
+          {
+            rli->report(ERROR_LEVEL, ER_SLAVE_FATAL_ERROR,
+                        ER_THD(thd, ER_SLAVE_FATAL_ERROR),
+                        "character_set cannot be parsed");
+            thd->is_slave_error= true;
+            goto end;
+          }
           /*
             Reset thd->query_string.cs to the newly set value.
             Note, there is a small flaw here. For a very short time frame
@@ -5328,7 +5395,13 @@ int Start_log_event_v3::do_apply_event(Relay_log_info const *rli)
     */
     break;
   default:
-    /* this case is impossible */
+    /*
+      This case is not expected. It can be either an event corruption or an
+      unsupported binary log version.
+    */
+    rli->report(ERROR_LEVEL, ER_SLAVE_FATAL_ERROR,
+                ER_THD(thd, ER_SLAVE_FATAL_ERROR),
+                "Binlog version not supported");
     DBUG_RETURN(1);
   }
   DBUG_RETURN(error);
@@ -6615,7 +6688,8 @@ int Rotate_log_event::do_update_pos(Relay_log_info *rli)
                                      real_event ?
                                      common_header->when.tv_sec +
                                      (time_t) exec_time : 0,
-                                     true/*need_data_lock=true*/);
+                                     true/*need_data_lock=true*/,
+                                     real_event? true : false);
     }
 
     /*
@@ -7754,7 +7828,12 @@ int User_var_log_event::do_apply_event(Relay_log_info const *rli)
   }
 
   if (!(charset= get_charset(charset_number, MYF(MY_WME))))
+  {
+    rli->report(ERROR_LEVEL, ER_SLAVE_FATAL_ERROR,
+                ER_THD(thd, ER_SLAVE_FATAL_ERROR),
+                "Invalid character set for User var event");
     DBUG_RETURN(1);
+  }
   double real_val;
   longlong int_val;
 
@@ -7772,12 +7851,26 @@ int User_var_log_event::do_apply_event(Relay_log_info const *rli)
   {
     switch (type) {
     case REAL_RESULT:
+      if (val_len != 8)
+      {
+        rli->report(ERROR_LEVEL, ER_SLAVE_FATAL_ERROR,
+                    ER_THD(thd, ER_SLAVE_FATAL_ERROR),
+                    "Invalid variable length at User var event");
+        DBUG_RETURN(1);
+      }
       float8get(&real_val, val);
       it= new Item_float(real_val, 0);
       val= (char*) &real_val;		// Pointer to value in native format
       val_len= 8;
       break;
     case INT_RESULT:
+      if (val_len != 8)
+      {
+        rli->report(ERROR_LEVEL, ER_SLAVE_FATAL_ERROR,
+                    ER_THD(thd, ER_SLAVE_FATAL_ERROR),
+                    "Invalid variable length at User var event");
+        DBUG_RETURN(1);
+      }
       int_val= (longlong) uint8korr(val);
       it= new Item_int(int_val);
       val= (char*) &int_val;		// Pointer to value in native format
@@ -7785,6 +7878,13 @@ int User_var_log_event::do_apply_event(Relay_log_info const *rli)
       break;
     case DECIMAL_RESULT:
     {
+      if (val_len < 3)
+      {
+        rli->report(ERROR_LEVEL, ER_SLAVE_FATAL_ERROR,
+                    ER_THD(thd, ER_SLAVE_FATAL_ERROR),
+                    "Invalid variable length at User var event");
+        DBUG_RETURN(1);
+      }
       Item_decimal *dec= new Item_decimal((uchar*) val+2, val[0], val[1]);
       it= dec;
       val= (char *)dec->val_decimal(NULL);
@@ -9542,9 +9642,7 @@ search_key_in_table(TABLE *table, MY_BITMAP *bi_cols, uint key_type)
       DBUG_RETURN(table->s->primary_key);
   }
 
-  DBUG_PRINT("debug", ("Unique keys count: %u", table->s->uniques));
-
-  if (key_type & UNIQUE_KEY_FLAG && table->s->uniques)
+  if (key_type & UNIQUE_KEY_FLAG)
   {
     DBUG_PRINT("debug", ("Searching for UK"));
     for (key=0,keyinfo= table->key_info ;
@@ -9933,7 +10031,13 @@ void Rows_log_event::do_post_row_operations(Relay_log_info const *rli, int error
 
   if (!m_curr_row_end && !error)
   {
+    const uchar *previous_m_curr_row= m_curr_row;
     error= unpack_current_row(rli, &m_cols);
+
+    if (!error && previous_m_curr_row == m_curr_row)
+    {
+      error= 1;
+    }
   }
 
   // at this moment m_curr_row_end should be set
@@ -11788,7 +11892,14 @@ enum enum_tbl_map_status
   SAME_ID_MAPPING_DIFFERENT_TABLE= 2,
   
   /* a duplicate identifier was found mapping the same table */
-  SAME_ID_MAPPING_SAME_TABLE= 3
+  SAME_ID_MAPPING_SAME_TABLE= 3,
+
+  /*
+    this table must be filtered out but found an active XA transaction. XA
+    transactions shouldn't be used with replication filters, until disabling
+    the XA read only optimization is a supported feature.
+  */
+  FILTERED_WITH_XA_ACTIVE = 4
 };
 
 /*
@@ -11839,7 +11950,11 @@ check_table_map(Relay_log_info const *rli, RPL_TABLE_LIST *table_list)
   if (rli->info_thd->slave_thread /* filtering is for slave only */ &&
       (!rpl_filter->db_ok(table_list->db) ||
        (rpl_filter->is_on() && !rpl_filter->tables_ok("", table_list))))
-    res= FILTERED_OUT;
+    if (rli->info_thd->get_transaction()->xid_state()->has_state(
+            XID_STATE::XA_ACTIVE))
+      res = FILTERED_WITH_XA_ACTIVE;
+    else
+      res = FILTERED_OUT;
   else
   {
     RPL_TABLE_LIST *ptr= static_cast<RPL_TABLE_LIST*>(rli->tables_to_lock);
@@ -11944,6 +12059,19 @@ int Table_map_log_event::do_apply_event(Relay_log_info const *rli)
   }
   else  // FILTERED_OUT, SAME_ID_MAPPING_*
   {
+    if (tblmap_status == FILTERED_WITH_XA_ACTIVE)
+    {
+      if (thd->slave_thread)
+        rli->report(ERROR_LEVEL, ER_XA_REPLICATION_FILTERS,
+                    "%s", ER_THD(thd, ER_XA_REPLICATION_FILTERS));
+      else
+        /*
+          For the cases in which a 'BINLOG' statement is set to
+          execute in a user session
+         */
+        my_printf_error(ER_XA_REPLICATION_FILTERS,
+                        "%s", MYF(0), ER_THD(thd, ER_XA_REPLICATION_FILTERS));
+    }
     /*
       If mapped already but with different properties, we raise an
       error.
@@ -11953,7 +12081,7 @@ int Table_map_log_event::do_apply_event(Relay_log_info const *rli)
       In all three cases, we need to free the memory previously 
       allocated.
      */
-    if (tblmap_status == SAME_ID_MAPPING_DIFFERENT_TABLE)
+    else if (tblmap_status == SAME_ID_MAPPING_DIFFERENT_TABLE)
     {
       /*
         Something bad has happened. We need to stop the slave as strange things
@@ -12375,6 +12503,22 @@ Write_rows_log_event::write_row(const Relay_log_info *const rli,
   /* unpack row into table->record[0] */
   if ((error= unpack_current_row(rli, &m_cols)))
     DBUG_RETURN(error);
+
+  /*
+    When m_curr_row == m_curr_row_end, it means a row that contains nothing,
+    so all the pointers shall be pointing to the same address, or else
+    we have corrupt data and shall throw the error.
+  */
+  DBUG_PRINT("debug",("m_rows_buf= %p, m_rows_cur= %p, m_rows_end= %p",
+                      m_rows_buf, m_rows_cur, m_rows_end));
+  DBUG_PRINT("debug",("m_curr_row= %p, m_curr_row_end= %p",
+                      m_curr_row, m_curr_row_end));
+  if (m_curr_row == m_curr_row_end &&
+      !((m_rows_buf == m_rows_cur) && (m_rows_cur == m_rows_end)))
+  {
+    my_error(ER_SLAVE_CORRUPT_EVENT, MYF(0));
+    DBUG_RETURN(ER_SLAVE_CORRUPT_EVENT);
+  }
 
   if (m_curr_row == m_rows_buf)
   {
@@ -13093,6 +13237,7 @@ Rows_query_log_event::Rows_query_log_event(const char *buf, uint event_len,
     Ignorable_log_event(buf, descr_event),
     binary_log::Rows_query_event(buf, event_len, descr_event)
 {
+  is_valid_param= (m_rows_query != NULL);
 }
 
 #ifndef MYSQL_CLIENT
@@ -13744,9 +13889,11 @@ err:
 Transaction_context_log_event::~Transaction_context_log_event()
 {
   DBUG_ENTER("Transaction_context_log_event::~Transaction_context_log_event");
-  my_free((void*)server_uuid);
+  if (server_uuid)
+    my_free((void*)server_uuid);
   server_uuid= NULL;
-  my_free((void*) encoded_snapshot_version);
+  if (encoded_snapshot_version)
+    my_free((void*) encoded_snapshot_version);
   encoded_snapshot_version= NULL;
   delete snapshot_version;
   delete sid_map;

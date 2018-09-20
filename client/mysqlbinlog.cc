@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -34,6 +34,7 @@
 #include "my_default.h"
 #include <my_time.h>
 #include <sslopt-vars.h>
+#include <caching_sha2_passwordopt-vars.h>
 /* That one is necessary for defines of OPTION_NO_FOREIGN_KEY_CHECKS etc */
 #include "query_options.h"
 #include <signal.h>
@@ -124,7 +125,7 @@ rewrite_db(char **buf, ulong *buf_size,
             *buf_size - (offset_db + old_db_len));
 
   // Write new_db and new_db_len.
-  strncpy((*buf) + offset_db, new_db, new_db_len);
+  memcpy((*buf) + offset_db, new_db, new_db_len);
   (*buf)[offset_len]= (char) new_db_len;
 
   // Update event length in header.
@@ -1167,11 +1168,14 @@ void end_binlog(PRINT_EVENT_INFO *print_event_info)
   Print the given event, and either delete it or delegate the deletion
   to someone else.
 
-  The deletion may be delegated in two cases: (1) the event is a
-  Format_description_log_event, and is saved in
-  glob_description_event; (2) the event is a Create_file_log_event,
-  and is saved in load_processor.
-
+  The deletion may be delegated in these cases:
+  (1) the event is a Format_description_log_event, and is saved in
+      glob_description_event.
+  (2) the event is a Create_file_log_event, and is saved in load_processor.
+  (3) the event is an Intvar, Rand or User_var event, it will be kept until
+      the subsequent Query_log_event.
+  (4) the event is a Table_map_log_event, it will be kept until the subsequent
+      Rows_log_event.
   @param[in,out] print_event_info Parameters and context state
   determining how to print.
   @param[in] ev Log_event to process.
@@ -1867,6 +1871,7 @@ static struct my_option my_long_options[] =
    &sock, &sock, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0,
    0, 0},
 #include <sslopt-longopts.h>
+#include <caching_sha2_passwordopt-longopts.h>
   {"start-datetime", OPT_START_DATETIME,
    "Start reading the binlog at first event having a datetime equal or "
    "posterior to the argument; the argument must be a date and time "
@@ -2280,6 +2285,9 @@ static Exit_status safe_connect()
                  "program_name", "mysqlbinlog");
   mysql_options4(mysql, MYSQL_OPT_CONNECT_ATTR_ADD,
                 "_client_role", "binary_log_listener");
+
+  set_server_public_key(mysql);
+  set_get_server_public_key_option(mysql);
 
   if (!mysql_real_connect(mysql, host, user, pass, 0, port, sock, 0))
   {
