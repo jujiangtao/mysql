@@ -1,9 +1,12 @@
 mysql-5.7 (5.7.23-2ubuntu1) cosmic; urgency=medium
 
-  * Merge from Debian (LP: #1791010)
+  * Merge from Debian.
   * Remaining changes:
     - Revert "Build with libmecab-dev" since libmecab-dev is in
       universe.
+  * Drop changes:
+    - debian/patches/disable_float_test.patch: disable test; this is
+      fixed in Debian since 5.7.23-2 (LP: #1791010).
   * This reverts the previous direct sync from Debian, which was
     missing the above change.
 
