@@ -1,3 +1,19 @@
+mysql-5.7 (5.7.24-1) unstable; urgency=high (security fixes)
+
+  * Imported upstream version 5.7.24 to fix security issues:
+    - https://www.oracle.com/technetwork/security-advisory/cpuoct2018-4428296.html
+    - CVE-2016-9843 CVE-2018-3133 CVE-2018-3143 CVE-2018-3144
+    - CVE-2018-3155 CVE-2018-3156 CVE-2018-3161 CVE-2018-3162
+    - CVE-2018-3171 CVE-2018-3173 CVE-2018-3174 CVE-2018-3185
+    - CVE-2018-3187 CVE-2018-3200 CVE-2018-3247 CVE-2018-3251
+    - CVE-2018-3276 CVE-2018-3277 CVE-2018-3278 CVE-2018-3282
+    - CVE-2018-3283 CVE-2018-3284
+    (Closes: #911221)
+  * d/patches: Dropped mysql-test-run.patch
+    Issue is fixed upstream
+
+ -- Lars Tangvald <lars.tangvald@oracle.com>  Fri, 26 Oct 2018 10:13:22 +0200
+
 mysql-5.7 (5.7.23-2) unstable; urgency=medium
 
   [ Robie Basak ]
