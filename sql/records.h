@@ -1,88 +1,91 @@
 #ifndef SQL_RECORDS_H
-#define SQL_RECORDS_H 
+#define SQL_RECORDS_H
 /* Copyright (c) 2008, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software Foundation,
-   51 Franklin Street, Suite 500, Boston, MA 02110-1335 USA */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include <my_global.h>                /* for uint typedefs */
-#include "my_base.h"
+#include <sys/types.h>
+#include <memory>
+
+#include "my_alloc.h"
+#include "sql/basic_row_iterators.h"
+#include "sql/ref_row_iterators.h"
+#include "sql/row_iterator.h"
+#include "sql/sorting_iterator.h"
 
 class QEP_TAB;
-class handler;
-struct TABLE;
 class THD;
+struct TABLE;
 
-/**
-  A context for reading through a single table using a chosen access method:
-  index read, scan, etc, use of cache, etc.
+struct READ_RECORD {
+  RowIterator *operator->() { return iterator.get(); }
 
-  Use by:
-@code
-  READ_RECORD read_record;
-  if (init_read_record(&read_record, ...))
-    return TRUE;
-  while (read_record.read_record())
-  {
-    ...
-  }
-  end_read_record();
-@endcode
-*/
+  unique_ptr_destroy_only<RowIterator> iterator;
 
-class QUICK_SELECT_I;
+  // Holds one out of all RowIterator implementations (except the ones used
+  // for filesort, which are in sort_holder), so that it is possible to
+  // initialize a RowIterator without heap allocations. (The iterator
+  // member typically points to this union, and is responsible for
+  // running the right destructor.)
+  union IteratorHolder {
+    IteratorHolder() {}
+    ~IteratorHolder() {}
 
-struct READ_RECORD
-{
-  typedef int (*Read_func)(READ_RECORD*);
-  typedef void (*Unlock_row_func)(QEP_TAB *);
-  typedef int (*Setup_func)(QEP_TAB*);
+    TableScanIterator table_scan;
+    IndexScanIterator<true> index_scan_reverse;
+    IndexScanIterator<false> index_scan;
+    IndexRangeScanIterator index_range_scan;
+    RefIterator<false> ref;
+    RefIterator<true> ref_reverse;
+    RefOrNullIterator ref_or_null;
+    EQRefIterator eq_ref;
+    ConstIterator const_table;
+    FullTextSearchIterator fts;
+    DynamicRangeIterator dynamic_range_scan;
+    PushedJoinRefIterator pushed_join_ref;
 
-  TABLE *table;                                 /* Head-form */
-  TABLE **forms;                                /* head and ref forms */
-  Unlock_row_func unlock_row;
-  Read_func read_record;
-  THD *thd;
-  QUICK_SELECT_I *quick;
-  uint cache_records;
-  uint ref_length,struct_length,reclength,rec_cache_size,error_offset;
+    // Used for unique, for now.
+    SortBufferIndirectIterator sort_buffer_indirect;
+    SortFileIndirectIterator sort_file_indirect;
+  } iterator_holder;
 
-  /**
-    Counting records when reading result from filesort().
-    Used when filesort leaves the result in the filesort buffer.
-   */
-  ha_rows unpack_counter;
+  // Same, when we have sorting. If we sort, SortingIterator will be
+  // responsible for destroying the inner object, but the memory will still be
+  // held in iterator_holder, so we can't put this in the union.
+  char sort_holder[sizeof(SortingIterator)];
 
-  uchar *ref_pos;				/* pointer to form->refpos */
-  uchar *record;
-  uchar *rec_buf;                /* to read field values  after filesort */
-  uchar	*cache,*cache_pos,*cache_end,*read_positions;
-  struct st_io_cache *io_cache;
-  bool print_error, ignore_not_found_rows;
-
-public:
-  READ_RECORD() { memset(this, 0, sizeof(*this)); }
+  // Same technique as sort_holder, when we have an AlternativeIterator.
+  char alternative_holder[sizeof(AlternativeIterator)];
 };
 
-bool init_read_record(READ_RECORD *info, THD *thd,
-                      TABLE *table, QEP_TAB *qep_tab,
-		      int use_record_cache,
-                      bool print_errors, bool disable_rr_cache);
-bool init_read_record_idx(READ_RECORD *info, THD *thd, TABLE *table,
-                          bool print_error, uint idx, bool reverse);
-void end_read_record(READ_RECORD *info);
+void setup_read_record(READ_RECORD *info, THD *thd, TABLE *table,
+                       QEP_TAB *qep_tab, bool disable_rr_cache,
+                       bool ignore_not_found_rows, ha_rows *examined_rows);
 
-void rr_unlock_row(QEP_TAB *tab);
-int rr_sequential(READ_RECORD *info);
+/** Calls setup_read_record(), then calls Init() on the resulting iterator. */
+bool init_read_record(READ_RECORD *info, THD *thd, TABLE *table,
+                      QEP_TAB *qep_tab, bool disable_rr_cache,
+                      bool ignore_not_found_rows);
+
+void setup_read_record_idx(READ_RECORD *info, THD *thd, TABLE *table, uint idx,
+                           bool reverse, QEP_TAB *qep_tab);
 
 #endif /* SQL_RECORDS_H */

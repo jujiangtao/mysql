@@ -1,5 +1,4 @@
 --source include/have_example_plugin.inc
---source include/not_embedded.inc
 
 --echo #
 --echo # Bug#27502530: DISABLING NO_ENGINE_SUBSTITUTION DOES NOT BEHAVE AS

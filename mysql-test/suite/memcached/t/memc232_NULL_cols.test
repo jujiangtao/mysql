@@ -1,16 +1,15 @@
 source include/not_valgrind.inc;
 source include/have_memcached_plugin.inc;
 source include/not_windows.inc;
-source include/have_innodb.inc;
 
 --disable_query_log
 CALL mtr.add_suppression("daemon-memcached-w-batch-size': unsigned");
 CALL mtr.add_suppression("Could not obtain server's UPN to be used as target service name");
-CALL mtr.add_suppression("InnoDB: Warning: MySQL is trying to drop");
+CALL mtr.add_suppression("Warning: MySQL is trying to drop");
 --enable_query_log
 
 --enable_connect_log
-SET @tx_isolation= @@global.tx_isolation;
+SET @transaction_isolation= @@global.transaction_isolation;
 SET GLOBAL TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 
 # Create the memcached tables
@@ -50,11 +49,13 @@ INSERT INTO t1 VALUES ('H', NULL, NULL, NULL, 'hhhhhhhhhh', NULL, NULL, 0, 0, 0)
 # Tables must exist before plugin can be started!
 INSTALL PLUGIN daemon_memcached SONAME 'libmemcached.so';
 
-# The following select is writing all to  memcache otherwisw memcache is empty.
+# The following select is writing all to  memcache otherwise memcache is empty.
 --sorted_result
 SELECT c1,c2,c21,c22,c23,c24,c25 FROM t1;
+--let $wait_condition = SELECT count(*) = 4 FROM t1
+--source include/wait_condition.inc
 
-SELECT SLEEP(2);
+# SELECT SLEEP(2);
 
 perl;
 use DBI;
@@ -94,8 +95,12 @@ if ($val) { print "$val\n"; }
 $memd->disconnect_all;
 EOF
 
+let $wait_condition= SELECT count(*) = 5 FROM t1;
+--source include/wait_condition.inc
 --sorted_result
 SELECT c1,c2,c21,c22,c23,c24,c25 FROM t1;
+let $wait_condition= SELECT count(*) = 5 FROM t1;
+--source include/wait_condition.inc
 
 perl;
 use DBI;
@@ -112,8 +117,12 @@ if ($val) { print "$val\n"; }
 $memd->disconnect_all;
 EOF
 
+let $wait_condition= SELECT count(*) = 6 FROM t1;
+--source include/wait_condition.inc
 --sorted_result
 SELECT c1,c2,c21,c22,c23,c24,c25 FROM t1;
+let $wait_condition= SELECT count(*) = 6 FROM t1;
+--source include/wait_condition.inc
 
 perl;
 use DBI;
@@ -130,6 +139,8 @@ if ($val) { print "$val\n"; }
 $memd->disconnect_all;
 EOF
 
+let $wait_condition= SELECT count(*)=1 FROM t1 WHERE c1 LIKE 'F';
+--source include/wait_condition.inc
 --sorted_result
 SELECT c1,c2,c21,c22,c23,c24,c25 FROM t1;
 
@@ -150,6 +161,8 @@ if ($val) { print "$val\n"; }
 $memd->disconnect_all;
 EOF
 
+let $wait_condition= SELECT count(*)=5 FROM t1;
+--source include/wait_condition.inc
 --sorted_result
 SELECT c1,c2,c21,c22,c23,c24,c25 FROM t1;
 
@@ -158,4 +171,4 @@ DROP TABLE t1;
 UNINSTALL PLUGIN daemon_memcached;
 DROP DATABASE innodb_memcache;
  
-SET @@global.tx_isolation= @tx_isolation;
+SET @@global.transaction_isolation= @transaction_isolation;

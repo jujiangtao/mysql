@@ -2,12 +2,12 @@
 .\"     Title: \fBmyisampack\fR
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 10/03/2018
+.\"      Date: 07/12/2018
 .\"    Manual: MySQL Database System
-.\"    Source: MySQL 5.7
+.\"    Source: MySQL 8.0
 .\"  Language: English
 .\"
-.TH "\FBMYISAMPACK\FR" "1" "10/03/2018" "MySQL 5\&.7" "MySQL Database System"
+.TH "\FBMYISAMPACK\FR" "1" "07/12/2018" "MySQL 8\&.0" "MySQL Database System"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -331,7 +331,6 @@ The following sequence of commands illustrates a typical table compression sessi
 shell> \fBls \-l station\&.*\fR
 \-rw\-rw\-r\-\-   1 monty    my         994128 Apr 17 19:00 station\&.MYD
 \-rw\-rw\-r\-\-   1 monty    my          53248 Apr 17 19:00 station\&.MYI
-\-rw\-rw\-r\-\-   1 monty    my           5767 Apr 17 19:00 station\&.frm
 shell> \fBmyisamchk \-dvv station\fR
 MyISAM file:     station
 Isam\-version:  2
@@ -424,7 +423,6 @@ shell> \fBmysqladmin \-uroot flush\-tables\fR
 shell> \fBls \-l station\&.*\fR
 \-rw\-rw\-r\-\-   1 monty    my         127874 Apr 17 19:00 station\&.MYD
 \-rw\-rw\-r\-\-   1 monty    my          55296 Apr 17 19:04 station\&.MYI
-\-rw\-rw\-r\-\-   1 monty    my           5767 Apr 17 19:00 station\&.frm
 shell> \fBmyisamchk \-dvv station\fR
 MyISAM file:     station
 Isam\-version:  2

@@ -1,17 +1,24 @@
-# Copyright (c) 2009, 2017, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2009, 2018, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; version 2 of the License.
+# it under the terms of the GNU General Public License, version 2.0,
+# as published by the Free Software Foundation.
+#
+# This program is also distributed with certain software (including
+# but not limited to OpenSSL) that is licensed under separate terms,
+# as designated in a particular file or component or in included license
+# documentation.  The authors of MySQL hereby grant you an additional
+# permission to link the program and your derivative works with the
+# separately licensed software that they have included with MySQL.
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU General Public License, version 2.0, for more details.
 #
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
-# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA 
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA 
 
 GET_FILENAME_COMPONENT(MYSQL_CMAKE_SCRIPT_DIR ${CMAKE_CURRENT_LIST_FILE} PATH)
 INCLUDE(${MYSQL_CMAKE_SCRIPT_DIR}/cmake_parse_arguments.cmake)
@@ -34,7 +41,7 @@ MACRO (INSTALL_DEBUG_SYMBOLS targets)
      ENDIF()
     ENDIF()
 
-    IF(target STREQUAL "mysqld")
+    IF(target STREQUAL "mysqld" OR target STREQUAL "mysqlbackup")
       SET(comp Server)
     ELSE()
       SET(comp Debuginfo)
@@ -104,7 +111,7 @@ FUNCTION(MYSQL_INSTALL_TARGETS)
   SET(INSTALL_LOCATION)
 ENDFUNCTION()
 
-# Optionally install mysqld/client/embedded from debug build run.
+# Optionally install mysqld/client from debug build run.
 # outside of the current build dir
 # (unless multi-config generator is used like Visual Studio or Xcode). 
 # For single-config generators like Makefile generators we default Debug
@@ -139,67 +146,34 @@ FUNCTION(INSTALL_DEBUG_TARGET target)
   IF(target_type STREQUAL "STATIC_LIBRARY")
     SET(debug_target_location
       "${CMAKE_BINARY_DIR}/archive_output_directory/Debug/${target_name}.lib")
-    # On UNIX we install mysqlserver which has name libmysqld.a
-    IF(UNIX)
-      IF(BUILD_IS_SINGLE_CONFIG)
-        SET(debug_target_location
-          "${DEBUGBUILDDIR}/archive_output_directory/lib${target_name}.a")
-      ELSE()
-        SET(debug_target_location
-          "${CMAKE_BINARY_DIR}/archive_output_directory/Debug/lib${target_name}.a")
-      ENDIF()
-      MESSAGE(STATUS
-        "library target ${target} debug_target ${debug_target_location}")
-    ENDIF()
   # mysqld or mysqld-debug
   ELSEIF(target_type STREQUAL "EXECUTABLE")
-    GET_TARGET_PROPERTY(runtime_output_directory ${target}
-      RUNTIME_OUTPUT_DIRECTORY)
-    IF(NOT runtime_output_directory)
-      MESSAGE(FATAL_ERROR "unknown executable!!")
-    ENDIF()
-
-    STRING(REPLACE
-      "${CMAKE_BINARY_DIR}/" "" RELATIVE_DIR ${runtime_output_directory})
-
     SET(EXE_SUFFIX "${CMAKE_EXECUTABLE_SUFFIX}")
     IF(BUILD_IS_SINGLE_CONFIG)
       SET(debug_target_location
-        "${DEBUGBUILDDIR}/${RELATIVE_DIR}/${target_name}${EXE_SUFFIX}")
+        "${DEBUGBUILDDIR}/runtime_output_directory/${target_name}${EXE_SUFFIX}")
     ELSE()
       SET(debug_target_location
-        "${CMAKE_BINARY_DIR}/${RELATIVE_DIR}/Debug/${target_name}${EXE_SUFFIX}")
+        "${CMAKE_BINARY_DIR}/runtime_output_directory/Debug/${target_name}${EXE_SUFFIX}")
     ENDIF()
-    MESSAGE(STATUS
-      "executable target ${target} debug_target ${debug_target_location}")
-
   # Plugins and components
   ELSEIF(target_type STREQUAL "MODULE_LIBRARY")
     SET(DLL_SUFFIX "${CMAKE_SHARED_LIBRARY_SUFFIX}")
     IF(APPLE)
       SET(DLL_SUFFIX ".so") # we do not use .dylib
     ENDIF()
-    GET_TARGET_PROPERTY(
-      target_output_directory ${target}  LIBRARY_OUTPUT_DIRECTORY)
-    IF(NOT target_output_directory)
-      MESSAGE(FATAL_ERROR "unknown module!!")
-    ENDIF()
 
-    STRING(REPLACE
-      "${CMAKE_BINARY_DIR}/" "" RELATIVE_DIR ${target_output_directory})
-
+    SET(MODULE_DIRECTORY "plugin_output_directory")
     IF(BUILD_IS_SINGLE_CONFIG)
       SET(debug_target_location
-        "${DEBUGBUILDDIR}/${RELATIVE_DIR}/${target_name}${DLL_SUFFIX}")
+        "${DEBUGBUILDDIR}/${MODULE_DIRECTORY}/${target_name}${DLL_SUFFIX}")
     ELSE()
       SET(debug_target_location
-        "${CMAKE_BINARY_DIR}/${RELATIVE_DIR}/Debug/${target_name}${DLL_SUFFIX}")
+        "${CMAKE_BINARY_DIR}/${MODULE_DIRECTORY}/Debug/${target_name}${DLL_SUFFIX}")
     ENDIF()
-    # MESSAGE(STATUS
-    # "module target ${target} debug_target ${debug_target_location}")
   ENDIF()
 
-  # This is only used for mysqld / mysqld-debug / libmysqlserver.a
+  # This is only used for mysqld / mysqld-debug
   IF(ARG_RENAME)
     SET(RENAME_PARAM RENAME ${ARG_RENAME})
   ELSE()
@@ -243,6 +217,10 @@ FUNCTION(INSTALL_DEBUG_TARGET target)
       OWNER_READ OWNER_WRITE 
       GROUP_READ
       WORLD_READ)
+
+  IF(LINUX_INSTALL_RPATH_ORIGIN)
+    SET_PROPERTY(TARGET ${target} PROPERTY INSTALL_RPATH "\$ORIGIN/")
+  ENDIF()
 
   INSTALL(FILES ${debug_target_location}
     DESTINATION ${ARG_DESTINATION}

@@ -11,6 +11,7 @@
 # [--let $keep_view_change_events= 1]
 # [--let $mask_binlog_commit_events= 1]
 # [--let $mask_anonymous_gtid_events= 1]
+# [--let $mask_user_password_events= 1]
 # --source include/show_binlog_events.inc
 #
 # Parameters:
@@ -61,8 +62,17 @@
 #     Mask ANONYMOUS_GTID_LOG_EVENT as GTID_LOG_EVENTS to make a non-GTID
 #     enabled event stream similar to a GTID enabled one, as the server now
 #     generates [ANONYMOUS_]GTID always.
-
-
+#
+#   $keep_ddl_xid
+#     When specified leaves the XID field printed out. The flag is not supposed
+#     to be specified in "old" tests that do not expect DDL Query_log_event:s
+#     with XID info.
+#
+#   $mask_user_password_events
+#     To mask random password generated with create/alter user which used
+#     caching_sha2 authentication plugin. Note this is the default
+#     authentication plugin since 8.0.4
+#
 --let $include_filename= show_binlog_events.inc
 --source include/begin_include_file.inc
 

@@ -36,7 +36,7 @@ show binlog events;
 
 --disable_query_log
 let $MYSQLD_DATADIR= `select @@datadir;`;
---exec $MYSQL_BINLOG --verbose $MYSQLD_DATADIR/mysqld-bin.000001 > $MYSQLTEST_VARDIR/tmp/ndb_binlog_mysqlbinlog.sql
+--exec $MYSQL_BINLOG --verbose $MYSQLD_DATADIR/binlog.000001 > $MYSQLTEST_VARDIR/tmp/ndb_binlog_mysqlbinlog.sql
 
 create table raw_binlog_rows (txt varchar(1000));
 
@@ -50,6 +50,14 @@ drop table raw_binlog_rows;
 
 set global debug='';
 delete from test.t1;
+
+# Wait for delete to be written to binlog before RESET MASTER
+--disable_query_log
+--disable_result_log
+show binlog events;
+--enable_result_log
+--enable_query_log
+
 reset master;
 
 --echo Specific flag settings test : Reflect
@@ -81,7 +89,7 @@ show binlog events;
 
 --disable_query_log
 let $MYSQLD_DATADIR= `select @@datadir;`;
---exec $MYSQL_BINLOG --verbose $MYSQLD_DATADIR/mysqld-bin.000001 > $MYSQLTEST_VARDIR/tmp/ndb_binlog_mysqlbinlog.sql
+--exec $MYSQL_BINLOG --verbose $MYSQLD_DATADIR/binlog.000001 > $MYSQLTEST_VARDIR/tmp/ndb_binlog_mysqlbinlog.sql
 
 create table raw_binlog_rows (txt varchar(1000));
 
@@ -95,6 +103,14 @@ drop table raw_binlog_rows;
 
 set global debug='';
 delete from test.t1;
+
+# Wait for delete to be written to binlog before RESET MASTER
+--disable_query_log
+--disable_result_log
+show binlog events;
+--enable_result_log
+--enable_query_log
+
 reset master;
 
 --echo Specific flag settings test : Refresh
@@ -125,7 +141,7 @@ show binlog events;
 
 --disable_query_log
 let $MYSQLD_DATADIR= `select @@datadir;`;
---exec $MYSQL_BINLOG --verbose $MYSQLD_DATADIR/mysqld-bin.000001 > $MYSQLTEST_VARDIR/tmp/ndb_binlog_mysqlbinlog.sql
+--exec $MYSQL_BINLOG --verbose $MYSQLD_DATADIR/binlog.000001 > $MYSQLTEST_VARDIR/tmp/ndb_binlog_mysqlbinlog.sql
 
 create table raw_binlog_rows (txt varchar(1000));
 
@@ -140,3 +156,4 @@ drop table raw_binlog_rows;
 set global debug='';
 
 drop table t1;
+--remove_file $MYSQLTEST_VARDIR/tmp/ndb_binlog_mysqlbinlog.sql

@@ -1,22 +1,36 @@
 /*
-   Copyright (c) 2011, 2015, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2011, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 */
 
-#include "ndb_thd_ndb.h"
+#include "sql/ndb_thd_ndb.h"
+
+#include "derror.h"
+#include "my_dbug.h"
+#include "mysqld_error.h"
 #include "mysql/plugin.h"          // thd_get_thread_id
+#include "sql/ndb_log.h"
+#include "sql/ndb_thd.h"
+#include "sql/sql_error.h"
 
 /*
   Default value for max number of transactions createable against NDB from
@@ -94,6 +108,9 @@ Thd_ndb::recycle_ndb(void)
   /* Reset last commit epoch for this 'session'. */
   m_last_commit_epoch_session = 0;
 
+  /* Update m_connect_count to avoid false failures of ::valid_ndb() */
+  m_connect_count= connection->get_connect_count();
+
   DBUG_RETURN(true);
 }
 
@@ -122,8 +139,22 @@ void
 Thd_ndb::init_open_tables()
 {
   count= 0;
-  m_error= FALSE;
-  my_hash_reset(&open_tables);
+  m_error= false;
+  open_tables.clear();
+}
+
+
+bool
+Thd_ndb::check_option(Options option) const
+{
+  return (options & option);
+}
+
+
+void
+Thd_ndb::set_option(Options option)
+{
+  options |= option;
 }
 
 
@@ -142,4 +173,98 @@ Thd_ndb::add_row_check_if_batch_full(uint size)
   unsent+= size;
   m_unsent_bytes= unsent;
   return unsent >= m_batch_size;
+}
+
+
+bool
+Thd_ndb::check_trans_option(Trans_options option) const
+{
+  return (trans_options & option);
+}
+
+
+void
+Thd_ndb::set_trans_option(Trans_options option)
+{
+#ifndef DBUG_OFF
+  if (check_trans_option(TRANS_TRANSACTIONS_OFF))
+    DBUG_PRINT("info", ("Disabling transactions"));
+  if (check_trans_option(TRANS_INJECTED_APPLY_STATUS))
+    DBUG_PRINT("info", ("Statement has written to ndb_apply_status"));
+  if (check_trans_option(TRANS_NO_LOGGING))
+    DBUG_PRINT("info", ("Statement is not using logging"));
+#endif
+  trans_options |= option;
+}
+
+
+void
+Thd_ndb::reset_trans_options(void)
+{
+  DBUG_PRINT("info", ("Resetting trans_options"));
+  trans_options = 0;
+}
+
+
+/*
+  Push to THD's condition stack
+
+  @param severity    Severity of the pushed condition
+  @param code        Error code to use for the pushed condition
+  @param[in]  fmt    printf-like format string
+  @param[in]  args   Arguments
+*/
+static void push_condition(THD* thd,
+                           Sql_condition::enum_severity_level severity,
+                           uint code, const char* fmt, va_list args)
+  MY_ATTRIBUTE((format(printf, 4, 0)));
+
+static void push_condition(THD* thd,
+                           Sql_condition::enum_severity_level severity,
+                           uint code, const char* fmt, va_list args) {
+  DBUG_ASSERT(fmt);
+
+  // Assemble the message
+  char msg_buf[512];
+  vsnprintf(msg_buf, sizeof(msg_buf), fmt, args);
+
+  push_warning(thd, severity, code, msg_buf);
+
+  // Workaround problem where Ndb_local_connection can't access the
+  // warnings produced when running a SQL query, instead detect
+  // if this a binlog thread and print the warning also to log.
+  // NOTE! This can be removed when BUG#27507543 has been implemented
+  // and instead log these warnings in a more controlled/selective manner
+  // in Ndb_local_connection.
+  if (ndb_thd_is_binlog_thread(thd)) {
+    ndb_log_warning("%s", msg_buf);
+  }
+}
+
+void Thd_ndb::push_warning(const char* fmt, ...) const {
+  const uint code = ER_GET_ERRMSG;
+  va_list args;
+  va_start(args, fmt);
+  push_condition(m_thd, Sql_condition::SL_WARNING, code, fmt, args);
+  va_end(args);
+}
+
+void Thd_ndb::push_warning(uint code, const char* fmt, ...) const {
+  va_list args;
+  va_start(args, fmt);
+  push_condition(m_thd, Sql_condition::SL_WARNING, code, fmt, args);
+  va_end(args);
+}
+
+void Thd_ndb::push_ndb_error_warning(const NdbError& ndberr) const {
+  if (ndberr.status == NdbError::TemporaryError) {
+    push_warning_printf(m_thd, Sql_condition::SL_WARNING,
+                        ER_GET_TEMPORARY_ERRMSG,
+                        ER_THD(m_thd, ER_GET_TEMPORARY_ERRMSG), ndberr.code,
+                        ndberr.message, "NDB");
+  } else {
+    push_warning_printf(m_thd, Sql_condition::SL_WARNING, ER_GET_ERRMSG,
+                        ER_THD(m_thd, ER_GET_ERRMSG), ndberr.code,
+                        ndberr.message, "NDB");
+  }
 }

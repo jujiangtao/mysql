@@ -173,7 +173,7 @@ SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
 # CREATE USER
 --echo
 --echo ******************** CREATE USER ********************
-CREATE USER 'user_test_rpl'@'localhost' IDENTIFIED BY PASSWORD '*1111111111111111111111111111111111111111';
+CREATE USER 'user_test_rpl'@'localhost' IDENTIFIED WITH 'mysql_native_password' AS '*1111111111111111111111111111111111111111';
 --source suite/rpl/include/rpl_mixed_check_user.inc
 
 # GRANT 
@@ -340,4 +340,7 @@ sync_slave_with_master;
 # the files your self to see what is not matching
 
 --diff_files $MYSQLTEST_VARDIR/tmp/rpl_switch_stm_row_mixed_master.sql $MYSQLTEST_VARDIR/tmp/rpl_switch_stm_row_mixed_slave.sql
+# Cleanup
+--remove_file $MYSQLTEST_VARDIR/tmp/rpl_switch_stm_row_mixed_master.sql
+--remove_file $MYSQLTEST_VARDIR/tmp/rpl_switch_stm_row_mixed_slave.sql
 --source include/rpl_end.inc
