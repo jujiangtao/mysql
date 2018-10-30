@@ -65,6 +65,7 @@ libmysqlclient.so.21 libmysqlclient21 #MINVER#
  mysql_refresh@libmysqlclient_21.0 8.0.11
  mysql_reset_connection@libmysqlclient_21.0 8.0.11
  mysql_reset_server_public_key@libmysqlclient_21.0 8.0.11
+ mysql_result_metadata@libmysqlclient_21.0 8.0.12
  mysql_rollback@libmysqlclient_21.0 8.0.11
  mysql_row_seek@libmysqlclient_21.0 8.0.11
  mysql_row_tell@libmysqlclient_21.0 8.0.11
