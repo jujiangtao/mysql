@@ -11,7 +11,5 @@ usr/share/mysql/docs/INFO_SRC
 usr/share/mysql/echo_stderr
 usr/share/mysql/errmsg-utf8.txt
 usr/share/mysql/install_rewriter.sql
-usr/share/mysql/mysql_sys_schema.sql
-usr/share/mysql/mysql_test_data_timezone.sql
 usr/share/mysql/mysqld_multi.server
 usr/share/mysql/uninstall_rewriter.sql

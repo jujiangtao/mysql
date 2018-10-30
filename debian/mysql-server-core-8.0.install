@@ -40,7 +40,6 @@ usr/share/mysql/dictionary.txt
 usr/share/mysql/dutch
 usr/share/mysql/english
 usr/share/mysql/estonian
-usr/share/mysql/fill_help_tables.sql
 usr/share/mysql/french
 usr/share/mysql/german
 usr/share/mysql/greek
@@ -51,8 +50,6 @@ usr/share/mysql/japanese
 usr/share/mysql/korean
 usr/share/mysql/magic
 usr/share/mysql/mysql-log-rotate
-usr/share/mysql/mysql_system_tables.sql
-usr/share/mysql/mysql_system_tables_data.sql
 usr/share/mysql/norwegian
 usr/share/mysql/norwegian-ny
 usr/share/mysql/polish
