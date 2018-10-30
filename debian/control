@@ -27,6 +27,7 @@ Build-Depends: bison,
                perl,
                po-debconf,
                psmisc,
+               rapidjson-dev,
                unzip,
                zlib1g-dev (>= 1:1.1.3-5)
 Standards-Version: 3.9.8
