@@ -38,7 +38,7 @@ Last-Update: 2016-02-09
 +SET(_FILE_OFFSET_BITS 64)
 --- a/mysql-test/lib/My/Platform.pm
 +++ b/mysql-test/lib/My/Platform.pm
-@@ -107,6 +107,11 @@ sub check_socket_path_length {
+@@ -115,6 +115,11 @@ sub check_socket_path_length {
  
    return 0 if IS_WINDOWS;
  
@@ -49,4 +49,4 @@ Last-Update: 2016-02-09
 +
    require IO::Socket::UNIX;
  
-   my $truncated= undef;
+   my $truncated = undef;
