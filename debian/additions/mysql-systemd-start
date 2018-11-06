@@ -20,6 +20,10 @@ get_mysql_option() {
         echo "$result"
 }
 sanity () {
+  if [ -e /etc/mysql/FROZEN -o -h /etc/mysql/FROZEN ]; then
+    echo "MySQL has been frozen to prevent damage to your system. Please see /etc/mysql/FROZEN for help."
+    exit 1
+  fi
   if [ ! -r /etc/mysql/my.cnf ]; then
     echo "MySQL configuration not found at /etc/mysql/my.cnf. Please create one."
     exit 1

@@ -87,18 +87,22 @@ for i in `ls $DATADIR/debian-*.flag 2>/dev/null`; do
   fi
 done
 if [ "$is_downgrade_attempt" = 1 ]; then
+  echo "Downgrade from (at least) $found_version to $this_version is not possible." 1>&2
   if [ -e /etc/mysql/FROZEN -o -h /etc/mysql/FROZEN ]; then
     echo "Warning: /etc/mysql/FROZEN already exists" >&2
   else
     ln -s ../../usr/share/doc/mysql-common/frozen-mode/downgrade /etc/mysql/FROZEN
   fi
+fi
+
+if [ -e /etc/mysql/FROZEN -o -h /etc/mysql/FROZEN ]; then
+  error_message="MySQL has been frozen to prevent damage to your system. Please see /etc/mysql/FROZEN for help."
+  logger -p daemon.err -t /etc/init.d/mysql -i "$error_message"
   db_fset mysql-server-$this_version/installation_freeze_mode_active seen false || true
   db_input critical mysql-server-$this_version/installation_freeze_mode_active || true
   db_go
   db_stop
-  echo "Downgrade from (at least) $found_version to $this_version is not possible." 1>&2
-  echo "Packaging maintenance of MySQL will stop and the daemon disabled to prevent damage to your system." 1>&2
-  echo "For help, see /etc/mysql/FROZEN" 1>&2
+  echo "$error_message" 1>&2
   exit 0
 fi
 

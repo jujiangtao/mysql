@@ -150,11 +150,12 @@ case "$1" in
     # remains active for a long period.
 
     if [ -e /etc/mysql/FROZEN -o -h /etc/mysql/FROZEN ]; then
+      error_message="MySQL has been frozen to prevent damage to your system. Please see /etc/mysql/FROZEN for help."
+      logger -p daemon.err -t /etc/init.d/mysql -i "$error_message"
       db_input critical mysql-server-$this_version/installation_freeze_mode_active || true
       db_go
       db_stop
-      echo "Packaging maintenance of MySQL will stop and the daemon disabled to prevent damage to your system." 1>&2
-      echo "For help, see /etc/mysql/FROZEN" 1>&2
+      echo "$error_message" 1>&2
       exit 0
     fi
 
