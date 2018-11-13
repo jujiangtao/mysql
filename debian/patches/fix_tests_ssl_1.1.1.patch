@@ -1,0 +1,865 @@
+Description: Update ssl tests to accept new defaults in 1.1.1
+ The SSL tests fail because OpenSSL 1.1.1 (with TLS 1.3) uses new
+ default ciphers, which the tests reject. This patch simply
+ adds the new defaults to the accepted ciphers, until upstream
+ finishes adding full support for 1.1.1
+Author: Lars Tangvald <lars.tangvald@oracle.com>
+Bug: https://bugs.mysql.com/bug.php?id=93457
+Last-Update: 2018-11-30
+
+--- mysql-8.0-8.0.13.orig/mysql-test/r/grant_alter_user_qa.result
++++ mysql-8.0-8.0.13/mysql-test/r/grant_alter_user_qa.result
+@@ -173,7 +173,7 @@ ssl_cipher
+ x509_issuer	
+ x509_subject	sub
+ CREATE USER u10@localhost IDENTIFIED WITH 'sha256_password' BY 'auth_string#y'
+-REQUIRE CIPHER "DHE-RSA-AES256-SHA" AND
++REQUIRE CIPHER "TLS_AES_256_GCM_SHA384" AND
+ SUBJECT "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=Client"
+ ISSUER "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA"
+ PASSWORD EXPIRE DEFAULT;
+@@ -182,7 +182,7 @@ x509_subject,password_expired,password_l
+ User	u10
+ plugin	sha256_password
+ ssl_type	SPECIFIED
+-ssl_cipher	DHE-RSA-AES256-SHA
++ssl_cipher	TLS_AES_256_GCM_SHA384
+ x509_issuer	/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA
+ x509_subject	/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=Client
+ password_expired	N
+@@ -191,7 +191,7 @@ SELECT USER();
+ USER()
+ u10@localhost
+ CREATE USER tu6@localhost IDENTIFIED WITH 'test_plugin_server' AS '#hGrt0O6'
+-REQUIRE CIPHER "DHE-RSA-AES256-SHA" AND
++REQUIRE CIPHER "TLS_AES_256_GCM_SHA384" AND
+ SUBJECT "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=Client"
+ ISSUER "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA"
+ WITH MAX_QUERIES_PER_HOUR 2 MAX_USER_CONNECTIONS 2;
+@@ -200,7 +200,7 @@ x509_subject,max_questions,max_user_conn
+ User	tu6
+ plugin	test_plugin_server
+ ssl_type	SPECIFIED
+-ssl_cipher	DHE-RSA-AES256-SHA
++ssl_cipher	TLS_AES_256_GCM_SHA384
+ x509_issuer	/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA
+ x509_subject	/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=Client
+ max_questions	2
+@@ -568,13 +568,13 @@ password_expired	N
+ password_last_changed	#
+ password_lifetime	NULL
+ CREATE USER u7@localhost IDENTIFIED WITH 'sha256_password' BY 'auth_string'
+-                         REQUIRE CIPHER 'DHE-RSA-AES256-SHA';
++                         REQUIRE CIPHER 'TLS_AES_256_GCM_SHA384';
+ SELECT User,ssl_type,ssl_cipher,x509_issuer,x509_subject,
+ plugin,password_expired,
+ password_last_changed,password_lifetime FROM mysql.user WHERE USER='u7';
+ User	u7
+ ssl_type	SPECIFIED
+-ssl_cipher	DHE-RSA-AES256-SHA
++ssl_cipher	TLS_AES_256_GCM_SHA384
+ x509_issuer	
+ x509_subject	
+ plugin	sha256_password
+@@ -613,13 +613,13 @@ password_expired	N
+ password_last_changed	#
+ password_lifetime	NULL
+ ALTER USER u8@localhost IDENTIFIED WITH 'sha256_password' BY 'auth_string'
+-                        REQUIRE CIPHER "DHE-RSA-AES256-SHA";
++                        REQUIRE CIPHER "TLS_AES_256_GCM_SHA384";
+ SELECT User,ssl_type,ssl_cipher,x509_issuer,x509_subject,
+ plugin,password_expired,
+ password_last_changed,password_lifetime FROM mysql.user WHERE USER='u8';
+ User	u8
+ ssl_type	SPECIFIED
+-ssl_cipher	DHE-RSA-AES256-SHA
++ssl_cipher	TLS_AES_256_GCM_SHA384
+ x509_issuer	
+ x509_subject	
+ plugin	sha256_password
+@@ -644,13 +644,13 @@ password_expired	N
+ password_last_changed	#
+ password_lifetime	NULL
+ ALTER USER tu1@localhost IDENTIFIED WITH 'sha256_password'
+-                         REQUIRE CIPHER "DHE-RSA-AES256-SHA";
++                         REQUIRE CIPHER "TLS_AES_256_GCM_SHA384";
+ SELECT User,ssl_type,ssl_cipher,x509_issuer,x509_subject,
+ plugin,password_expired,
+ password_last_changed,password_lifetime FROM mysql.user WHERE USER='tu1';
+ User	tu1
+ ssl_type	SPECIFIED
+-ssl_cipher	DHE-RSA-AES256-SHA
++ssl_cipher	TLS_AES_256_GCM_SHA384
+ x509_issuer	
+ x509_subject	
+ plugin	sha256_password
+@@ -699,7 +699,7 @@ password_expired	N
+ password_last_changed	#
+ password_lifetime	NULL
+ CREATE USER u10@localhost IDENTIFIED WITH 'sha256_password' BY 'auth_string'
+-                          REQUIRE CIPHER "DHE-RSA-AES256-SHA" AND
++                          REQUIRE CIPHER "TLS_AES_256_GCM_SHA384" AND
+ SUBJECT "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=Client"
+                           ISSUER "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA";
+ SELECT User,ssl_type,ssl_cipher,x509_issuer,x509_subject,
+@@ -707,7 +707,7 @@ plugin,password_expired,
+ password_last_changed,password_lifetime FROM mysql.user WHERE USER='u10';
+ User	u10
+ ssl_type	SPECIFIED
+-ssl_cipher	DHE-RSA-AES256-SHA
++ssl_cipher	TLS_AES_256_GCM_SHA384
+ x509_issuer	/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA
+ x509_subject	/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=Client
+ plugin	sha256_password
+@@ -1243,14 +1243,14 @@ SHOW CREATE USER u9@localhost;
+ CREATE USER for u9@localhost
+ CREATE USER 'u9'@'localhost' IDENTIFIED WITH 'caching_sha2_password' REQUIRE SUBJECT 'sub' PASSWORD EXPIRE DEFAULT ACCOUNT UNLOCK PASSWORD HISTORY DEFAULT PASSWORD REUSE INTERVAL DEFAULT PASSWORD REQUIRE CURRENT DEFAULT
+ CREATE USER u10@localhost IDENTIFIED WITH 'sha256_password' BY 'auth_string'
+-            REQUIRE CIPHER "DHE-RSA-AES256-SHA" AND
++            REQUIRE CIPHER "TLS_AES_256_GCM_SHA384" AND
+ SUBJECT "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=Client"
+             ISSUER "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA";
+ SHOW CREATE USER u10@localhost;
+ CREATE USER for u10@localhost
+-CREATE USER 'u10'@'localhost' IDENTIFIED WITH 'sha256_password' AS '<non-deterministic-password-hash>' REQUIRE SUBJECT '/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=Client' ISSUER '/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA' CIPHER 'DHE-RSA-AES256-SHA' PASSWORD EXPIRE DEFAULT ACCOUNT UNLOCK PASSWORD HISTORY DEFAULT PASSWORD REUSE INTERVAL DEFAULT PASSWORD REQUIRE CURRENT DEFAULT
++CREATE USER 'u10'@'localhost' IDENTIFIED WITH 'sha256_password' AS '<non-deterministic-password-hash>' REQUIRE SUBJECT '/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=Client' ISSUER '/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA' CIPHER 'TLS_AES_256_GCM_SHA384' PASSWORD EXPIRE DEFAULT ACCOUNT UNLOCK PASSWORD HISTORY DEFAULT PASSWORD REUSE INTERVAL DEFAULT PASSWORD REQUIRE CURRENT DEFAULT
+ ALTER USER u10@localhost IDENTIFIED WITH 'sha256_password' BY 'auth_string'
+-           REQUIRE CIPHER "DHE-RSA-AES256-SHA" AND
++           REQUIRE CIPHER "TLS_AES_256_GCM_SHA384" AND
+ SUBJECT "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=Client"
+            ISSUER "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA"
+            WITH MAX_CONNECTIONS_PER_HOUR 1000
+@@ -1259,7 +1259,7 @@ MAX_UPDATES_PER_HOUR 100;
+ # SHOW CREATE USER after ALTER user attributes
+ SHOW CREATE USER u10@localhost;
+ CREATE USER for u10@localhost
+-CREATE USER 'u10'@'localhost' IDENTIFIED WITH 'sha256_password' AS '<non-deterministic-password-hash>' REQUIRE SUBJECT '/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=Client' ISSUER '/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA' CIPHER 'DHE-RSA-AES256-SHA' WITH MAX_QUERIES_PER_HOUR 60 MAX_UPDATES_PER_HOUR 100 MAX_CONNECTIONS_PER_HOUR 1000 MAX_USER_CONNECTIONS 20 PASSWORD EXPIRE DEFAULT ACCOUNT UNLOCK PASSWORD HISTORY DEFAULT PASSWORD REUSE INTERVAL DEFAULT PASSWORD REQUIRE CURRENT DEFAULT
++CREATE USER 'u10'@'localhost' IDENTIFIED WITH 'sha256_password' AS '<non-deterministic-password-hash>' REQUIRE SUBJECT '/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=Client' ISSUER '/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA' CIPHER 'TLS_AES_256_GCM_SHA384' WITH MAX_QUERIES_PER_HOUR 60 MAX_UPDATES_PER_HOUR 100 MAX_CONNECTIONS_PER_HOUR 1000 MAX_USER_CONNECTIONS 20 PASSWORD EXPIRE DEFAULT ACCOUNT UNLOCK PASSWORD HISTORY DEFAULT PASSWORD REUSE INTERVAL DEFAULT PASSWORD REQUIRE CURRENT DEFAULT
+ CREATE USER u11@localhost WITH MAX_QUERIES_PER_HOUR 2;
+ SHOW CREATE USER u11@localhost;
+ CREATE USER for u11@localhost
+@@ -1447,14 +1447,14 @@ CREATE USER user12@localhost IDENTIFIED
+                              PASSWORD EXPIRE NEVER;
+ CREATE USER u2@localhost IDENTIFIED BY 'meow';
+ CREATE USER u10@localhost IDENTIFIED WITH 'sha256_password'
+-                          REQUIRE CIPHER "DHE-RSA-AES256-SHA" AND
++                          REQUIRE CIPHER "TLS_AES_256_GCM_SHA384" AND
+ SUBJECT "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=Client"
+                           ISSUER "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA"
+                           WITH MAX_QUERIES_PER_HOUR 2 MAX_USER_CONNECTIONS 2;
+ ALTER USER u10@localhost IDENTIFIED WITH 'mysql_native_password' BY 'auth_string'
+                          REQUIRE SSL;
+ ALTER USER user11@localhost IDENTIFIED WITH 'sha256_password'
+-                            REQUIRE CIPHER "DHE-RSA-AES256-SHA" AND
++                            REQUIRE CIPHER "TLS_AES_256_GCM_SHA384" AND
+ SUBJECT "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=Client"
+                             ISSUER "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA"
+                             PASSWORD EXPIRE  DEFAULT ACCOUNT UNLOCK;
+@@ -1487,9 +1487,9 @@ binlog.000001	#	Query	#	#	use `test`; CR
+ binlog.000001	#	Query	#	#	use `test`; CREATE USER 'user11'@'localhost' IDENTIFIED WITH 'mysql_native_password' PASSWORD EXPIRE NEVER ACCOUNT LOCK
+ binlog.000001	#	Query	#	#	use `test`; CREATE USER 'user12'@'localhost' IDENTIFIED WITH 'sha256_password' PASSWORD EXPIRE NEVER
+ binlog.000001	#	Query	#	#	use `test`; CREATE USER 'u2'@'localhost' IDENTIFIED WITH 'caching_sha2_password' AS '<non-deterministic-password-hash>'
+-binlog.000001	#	Query	#	#	use `test`; CREATE USER 'u10'@'localhost' IDENTIFIED WITH 'sha256_password' REQUIRE SUBJECT '/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=Client' ISSUER '/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA' CIPHER 'DHE-RSA-AES256-SHA' WITH MAX_QUERIES_PER_HOUR 2 MAX_USER_CONNECTIONS 2
++binlog.000001	#	Query	#	#	use `test`; CREATE USER 'u10'@'localhost' IDENTIFIED WITH 'sha256_password' REQUIRE SUBJECT '/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=Client' ISSUER '/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA' CIPHER 'TLS_AES_256_GCM_SHA384' WITH MAX_QUERIES_PER_HOUR 2 MAX_USER_CONNECTIONS 2
+ binlog.000001	#	Query	#	#	use `test`; ALTER USER 'u10'@'localhost' IDENTIFIED WITH 'mysql_native_password' AS '*67092806AE91BFB6BE72DE6C7BE2B7CCA8CFA9DF' REQUIRE SSL
+-binlog.000001	#	Query	#	#	use `test`; ALTER USER 'user11'@'localhost' IDENTIFIED WITH 'sha256_password' REQUIRE SUBJECT '/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=Client' ISSUER '/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA' CIPHER 'DHE-RSA-AES256-SHA' PASSWORD EXPIRE DEFAULT ACCOUNT UNLOCK
++binlog.000001	#	Query	#	#	use `test`; ALTER USER 'user11'@'localhost' IDENTIFIED WITH 'sha256_password' REQUIRE SUBJECT '/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=Client' ISSUER '/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA' CIPHER 'TLS_AES_256_GCM_SHA384' PASSWORD EXPIRE DEFAULT ACCOUNT UNLOCK
+ binlog.000001	#	Query	#	#	use `test`; ALTER USER 'user12'@'localhost' IDENTIFIED WITH 'mysql_native_password' AS '*67092806AE91BFB6BE72DE6C7BE2B7CCA8CFA9DF' PASSWORD EXPIRE INTERVAL 90 DAY ACCOUNT UNLOCK
+ binlog.000001	#	Query	#	#	use `test`; CREATE USER 'user13'@'localhost' IDENTIFIED WITH 'caching_sha2_password' AS '<non-deterministic-password-hash>' ACCOUNT UNLOCK
+ binlog.000001	#	Query	#	#	use `test`; ALTER USER 'user13'@'localhost' WITH MAX_QUERIES_PER_HOUR 22 MAX_USER_CONNECTIONS 4 PASSWORD EXPIRE NEVER ACCOUNT LOCK
+@@ -1521,14 +1521,14 @@ CREATE USER user12@localhost IDENTIFIED
+                              PASSWORD EXPIRE NEVER;
+ CREATE USER u2@localhost IDENTIFIED BY 'meow';
+ CREATE USER u10@localhost IDENTIFIED WITH 'sha256_password'
+-            REQUIRE CIPHER "DHE-RSA-AES256-SHA" AND
++            REQUIRE CIPHER "TLS_AES_256_GCM_SHA384" AND
+ SUBJECT "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=Client"
+             ISSUER "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA"
+             WITH MAX_QUERIES_PER_HOUR 2 MAX_USER_CONNECTIONS 2;
+ ALTER USER u10@localhost IDENTIFIED WITH 'mysql_native_password' BY 'auth_string'
+                          REQUIRE SSL;
+ ALTER USER user11@localhost IDENTIFIED WITH 'sha256_password'
+-           REQUIRE CIPHER "DHE-RSA-AES256-SHA" AND
++           REQUIRE CIPHER "TLS_AES_256_GCM_SHA384" AND
+ SUBJECT "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=Client"
+            ISSUER "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA"
+            PASSWORD EXPIRE  DEFAULT ACCOUNT UNLOCK;
+@@ -1566,7 +1566,7 @@ CREATE USER user12@localhost IDENTIFIED
+                              PASSWORD EXPIRE NEVER
+ CREATE USER 'u2'@'localhost' IDENTIFIED BY <secret>
+ CREATE USER u10@localhost IDENTIFIED WITH 'sha256_password'
+-            REQUIRE CIPHER "DHE-RSA-AES256-SHA" AND
++            REQUIRE CIPHER "TLS_AES_256_GCM_SHA384" AND
+ SUBJECT "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=Client"
+             ISSUER "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA"
+             WITH MAX_QUERIES_PER_HOUR 2 MAX_USER_CONNECTIONS 2
+@@ -1582,7 +1582,7 @@ command_type NOT LIKE 'Prepare';
+ argument
+ ALTER USER 'u10'@'localhost' IDENTIFIED WITH 'mysql_native_password' BY <secret> REQUIRE SSL
+ ALTER USER user11@localhost IDENTIFIED WITH 'sha256_password'
+-           REQUIRE CIPHER "DHE-RSA-AES256-SHA" AND
++           REQUIRE CIPHER "TLS_AES_256_GCM_SHA384" AND
+ SUBJECT "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=Client"
+            ISSUER "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA"
+            PASSWORD EXPIRE  DEFAULT ACCOUNT UNLOCK
+--- mysql-8.0-8.0.13.orig/mysql-test/r/grant_user_lock_qa.result
++++ mysql-8.0-8.0.13/mysql-test/r/grant_user_lock_qa.result
+@@ -425,7 +425,7 @@ SELECT USER();
+ USER()
+ u6@localhost
+ CREATE USER u7@localhost IDENTIFIED WITH 'sha256_password'
+-            REQUIRE CIPHER "DHE-RSA-AES256-SHA"
++            REQUIRE CIPHER "TLS_AES_256_GCM_SHA384"
+             PASSWORD EXPIRE NEVER PASSWORD EXPIRE NEVER;
+ SELECT user,plugin,authentication_string,ssl_type,ssl_cipher,x509_issuer,
+ x509_subject,password_expired,password_lifetime,account_locked FROM mysql.user WHERE USER='u7';
+@@ -433,7 +433,7 @@ user	u7
+ plugin	sha256_password
+ authentication_string	#
+ ssl_type	SPECIFIED
+-ssl_cipher	DHE-RSA-AES256-SHA
++ssl_cipher	TLS_AES_256_GCM_SHA384
+ x509_issuer	
+ x509_subject	
+ password_expired	N
+@@ -442,7 +442,7 @@ account_locked	N
+ 
+ SHOW CREATE USER u7@localhost;
+ CREATE USER for u7@localhost
+-CREATE USER 'u7'@'localhost' IDENTIFIED WITH 'sha256_password' REQUIRE CIPHER 'DHE-RSA-AES256-SHA' PASSWORD EXPIRE NEVER ACCOUNT UNLOCK PASSWORD HISTORY DEFAULT PASSWORD REUSE INTERVAL DEFAULT PASSWORD REQUIRE CURRENT DEFAULT
++CREATE USER 'u7'@'localhost' IDENTIFIED WITH 'sha256_password' REQUIRE CIPHER 'TLS_AES_256_GCM_SHA384' PASSWORD EXPIRE NEVER ACCOUNT UNLOCK PASSWORD HISTORY DEFAULT PASSWORD REUSE INTERVAL DEFAULT PASSWORD REQUIRE CURRENT DEFAULT
+ SELECT USER();
+ USER()
+ u7@localhost
+@@ -454,7 +454,7 @@ user	u7
+ plugin	mysql_native_password
+ authentication_string	#
+ ssl_type	SPECIFIED
+-ssl_cipher	DHE-RSA-AES256-SHA
++ssl_cipher	TLS_AES_256_GCM_SHA384
+ x509_issuer	
+ x509_subject	
+ password_expired	Y
+@@ -463,7 +463,7 @@ account_locked	Y
+ 
+ SHOW CREATE USER u7@localhost;
+ CREATE USER for u7@localhost
+-CREATE USER 'u7'@'localhost' IDENTIFIED WITH 'mysql_native_password' REQUIRE CIPHER 'DHE-RSA-AES256-SHA' PASSWORD EXPIRE ACCOUNT LOCK PASSWORD HISTORY DEFAULT PASSWORD REUSE INTERVAL DEFAULT PASSWORD REQUIRE CURRENT DEFAULT
++CREATE USER 'u7'@'localhost' IDENTIFIED WITH 'mysql_native_password' REQUIRE CIPHER 'TLS_AES_256_GCM_SHA384' PASSWORD EXPIRE ACCOUNT LOCK PASSWORD HISTORY DEFAULT PASSWORD REUSE INTERVAL DEFAULT PASSWORD REQUIRE CURRENT DEFAULT
+ connect(localhost,u7,,test,MASTER_PORT,MASTER_SOCKET);
+ ERROR HY000: Access denied for user 'u7'@'localhost'. Account is locked.
+ CREATE USER u8@localhost IDENTIFIED WITH 'sha256_password' BY 'auth_string'
+@@ -543,7 +543,7 @@ SELECT USER();
+ USER()
+ u9@localhost
+ CREATE USER u10@localhost IDENTIFIED WITH 'sha256_password' BY 'auth_string#y'
+-            REQUIRE CIPHER "DHE-RSA-AES256-SHA"
++            REQUIRE CIPHER "TLS_AES_256_GCM_SHA384"
+             SUBJECT "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=Client"
+             ISSUER "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA"
+             ACCOUNT LOCK PASSWORD EXPIRE DEFAULT ACCOUNT UNLOCK;
+@@ -553,7 +553,7 @@ user	u10
+ plugin	sha256_password
+ authentication_string	#
+ ssl_type	SPECIFIED
+-ssl_cipher	DHE-RSA-AES256-SHA
++ssl_cipher	TLS_AES_256_GCM_SHA384
+ x509_issuer	/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA
+ x509_subject	/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=Client
+ password_expired	N
+@@ -562,11 +562,11 @@ account_locked	N
+ 
+ SHOW CREATE USER u10@localhost;
+ CREATE USER for u10@localhost
+-CREATE USER 'u10'@'localhost' IDENTIFIED WITH 'sha256_password' AS '<non-deterministic-password-hash>' REQUIRE SUBJECT '/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=Client' ISSUER '/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA' CIPHER 'DHE-RSA-AES256-SHA' PASSWORD EXPIRE DEFAULT ACCOUNT UNLOCK PASSWORD HISTORY DEFAULT PASSWORD REUSE INTERVAL DEFAULT PASSWORD REQUIRE CURRENT DEFAULT
++CREATE USER 'u10'@'localhost' IDENTIFIED WITH 'sha256_password' AS '<non-deterministic-password-hash>' REQUIRE SUBJECT '/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=Client' ISSUER '/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA' CIPHER 'TLS_AES_256_GCM_SHA384' PASSWORD EXPIRE DEFAULT ACCOUNT UNLOCK PASSWORD HISTORY DEFAULT PASSWORD REUSE INTERVAL DEFAULT PASSWORD REQUIRE CURRENT DEFAULT
+ SELECT USER();
+ USER()
+ u10@localhost
+-ALTER USER u10@localhost REQUIRE CIPHER "DHE-RSA-AES256-SHA"
++ALTER USER u10@localhost REQUIRE CIPHER "TLS_AES_256_GCM_SHA384"
+            ACCOUNT UNLOCK PASSWORD EXPIRE DEFAULT ACCOUNT LOCK;
+ SELECT user,plugin,authentication_string,ssl_type,ssl_cipher,x509_issuer,
+ x509_subject,password_expired,password_lifetime,account_locked FROM mysql.user WHERE USER='u10';
+@@ -574,7 +574,7 @@ user	u10
+ plugin	#
+ authentication_string	#
+ ssl_type	SPECIFIED
+-ssl_cipher	DHE-RSA-AES256-SHA
++ssl_cipher	TLS_AES_256_GCM_SHA384
+ x509_issuer	
+ x509_subject	
+ password_expired	N
+@@ -583,7 +583,7 @@ account_locked	Y
+ 
+ SHOW CREATE USER u10@localhost;
+ CREATE USER for u10@localhost
+-CREATE USER 'u10'@'localhost' IDENTIFIED WITH 'sha256_password' AS '<non-deterministic-password-hash>' REQUIRE CIPHER 'DHE-RSA-AES256-SHA' PASSWORD EXPIRE DEFAULT ACCOUNT LOCK PASSWORD HISTORY DEFAULT PASSWORD REUSE INTERVAL DEFAULT PASSWORD REQUIRE CURRENT DEFAULT
++CREATE USER 'u10'@'localhost' IDENTIFIED WITH 'sha256_password' AS '<non-deterministic-password-hash>' REQUIRE CIPHER 'TLS_AES_256_GCM_SHA384' PASSWORD EXPIRE DEFAULT ACCOUNT LOCK PASSWORD HISTORY DEFAULT PASSWORD REUSE INTERVAL DEFAULT PASSWORD REQUIRE CURRENT DEFAULT
+ connect(localhost,u10,auth_string#y,test,MASTER_PORT,MASTER_SOCKET);
+ ERROR HY000: Access denied for user 'u10'@'localhost'. Account is locked.
+ CREATE USER u11@localhost WITH MAX_QUERIES_PER_HOUR 2 ACCOUNT LOCK;
+@@ -712,7 +712,7 @@ SELECT USER();
+ USER()
+ u13@localhost
+ CREATE USER u14@localhost IDENTIFIED WITH 'sha256_password' BY 'auth_string'
+-REQUIRE CIPHER "DHE-RSA-AES256-SHA"
++REQUIRE CIPHER "TLS_AES_256_GCM_SHA384"
+ WITH MAX_USER_CONNECTIONS 2 ACCOUNT LOCK PASSWORD EXPIRE INTERVAL 999 DAY ACCOUNT UNLOCK;
+ SELECT user,plugin,authentication_string,ssl_type,ssl_cipher,x509_issuer,
+ x509_subject,max_user_connections,password_expired,password_lifetime,account_locked
+@@ -721,7 +721,7 @@ user	u14
+ plugin	sha256_password
+ authentication_string	#
+ ssl_type	SPECIFIED
+-ssl_cipher	DHE-RSA-AES256-SHA
++ssl_cipher	TLS_AES_256_GCM_SHA384
+ x509_issuer	
+ x509_subject	
+ max_user_connections	2
+@@ -905,7 +905,7 @@ u21@localhost IDENTIFIED WITH 'sha256_pa
+ u22@localhost IDENTIFIED WITH 'mysql_native_password',
+ u23@localhost IDENTIFIED WITH 'mysql_native_password'
+                           AS '*318C29553A414C4A571A077BC9E9A9F67D5E5634'
+-                          REQUIRE CIPHER "DHE-RSA-AES256-SHA"
++                          REQUIRE CIPHER "TLS_AES_256_GCM_SHA384"
+                           ISSUER "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA"
+                           ACCOUNT UNLOCK;
+ SELECT user,plugin,authentication_string,ssl_type,ssl_cipher,x509_issuer,
+@@ -915,7 +915,7 @@ user	u18
+ plugin	#
+ authentication_string	#
+ ssl_type	SPECIFIED
+-ssl_cipher	DHE-RSA-AES256-SHA
++ssl_cipher	TLS_AES_256_GCM_SHA384
+ x509_issuer	/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA
+ x509_subject	
+ max_questions	2
+@@ -930,7 +930,7 @@ user	u19
+ plugin	#
+ authentication_string	#
+ ssl_type	SPECIFIED
+-ssl_cipher	DHE-RSA-AES256-SHA
++ssl_cipher	TLS_AES_256_GCM_SHA384
+ x509_issuer	/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA
+ x509_subject	
+ max_questions	2
+@@ -945,7 +945,7 @@ user	u20
+ plugin	sha256_password
+ authentication_string	#
+ ssl_type	SPECIFIED
+-ssl_cipher	DHE-RSA-AES256-SHA
++ssl_cipher	TLS_AES_256_GCM_SHA384
+ x509_issuer	/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA
+ x509_subject	
+ max_questions	2
+@@ -960,7 +960,7 @@ user	u21
+ plugin	sha256_password
+ authentication_string	#
+ ssl_type	SPECIFIED
+-ssl_cipher	DHE-RSA-AES256-SHA
++ssl_cipher	TLS_AES_256_GCM_SHA384
+ x509_issuer	/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA
+ x509_subject	
+ max_questions	2
+@@ -975,7 +975,7 @@ user	u22
+ plugin	mysql_native_password
+ authentication_string	#
+ ssl_type	SPECIFIED
+-ssl_cipher	DHE-RSA-AES256-SHA
++ssl_cipher	TLS_AES_256_GCM_SHA384
+ x509_issuer	/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA
+ x509_subject	
+ max_questions	2
+@@ -990,7 +990,7 @@ user	u23
+ plugin	mysql_native_password
+ authentication_string	#
+ ssl_type	SPECIFIED
+-ssl_cipher	DHE-RSA-AES256-SHA
++ssl_cipher	TLS_AES_256_GCM_SHA384
+ x509_issuer	/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA
+ x509_subject	
+ max_questions	2
+--- mysql-8.0-8.0.13.orig/mysql-test/r/openssl_1.result
++++ mysql-8.0-8.0.13/mysql-test/r/openssl_1.result
+@@ -61,7 +61,7 @@ mysqltest: [ERROR] SSL error: Unable to
+ mysqltest: Could not open connection 'default': 2026 SSL connection error: Unable to get certificate
+ SHOW STATUS LIKE 'Ssl_cipher';
+ Variable_name	Value
+-Ssl_cipher	DHE-RSA-AES256-SHA
++Ssl_cipher	TLS_AES_256_GCM_SHA384
+ WARNING: no verification of server certificate will be done. Use --ssl-mode=VERIFY_CA or VERIFY_IDENTITY.
+ Variable_name	Value
+ Ssl_cipher	SSL_CIPHER
+@@ -90,13 +90,17 @@ Ssl_callback_cache_hits	#
+ DROP TABLE thread_status;
+ SHOW STATUS LIKE 'Ssl_cipher';
+ Variable_name	Value
+-Ssl_cipher	AES128-SHA
++Ssl_cipher	TLS_AES_256_GCM_SHA384
+ WARNING: no verification of server certificate will be done. Use --ssl-mode=VERIFY_CA or VERIFY_IDENTITY.
+ SHOW STATUS LIKE 'Ssl_cipher';
+ Variable_name	Value
+-Ssl_cipher	AES128-SHA
++Ssl_cipher	TLS_AES_256_GCM_SHA384
+ WARNING: no verification of server certificate will be done. Use --ssl-mode=VERIFY_CA or VERIFY_IDENTITY.
+-mysqltest: Could not open connection 'default': 2026 SSL connection error: Failed to set ciphers to use
++SHOW STATUS LIKE 'Ssl_cipher';
++Variable_name	Value
++Ssl_cipher	TLS_AES_256_GCM_SHA384
++mysqltest: At line 1: End of line junk detected: "exit
++"
+ CREATE TABLE t1(a int);
+ INSERT INTO t1 VALUES (1), (2);
+ 
+@@ -205,13 +209,13 @@ mysqldump: [ERROR] SSL error: Unable to
+ mysqldump: Got error: 2026: SSL connection error: Unable to get private key when trying to connect
+ DROP TABLE t1;
+ Variable_name	Value
+-Ssl_cipher	DHE-RSA-AES256-SHA
++Ssl_cipher	TLS_AES_256_GCM_SHA384
+ Variable_name	Value
+-Ssl_cipher	DHE-RSA-AES128-SHA
++Ssl_cipher	TLS_AES_256_GCM_SHA384
+ Variable_name	Value
+-Ssl_cipher	AES256-SHA
++Ssl_cipher	TLS_AES_256_GCM_SHA384
+ Variable_name	Value
+-Ssl_cipher	DHE-RSA-AES128-SHA
++Ssl_cipher	TLS_AES_256_GCM_SHA384
+ select 'is still running; no cipher request crashed the server' as result from dual;
+ result
+ is still running; no cipher request crashed the server
+--- mysql-8.0-8.0.13.orig/mysql-test/r/ssl_cipher.result
++++ mysql-8.0-8.0.13/mysql-test/r/ssl_cipher.result
+@@ -3,7 +3,6 @@
+ #
+ # must return DHE-RSA-AES256-SHA
+ Variable_name	Value
+-Ssl_cipher	DHE-RSA-AES256-SHA
++Ssl_cipher	TLS_AES_256_GCM_SHA384
+ Variable_name	Value
+-Ssl_cipher_list	DHE-RSA-AES256-SHA
+-# must fail since the default SSL cipher is not compatible
++Ssl_cipher_list	TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256:DHE-RSA-AES256-SHA
+--- mysql-8.0-8.0.13.orig/mysql-test/t/grant_alter_user_qa.test
++++ mysql-8.0-8.0.13/mysql-test/t/grant_alter_user_qa.test
+@@ -164,7 +164,7 @@ query_vertical SELECT User,plugin,ssl_ty
+ x509_issuer,x509_subject FROM mysql.user WHERE USER='u9';
+ 
+ CREATE USER u10@localhost IDENTIFIED WITH 'sha256_password' BY 'auth_string#y'
+-REQUIRE CIPHER "DHE-RSA-AES256-SHA" AND
++REQUIRE CIPHER "TLS_AES_256_GCM_SHA384" AND
+ SUBJECT "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=Client"
+ ISSUER "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA"
+ PASSWORD EXPIRE DEFAULT;
+@@ -178,7 +178,7 @@ connection default;
+ disconnect con1;
+ 
+ CREATE USER tu6@localhost IDENTIFIED WITH 'test_plugin_server' AS '#hGrt0O6'
+-REQUIRE CIPHER "DHE-RSA-AES256-SHA" AND
++REQUIRE CIPHER "TLS_AES_256_GCM_SHA384" AND
+ SUBJECT "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=Client"
+ ISSUER "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA"
+ WITH MAX_QUERIES_PER_HOUR 2 MAX_USER_CONNECTIONS 2;
+@@ -371,7 +371,7 @@ plugin,password_expired,
+ password_last_changed,password_lifetime FROM mysql.user WHERE USER='u6';
+ 
+ CREATE USER u7@localhost IDENTIFIED WITH 'sha256_password' BY 'auth_string'
+-                         REQUIRE CIPHER 'DHE-RSA-AES256-SHA';
++                         REQUIRE CIPHER 'TLS_AES_256_GCM_SHA384';
+ --replace_column 8 #
+ query_vertical SELECT User,ssl_type,ssl_cipher,x509_issuer,x509_subject,
+ plugin,password_expired,
+@@ -397,7 +397,7 @@ query_vertical SELECT User,ssl_type,ssl_
+ plugin,password_expired,
+ password_last_changed,password_lifetime FROM mysql.user WHERE USER='u8';
+ ALTER USER u8@localhost IDENTIFIED WITH 'sha256_password' BY 'auth_string'
+-                        REQUIRE CIPHER "DHE-RSA-AES256-SHA";
++                        REQUIRE CIPHER "TLS_AES_256_GCM_SHA384";
+ # Look for plugin,auth_string, password expired, SSL fields
+ --replace_column 8 #
+ query_vertical SELECT User,ssl_type,ssl_cipher,x509_issuer,x509_subject,
+@@ -416,7 +416,7 @@ query_vertical SELECT User,ssl_type,ssl_
+ plugin,password_expired,
+ password_last_changed,password_lifetime FROM mysql.user WHERE USER='tu1';
+ ALTER USER tu1@localhost IDENTIFIED WITH 'sha256_password'
+-                         REQUIRE CIPHER "DHE-RSA-AES256-SHA";
++                         REQUIRE CIPHER "TLS_AES_256_GCM_SHA384";
+ # Look for plugin,auth_string, password expired, SSL fields
+ --replace_column 8 #
+ query_vertical SELECT User,ssl_type,ssl_cipher,x509_issuer,x509_subject,
+@@ -443,7 +443,7 @@ plugin,password_expired,
+ password_last_changed,password_lifetime FROM mysql.user WHERE USER='u9';
+ 
+ CREATE USER u10@localhost IDENTIFIED WITH 'sha256_password' BY 'auth_string'
+-                          REQUIRE CIPHER "DHE-RSA-AES256-SHA" AND
++                          REQUIRE CIPHER "TLS_AES_256_GCM_SHA384" AND
+                           SUBJECT "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=Client"
+                           ISSUER "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA";
+ --replace_column 8 #
+@@ -765,14 +765,14 @@ CREATE USER u9@localhost REQUIRE SUBJECT
+ SHOW CREATE USER u9@localhost;
+ 
+ CREATE USER u10@localhost IDENTIFIED WITH 'sha256_password' BY 'auth_string'
+-            REQUIRE CIPHER "DHE-RSA-AES256-SHA" AND
++            REQUIRE CIPHER "TLS_AES_256_GCM_SHA384" AND
+             SUBJECT "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=Client"
+             ISSUER "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA";
+ --replace_regex /AS '(.*)' REQUIRE/AS '<non-deterministic-password-hash>' REQUIRE/
+ SHOW CREATE USER u10@localhost;
+ 
+ ALTER USER u10@localhost IDENTIFIED WITH 'sha256_password' BY 'auth_string'
+-           REQUIRE CIPHER "DHE-RSA-AES256-SHA" AND
++           REQUIRE CIPHER "TLS_AES_256_GCM_SHA384" AND
+            SUBJECT "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=Client"
+            ISSUER "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA"
+            WITH MAX_CONNECTIONS_PER_HOUR 1000
+@@ -988,14 +988,14 @@ CREATE USER user12@localhost IDENTIFIED
+ 
+ CREATE USER u2@localhost IDENTIFIED BY 'meow';
+ CREATE USER u10@localhost IDENTIFIED WITH 'sha256_password'
+-                          REQUIRE CIPHER "DHE-RSA-AES256-SHA" AND
++                          REQUIRE CIPHER "TLS_AES_256_GCM_SHA384" AND
+                           SUBJECT "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=Client"
+                           ISSUER "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA"
+                           WITH MAX_QUERIES_PER_HOUR 2 MAX_USER_CONNECTIONS 2;
+ ALTER USER u10@localhost IDENTIFIED WITH 'mysql_native_password' BY 'auth_string'
+                          REQUIRE SSL;
+ ALTER USER user11@localhost IDENTIFIED WITH 'sha256_password'
+-                            REQUIRE CIPHER "DHE-RSA-AES256-SHA" AND
++                            REQUIRE CIPHER "TLS_AES_256_GCM_SHA384" AND
+                             SUBJECT "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=Client"
+                             ISSUER "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA"
+                             PASSWORD EXPIRE  DEFAULT ACCOUNT UNLOCK;
+@@ -1057,14 +1057,14 @@ CREATE USER user12@localhost IDENTIFIED
+ 
+ CREATE USER u2@localhost IDENTIFIED BY 'meow';
+ CREATE USER u10@localhost IDENTIFIED WITH 'sha256_password'
+-            REQUIRE CIPHER "DHE-RSA-AES256-SHA" AND
++            REQUIRE CIPHER "TLS_AES_256_GCM_SHA384" AND
+             SUBJECT "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=Client"
+             ISSUER "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA"
+             WITH MAX_QUERIES_PER_HOUR 2 MAX_USER_CONNECTIONS 2;
+ ALTER USER u10@localhost IDENTIFIED WITH 'mysql_native_password' BY 'auth_string'
+                          REQUIRE SSL;
+ ALTER USER user11@localhost IDENTIFIED WITH 'sha256_password'
+-           REQUIRE CIPHER "DHE-RSA-AES256-SHA" AND
++           REQUIRE CIPHER "TLS_AES_256_GCM_SHA384" AND
+            SUBJECT "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=Client"
+            ISSUER "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA"
+            PASSWORD EXPIRE  DEFAULT ACCOUNT UNLOCK;
+--- mysql-8.0-8.0.13.orig/mysql-test/t/grant_user_lock_qa.test
++++ mysql-8.0-8.0.13/mysql-test/t/grant_user_lock_qa.test
+@@ -391,7 +391,7 @@ connection default;
+ disconnect con1;
+ 
+ CREATE USER u7@localhost IDENTIFIED WITH 'sha256_password'
+-            REQUIRE CIPHER "DHE-RSA-AES256-SHA"
++            REQUIRE CIPHER "TLS_AES_256_GCM_SHA384"
+             PASSWORD EXPIRE NEVER PASSWORD EXPIRE NEVER;
+ --replace_column 3 #
+ query_vertical SELECT user,plugin,authentication_string,ssl_type,ssl_cipher,x509_issuer,
+@@ -468,7 +468,7 @@ connection default;
+ disconnect con1;
+ 
+ CREATE USER u10@localhost IDENTIFIED WITH 'sha256_password' BY 'auth_string#y'
+-            REQUIRE CIPHER "DHE-RSA-AES256-SHA"
++            REQUIRE CIPHER "TLS_AES_256_GCM_SHA384"
+             SUBJECT "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=Client"
+             ISSUER "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA"
+             ACCOUNT LOCK PASSWORD EXPIRE DEFAULT ACCOUNT UNLOCK;
+@@ -483,7 +483,7 @@ SHOW CREATE USER u10@localhost;
+ SELECT USER();
+ connection default;
+ disconnect con1;
+-ALTER USER u10@localhost REQUIRE CIPHER "DHE-RSA-AES256-SHA"
++ALTER USER u10@localhost REQUIRE CIPHER "TLS_AES_256_GCM_SHA384"
+            ACCOUNT UNLOCK PASSWORD EXPIRE DEFAULT ACCOUNT LOCK;
+ --replace_column 2 # 3 #
+ query_vertical SELECT user,plugin,authentication_string,ssl_type,ssl_cipher,x509_issuer,
+@@ -591,7 +591,7 @@ connection default;
+ disconnect con1;
+ 
+ CREATE USER u14@localhost IDENTIFIED WITH 'sha256_password' BY 'auth_string'
+-REQUIRE CIPHER "DHE-RSA-AES256-SHA"
++REQUIRE CIPHER "TLS_AES_256_GCM_SHA384"
+ WITH MAX_USER_CONNECTIONS 2 ACCOUNT LOCK PASSWORD EXPIRE INTERVAL 999 DAY ACCOUNT UNLOCK;
+ --replace_column 3 #
+ query_vertical SELECT user,plugin,authentication_string,ssl_type,ssl_cipher,x509_issuer,
+@@ -719,7 +719,7 @@ ALTER  USER u18@localhost,
+             u22@localhost IDENTIFIED WITH 'mysql_native_password',
+             u23@localhost IDENTIFIED WITH 'mysql_native_password'
+                           AS '*318C29553A414C4A571A077BC9E9A9F67D5E5634'
+-                          REQUIRE CIPHER "DHE-RSA-AES256-SHA"
++                          REQUIRE CIPHER "TLS_AES_256_GCM_SHA384"
+                           ISSUER "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA"
+                           ACCOUNT UNLOCK;
+ --replace_column 2 # 3 #
+--- mysql-8.0-8.0.13.orig/mysql-test/t/mysql_ssl_default.test
++++ mysql-8.0-8.0.13/mysql-test/t/mysql_ssl_default.test
+@@ -11,15 +11,15 @@
+ 
+ --echo # verify that mysql default connect with ssl channel when using TCP/IP
+ --echo # connection
+---replace_result ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
++--replace_result TLS_AES_256_GCM_SHA384 SSL_CIPHER ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
+ --exec $MYSQL --host=127.0.0.1 -P $MASTER_MYPORT -e "SHOW STATUS like 'Ssl_cipher'"
+ 
+ --echo # verify that mysql --ssl=0 connect with unencrypted channel
+---replace_result ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
++--replace_result TLS_AES_256_GCM_SHA384 SSL_CIPHER ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
+ --exec $MYSQL --host=127.0.0.1 -P $MASTER_MYPORT -e "SHOW STATUS like 'Ssl_cipher'" --ssl-mode=DISABLED
+ 
+ --echo # verify that mysql --ssl=1 connect with ssl channel
+---replace_result ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
++--replace_result TLS_AES_256_GCM_SHA384 SSL_CIPHER ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
+ --exec $MYSQL --host=127.0.0.1 -P $MASTER_MYPORT -e "SHOW STATUS like 'Ssl_cipher'" --ssl-mode=REQUIRED
+ 
+ CREATE USER u1@localhost IDENTIFIED BY 'secret' REQUIRE SSL;
+--- mysql-8.0-8.0.13.orig/mysql-test/t/openssl_1.test
++++ mysql-8.0-8.0.13/mysql-test/t/openssl_1.test
+@@ -27,13 +27,13 @@ create user ssl_user1@localhost, ssl_use
+ grant select on test.* to ssl_user1@localhost, ssl_user2@localhost,
+                           ssl_user3@localhost, ssl_user4@localhost,
+                           ssl_user5@localhost;
+---replace_result ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
++--replace_result TLS_AES_256_GCM_SHA384 SSL_CIPHER ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
+ -- eval alter user ssl_user2@localhost require cipher $cipher_val
+---replace_result ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
++--replace_result TLS_AES_256_GCM_SHA384 SSL_CIPHER ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
+ -- eval alter user ssl_user3@localhost require cipher $cipher_val AND SUBJECT "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=Client"
+---replace_result ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
++--replace_result TLS_AES_256_GCM_SHA384 SSL_CIPHER ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
+ -- eval alter user ssl_user4@localhost require cipher $cipher_val AND SUBJECT "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=Client" ISSUER "/C=SE/ST=Stockholm/L=Stockholm/O=Oracle/OU=MySQL/CN=CA"
+---replace_result ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
++--replace_result TLS_AES_256_GCM_SHA384 SSL_CIPHER ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
+ -- eval alter user ssl_user5@localhost require cipher $cipher_val AND SUBJECT "xxx"
+ flush privileges;
+ 
+@@ -47,7 +47,7 @@ connect (con5,localhost,ssl_user5,,,,,SS
+ 
+ connection con1;
+ # Check ssl turned on
+---replace_result ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
++--replace_result TLS_AES_256_GCM_SHA384 SSL_CIPHER ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
+ SHOW STATUS LIKE 'Ssl_cipher';
+ select * from t1;
+ --error ER_TABLEACCESS_DENIED_ERROR
+@@ -55,7 +55,7 @@ delete from t1;
+ 
+ connection con2;
+ # Check ssl turned on
+---replace_result ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
++--replace_result TLS_AES_256_GCM_SHA384 SSL_CIPHER ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
+ SHOW STATUS LIKE 'Ssl_cipher';
+ select * from t1;
+ --error ER_TABLEACCESS_DENIED_ERROR
+@@ -63,7 +63,7 @@ delete from t1;
+ 
+ connection con3;
+ # Check ssl turned on
+---replace_result ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
++--replace_result TLS_AES_256_GCM_SHA384 SSL_CIPHER ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
+ SHOW STATUS LIKE 'Ssl_cipher';
+ select * from t1;
+ --error ER_TABLEACCESS_DENIED_ERROR
+@@ -71,7 +71,7 @@ delete from t1;
+ 
+ connection con4;
+ # Check ssl turned on
+---replace_result ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
++--replace_result TLS_AES_256_GCM_SHA384 SSL_CIPHER ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
+ SHOW STATUS LIKE 'Ssl_cipher';
+ select * from t1;
+ --error ER_TABLEACCESS_DENIED_ERROR
+@@ -149,7 +149,7 @@ drop table t1;
+ # verification of servers certificate by setting both ca certificate
+ # and ca path to NULL
+ #
+---replace_result ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
++--replace_result TLS_AES_256_GCM_SHA384 SSL_CIPHER ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
+ --exec $MYSQL --ssl-mode=REQUIRED --ssl-key=$MYSQL_TEST_DIR/std_data/client-key.pem --ssl-cert=$MYSQL_TEST_DIR/std_data/client-cert.pem -e "SHOW STATUS LIKE 'ssl_Cipher'" 2>&1
+ --echo End of 5.0 tests
+ 
+@@ -281,7 +281,7 @@ CREATE USER bug42158@localhost REQUIRE X
+ GRANT SELECT ON test.* TO bug42158@localhost;
+ FLUSH PRIVILEGES;
+ connect(con1,localhost,bug42158,,,,,SSL);
+---replace_result ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
++--replace_result TLS_AES_256_GCM_SHA384 SSL_CIPHER ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
+ SHOW STATUS LIKE 'Ssl_cipher';
+ disconnect con1;
+ connection default;
+--- mysql-8.0-8.0.13.orig/mysql-test/t/plugin_auth_sha256_tls.test
++++ mysql-8.0-8.0.13/mysql-test/t/plugin_auth_sha256_tls.test
+@@ -1,7 +1,7 @@
+ --source include/have_ssl.inc
+ 
+ connect (ssl_con,localhost,root,,,,,SSL);
+---replace_result ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
++--replace_result TLS_AES_256_GCM_SHA384 SSL_CIPHER ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
+ SHOW STATUS LIKE 'Ssl_cipher';
+ 
+ CREATE USER 'kristofer' IDENTIFIED WITH 'sha256_password';
+--- mysql-8.0-8.0.13.orig/mysql-test/t/ssl.test
++++ mysql-8.0-8.0.13/mysql-test/t/ssl.test
+@@ -11,7 +11,7 @@
+ connect (ssl_con,localhost,root,,,,,SSL);
+ 
+ # Check ssl turned on
+---replace_result ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER
++--replace_result TLS_AES_256_GCM_SHA384 SSL_CIPHER ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER
+ SHOW STATUS LIKE 'Ssl_cipher';
+ 
+ # Check ssl expiration
+@@ -22,7 +22,7 @@ SHOW STATUS LIKE 'Ssl_server_not_after';
+ -- source include/common-tests.inc
+ 
+ # Check ssl turned on
+---replace_result ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER
++--replace_result TLS_AES_256_GCM_SHA384 SSL_CIPHER ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER
+ SHOW STATUS LIKE 'Ssl_cipher';
+ 
+ connection default;
+--- mysql-8.0-8.0.13.orig/mysql-test/t/ssl_8k_key.test
++++ mysql-8.0-8.0.13/mysql-test/t/ssl_8k_key.test
+@@ -4,7 +4,7 @@
+ #
+ # Bug#29784 YaSSL assertion failure when reading 8k key.
+ #
+---replace_result ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
++--replace_result TLS_AES_256_GCM_SHA384 SSL_CIPHER ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
+ --exec $MYSQL --ssl-mode=REQUIRED --ssl-key=$MYSQL_TEST_DIR/std_data/client-key.pem --ssl-cert=$MYSQL_TEST_DIR/std_data/client-cert.pem -e "SHOW STATUS LIKE 'ssl_Cipher'" 2>&1
+ 
+ ##  This test file is for testing encrypted communication only, not other
+--- mysql-8.0-8.0.13.orig/mysql-test/t/ssl_ca.test
++++ mysql-8.0-8.0.13/mysql-test/t/ssl_ca.test
+@@ -9,7 +9,7 @@
+ --exec $MYSQL --ssl-ca=$MYSQL_TEST_DIR/std_data/wrong-crl-ca-cert.pem --ssl-key=$MYSQL_TEST_DIR/std_data/crl-client-key.pem --ssl-cert=$MYSQL_TEST_DIR/std_data/crl-client-cert.pem test -e "SHOW STATUS LIKE 'Ssl_cipher'" 2>&1
+ 
+ --echo # try to connect with correct '--ssl-ca' path : should connect
+---replace_result ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
++--replace_result TLS_AES_256_GCM_SHA384 SSL_CIPHER ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
+ --exec $MYSQL --ssl-ca=$MYSQL_TEST_DIR/std_data/crl-ca-cert.pem --ssl-key=$MYSQL_TEST_DIR/std_data/crl-client-key.pem --ssl-cert=$MYSQL_TEST_DIR/std_data/crl-client-cert.pem test -e "SHOW STATUS LIKE 'Ssl_cipher'"
+ 
+ --echo #
+@@ -21,15 +21,15 @@
+ 
+ --echo # try to connect with '--ssl-ca' option using tilde home directoy
+ --echo # path substitution : should connect
+---replace_result ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
++--replace_result TLS_AES_256_GCM_SHA384 SSL_CIPHER ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
+ --exec $MYSQL --ssl-ca=$mysql_test_dir_path/std_data/crl-ca-cert.pem --ssl-key=$MYSQL_TEST_DIR/std_data/crl-client-key.pem --ssl-cert=$MYSQL_TEST_DIR/std_data/crl-client-cert.pem test -e "SHOW STATUS LIKE 'Ssl_cipher'"
+ 
+ --echo # try to connect with '--ssl-key' option using tilde home directoy
+ --echo # path substitution : should connect
+---replace_result ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
++--replace_result TLS_AES_256_GCM_SHA384 SSL_CIPHER ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
+ --exec $MYSQL --ssl-ca=$MYSQL_TEST_DIR/std_data/crl-ca-cert.pem --ssl-key=$mysql_test_dir_path/std_data/crl-client-key.pem --ssl-cert=$MYSQL_TEST_DIR/std_data/crl-client-cert.pem test -e "SHOW STATUS LIKE 'Ssl_cipher'"
+ 
+ --echo # try to connect with '--ssl-cert' option using tilde home directoy
+ --echo # path substitution : should connect
+---replace_result ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
++--replace_result TLS_AES_256_GCM_SHA384 SSL_CIPHER ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
+ --exec $MYSQL --ssl-ca=$MYSQL_TEST_DIR/std_data/crl-ca-cert.pem --ssl-key=$MYSQL_TEST_DIR/std_data/crl-client-key.pem --ssl-cert=$mysql_test_dir_path/std_data/crl-client-cert.pem test -e "SHOW STATUS LIKE 'Ssl_cipher'"
+--- mysql-8.0-8.0.13.orig/mysql-test/t/ssl_cipher.test
++++ mysql-8.0-8.0.13/mysql-test/t/ssl_cipher.test
+@@ -15,10 +15,5 @@
+ # need to use mysql since mysqltest doesn't support --ssl-cipher
+ --exec $MYSQL --host=localhost -e "SHOW STATUS LIKE 'Ssl_cipher'; SHOW STATUS LIKE 'Ssl_cipher_list'" --ssl-mode=REQUIRED --ssl-cipher=DHE-RSA-AES256-SHA
+ 
+-
+---echo # must fail since the default SSL cipher is not compatible
+---error 1
+---exec $MYSQL --host=localhost  --ssl-cipher=AES128-RMD:DES-CBC3-RMD -e "SHOW STATUS LIKE 'Ssl_cipher'; SHOW STATUS LIKE 'Ssl_cipher_list'" --ssl-mode=REQUIRED
+-
+ # Wait till all disconnects are completed
+ --source include/wait_until_count_sessions.inc
+--- mysql-8.0-8.0.13.orig/mysql-test/t/ssl_compress.test
++++ mysql-8.0-8.0.13/mysql-test/t/ssl_compress.test
+@@ -11,7 +11,7 @@
+ connect (ssl_compress_con,localhost,root,,,,,SSL COMPRESS);
+ 
+ # Check ssl turned on
+---replace_result ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
++--replace_result TLS_AES_256_GCM_SHA384 SSL_CIPHER ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
+ SHOW STATUS LIKE 'Ssl_cipher';
+ 
+ # Check compression turned on
+@@ -21,7 +21,7 @@ SHOW STATUS LIKE 'Compression';
+ -- source include/common-tests.inc
+ 
+ # Check ssl turned on
+---replace_result ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
++--replace_result TLS_AES_256_GCM_SHA384 SSL_CIPHER ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
+ SHOW STATUS LIKE 'Ssl_cipher';
+ 
+ # Check compression turned on
+--- mysql-8.0-8.0.13.orig/mysql-test/t/ssl_crl.test
++++ mysql-8.0-8.0.13/mysql-test/t/ssl_crl.test
+@@ -8,11 +8,11 @@ if (!$crllen)
+ }
+ 
+ --echo # test --crl for the client : should connect
+---replace_result $MYSQL_TEST_DIR MYSQL_TEST_DIR ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER
++--replace_result $MYSQL_TEST_DIR MYSQL_TEST_DIR TLS_AES_256_GCM_SHA384 SSL_CIPHER ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER
+ --exec $MYSQL --ssl-mode=VERIFY_CA --ssl-ca=$MYSQL_TEST_DIR/std_data/crl-ca-cert.pem --ssl-key=$MYSQL_TEST_DIR/std_data/crl-client-key.pem --ssl-cert=$MYSQL_TEST_DIR/std_data/crl-client-cert.pem test --ssl-crl=$MYSQL_TEST_DIR/std_data/crl-client-revoked.crl -e "SHOW VARIABLES like '%ssl%';"
+ 
+ --echo # test --crlpath for the client : should connect
+---replace_result $MYSQL_TEST_DIR MYSQL_TEST_DIR ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER
++--replace_result $MYSQL_TEST_DIR MYSQL_TEST_DIR TLS_AES_256_GCM_SHA384 SSL_CIPHER ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER
+ --exec $MYSQL --ssl-mode=VERIFY_CA --ssl-ca=$MYSQL_TEST_DIR/std_data/crl-ca-cert.pem --ssl-key=$MYSQL_TEST_DIR/std_data/crl-client-key.pem --ssl-cert=$MYSQL_TEST_DIR/std_data/crl-client-cert.pem --ssl-crlpath=$MYSQL_TEST_DIR/std_data/crldir test -e "SHOW VARIABLES like '%ssl%';"
+ 
+ --echo # try logging in with a certificate in the server's --ssl-crl : should fail
+@@ -29,10 +29,10 @@ if (!$crllen)
+ 
+ --echo # try to connect with '--ssl-crl' option using tilde home directoy
+ --echo # path substitution : should connect
+---replace_result $MYSQL_TEST_DIR MYSQL_TEST_DIR ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER
++--replace_result $MYSQL_TEST_DIR MYSQL_TEST_DIR TLS_AES_256_GCM_SHA384 SSL_CIPHER ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER
+ --exec $MYSQL --ssl-ca=$MYSQL_TEST_DIR/std_data/crl-ca-cert.pem --ssl-key=$MYSQL_TEST_DIR/std_data/crl-client-key.pem --ssl-cert=$MYSQL_TEST_DIR/std_data/crl-client-cert.pem test --ssl-crl=$mysql_test_dir_path/std_data/crl-client-revoked.crl -e "SHOW STATUS LIKE 'Ssl_cipher'"
+ 
+ --echo # try to connect with '--ssl-crlpath' option using tilde home directoy
+ --echo # path substitution : should connect
+---replace_result $MYSQL_TEST_DIR MYSQL_TEST_DIR ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER
++--replace_result $MYSQL_TEST_DIR MYSQL_TEST_DIR TLS_AES_256_GCM_SHA384 SSL_CIPHER ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER
+ --exec $MYSQL --ssl-ca=$MYSQL_TEST_DIR/std_data/crl-ca-cert.pem --ssl-key=$MYSQL_TEST_DIR/std_data/crl-client-key.pem --ssl-cert=$MYSQL_TEST_DIR/std_data/crl-client-cert.pem --ssl-crlpath=$mysql_test_dir_path/std_data/crldir test -e "SHOW STATUS LIKE 'Ssl_cipher'"
+--- mysql-8.0-8.0.13.orig/mysql-test/t/ssl_verify_identity.test
++++ mysql-8.0-8.0.13/mysql-test/t/ssl_verify_identity.test
+@@ -20,17 +20,17 @@
+ --cat_file $MYSQLTEST_VARDIR/tmp/bug24732452_stderr
+ 
+ --echo ### Trying to connect with ssl-mode as REQUIRED. This should establish an encrypted connection.
+---replace_result ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
++--replace_result TLS_AES_256_GCM_SHA384 SSL_CIPHER ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
+ --exec $MYSQL --ssl-mode=REQUIRED --ssl-ca=$MYSQL_TEST_DIR/std_data/ca-cert-verify-san.pem  --ssl-cert=$MYSQL_TEST_DIR/std_data/client-cert-verify-san.pem --ssl-key=$MYSQL_TEST_DIR/std_data/client-key-verify-san.pem test -e "SHOW STATUS LIKE 'Ssl_cipher'" 2> $MYSQLTEST_VARDIR/tmp/bug24732452_stderr
+ --cat_file $MYSQLTEST_VARDIR/tmp/bug24732452_stderr
+ 
+ --echo ### Trying to connect with ssl-mode as VERIFY_CA. This should establish an encrypted connection.
+---replace_result ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
++--replace_result TLS_AES_256_GCM_SHA384 SSL_CIPHER ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
+ --exec $MYSQL --ssl-mode=VERIFY_CA --ssl-ca=$MYSQL_TEST_DIR/std_data/ca-cert-verify-san.pem  --ssl-cert=$MYSQL_TEST_DIR/std_data/client-cert-verify-san.pem --ssl-key=$MYSQL_TEST_DIR/std_data/client-key-verify-san.pem test -e "SHOW STATUS LIKE 'Ssl_cipher'" 2> $MYSQLTEST_VARDIR/tmp/bug24732452_stderr
+ --cat_file $MYSQLTEST_VARDIR/tmp/bug24732452_stderr
+ 
+ --echo ### Trying to connect with ssl-mode as VERIFY_IDENTITY. This should establish an encrypted connection.
+---replace_result ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
++--replace_result TLS_AES_256_GCM_SHA384 SSL_CIPHER ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
+ --exec $MYSQL --ssl-mode=VERIFY_IDENTITY --ssl-ca=$MYSQL_TEST_DIR/std_data/ca-cert-verify-san.pem  --ssl-cert=$MYSQL_TEST_DIR/std_data/client-cert-verify-san.pem --ssl-key=$MYSQL_TEST_DIR/std_data/client-key-verify-san.pem test -e "SHOW STATUS LIKE 'Ssl_cipher'" 2> $MYSQLTEST_VARDIR/tmp/bug24732452_stderr
+ --cat_file $MYSQLTEST_VARDIR/tmp/bug24732452_stderr
+ 
+@@ -43,12 +43,12 @@ let SEARCH_FILE= $MYSQLTEST_VARDIR/tmp/b
+ --source include/search_pattern.inc
+ 
+ --echo ### Trying to connect with ssl-mode as VERIFY_IDENTITY and hostname as localhost. This should establish an encrypted connection as localhost is present in Alternative Subject Name in the certificate.
+---replace_result ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
++--replace_result TLS_AES_256_GCM_SHA384 SSL_CIPHER ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
+ --exec $MYSQL --host=localhost --ssl-mode=VERIFY_IDENTITY --ssl-ca=$MYSQL_TEST_DIR/std_data/ca-cert-verify-san.pem  --ssl-cert=$MYSQL_TEST_DIR/std_data/client-cert-verify-san.pem --ssl-key=$MYSQL_TEST_DIR/std_data/client-key-verify-san.pem test -e "SHOW STATUS LIKE 'Ssl_cipher'" 2> $MYSQLTEST_VARDIR/tmp/bug24732452_stderr
+ --cat_file $MYSQLTEST_VARDIR/tmp/bug24732452_stderr
+ 
+ --echo ### Trying to connect with ssl-mode as VERIFY_IDENTITY and hostname as 127.0.0.1. This should establish an encrypted connection as localhost is present in Alternative Subject Name in the certificate.
+---replace_result ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
++--replace_result TLS_AES_256_GCM_SHA384 SSL_CIPHER ECDHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES128-GCM-SHA256 SSL_CIPHER DHE-RSA-AES256-SHA SSL_CIPHER ECDHE-RSA-AES128-SHA256 SSL_CIPHER
+ --exec $MYSQL --host=127.0.0.1 --ssl-mode=VERIFY_IDENTITY --ssl-ca=$MYSQL_TEST_DIR/std_data/ca-cert-verify-san.pem  --ssl-cert=$MYSQL_TEST_DIR/std_data/client-cert-verify-san.pem --ssl-key=$MYSQL_TEST_DIR/std_data/client-key-verify-san.pem test -e "SHOW STATUS LIKE 'Ssl_cipher'" 2> $MYSQLTEST_VARDIR/tmp/bug24732452_stderr
+ --cat_file $MYSQLTEST_VARDIR/tmp/bug24732452_stderr
+ 
