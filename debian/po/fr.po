@@ -1,16 +1,16 @@
-# Translation of mysql-dfsg-* debconf templates to French
+# Translation of mysql-5.7 debconf templates to French
 # Copyright (C) 2004-2009, 2012, 2017 Debian French l10n team <debian-l10n-french@lists.debian.org>
-# This file is distributed under the same license as the mysql-dfsg-* packages.
+# This file is distributed under the same license as the mysql-5.7 packages.
 #
 # Translators:
 # Christian Perrier <bubulle@debian.org>, 2004, 2006, 2007, 2009, 2012.
-# Alban Vidal <alban.vidal@zordhak.fr>, 2017.
+# Alban Vidal <alban.vidal@zordhak.fr>, 2017, 2018.
 msgid ""
 msgstr ""
-"Project-Id-Version: mysql-5.7 5.7.18-1\n"
+"Project-Id-Version: mysql-5.7 5.7.21-1\n"
 "Report-Msgid-Bugs-To: mysql-5.7@packages.debian.org\n"
 "POT-Creation-Date: 2018-01-10 07:21+0000\n"
-"PO-Revision-Date: 2017-05-27 14:13+0100\n"
+"PO-Revision-Date: 2018-05-09 20:00+0100\n"
 "Last-Translator: Alban Vidal <alban.vidal@zordhak.fr>\n"
 "Language-Team: French <debian-l10n-french@lists.debian.org>\n"
 "Language: fr\n"
@@ -25,7 +25,7 @@ msgstr ""
 #. Description
 #: ../mysql-server-5.7.templates:2001
 msgid "Automatic maintenance of MySQL server daemon disabled"
-msgstr ""
+msgstr "Maintenance automatique du démon du serveur MySQL désactivée"
 
 #. Type: note
 #. Description
@@ -36,6 +36,11 @@ msgid ""
 "MySQL installation has been disabled to allow other packaging tasks to "
 "complete. For more details, see /etc/mysql/FROZEN."
 msgstr ""
+"Les scripts des mainteneurs du paquet ont détecté un cas qu'ils ne savent pas "
+"gérer et ils ne peuvent pas continuer la configuration de MySQL. La gestion "
+"automatique de votre installation MySQL a été désactivée pour permettre aux "
+"autres tâches du paquet de s'exécuter correctement. Pour plus de détails, "
+"veuillez consulter /etc/mysql/FROZEN."
 
 #. Type: note
 #. Description
@@ -60,7 +65,7 @@ msgid ""
 "You should also check the permissions and ownership of the /var/lib/mysql "
 "directory:"
 msgstr ""
-"Vous devez également vérifier le propriétaire et les permissions du "
+"Vous devez également vérifier le propriétaire et les droits du "
 "répertoire /var/lib/mysql :"
 
 #. Type: boolean
@@ -120,7 +125,8 @@ msgstr ""
 #. Description
 #: ../mysql-server-5.7.templates:6001
 msgid "New password for the MySQL \"root\" user:"
-msgstr "Nouveau mot de passe du superutilisateur de MySQL :"
+msgstr ""
+"Nouveau mot de passe de l'utilisateur « root » (superutilisateur) de MySQL :"
 
 #. Type: password
 #. Description
@@ -142,7 +148,7 @@ msgstr "Si ce champ est laissé vide, le mot de passe ne sera pas changé."
 #. Description
 #: ../mysql-server-5.7.templates:7001
 msgid "Repeat password for the MySQL \"root\" user:"
-msgstr "Confirmation du mot de passe du superutilisateur de MySQL :"
+msgstr "Confirmation du mot de passe de l'utilisateur « root » de MySQL :"
 
 #. Type: error
 #. Description
@@ -172,7 +178,7 @@ msgid ""
 "mysql-cluster-server package and remove all lines starting with \"ndb\" from "
 "all config files below /etc/mysql/."
 msgstr ""
-"La version 5.7 de MySQL ne gère plus les grappes NDB. Vous devriez utiliser "
+"La version 5.7 de MySQL ne gère plus les grappes NDB. Vous devriez utiliser "
 "le paquet mysql-cluster-server et supprimer toutes les lignes commençant par "
 "« ndb » des fichiers de configuration situés dans /etc/mysql."
 
