@@ -1,3 +1,20 @@
+mysql-5.7 (5.7.24-2) unstable; urgency=medium
+
+  [ Karl Stenerud ]
+  * d/mysql-server-5.7.{pre,post}inst, d/additions/mysql-systemd-start: improve
+    frozen state handling (LP: #1799763):
+     - Do not proceed in preinst if already in frozen state to prevent daemon
+       stop if it had been started manually.
+     - Log to syslog via logger to increase visibility of the problem.
+     - Prevent systemd service start when in frozen state.
+
+  [ Robie Basak ]
+  * Update Dutch, Portuguese, French and German translations. Thanks to Frans
+    Spiesschaert, "Traduz", Alban Vidal and Helge Kreutzmann. Closes: #895458,
+    #898190, #898827, #906169.
+
+ -- Robie Basak <robie.basak@canonical.com>  Thu, 15 Nov 2018 13:55:54 +0000
+
 mysql-5.7 (5.7.24-1) unstable; urgency=high (security fixes)
 
   * Imported upstream version 5.7.24 to fix security issues:
