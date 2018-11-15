@@ -12,26 +12,26 @@
 #
 # Alwin Meschede <ameschede@gmx.de>, 2006, 2007.
 # Thomas Mueller <thomas.mueller@tmit.eu>, 2009.
+# Helge Kreutzmann <debian@helgefjell.de>, 2018.
 msgid ""
 msgstr ""
-"Project-Id-Version: mysql-dfsg 5.6.23-2\n"
+"Project-Id-Version: mysql-dfsg 5.7_5.7.23-1\n"
 "Report-Msgid-Bugs-To: mysql-5.7@packages.debian.org\n"
 "POT-Creation-Date: 2018-01-10 07:21+0000\n"
-"PO-Revision-Date: 2012-06-03 10:33+0200\n"
-"Last-Translator: Thomas Mueller <thomas.mueller@tmit.eu>\n"
+"PO-Revision-Date: 2018-08-15 10:54+0200\n"
+"Last-Translator: Helge Kreutzmann <debian@helgefjell.de>\n"
 "Language-Team: german <debian-l10n-german@lists.debian.org>\n"
-"Language: \n"
+"Language: de\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"X-Generator: KBabel 1.11.4\n"
 "Plural-Forms:  nplurals=2; plural=(n != 1);\n"
 
 #. Type: note
 #. Description
 #: ../mysql-server-5.7.templates:2001
 msgid "Automatic maintenance of MySQL server daemon disabled"
-msgstr ""
+msgstr "Automatische Verwaltung des MySQL-Server-Deamons deaktiviert"
 
 #. Type: note
 #. Description
@@ -42,6 +42,10 @@ msgid ""
 "MySQL installation has been disabled to allow other packaging tasks to "
 "complete. For more details, see /etc/mysql/FROZEN."
 msgstr ""
+"Die Paketier-Betreuerskripte entdeckten einen Fall, mit dem sie nicht "
+"umgehen und MySQL weiter konfigurieren können. Automatische Verwaltung Ihrer "
+"MySQL-Installation wurde deaktiviert, damit andere Paketieraufgaben "
+"abgeschlossen werden können. Für weitere Details siehe /etc/mysql/FROZEN."
 
 #. Type: note
 #. Description
@@ -92,6 +96,8 @@ msgid ""
 "This will also erase all data in /var/lib/mysql-files as well as /var/lib/"
 "mysql-keyring."
 msgstr ""
+"Dies wird auch alle Daten in /var/lib/mysql-files sowie in /var/lib/mysql-"
+"keyring löschen."
 
 #. Type: boolean
 #. Description
@@ -109,7 +115,7 @@ msgstr ""
 #. Description
 #: ../mysql-server-5.7.templates:5001
 msgid "Start the MySQL server on boot?"
-msgstr "Soll der MySQL-Server automatisch beim Booten starten?"
+msgstr "Soll der MySQL-Server automatisch beim Systemstart starten?"
 
 #. Type: boolean
 #. Description
@@ -125,7 +131,7 @@ msgstr ""
 #. Description
 #: ../mysql-server-5.7.templates:6001
 msgid "New password for the MySQL \"root\" user:"
-msgstr "Neues Passwort für den MySQL »root«-Benutzer:"
+msgstr "Neues Passwort für den MySQL-»root«-Benutzer:"
 
 #. Type: password
 #. Description
@@ -134,8 +140,8 @@ msgid ""
 "While not mandatory, it is highly recommended that you set a password for "
 "the MySQL administrative \"root\" user."
 msgstr ""
-"Obwohl es nicht zwingend erforderlich ist, wird nachdrücklich empfohlen für "
-"den administrativen MySQL »root«-Benutzer ein Passwort zu setzen."
+"Obwohl es nicht zwingend erforderlich ist, wird nachdrücklich empfohlen, für "
+"den administrativen MySQL-»root«-Benutzer ein Passwort zu setzen."
 
 #. Type: password
 #. Description
@@ -161,7 +167,7 @@ msgstr "Passwort-Eingabefehler"
 msgid "The two passwords you entered were not the same. Please try again."
 msgstr ""
 "Die beiden von Ihnen eingegebenen Passwörter sind nicht identisch. Bitte "
-"erneut versuchen."
+"versuchen Sie es erneut."
 
 #. Type: error
 #. Description
@@ -172,11 +178,6 @@ msgstr "NDB-Cluster scheint gerade benutzt zu werden"
 #. Type: error
 #. Description
 #: ../mysql-server-5.7.templates:9001
-#, fuzzy
-#| msgid ""
-#| "MySQL-5.7 no longer provides NDB Cluster support. Please migrate to the "
-#| "new mysql-cluster-server package and remove all lines starting with \"ndb"
-#| "\" from all config files below /etc/mysql/."
 msgid ""
 "MySQL-5.7 no longer provides NDB Cluster support. Please migrate to the new "
 "mysql-cluster-server package and remove all lines starting with \"ndb\" from "
@@ -186,51 +187,3 @@ msgstr ""
 "Ihr System zum neuen »mysql-cluster-server«-Paket und entfernen Sie alle "
 "Zeilen, die mit »ndb« beginnen aus allen Konfigurationsdateien im "
 "Verzeichnis /etc/mysql/."
-
-#~ msgid "Really proceed with downgrade?"
-#~ msgstr "Möchten Sie wirklich eine ältere Version einspielen?"
-
-#~ msgid "A file named /var/lib/mysql/debian-*.flag exists on this system."
-#~ msgstr ""
-#~ "Auf diesem System existiert eine Datei mit dem Namen /var/lib/mysql/"
-#~ "debian-*.flag"
-
-#~ msgid ""
-#~ "Such a file is an indication that a mysql-server package with a higher "
-#~ "version has been installed previously."
-#~ msgstr ""
-#~ "Diese Datei ist ein Hinweis darauf, dass früher ein MySQL-Server-Paket "
-#~ "mit einer höheren Version installiert war."
-
-#~ msgid ""
-#~ "There is no guarantee that the version you're currently installing will "
-#~ "be able to use the current databases."
-#~ msgstr ""
-#~ "Es kann nicht garantiert werden, dass die gegenwärtig zu installierende "
-#~ "Version dessen Daten benutzen kann."
-
-#~ msgid "Unable to set password for the MySQL \"root\" user"
-#~ msgstr "Konnte für den MySQL-»root«-Benutzer kein Passwort setzen"
-
-#~ msgid ""
-#~ "An error occurred while setting the password for the MySQL administrative "
-#~ "user. This may have happened because the account already has a password, "
-#~ "or because of a communication problem with the MySQL server."
-#~ msgstr ""
-#~ "Beim setzen des Passworts für den administrativen MySQL-Benutzer ist ein "
-#~ "Fehler aufgetreten. Dies könnte daran liegen, dass der Benutzer bereits "
-#~ "ein Passwort hat oder dass es ein Problem mit der Kommunikation mit dem "
-#~ "MySQL-Server gibt."
-
-#~ msgid ""
-#~ "You should check the account's password after the package installation."
-#~ msgstr ""
-#~ "Sie sollten das Passwort des administrativen Benutzers nach der "
-#~ "Paketinstallation prüfen."
-
-#~ msgid ""
-#~ "Please read the /usr/share/doc/mysql-server-5.7/README.Debian file for "
-#~ "more information."
-#~ msgstr ""
-#~ "Für weitere Informationen lesen Sie /usr/share/doc/mysql-server-5.7/"
-#~ "README.Debian."
