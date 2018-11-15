@@ -174,10 +174,6 @@ msgstr "NDB Cluster lijkt in gebruik te zijn"
 #. Type: error
 #. Description
 #: ../mysql-server-5.7.templates:9001
-#| msgid ""
-#| "MySQL-5.7 no longer provides NDB Cluster support. Please migrate to the "
-#| "new mysql-cluster-server package and remove all lines starting with \"ndb"
-#| "\" from all config files below /etc/mysql/."
 msgid ""
 "MySQL-5.7 no longer provides NDB Cluster support. Please migrate to the new "
 "mysql-cluster-server package and remove all lines starting with \"ndb\" from "
