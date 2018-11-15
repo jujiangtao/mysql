@@ -1,16 +1,16 @@
 # Portuguese translation for mysql-5.7's debconf messages
 # Copyright (C) 2006 Miguel Figueiredo <elmig@debianpt.org>
 # This file is distributed under the same license as the mysql-5.7 package.
-# Miguel Figueiredo <elmig@debianpt.org>, 2012
-# Rui Branco <ruipb@debianpt.org>, 2017.
 #
+# Miguel Figueiredo <elmig@debianpt.org>, 2012.
+# Rui Branco <ruipb@debianpt.org>, 2017, 2018.
 msgid ""
 msgstr ""
-"Project-Id-Version: mysql-5.7 5.7.18-1\n"
+"Project-Id-Version: mysql-5.7 5.7.21-1\n"
 "Report-Msgid-Bugs-To: mysql-5.7@packages.debian.org\n"
 "POT-Creation-Date: 2018-01-10 07:21+0000\n"
-"PO-Revision-Date: 2017-08-07 19:34+0100\n"
-"Last-Translator: Rui Branco <ruipb@debianpt.org>\n"
+"PO-Revision-Date: 2018-05-08 13:56+0000\n"
+"Last-Translator: Rui Branco - DebianPT <ruipb@debianpt.org>\n"
 "Language-Team: Portuguese <traduz@debianpt.org>\n"
 "Language: pt\n"
 "MIME-Version: 1.0\n"
@@ -22,7 +22,7 @@ msgstr ""
 #. Description
 #: ../mysql-server-5.7.templates:2001
 msgid "Automatic maintenance of MySQL server daemon disabled"
-msgstr ""
+msgstr "Manutenção automática do 'daemon' MySQL desactivada"
 
 #. Type: note
 #. Description
@@ -33,6 +33,10 @@ msgid ""
 "MySQL installation has been disabled to allow other packaging tasks to "
 "complete. For more details, see /etc/mysql/FROZEN."
 msgstr ""
+"Os 'scripts' de manutenção de empacotamento detectaram um caso que não "
+"pode ser resolvido e não poderá continuar a configurar o MySQL. A gestão "
+"automática da sua instalação MySQL foi desactivada de modo a permitir a "
+"finalização de outras tarefas. Para mais detalhes veja /etc/mysql/FROZEN."
 
 #. Type: note
 #. Description
@@ -174,23 +178,3 @@ msgstr ""
 "para o novo pacote mysql-cluster-server e remova todas as linhas que comecem "
 "por \"ndb\" em todos os ficheiros de configuração em /etc/mysql/."
 
-#~ msgid "Really proceed with downgrade?"
-#~ msgstr "Deseja mesmo fazer downgrade?"
-
-#~ msgid "A file named /var/lib/mysql/debian-*.flag exists on this system."
-#~ msgstr ""
-#~ "Existe, neste sistema, um ficheiro chamado /var/lib/mysql/debian-*.flag."
-
-#~ msgid ""
-#~ "Such a file is an indication that a mysql-server package with a higher "
-#~ "version has been installed previously."
-#~ msgstr ""
-#~ "A existência de tal ficheiro é um indicador que anteriormente foi "
-#~ "instalado um pacote mysql-server com um número de versão superior."
-
-#~ msgid ""
-#~ "There is no guarantee that the version you're currently installing will "
-#~ "be able to use the current databases."
-#~ msgstr ""
-#~ "Não existe nenhuma garantia que a versão que está actualmente a instalar "
-#~ "seja capaz de utilizar as bases de dados actuais."
