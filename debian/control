@@ -121,7 +121,7 @@ Description: MySQL database server binaries
 
 Package: mysql-server-8.0
 Architecture: any
-Recommends: libhtml-template-perl
+Recommends: libhtml-template-perl, mecab-ipadic-utf8
 Suggests: mailx, tinyca
 Pre-Depends: adduser (>= 3.40), debconf, mysql-common (>= 5.5)
 Depends: lsb-base (>= 3.0-10),
