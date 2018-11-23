@@ -66,6 +66,9 @@
   /var/log/mysql/ r,
   /var/log/mysql/** rw,
 
+# Allow read access to mecab files
+  /var/lib/mecab/dic/ipadic-utf8/** r,
+
   # Site-specific additions and overrides. See local/README for details.
   #include <local/usr.sbin.mysqld>
 }
