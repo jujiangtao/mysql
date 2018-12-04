@@ -86,7 +86,7 @@ configure-stamp:
 		-DMYSQL_UNIX_ADDR=/var/run/mysqld/mysqld.sock \
 		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
 		-DBUILD_CONFIG=mysql_release \
-		-DWITH_LIBWRAP=ON \
+		-DWITH_LIBWRAP=OFF \
 		-DWITH_ZLIB=system \
 		-DWITH_LZ4=system \
 		-DWITH_EDITLINE=system \
