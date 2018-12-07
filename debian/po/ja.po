@@ -15,8 +15,8 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: mysql-dfsg-5.6 5.6.8-1\n"
-"Report-Msgid-Bugs-To: mysql-5.7@packages.debian.org\n"
-"POT-Creation-Date: 2018-01-10 07:21+0000\n"
+"Report-Msgid-Bugs-To: mysql-8.0@packages.debian.org\n"
+"POT-Creation-Date: 2018-12-07 09:36+0100\n"
 "PO-Revision-Date: 2016-03-03 10:13+0900\n"
 "Last-Translator: Takuma Yamada <tyamada@takumayamada.com>\n"
 "Language-Team: Japanese <debian-japanese@lists.debian.org>\n"
@@ -29,13 +29,13 @@ msgstr ""
 
 #. Type: note
 #. Description
-#: ../mysql-server-5.7.templates:2001
+#: ../mysql-server-8.0.templates:2001
 msgid "Automatic maintenance of MySQL server daemon disabled"
 msgstr ""
 
 #. Type: note
 #. Description
-#: ../mysql-server-5.7.templates:2001
+#: ../mysql-server-8.0.templates:2001
 msgid ""
 "Packaging maintainer scripts detected a case that it does not know how to "
 "handle and cannot continue configuring MySQL. Automatic management of your "
@@ -45,13 +45,13 @@ msgstr ""
 
 #. Type: note
 #. Description
-#: ../mysql-server-5.7.templates:3001
+#: ../mysql-server-8.0.templates:3001
 msgid "Important note for NIS/YP users"
 msgstr "NIS/YP ユーザへの重要な注意"
 
 #. Type: note
 #. Description
-#: ../mysql-server-5.7.templates:3001
+#: ../mysql-server-8.0.templates:3001
 msgid ""
 "Using MySQL under NIS/YP requires a mysql user account to be added on the "
 "local system with:"
@@ -61,7 +61,7 @@ msgstr ""
 
 #. Type: note
 #. Description
-#: ../mysql-server-5.7.templates:3001
+#: ../mysql-server-8.0.templates:3001
 msgid ""
 "You should also check the permissions and ownership of the /var/lib/mysql "
 "directory:"
@@ -71,13 +71,13 @@ msgstr ""
 
 #. Type: boolean
 #. Description
-#: ../mysql-server-5.7.templates:4001
+#: ../mysql-server-8.0.templates:4001
 msgid "Remove all MySQL databases?"
 msgstr "すべての MySQL データベースを削除しますか?"
 
 #. Type: boolean
 #. Description
-#: ../mysql-server-5.7.templates:4001
+#: ../mysql-server-8.0.templates:4001
 msgid ""
 "The /var/lib/mysql directory which contains the MySQL databases is about to "
 "be removed."
@@ -87,7 +87,7 @@ msgstr ""
 
 #. Type: boolean
 #. Description
-#: ../mysql-server-5.7.templates:4001
+#: ../mysql-server-8.0.templates:4001
 msgid ""
 "This will also erase all data in /var/lib/mysql-files as well as /var/lib/"
 "mysql-keyring."
@@ -95,7 +95,7 @@ msgstr ""
 
 #. Type: boolean
 #. Description
-#: ../mysql-server-5.7.templates:4001
+#: ../mysql-server-8.0.templates:4001
 msgid ""
 "If you're removing the MySQL package in order to later install a more recent "
 "version or if a different mysql-server package is already using it, the data "
@@ -107,13 +107,13 @@ msgstr ""
 
 #. Type: boolean
 #. Description
-#: ../mysql-server-5.7.templates:5001
+#: ../mysql-server-8.0.templates:5001
 msgid "Start the MySQL server on boot?"
 msgstr "MySQL をシステム起動時に開始しますか?"
 
 #. Type: boolean
 #. Description
-#: ../mysql-server-5.7.templates:5001
+#: ../mysql-server-8.0.templates:5001
 msgid ""
 "The MySQL server can be launched automatically at boot time or manually with "
 "the '/etc/init.d/mysql start' command."
@@ -123,13 +123,13 @@ msgstr ""
 
 #. Type: password
 #. Description
-#: ../mysql-server-5.7.templates:6001
+#: ../mysql-server-8.0.templates:6001
 msgid "New password for the MySQL \"root\" user:"
 msgstr "MySQL の \"root\" ユーザに対する新しいパスワード:"
 
 #. Type: password
 #. Description
-#: ../mysql-server-5.7.templates:6001
+#: ../mysql-server-8.0.templates:6001
 msgid ""
 "While not mandatory, it is highly recommended that you set a password for "
 "the MySQL administrative \"root\" user."
@@ -139,44 +139,44 @@ msgstr ""
 
 #. Type: password
 #. Description
-#: ../mysql-server-5.7.templates:6001
+#: ../mysql-server-8.0.templates:6001
 msgid "If this field is left blank, the password will not be changed."
 msgstr "この値を空のままにしておいた場合は、パスワードは変更されません。"
 
 #. Type: password
 #. Description
-#: ../mysql-server-5.7.templates:7001
+#: ../mysql-server-8.0.templates:7001
 msgid "Repeat password for the MySQL \"root\" user:"
 msgstr "MySQL の \"root\" ユーザに対する新しいパスワード:"
 
 #. Type: error
 #. Description
-#: ../mysql-server-5.7.templates:8001
+#: ../mysql-server-8.0.templates:8001
 msgid "Password input error"
 msgstr "パスワード入力エラー"
 
 #. Type: error
 #. Description
-#: ../mysql-server-5.7.templates:8001
+#: ../mysql-server-8.0.templates:8001
 msgid "The two passwords you entered were not the same. Please try again."
 msgstr "入力された二つのパスワードが一致しません。再入力してください。"
 
 #. Type: error
 #. Description
-#: ../mysql-server-5.7.templates:9001
+#: ../mysql-server-8.0.templates:9001
 msgid "NDB Cluster seems to be in use"
 msgstr "NDB クラスタが利用されているようです"
 
 #. Type: error
 #. Description
-#: ../mysql-server-5.7.templates:9001
+#: ../mysql-server-8.0.templates:9001
 #, fuzzy
 #| msgid ""
 #| "MySQL-5.7 no longer provides NDB Cluster support. Please migrate to the "
 #| "new mysql-cluster-server package and remove all lines starting with \"ndb"
 #| "\" from all config files below /etc/mysql/."
 msgid ""
-"MySQL-5.7 no longer provides NDB Cluster support. Please migrate to the new "
+"MySQL-8.0 no longer provides NDB Cluster support. Please migrate to the new "
 "mysql-cluster-server package and remove all lines starting with \"ndb\" from "
 "all config files below /etc/mysql/."
 msgstr ""
