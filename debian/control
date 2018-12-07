@@ -105,7 +105,7 @@ Package: mysql-server-core-8.0
 Architecture: any
 Depends: ${misc:Depends}, ${shlibs:Depends}
 Provides: virtual-mysql-server-core
-Conflicts: mariadb-server-10.1
+Conflicts: mariadb-server-10.1,
            mariadb-server-core-10.1,
            mysql-server-5.7,
            mysql-server-core-5.7,
