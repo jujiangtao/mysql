@@ -12,11 +12,11 @@ default-mysql-server		 = mysql-server-5.7
 default-libmysqlclient-dev	 = libmysqlclient-dev
 default-libmysqld-dev		 = libmysqld-dev
 else
-default-mysql-client-core	 = mariadb-client-core-10.1
-default-mysql-client		 = mariadb-client-10.1
-default-mysql-server-core	 = mariadb-server-core-10.1
-default-mysql-server		 = mariadb-server-10.1
-default-libmysqlclient-dev	 = libmariadbclient-dev-compat
+default-mysql-client-core	 = mariadb-client-core-10.3
+default-mysql-client		 = mariadb-client-10.3
+default-mysql-server-core	 = mariadb-server-core-10.3
+default-mysql-server		 = mariadb-server-10.3
+default-libmysqlclient-dev	 = libmariadb-dev-compat
 default-libmysqld-dev		 = libmariadbd-dev
 endif
 
