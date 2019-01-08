@@ -1,3 +1,11 @@
+mysql-5.7 (5.7.24-3) unstable; urgency=medium
+
+  [ Julian Andres Klode ]
+  * mysqldump.test: Bump failing test for 2018-12-31 to 2020-12-31, so we
+    get two years where it works again.
+
+ -- Robie Basak <robie.basak@canonical.com>  Tue, 08 Jan 2019 15:20:09 +0000
+
 mysql-5.7 (5.7.24-2) unstable; urgency=medium
 
   [ Karl Stenerud ]
