@@ -13,7 +13,7 @@ mysql-5.7 (5.7.24-2) unstable; urgency=medium
     Spiesschaert, "Traduz", Alban Vidal and Helge Kreutzmann. Closes: #895458,
     #898190, #898827, #906169.
 
- -- Robie Basak <robie.basak@canonical.com>  Thu, 15 Nov 2018 13:55:54 +0000
+ -- Robie Basak <robie@justgohome.co.uk>  Thu, 15 Nov 2018 13:55:54 +0000
 
 mysql-5.7 (5.7.24-1) unstable; urgency=high (security fixes)
 
