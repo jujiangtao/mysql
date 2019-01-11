@@ -1,3 +1,9 @@
+mysql-8.0 (8.0.13-1~dev1) UNRELEASED; urgency=medium
+
+  * Initial 8.0 entry
+
+ -- Lars Tangvald <lars.tangvald@oracle.com>  Fri, 11 Jan 2019 13:05:54 +0100
+
 mysql-5.7 (5.7.24-3) unstable; urgency=medium
 
   [ Julian Andres Klode ]
