@@ -22,18 +22,18 @@ SELECT @@innodb_file_per_table;
 CREATE TABLE tde_db.t_encrypt(c4 JSON ,
 c5 INT GENERATED ALWAYS AS (JSON_EXTRACT(c4,'$.key_a')) STORED,
 c6 INT GENERATED ALWAYS AS (JSON_EXTRACT(c4,'$.key_b')) VIRTUAL,
-c7 POINT NOT NULL,
+c7 POINT NOT NULL SRID 0,
 spatial INDEX idx2 (c7)
 )  ENCRYPTION="Y" ENGINE = InnoDB;
 SHOW CREATE TABLE tde_db.t_encrypt;
 Table	Create Table
 t_encrypt	CREATE TABLE `t_encrypt` (
   `c4` json DEFAULT NULL,
-  `c5` int(11) GENERATED ALWAYS AS (json_extract(`c4`,'$.key_a')) STORED,
-  `c6` int(11) GENERATED ALWAYS AS (json_extract(`c4`,'$.key_b')) VIRTUAL,
-  `c7` point NOT NULL,
+  `c5` int(11) GENERATED ALWAYS AS (json_extract(`c4`,_utf8mb4'$.key_a')) STORED,
+  `c6` int(11) GENERATED ALWAYS AS (json_extract(`c4`,_utf8mb4'$.key_b')) VIRTUAL,
+  `c7` point NOT NULL /*!80003 SRID 0 */,
   SPATIAL KEY `idx2` (`c7`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 ENCRYPTION='Y'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci ENCRYPTION='Y'
 INSERT INTO tde_db.t_encrypt(c4,c7) VALUES('{ "key_a": 1, "key_b": 2, "key_c": 3 }',ST_GeomFromText('POINT(383293632 1754448)'));
 INSERT INTO tde_db.t_encrypt(c4,c7) select c4,c7 from tde_db.t_encrypt;
 SELECT c4,c5,ST_AsText(c7) FROM tde_db.t_encrypt LIMIT 10;
@@ -48,11 +48,11 @@ SHOW CREATE TABLE tde_db.t_encrypt;
 Table	Create Table
 t_encrypt	CREATE TABLE `t_encrypt` (
   `c4` json DEFAULT NULL,
-  `c5` int(11) GENERATED ALWAYS AS (json_extract(`c4`,'$.key_a')) STORED,
-  `c6` int(11) GENERATED ALWAYS AS (json_extract(`c4`,'$.key_b')) VIRTUAL,
-  `c7` point NOT NULL,
+  `c5` int(11) GENERATED ALWAYS AS (json_extract(`c4`,_utf8mb4'$.key_a')) STORED,
+  `c6` int(11) GENERATED ALWAYS AS (json_extract(`c4`,_utf8mb4'$.key_b')) VIRTUAL,
+  `c7` point NOT NULL /*!80003 SRID 0 */,
   SPATIAL KEY `idx2` (`c7`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 ENCRYPTION='Y'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci ENCRYPTION='Y'
 # In connection 1
 LOCK TABLES tde_db.t_encrypt WRITE;
 # In connection default
@@ -103,7 +103,7 @@ t_encrypt	CREATE TABLE `t_encrypt` (
   `c1` int(11) DEFAULT NULL,
   `c2` char(20) DEFAULT NULL,
   `c3` blob
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 ENCRYPTION='Y'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci ENCRYPTION='Y'
 INSERT INTO tde_db.t_encrypt VALUES(0, "aaaaa",repeat('A', 20000));
 INSERT INTO tde_db.t_encrypt select * from tde_db.t_encrypt;
 INSERT INTO tde_db.t_encrypt select * from tde_db.t_encrypt;
@@ -188,20 +188,32 @@ SELECT @@innodb_file_per_table;
 CREATE TABLE tde_db.t_encrypt(c4 JSON ,
 c5 INT GENERATED ALWAYS AS (JSON_EXTRACT(c4,'$.key_a')) STORED,
 c6 INT GENERATED ALWAYS AS (JSON_EXTRACT(c4,'$.key_b')) VIRTUAL,
-c7 POINT NOT NULL,
+c7 POINT NOT NULL SRID 0,
 spatial INDEX idx2 (c7)
 )  ENCRYPTION="Y" ENGINE = InnoDB;
-ERROR HY000: This tablespace can't be encrypted.
+ERROR HY000: InnoDB : ENCRYPTION is not accepted syntax for CREATE/ALTER table, for tables in general/shared tablespace.
+SHOW WARNINGS;
+Level	Code	Message
+Error	1478	InnoDB : ENCRYPTION is not accepted syntax for CREATE/ALTER table, for tables in general/shared tablespace.
+Error	1031	Table storage engine for 't_encrypt' doesn't have this option
 SET GLOBAL innodb_file_per_table = 1;
 SELECT @@innodb_file_per_table;
 @@innodb_file_per_table
 1
 CREATE TABLESPACE s_alt1 ADD DATAFILE 's_alt1.ibd';
 CREATE TABLE tde_db.t_encrypt (a int, b text) ENCRYPTION="Y" TABLESPACE=`s_alt1` ENGINE=InnoDB;
-ERROR HY000: This tablespace can't be encrypted.
+ERROR HY000: InnoDB : ENCRYPTION is not accepted syntax for CREATE/ALTER table, for tables in general/shared tablespace.
+SHOW WARNINGS;
+Level	Code	Message
+Error	1478	InnoDB : ENCRYPTION is not accepted syntax for CREATE/ALTER table, for tables in general/shared tablespace.
+Error	1031	Table storage engine for 't_encrypt' doesn't have this option
 DROP TABLESPACE s_alt1;
 CREATE TEMPORARY TABLE tde_db.t_encrypt (a int, b text) ENCRYPTION="Y" ENGINE=InnoDB;
-ERROR HY000: This tablespace can't be encrypted.
+ERROR HY000: InnoDB : ENCRYPTION is not accepted syntax for CREATE/ALTER table, for tables in general/shared tablespace.
+SHOW WARNINGS;
+Level	Code	Message
+Error	1478	InnoDB : ENCRYPTION is not accepted syntax for CREATE/ALTER table, for tables in general/shared tablespace.
+Error	1031	Table storage engine for 't_encrypt' doesn't have this option
 CREATE TABLE tde_db.t_encrypt_myisam (a int, b text) ENCRYPTION="Y" ENGINE=MyISAM;
 ERROR HY000: Table storage engine for 't_encrypt_myisam' doesn't have this option
 CREATE PROCEDURE tde_db.row_format_t_encrypt(row_form VARCHAR(1000))
@@ -210,7 +222,7 @@ declare i int default 1;
 declare has_error int default 0;
 DECLARE CONTINUE HANDLER FOR 1062 SET has_error = 1;
 DROP TABLE IF EXISTS tde_db.t_encrypt;
-SET @sql_text = CONCAT('CREATE TABLE tde_db.t_encrypt  ('," c2 INT NOT NULL AUTO_INCREMENT PRIMARY KEY,c3 VARCHAR(255), c4 JSON ,c5 INT GENERATED ALWAYS AS (JSON_EXTRACT(c4,'$.key_a')) STORED,c6 INT GENERATED ALWAYS AS (JSON_EXTRACT(c4,'$.key_b')) VIRTUAL,c7 POINT NOT NULL,spatial INDEX idx2 (c7) ) ", ' ENCRYPTION="Y" ',  row_form ,' ENGINE=InnoDB');
+SET @sql_text = CONCAT('CREATE TABLE tde_db.t_encrypt  ('," c2 INT NOT NULL AUTO_INCREMENT PRIMARY KEY,c3 VARCHAR(255), c4 JSON ,c5 INT GENERATED ALWAYS AS (JSON_EXTRACT(c4,'$.key_a')) STORED,c6 INT GENERATED ALWAYS AS (JSON_EXTRACT(c4,'$.key_b')) VIRTUAL,c7 POINT NOT NULL SRID 0,spatial INDEX idx2 (c7) ) ", ' ENCRYPTION="Y" ',  row_form ,' ENGINE=InnoDB');
 PREPARE stmt FROM @sql_text;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
@@ -236,12 +248,12 @@ t_encrypt	CREATE TABLE `t_encrypt` (
   `c2` int(11) NOT NULL AUTO_INCREMENT,
   `c3` varchar(255) DEFAULT NULL,
   `c4` json DEFAULT NULL,
-  `c5` int(11) GENERATED ALWAYS AS (json_extract(`c4`,'$.key_a')) STORED,
-  `c6` int(11) GENERATED ALWAYS AS (json_extract(`c4`,'$.key_b')) VIRTUAL,
-  `c7` point NOT NULL,
+  `c5` int(11) GENERATED ALWAYS AS (json_extract(`c4`,_utf8mb4'$.key_a')) STORED,
+  `c6` int(11) GENERATED ALWAYS AS (json_extract(`c4`,_utf8mb4'$.key_b')) VIRTUAL,
+  `c7` point NOT NULL /*!80003 SRID 0 */,
   PRIMARY KEY (`c2`),
   SPATIAL KEY `idx2` (`c7`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 ROW_FORMAT=DYNAMIC ENCRYPTION='Y'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci ROW_FORMAT=DYNAMIC ENCRYPTION='Y'
 COUNT(*)
 32
 c2	c4	c5	ST_AsText(c7)
@@ -289,12 +301,12 @@ t_encrypt	CREATE TABLE `t_encrypt` (
   `c2` int(11) NOT NULL AUTO_INCREMENT,
   `c3` varchar(255) DEFAULT NULL,
   `c4` json DEFAULT NULL,
-  `c5` int(11) GENERATED ALWAYS AS (json_extract(`c4`,'$.key_a')) STORED,
-  `c6` int(11) GENERATED ALWAYS AS (json_extract(`c4`,'$.key_b')) VIRTUAL,
-  `c7` point NOT NULL,
+  `c5` int(11) GENERATED ALWAYS AS (json_extract(`c4`,_utf8mb4'$.key_a')) STORED,
+  `c6` int(11) GENERATED ALWAYS AS (json_extract(`c4`,_utf8mb4'$.key_b')) VIRTUAL,
+  `c7` point NOT NULL /*!80003 SRID 0 */,
   PRIMARY KEY (`c2`),
   SPATIAL KEY `idx2` (`c7`)
-) ENGINE=InnoDB AUTO_INCREMENT=59 DEFAULT CHARSET=latin1 ROW_FORMAT=DYNAMIC ENCRYPTION='Y'
+) ENGINE=InnoDB AUTO_INCREMENT=101 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci ROW_FORMAT=DYNAMIC ENCRYPTION='Y'
 # restart with keying
 # restart: --early-plugin-load=keyring_file=keyring_file.so --loose-keyring_file_data=MYSQL_TMP_DIR/mysecret_keyring --plugin-dir=KEYRING_PLUGIN_PATH
 SELECT c2,c4,c5,c6,ST_AsText(c7) FROM tde_db.t_encrypt LIMIT 10;
@@ -320,12 +332,12 @@ t_encrypt	CREATE TABLE `t_encrypt` (
   `c2` int(11) NOT NULL AUTO_INCREMENT,
   `c3` varchar(255) DEFAULT NULL,
   `c4` json DEFAULT NULL,
-  `c5` int(11) GENERATED ALWAYS AS (json_extract(`c4`,'$.key_a')) STORED,
-  `c6` int(11) GENERATED ALWAYS AS (json_extract(`c4`,'$.key_b')) VIRTUAL,
-  `c7` point NOT NULL,
+  `c5` int(11) GENERATED ALWAYS AS (json_extract(`c4`,_utf8mb4'$.key_a')) STORED,
+  `c6` int(11) GENERATED ALWAYS AS (json_extract(`c4`,_utf8mb4'$.key_b')) VIRTUAL,
+  `c7` point NOT NULL /*!80003 SRID 0 */,
   PRIMARY KEY (`c2`),
   SPATIAL KEY `idx2` (`c7`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 ROW_FORMAT=COMPACT ENCRYPTION='Y'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci ROW_FORMAT=COMPACT ENCRYPTION='Y'
 COUNT(*)
 32
 c2	c4	c5	ST_AsText(c7)
@@ -373,12 +385,12 @@ t_encrypt	CREATE TABLE `t_encrypt` (
   `c2` int(11) NOT NULL AUTO_INCREMENT,
   `c3` varchar(255) DEFAULT NULL,
   `c4` json DEFAULT NULL,
-  `c5` int(11) GENERATED ALWAYS AS (json_extract(`c4`,'$.key_a')) STORED,
-  `c6` int(11) GENERATED ALWAYS AS (json_extract(`c4`,'$.key_b')) VIRTUAL,
-  `c7` point NOT NULL,
+  `c5` int(11) GENERATED ALWAYS AS (json_extract(`c4`,_utf8mb4'$.key_a')) STORED,
+  `c6` int(11) GENERATED ALWAYS AS (json_extract(`c4`,_utf8mb4'$.key_b')) VIRTUAL,
+  `c7` point NOT NULL /*!80003 SRID 0 */,
   PRIMARY KEY (`c2`),
   SPATIAL KEY `idx2` (`c7`)
-) ENGINE=InnoDB AUTO_INCREMENT=59 DEFAULT CHARSET=latin1 ROW_FORMAT=COMPACT ENCRYPTION='Y'
+) ENGINE=InnoDB AUTO_INCREMENT=101 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci ROW_FORMAT=COMPACT ENCRYPTION='Y'
 # restart with keying
 # restart: --early-plugin-load=keyring_file=keyring_file.so --loose-keyring_file_data=MYSQL_TMP_DIR/mysecret_keyring --plugin-dir=KEYRING_PLUGIN_PATH
 SELECT c2,c4,c5,c6,ST_AsText(c7) FROM tde_db.t_encrypt LIMIT 10;
@@ -404,12 +416,12 @@ t_encrypt	CREATE TABLE `t_encrypt` (
   `c2` int(11) NOT NULL AUTO_INCREMENT,
   `c3` varchar(255) DEFAULT NULL,
   `c4` json DEFAULT NULL,
-  `c5` int(11) GENERATED ALWAYS AS (json_extract(`c4`,'$.key_a')) STORED,
-  `c6` int(11) GENERATED ALWAYS AS (json_extract(`c4`,'$.key_b')) VIRTUAL,
-  `c7` point NOT NULL,
+  `c5` int(11) GENERATED ALWAYS AS (json_extract(`c4`,_utf8mb4'$.key_a')) STORED,
+  `c6` int(11) GENERATED ALWAYS AS (json_extract(`c4`,_utf8mb4'$.key_b')) VIRTUAL,
+  `c7` point NOT NULL /*!80003 SRID 0 */,
   PRIMARY KEY (`c2`),
   SPATIAL KEY `idx2` (`c7`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 ROW_FORMAT=REDUNDANT ENCRYPTION='Y'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci ROW_FORMAT=REDUNDANT ENCRYPTION='Y'
 COUNT(*)
 32
 c2	c4	c5	ST_AsText(c7)
@@ -457,12 +469,12 @@ t_encrypt	CREATE TABLE `t_encrypt` (
   `c2` int(11) NOT NULL AUTO_INCREMENT,
   `c3` varchar(255) DEFAULT NULL,
   `c4` json DEFAULT NULL,
-  `c5` int(11) GENERATED ALWAYS AS (json_extract(`c4`,'$.key_a')) STORED,
-  `c6` int(11) GENERATED ALWAYS AS (json_extract(`c4`,'$.key_b')) VIRTUAL,
-  `c7` point NOT NULL,
+  `c5` int(11) GENERATED ALWAYS AS (json_extract(`c4`,_utf8mb4'$.key_a')) STORED,
+  `c6` int(11) GENERATED ALWAYS AS (json_extract(`c4`,_utf8mb4'$.key_b')) VIRTUAL,
+  `c7` point NOT NULL /*!80003 SRID 0 */,
   PRIMARY KEY (`c2`),
   SPATIAL KEY `idx2` (`c7`)
-) ENGINE=InnoDB AUTO_INCREMENT=59 DEFAULT CHARSET=latin1 ROW_FORMAT=REDUNDANT ENCRYPTION='Y'
+) ENGINE=InnoDB AUTO_INCREMENT=101 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci ROW_FORMAT=REDUNDANT ENCRYPTION='Y'
 # restart with keying
 # restart: --early-plugin-load=keyring_file=keyring_file.so --loose-keyring_file_data=MYSQL_TMP_DIR/mysecret_keyring --plugin-dir=KEYRING_PLUGIN_PATH
 SELECT c2,c4,c5,c6,ST_AsText(c7) FROM tde_db.t_encrypt LIMIT 10;
@@ -488,12 +500,12 @@ t_encrypt	CREATE TABLE `t_encrypt` (
   `c2` int(11) NOT NULL AUTO_INCREMENT,
   `c3` varchar(255) DEFAULT NULL,
   `c4` json DEFAULT NULL,
-  `c5` int(11) GENERATED ALWAYS AS (json_extract(`c4`,'$.key_a')) STORED,
-  `c6` int(11) GENERATED ALWAYS AS (json_extract(`c4`,'$.key_b')) VIRTUAL,
-  `c7` point NOT NULL,
+  `c5` int(11) GENERATED ALWAYS AS (json_extract(`c4`,_utf8mb4'$.key_a')) STORED,
+  `c6` int(11) GENERATED ALWAYS AS (json_extract(`c4`,_utf8mb4'$.key_b')) VIRTUAL,
+  `c7` point NOT NULL /*!80003 SRID 0 */,
   PRIMARY KEY (`c2`),
   SPATIAL KEY `idx2` (`c7`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 ROW_FORMAT=COMPRESSED ENCRYPTION='Y'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci ROW_FORMAT=COMPRESSED ENCRYPTION='Y'
 COUNT(*)
 32
 c2	c4	c5	ST_AsText(c7)
@@ -541,12 +553,12 @@ t_encrypt	CREATE TABLE `t_encrypt` (
   `c2` int(11) NOT NULL AUTO_INCREMENT,
   `c3` varchar(255) DEFAULT NULL,
   `c4` json DEFAULT NULL,
-  `c5` int(11) GENERATED ALWAYS AS (json_extract(`c4`,'$.key_a')) STORED,
-  `c6` int(11) GENERATED ALWAYS AS (json_extract(`c4`,'$.key_b')) VIRTUAL,
-  `c7` point NOT NULL,
+  `c5` int(11) GENERATED ALWAYS AS (json_extract(`c4`,_utf8mb4'$.key_a')) STORED,
+  `c6` int(11) GENERATED ALWAYS AS (json_extract(`c4`,_utf8mb4'$.key_b')) VIRTUAL,
+  `c7` point NOT NULL /*!80003 SRID 0 */,
   PRIMARY KEY (`c2`),
   SPATIAL KEY `idx2` (`c7`)
-) ENGINE=InnoDB AUTO_INCREMENT=59 DEFAULT CHARSET=latin1 ROW_FORMAT=COMPRESSED ENCRYPTION='Y'
+) ENGINE=InnoDB AUTO_INCREMENT=101 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci ROW_FORMAT=COMPRESSED ENCRYPTION='Y'
 # restart with keying
 # restart: --early-plugin-load=keyring_file=keyring_file.so --loose-keyring_file_data=MYSQL_TMP_DIR/mysecret_keyring --plugin-dir=KEYRING_PLUGIN_PATH
 SELECT c2,c4,c5,c6,ST_AsText(c7) FROM tde_db.t_encrypt LIMIT 10;
@@ -572,12 +584,12 @@ t_encrypt	CREATE TABLE `t_encrypt` (
   `c2` int(11) NOT NULL AUTO_INCREMENT,
   `c3` varchar(255) DEFAULT NULL,
   `c4` json DEFAULT NULL,
-  `c5` int(11) GENERATED ALWAYS AS (json_extract(`c4`,'$.key_a')) STORED,
-  `c6` int(11) GENERATED ALWAYS AS (json_extract(`c4`,'$.key_b')) VIRTUAL,
-  `c7` point NOT NULL,
+  `c5` int(11) GENERATED ALWAYS AS (json_extract(`c4`,_utf8mb4'$.key_a')) STORED,
+  `c6` int(11) GENERATED ALWAYS AS (json_extract(`c4`,_utf8mb4'$.key_b')) VIRTUAL,
+  `c7` point NOT NULL /*!80003 SRID 0 */,
   PRIMARY KEY (`c2`),
   SPATIAL KEY `idx2` (`c7`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 ROW_FORMAT=COMPRESSED KEY_BLOCK_SIZE=4 ENCRYPTION='Y'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci ROW_FORMAT=COMPRESSED KEY_BLOCK_SIZE=4 ENCRYPTION='Y'
 COUNT(*)
 32
 c2	c4	c5	ST_AsText(c7)
@@ -625,12 +637,12 @@ t_encrypt	CREATE TABLE `t_encrypt` (
   `c2` int(11) NOT NULL AUTO_INCREMENT,
   `c3` varchar(255) DEFAULT NULL,
   `c4` json DEFAULT NULL,
-  `c5` int(11) GENERATED ALWAYS AS (json_extract(`c4`,'$.key_a')) STORED,
-  `c6` int(11) GENERATED ALWAYS AS (json_extract(`c4`,'$.key_b')) VIRTUAL,
-  `c7` point NOT NULL,
+  `c5` int(11) GENERATED ALWAYS AS (json_extract(`c4`,_utf8mb4'$.key_a')) STORED,
+  `c6` int(11) GENERATED ALWAYS AS (json_extract(`c4`,_utf8mb4'$.key_b')) VIRTUAL,
+  `c7` point NOT NULL /*!80003 SRID 0 */,
   PRIMARY KEY (`c2`),
   SPATIAL KEY `idx2` (`c7`)
-) ENGINE=InnoDB AUTO_INCREMENT=59 DEFAULT CHARSET=latin1 ROW_FORMAT=COMPRESSED KEY_BLOCK_SIZE=4 ENCRYPTION='Y'
+) ENGINE=InnoDB AUTO_INCREMENT=101 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci ROW_FORMAT=COMPRESSED KEY_BLOCK_SIZE=4 ENCRYPTION='Y'
 # restart with keying
 # restart: --early-plugin-load=keyring_file=keyring_file.so --loose-keyring_file_data=MYSQL_TMP_DIR/mysecret_keyring --plugin-dir=KEYRING_PLUGIN_PATH
 SELECT c2,c4,c5,c6,ST_AsText(c7) FROM tde_db.t_encrypt LIMIT 10;
@@ -659,11 +671,11 @@ t_encrypt	CREATE TABLE `t_encrypt` (
   `c2` int(11) NOT NULL AUTO_INCREMENT,
   `c3` varchar(255) DEFAULT NULL,
   `c4` json DEFAULT NULL,
-  `c5` int(11) GENERATED ALWAYS AS (json_extract(`c4`,'$.key_a')) STORED,
-  `c6` int(11) GENERATED ALWAYS AS (json_extract(`c4`,'$.key_b')) VIRTUAL,
+  `c5` int(11) GENERATED ALWAYS AS (json_extract(`c4`,_utf8mb4'$.key_a')) STORED,
+  `c6` int(11) GENERATED ALWAYS AS (json_extract(`c4`,_utf8mb4'$.key_b')) VIRTUAL,
   PRIMARY KEY (`c2`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 ENCRYPTION='Y'
-/*!50100 PARTITION BY RANGE (c2)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci ENCRYPTION='Y'
+/*!50100 PARTITION BY RANGE (`c2`)
 (PARTITION p1 VALUES LESS THAN (4) ENGINE = InnoDB,
  PARTITION p2 VALUES LESS THAN (8) ENGINE = InnoDB,
  PARTITION p3 VALUES LESS THAN (1000) ENGINE = InnoDB) */
@@ -673,7 +685,7 @@ INSERT INTO tde_db.t_encrypt(c3,c4) SELECT c3,c4 FROM tde_db.t_encrypt;
 INSERT INTO tde_db.t_encrypt(c3,c4) SELECT c3,c4 FROM tde_db.t_encrypt;
 INSERT INTO tde_db.t_encrypt(c3,c4) SELECT c3,c4 FROM tde_db.t_encrypt;
 INSERT INTO tde_db.t_encrypt(c3,c4) SELECT c3,c4 FROM tde_db.t_encrypt;
-SELECT c2,c4,c5 FROM tde_db.t_encrypt LIMIT 10;
+SELECT c2,c4,c5 FROM tde_db.t_encrypt ORDER BY c2 LIMIT 10;
 c2	c4	c5
 1	{"key_a": 1, "key_b": 2, "key_c": 3}	1
 2	{"key_a": 1, "key_b": 2, "key_c": 3}	1
@@ -685,7 +697,7 @@ c2	c4	c5
 8	{"key_a": 1, "key_b": 2, "key_c": 3}	1
 9	{"key_a": 1, "key_b": 2, "key_c": 3}	1
 10	{"key_a": 1, "key_b": 2, "key_c": 3}	1
-SELECT c2,c4,c5,c6 FROM tde_db.t_encrypt LIMIT 10;
+SELECT c2,c4,c5,c6 FROM tde_db.t_encrypt ORDER BY c2 LIMIT 10;
 c2	c4	c5	c6
 1	{"key_a": 1, "key_b": 2, "key_c": 3}	1	2
 2	{"key_a": 1, "key_b": 2, "key_c": 3}	1	2
@@ -699,7 +711,7 @@ c2	c4	c5	c6
 10	{"key_a": 1, "key_b": 2, "key_c": 3}	1	2
 DELETE FROM tde_db.t_encrypt WHERE c2 > 10;
 UPDATE tde_db.t_encrypt SET c2 = 100 WHERE c2=1;
-SELECT c2,c4,c5 FROM tde_db.t_encrypt LIMIT 10;
+SELECT c2,c4,c5 FROM tde_db.t_encrypt ORDER BY c2 LIMIT 10;
 c2	c4	c5
 2	{"key_a": 1, "key_b": 2, "key_c": 3}	1
 3	{"key_a": 1, "key_b": 2, "key_c": 3}	1
@@ -711,7 +723,7 @@ c2	c4	c5
 9	{"key_a": 1, "key_b": 2, "key_c": 3}	1
 10	{"key_a": 1, "key_b": 2, "key_c": 3}	1
 100	{"key_a": 1, "key_b": 2, "key_c": 3}	1
-SELECT c2,c4,c5,c6 FROM tde_db.t_encrypt LIMIT 10;
+SELECT c2,c4,c5,c6 FROM tde_db.t_encrypt ORDER BY c2 LIMIT 10;
 c2	c4	c5	c6
 2	{"key_a": 1, "key_b": 2, "key_c": 3}	1	2
 3	{"key_a": 1, "key_b": 2, "key_c": 3}	1	2
@@ -724,7 +736,7 @@ c2	c4	c5	c6
 10	{"key_a": 1, "key_b": 2, "key_c": 3}	1	2
 100	{"key_a": 1, "key_b": 2, "key_c": 3}	1	2
 ALTER TABLE tde_db.t_encrypt TRUNCATE PARTITION p2;
-SELECT c2,c4,c5 FROM tde_db.t_encrypt LIMIT 10;
+SELECT c2,c4,c5 FROM tde_db.t_encrypt ORDER BY c2 LIMIT 10;
 c2	c4	c5
 2	{"key_a": 1, "key_b": 2, "key_c": 3}	1
 3	{"key_a": 1, "key_b": 2, "key_c": 3}	1
@@ -732,7 +744,7 @@ c2	c4	c5
 9	{"key_a": 1, "key_b": 2, "key_c": 3}	1
 10	{"key_a": 1, "key_b": 2, "key_c": 3}	1
 100	{"key_a": 1, "key_b": 2, "key_c": 3}	1
-SELECT c2,c4,c5,c6 FROM tde_db.t_encrypt LIMIT 10;
+SELECT c2,c4,c5,c6 FROM tde_db.t_encrypt ORDER BY c2 LIMIT 10;
 c2	c4	c5	c6
 2	{"key_a": 1, "key_b": 2, "key_c": 3}	1	2
 3	{"key_a": 1, "key_b": 2, "key_c": 3}	1	2
@@ -746,17 +758,17 @@ t_encrypt	CREATE TABLE `t_encrypt` (
   `c2` int(11) NOT NULL AUTO_INCREMENT,
   `c3` varchar(255) DEFAULT NULL,
   `c4` json DEFAULT NULL,
-  `c5` int(11) GENERATED ALWAYS AS (json_extract(`c4`,'$.key_a')) STORED,
-  `c6` int(11) GENERATED ALWAYS AS (json_extract(`c4`,'$.key_b')) VIRTUAL,
+  `c5` int(11) GENERATED ALWAYS AS (json_extract(`c4`,_utf8mb4'$.key_a')) STORED,
+  `c6` int(11) GENERATED ALWAYS AS (json_extract(`c4`,_utf8mb4'$.key_b')) VIRTUAL,
   PRIMARY KEY (`c2`)
-) ENGINE=InnoDB AUTO_INCREMENT=101 DEFAULT CHARSET=latin1 ENCRYPTION='Y'
-/*!50100 PARTITION BY RANGE (c2)
+) ENGINE=InnoDB AUTO_INCREMENT=101 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci ENCRYPTION='Y'
+/*!50100 PARTITION BY RANGE (`c2`)
 (PARTITION p1 VALUES LESS THAN (4) ENGINE = InnoDB,
  PARTITION p2 VALUES LESS THAN (8) ENGINE = InnoDB,
  PARTITION p3 VALUES LESS THAN (1000) ENGINE = InnoDB) */
 # restart with keying
 # restart: --early-plugin-load=keyring_file=keyring_file.so --loose-keyring_file_data=MYSQL_TMP_DIR/mysecret_keyring --plugin-dir=KEYRING_PLUGIN_PATH
-SELECT c2,c4,c5,c6 FROM tde_db.t_encrypt LIMIT 10;
+SELECT c2,c4,c5,c6 FROM tde_db.t_encrypt ORDER BY c2 LIMIT 10;
 c2	c4	c5	c6
 2	{"key_a": 1, "key_b": 2, "key_c": 3}	1	2
 3	{"key_a": 1, "key_b": 2, "key_c": 3}	1	2
@@ -780,7 +792,7 @@ c3 CHAR(255) Default 'No text',
 c4 JSON ,
 c5 INT GENERATED ALWAYS AS (JSON_EXTRACT(c4,'$.key_a')) STORED,
 c6 INT GENERATED ALWAYS AS (JSON_EXTRACT(c4,'$.key_b')) VIRTUAL,
-c7 POINT NOT NULL,
+c7 POINT NOT NULL SRID 0,
 spatial INDEX idx2 (c7)
 ) ENCRYPTION="Y"  ENGINE = InnoDB;
 CREATE PROCEDURE tde_db.populate_t_encrypt()
@@ -838,12 +850,12 @@ t_encrypt	CREATE TABLE `t_encrypt` (
   `c2` int(11) NOT NULL,
   `c3` char(255) DEFAULT 'No text',
   `c4` json DEFAULT NULL,
-  `c5` int(11) GENERATED ALWAYS AS (json_extract(`c4`,'$.key_a')) STORED,
-  `c6` int(11) GENERATED ALWAYS AS (json_extract(`c4`,'$.key_b')) VIRTUAL,
-  `c7` point NOT NULL,
+  `c5` int(11) GENERATED ALWAYS AS (json_extract(`c4`,_utf8mb4'$.key_a')) STORED,
+  `c6` int(11) GENERATED ALWAYS AS (json_extract(`c4`,_utf8mb4'$.key_b')) VIRTUAL,
+  `c7` point NOT NULL /*!80003 SRID 0 */,
   PRIMARY KEY (`c2`),
   SPATIAL KEY `idx2` (`c7`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 ENCRYPTION='Y'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci ENCRYPTION='Y'
 # In connection con1 - Running insert
 call tde_db.populate_t_encrypt();
 # In connection con2 - Running insert
@@ -1050,7 +1062,7 @@ t_encrypt	CREATE TABLE `t_encrypt` (
   `c1` int(11) DEFAULT NULL,
   `c2` char(20) DEFAULT NULL,
   `c3` blob
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 ENCRYPTION='Y'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci ENCRYPTION='Y'
 INSERT INTO tde_db.t_encrypt VALUES(0, "aaaaa",repeat('A', 20000));
 INSERT INTO tde_db.t_encrypt select * from tde_db.t_encrypt;
 INSERT INTO tde_db.t_encrypt select * from tde_db.t_encrypt;
@@ -1134,7 +1146,7 @@ c1	c2	right(c3, 20)
 0	aaaaa	AAAAAAAAAAAAAAAAAAAA
 0	aaaaa	AAAAAAAAAAAAAAAAAAAA
 ALTER INSTANCE ROTATE INNODB MASTER KEY;
-ERROR 42000: Access denied; you need (at least one of) the SUPER privilege(s) for this operation
+ERROR 42000: Access denied; you need (at least one of) the SUPER or ENCRYPTION_KEY_ADMIN privilege(s) for this operation
 CREATE TABLE tde_db.t_encrypt_np(c1 INT, c2 char(20), c3 BLOB) ENCRYPTION="Y" ENGINE = InnoDB;
 ERROR 42000: CREATE command denied to user 'encryptnonprivuser'@'localhost' for table 't_encrypt_np'
 SELECT c1,c2,right(c3, 20) FROM tde_db.t_encrypt LIMIT 10;
@@ -1164,9 +1176,9 @@ c1	c2	right(c3, 20)
 0	aaaaa	AAAAAAAAAAAAAAAAAAAA
 0	aaaaa	AAAAAAAAAAAAAAAAAAAA
 0	aaaaa	AAAAAAAAAAAAAAAAAAAA
-DROP TABLE tde_db.t_encrypt;
 DROP USER encryptnonprivuser@localhost;
 DROP USER encryptprivuser@localhost;
+DROP TABLE tde_db.t_encrypt;
 SET GLOBAL innodb_file_per_table=1;
 DROP DATABASE IF EXISTS tde_db;
 CREATE DATABASE tde_db;
@@ -1186,7 +1198,7 @@ t_encrypt	CREATE TABLE `t_encrypt` (
   `c3` blob,
   PRIMARY KEY (`c1`),
   FULLTEXT KEY `idx1` (`c2`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 ENCRYPTION='Y'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci ENCRYPTION='Y'
 CREATE TABLE tde_db.t_encrypt2 (f1 INT PRIMARY KEY, f2 CHAR(100),
 FOREIGN KEY (f1) REFERENCES tde_db.t_encrypt(c1) ON UPDATE CASCADE) ENCRYPTION="Y" ENGINE=InnoDB;
 CREATE TRIGGER tde_db.trigger_encrypt_table AFTER INSERT ON tde_db.t_encrypt
@@ -1267,7 +1279,7 @@ SET GLOBAL innodb_file_per_table = 1;
 SELECT @@innodb_file_per_table;
 @@innodb_file_per_table
 1
-CREATE TABLE tde_db.t_encrypt  (c2 INT NOT NULL AUTO_INCREMENT ,c3 VARCHAR(255), c4 JSON ,c5 INT GENERATED ALWAYS AS (JSON_EXTRACT(c4,'$.key_a')) STORED,c6 INT GENERATED ALWAYS AS (JSON_EXTRACT(c4,'$.key_b')) VIRTUAL,c7 POINT NOT NULL,spatial INDEX idx2 (c7) , PRIMARY KEY (c2,c3(100))) ENCRYPTION="Y" ENGINE=InnoDB;
+CREATE TABLE tde_db.t_encrypt  (c2 INT NOT NULL AUTO_INCREMENT ,c3 VARCHAR(255), c4 JSON ,c5 INT GENERATED ALWAYS AS (JSON_EXTRACT(c4,'$.key_a')) STORED,c6 INT GENERATED ALWAYS AS (JSON_EXTRACT(c4,'$.key_b')) VIRTUAL,c7 POINT NOT NULL SRID 0,spatial INDEX idx2 (c7) , PRIMARY KEY (c2,c3(100))) ENCRYPTION="Y" ENGINE=InnoDB;
 CREATE PROCEDURE tde_db.txn_t_encrypt()
 BEGIN
 declare i int default 0;
@@ -1398,12 +1410,16 @@ c2	RIGHT(c3,20)	c4
 1961	19611961196119611961	{"key_a": 1, "key_b": 2, "key_c": 3}
 1952	19521952195219521952	{"key_a": 21, "key_b": 22, "key_c": 23}
 DROP DATABASE tde_db;
-#
-# Bug#24404091 FAILING ASSERTION: !SRV_READ_ONLY_MODE ||
-# M_IMPL.M_LOG_MODE == MTR_LOG_NO_REDO
-#
-# restart: --early-plugin-load=keyring_file=keyring_file.so --loose-keyring_file_data=MYSQL_TMP_DIR/mysecret_keyring --plugin-dir=KEYRING_PLUGIN_PATH --innodb_read_only=1
+# Global privilege ENCRYPTION_KEY_ADMIN can replace super.
+USE test;
+CREATE USER encryption_admin@localhost IDENTIFIED BY 'foo';
+GRANT ENCRYPTION_KEY_ADMIN, CREATE ON *.* TO encryption_admin@localhost;
+CREATE TABLE t1(c1 INT, c2 char(20)) ENCRYPTION="Y" ENGINE = InnoDB;
 ALTER INSTANCE ROTATE INNODB MASTER KEY;
-ERROR HY000: InnoDB is in read only mode.
+REVOKE ENCRYPTION_KEY_ADMIN ON *.* FROM encryption_admin@localhost;
+ALTER INSTANCE ROTATE INNODB MASTER KEY;
+ERROR 42000: Access denied; you need (at least one of) the SUPER or ENCRYPTION_KEY_ADMIN privilege(s) for this operation
+DROP USER encryption_admin@localhost;
+DROP TABLE t1;
 # restart:
 SET GLOBAL innodb_file_per_table=1;

@@ -1,8 +1,6 @@
 ### test to check if performance_schema.events_waits_history_long
 ### reflects correct data
 
-### disable for embedded server
---source include/not_embedded.inc
 update  performance_schema.setup_instruments set enabled='YES' where name like '%innodb_temp%';
 update performance_schema.setup_consumers set enabled='YES';
 use test;

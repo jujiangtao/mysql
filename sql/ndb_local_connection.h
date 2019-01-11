@@ -1,14 +1,21 @@
 /*
-   Copyright (c) 2011, 2015, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2011, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -18,7 +25,8 @@
 #ifndef NDB_LOCAL_CONNECTION_H
 #define NDB_LOCAL_CONNECTION_H
 
-#include <mysql/mysql_lex_string.h>
+#include "my_inttypes.h"
+#include "mysql/mysql_lex_string.h"
 
 class THD;
 
@@ -39,8 +47,7 @@ class Ndb_local_connection {
 public:
   Ndb_local_connection(THD* thd);
 
-  bool truncate_table(const char* db, size_t db_length,
-                      const char* table, size_t table_length,
+  bool truncate_table(const char* db, const char* table,
                       bool ignore_no_such_table);
 
   bool flush_table(const char* db, size_t db_length,
@@ -63,10 +70,10 @@ public:
 
 private:
   bool execute_query(MYSQL_LEX_STRING sql_text,
-                     const unsigned int* ignore_mysql_errors,
+                     const uint* ignore_mysql_errors,
                      const class Suppressor* suppressor = NULL);
   bool execute_query_iso(MYSQL_LEX_STRING sql_text,
-                         const unsigned int* ignore_mysql_errors,
+                         const uint* ignore_mysql_errors,
                          const class Suppressor* suppressor = NULL);
 private:
   THD* m_thd;

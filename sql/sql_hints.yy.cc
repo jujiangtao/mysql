@@ -68,16 +68,28 @@
 
 
 /* Copy the first part of user declarations.  */
-#line 21 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:339  */
+#line 28 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:339  */
 
-#include "sql_class.h"
-#include "parse_tree_hints.h"
-#include "sql_lex_hints.h"
-#include "sql_const.h"
+#include "my_inttypes.h"
+#include "sql/derror.h"
+#include "sql/parse_tree_hints.h"
+#include "sql/sql_class.h"
+#include "sql/sql_const.h"
+#include "sql/sql_lex.h"
+#include "sql/sql_lex_hints.h"
 
 #define NEW_PTN new (thd->mem_root)
 
-#line 81 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:339  */
+static bool parse_int(longlong *to, const char *from, size_t from_length)
+{
+  int error;
+  char *end= const_cast<char *>(from + from_length);
+  *to= my_strtoll10(from, &end, &error);
+  return error != 0 || end != from + from_length;
+}
+
+
+#line 93 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:339  */
 
 # ifndef YY_NULLPTR
 #  if defined __cplusplus && 201103L <= __cplusplus
@@ -97,8 +109,8 @@
 
 /* In a future release of Bison, this section will be replaced
    by #include "sql_hints.yy.h".  */
-#ifndef YY_HINT_PARSER_EXPORT_HOME2_PB2_BUILD_SB_2_30854041_1538632219_7_DIST_GPL_SQL_SQL_HINTS_YY_H_INCLUDED
-# define YY_HINT_PARSER_EXPORT_HOME2_PB2_BUILD_SB_2_30854041_1538632219_7_DIST_GPL_SQL_SQL_HINTS_YY_H_INCLUDED
+#ifndef YY_HINT_PARSER_EXPORT_HOME2_PB2_BUILD_SB_1_30892320_1538901964_59_DIST_GPL_SQL_SQL_HINTS_YY_H_INCLUDED
+# define YY_HINT_PARSER_EXPORT_HOME2_PB2_BUILD_SB_1_30892320_1538901964_59_DIST_GPL_SQL_SQL_HINTS_YY_H_INCLUDED
 /* Debug traces.  */
 #ifndef YYDEBUG
 # define YYDEBUG 0
@@ -113,54 +125,82 @@ extern int HINT_PARSER_debug;
   enum yytokentype
   {
     MAX_EXECUTION_TIME_HINT = 258,
-    BKA_HINT = 259,
-    BNL_HINT = 260,
-    DUPSWEEDOUT_HINT = 261,
-    FIRSTMATCH_HINT = 262,
-    INTOEXISTS_HINT = 263,
-    LOOSESCAN_HINT = 264,
-    MATERIALIZATION_HINT = 265,
-    NO_BKA_HINT = 266,
-    NO_BNL_HINT = 267,
-    NO_ICP_HINT = 268,
-    NO_MRR_HINT = 269,
-    NO_RANGE_OPTIMIZATION_HINT = 270,
-    NO_SEMIJOIN_HINT = 271,
-    MRR_HINT = 272,
-    QB_NAME_HINT = 273,
-    SEMIJOIN_HINT = 274,
-    SUBQUERY_HINT = 275,
-    HINT_ARG_NUMBER = 276,
-    HINT_ARG_IDENT = 277,
-    HINT_ARG_QB_NAME = 278,
-    HINT_CLOSE = 279,
-    HINT_ERROR = 280
+    RESOURCE_GROUP_HINT = 259,
+    BKA_HINT = 260,
+    BNL_HINT = 261,
+    DUPSWEEDOUT_HINT = 262,
+    FIRSTMATCH_HINT = 263,
+    INTOEXISTS_HINT = 264,
+    LOOSESCAN_HINT = 265,
+    MATERIALIZATION_HINT = 266,
+    NO_BKA_HINT = 267,
+    NO_BNL_HINT = 268,
+    NO_ICP_HINT = 269,
+    NO_MRR_HINT = 270,
+    NO_RANGE_OPTIMIZATION_HINT = 271,
+    NO_SEMIJOIN_HINT = 272,
+    MRR_HINT = 273,
+    QB_NAME_HINT = 274,
+    SEMIJOIN_HINT = 275,
+    SUBQUERY_HINT = 276,
+    DERIVED_MERGE_HINT = 277,
+    NO_DERIVED_MERGE_HINT = 278,
+    JOIN_PREFIX_HINT = 279,
+    JOIN_SUFFIX_HINT = 280,
+    JOIN_ORDER_HINT = 281,
+    JOIN_FIXED_ORDER_HINT = 282,
+    INDEX_MERGE_HINT = 283,
+    NO_INDEX_MERGE_HINT = 284,
+    SET_VAR_HINT = 285,
+    SKIP_SCAN_HINT = 286,
+    NO_SKIP_SCAN_HINT = 287,
+    HINT_ARG_NUMBER = 288,
+    HINT_ARG_IDENT = 289,
+    HINT_ARG_QB_NAME = 290,
+    HINT_ARG_TEXT = 291,
+    HINT_IDENT_OR_NUMBER_WITH_SCALE = 292,
+    HINT_CLOSE = 293,
+    HINT_ERROR = 294
   };
 #endif
 /* Tokens.  */
 #define MAX_EXECUTION_TIME_HINT 258
-#define BKA_HINT 259
-#define BNL_HINT 260
-#define DUPSWEEDOUT_HINT 261
-#define FIRSTMATCH_HINT 262
-#define INTOEXISTS_HINT 263
-#define LOOSESCAN_HINT 264
-#define MATERIALIZATION_HINT 265
-#define NO_BKA_HINT 266
-#define NO_BNL_HINT 267
-#define NO_ICP_HINT 268
-#define NO_MRR_HINT 269
-#define NO_RANGE_OPTIMIZATION_HINT 270
-#define NO_SEMIJOIN_HINT 271
-#define MRR_HINT 272
-#define QB_NAME_HINT 273
-#define SEMIJOIN_HINT 274
-#define SUBQUERY_HINT 275
-#define HINT_ARG_NUMBER 276
-#define HINT_ARG_IDENT 277
-#define HINT_ARG_QB_NAME 278
-#define HINT_CLOSE 279
-#define HINT_ERROR 280
+#define RESOURCE_GROUP_HINT 259
+#define BKA_HINT 260
+#define BNL_HINT 261
+#define DUPSWEEDOUT_HINT 262
+#define FIRSTMATCH_HINT 263
+#define INTOEXISTS_HINT 264
+#define LOOSESCAN_HINT 265
+#define MATERIALIZATION_HINT 266
+#define NO_BKA_HINT 267
+#define NO_BNL_HINT 268
+#define NO_ICP_HINT 269
+#define NO_MRR_HINT 270
+#define NO_RANGE_OPTIMIZATION_HINT 271
+#define NO_SEMIJOIN_HINT 272
+#define MRR_HINT 273
+#define QB_NAME_HINT 274
+#define SEMIJOIN_HINT 275
+#define SUBQUERY_HINT 276
+#define DERIVED_MERGE_HINT 277
+#define NO_DERIVED_MERGE_HINT 278
+#define JOIN_PREFIX_HINT 279
+#define JOIN_SUFFIX_HINT 280
+#define JOIN_ORDER_HINT 281
+#define JOIN_FIXED_ORDER_HINT 282
+#define INDEX_MERGE_HINT 283
+#define NO_INDEX_MERGE_HINT 284
+#define SET_VAR_HINT 285
+#define SKIP_SCAN_HINT 286
+#define NO_SKIP_SCAN_HINT 287
+#define HINT_ARG_NUMBER 288
+#define HINT_ARG_IDENT 289
+#define HINT_ARG_QB_NAME 290
+#define HINT_ARG_TEXT 291
+#define HINT_IDENT_OR_NUMBER_WITH_SCALE 292
+#define HINT_CLOSE 293
+#define HINT_ERROR 294
 
 /* Value type.  */
 
@@ -168,11 +208,11 @@ extern int HINT_PARSER_debug;
 
 int HINT_PARSER_parse (class THD *thd, class Hint_scanner *scanner, class PT_hint_list **ret);
 
-#endif /* !YY_HINT_PARSER_EXPORT_HOME2_PB2_BUILD_SB_2_30854041_1538632219_7_DIST_GPL_SQL_SQL_HINTS_YY_H_INCLUDED  */
+#endif /* !YY_HINT_PARSER_EXPORT_HOME2_PB2_BUILD_SB_1_30892320_1538901964_59_DIST_GPL_SQL_SQL_HINTS_YY_H_INCLUDED  */
 
 /* Copy the second part of user declarations.  */
 
-#line 176 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:358  */
+#line 216 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:358  */
 
 #ifdef short
 # undef short
@@ -412,23 +452,23 @@ union yyalloc
 #endif /* !YYCOPY_NEEDED */
 
 /* YYFINAL -- State number of the termination state.  */
-#define YYFINAL  33
+#define YYFINAL  53
 /* YYLAST -- Last index in YYTABLE.  */
-#define YYLAST   107
+#define YYLAST   165
 
 /* YYNTOKENS -- Number of terminals.  */
-#define YYNTOKENS  29
+#define YYNTOKENS  44
 /* YYNNTS -- Number of nonterminals.  */
-#define YYNNTS  27
+#define YYNNTS  34
 /* YYNRULES -- Number of rules.  */
-#define YYNRULES  58
+#define YYNRULES  84
 /* YYNSTATES -- Number of states.  */
-#define YYNSTATES  100
+#define YYNSTATES  152
 
 /* YYTRANSLATE[YYX] -- Symbol number corresponding to YYX as returned
    by yylex, with out-of-bounds checking.  */
 #define YYUNDEFTOK  2
-#define YYMAXUTOK   280
+#define YYMAXUTOK   294
 
 #define YYTRANSLATE(YYX)                                                \
   ((unsigned int) (YYX) <= YYMAXUTOK ? yytranslate[YYX] : YYUNDEFTOK)
@@ -441,9 +481,9 @@ static const yytype_uint8 yytranslate[] =
        2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
        2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
        2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
-      26,    27,     2,     2,    28,     2,     2,     2,     2,     2,
+      40,    41,     2,     2,    42,     2,     2,     2,     2,     2,
        2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
-       2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
+       2,    43,     2,     2,     2,     2,     2,     2,     2,     2,
        2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
        2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
        2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
@@ -465,19 +505,23 @@ static const yytype_uint8 yytranslate[] =
        2,     2,     2,     2,     2,     2,     1,     2,     3,     4,
        5,     6,     7,     8,     9,    10,    11,    12,    13,    14,
       15,    16,    17,    18,    19,    20,    21,    22,    23,    24,
-      25
+      25,    26,    27,    28,    29,    30,    31,    32,    33,    34,
+      35,    36,    37,    38,    39
 };
 
 #if YYDEBUG
   /* YYRLINE[YYN] -- Source line where rule number YYN was defined.  */
 static const yytype_uint16 yyrline[] =
 {
-       0,   118,   118,   120,   122,   127,   133,   141,   142,   143,
-     144,   145,   150,   172,   173,   177,   183,   192,   193,   197,
-     203,   212,   213,   217,   223,   232,   236,   244,   252,   253,
-     261,   262,   266,   273,   280,   289,   290,   294,   301,   302,
-     303,   304,   308,   310,   315,   321,   328,   334,   344,   351,
-     361,   365,   372,   376,   383,   387,   394,   398,   405
+       0,   164,   164,   166,   168,   173,   179,   187,   188,   189,
+     190,   191,   192,   193,   198,   218,   219,   223,   229,   238,
+     239,   243,   249,   258,   259,   263,   269,   278,   282,   290,
+     298,   299,   307,   308,   312,   319,   326,   333,   340,   347,
+     354,   361,   368,   375,   384,   385,   389,   396,   397,   398,
+     399,   403,   405,   410,   416,   423,   429,   439,   446,   456,
+     460,   464,   471,   475,   479,   486,   490,   494,   498,   505,
+     509,   513,   517,   524,   533,   542,   551,   552,   556,   571,
+     606,   607,   611,   619,   620
 };
 #endif
 
@@ -486,23 +530,31 @@ static const yytype_uint16 yyrline[] =
    First, the terminals, then, starting at YYNTOKENS, nonterminals.  */
 static const char *const yytname[] =
 {
-  "$end", "error", "$undefined", "MAX_EXECUTION_TIME_HINT", "BKA_HINT",
-  "BNL_HINT", "DUPSWEEDOUT_HINT", "FIRSTMATCH_HINT", "INTOEXISTS_HINT",
-  "LOOSESCAN_HINT", "MATERIALIZATION_HINT", "NO_BKA_HINT", "NO_BNL_HINT",
-  "NO_ICP_HINT", "NO_MRR_HINT", "NO_RANGE_OPTIMIZATION_HINT",
-  "NO_SEMIJOIN_HINT", "MRR_HINT", "QB_NAME_HINT", "SEMIJOIN_HINT",
-  "SUBQUERY_HINT", "HINT_ARG_NUMBER", "HINT_ARG_IDENT", "HINT_ARG_QB_NAME",
-  "HINT_CLOSE", "HINT_ERROR", "'('", "')'", "','", "$accept", "start",
-  "hint_list", "hint", "max_execution_time_hint",
-  "opt_hint_param_table_list", "hint_param_table_list",
-  "opt_hint_param_table_list_empty_qb", "hint_param_table_list_empty_qb",
-  "opt_hint_param_index_list", "hint_param_index_list", "hint_param_index",
-  "hint_param_table_empty_qb", "hint_param_table", "hint_param_table_ext",
-  "opt_qb_name", "qb_level_hint", "semijoin_strategies",
-  "semijoin_strategy", "subquery_strategy", "table_level_hint",
-  "index_level_hint", "table_level_hint_type_on",
-  "table_level_hint_type_off", "key_level_hint_type_on",
-  "key_level_hint_type_off", "qb_name_hint", YY_NULLPTR
+  "$end", "error", "$undefined", "MAX_EXECUTION_TIME_HINT",
+  "RESOURCE_GROUP_HINT", "BKA_HINT", "BNL_HINT", "DUPSWEEDOUT_HINT",
+  "FIRSTMATCH_HINT", "INTOEXISTS_HINT", "LOOSESCAN_HINT",
+  "MATERIALIZATION_HINT", "NO_BKA_HINT", "NO_BNL_HINT", "NO_ICP_HINT",
+  "NO_MRR_HINT", "NO_RANGE_OPTIMIZATION_HINT", "NO_SEMIJOIN_HINT",
+  "MRR_HINT", "QB_NAME_HINT", "SEMIJOIN_HINT", "SUBQUERY_HINT",
+  "DERIVED_MERGE_HINT", "NO_DERIVED_MERGE_HINT", "JOIN_PREFIX_HINT",
+  "JOIN_SUFFIX_HINT", "JOIN_ORDER_HINT", "JOIN_FIXED_ORDER_HINT",
+  "INDEX_MERGE_HINT", "NO_INDEX_MERGE_HINT", "SET_VAR_HINT",
+  "SKIP_SCAN_HINT", "NO_SKIP_SCAN_HINT", "HINT_ARG_NUMBER",
+  "HINT_ARG_IDENT", "HINT_ARG_QB_NAME", "HINT_ARG_TEXT",
+  "HINT_IDENT_OR_NUMBER_WITH_SCALE", "HINT_CLOSE", "HINT_ERROR", "'('",
+  "')'", "','", "'='", "$accept", "start", "hint_list", "hint",
+  "max_execution_time_hint", "opt_hint_param_table_list",
+  "hint_param_table_list", "opt_hint_param_table_list_empty_qb",
+  "hint_param_table_list_empty_qb", "opt_hint_param_index_list",
+  "hint_param_index_list", "hint_param_index", "hint_param_table_empty_qb",
+  "hint_param_table", "hint_param_table_ext", "opt_qb_name",
+  "qb_level_hint", "semijoin_strategies", "semijoin_strategy",
+  "subquery_strategy", "table_level_hint", "index_level_hint",
+  "table_level_hint_type_on", "table_level_hint_type_off",
+  "key_level_hint_type_on", "key_level_hint_type_off", "qb_name_hint",
+  "set_var_hint", "resource_group_hint", "set_var_ident",
+  "set_var_num_item", "set_var_text_value", "set_var_string_item",
+  "set_var_arg", YY_NULLPTR
 };
 #endif
 
@@ -513,14 +565,16 @@ static const yytype_uint16 yytoknum[] =
 {
        0,   256,   257,   258,   259,   260,   261,   262,   263,   264,
      265,   266,   267,   268,   269,   270,   271,   272,   273,   274,
-     275,   276,   277,   278,   279,   280,    40,    41,    44
+     275,   276,   277,   278,   279,   280,   281,   282,   283,   284,
+     285,   286,   287,   288,   289,   290,   291,   292,   293,   294,
+      40,    41,    44,    61
 };
 # endif
 
-#define YYPACT_NINF -40
+#define YYPACT_NINF -60
 
 #define yypact_value_is_default(Yystate) \
-  (!!((Yystate) == (-40)))
+  (!!((Yystate) == (-60)))
 
 #define YYTABLE_NINF -1
 
@@ -531,16 +585,22 @@ static const yytype_uint16 yytoknum[] =
      STATE-NUM.  */
 static const yytype_int8 yypact[] =
 {
-      28,   -21,   -15,   -40,   -40,   -40,   -40,   -40,   -40,   -40,
-       4,   -40,    25,    30,    31,    58,     1,   -40,   -40,   -40,
-     -40,   -40,    33,    34,    35,    36,   -40,   -40,     6,    40,
-      42,    40,    40,   -40,    41,   -40,   -40,   -13,     0,    12,
-      12,    39,   -40,    43,    44,    43,    18,   -40,    40,    45,
-      46,    47,   -40,    45,    49,    48,   -40,    50,    50,   -40,
-     -40,   -40,   -40,   -40,     9,   -40,   -40,    27,   -40,   -40,
-      51,   -40,   -40,    52,    53,   -40,   -40,    55,    56,   -40,
-     -40,   -40,    57,    54,   -40,    59,   -40,    43,   -40,   -40,
-     -40,    45,   -40,   -40,   -40,    50,   -40,   -40,   -40,   -40
+      39,   -28,    -5,    -3,   -60,   -60,   -60,   -60,   -60,   -60,
+     -60,    41,   -60,    44,    46,    50,   -60,   -60,    53,    66,
+      67,    68,   -60,   -60,    69,   -60,   -60,   105,     1,   -60,
+     -60,   -60,   -60,   -60,    70,    71,    72,    73,   -60,   -60,
+     -60,   -60,     8,    80,    82,    84,    82,    82,    12,    14,
+      45,    82,     0,   -60,    77,   -60,   -60,    61,    63,    65,
+      65,    75,    78,   -60,    81,    79,    81,    27,    82,    87,
+      83,    85,   -60,    87,    88,    87,    89,    90,   -60,   -60,
+      91,   -60,    87,    92,    87,    94,    98,   -60,   102,   102,
+     -60,   -60,   -60,   -60,   -60,   -60,    60,   -60,   -60,    62,
+     -60,   -60,    96,   -60,   -60,    97,    86,   -60,   -60,   106,
+     100,   -60,   101,   -60,   -60,   -25,   103,   -60,   104,   -60,
+     -60,   -60,   107,   108,   -60,   110,   -60,    81,   -60,   -60,
+     -60,    87,   -60,   -60,   -60,   -60,   -60,   -60,   -60,   -60,
+     -60,   -60,   111,   -60,   -60,   -60,   102,   -60,   -60,   -60,
+     -60,   -60
 };
 
   /* YYDEFACT[STATE-NUM] -- Default reduction number in state STATE-NUM.
@@ -548,32 +608,40 @@ static const yytype_int8 yypact[] =
      means the default is an error.  */
 static const yytype_uint8 yydefact[] =
 {
-       0,     0,     0,    50,    51,    52,    53,    56,    57,    55,
-       0,    54,     0,     0,     0,     0,     0,     5,    11,     9,
-       8,     7,     0,     0,     0,     0,    10,     4,     0,    30,
-       0,    30,    30,     1,     0,     2,     6,    13,    13,     0,
-       0,     0,    31,    35,     0,    35,     0,     3,    30,    17,
-       0,    14,    15,    17,     0,     0,    28,    21,    21,    12,
-      41,    38,    39,    40,     0,    36,    58,     0,    43,    42,
-       0,    27,    26,     0,    18,    19,    44,     0,     0,    46,
-      29,    25,     0,    22,    23,     0,    33,     0,    32,    34,
-      45,     0,    16,    47,    48,     0,    49,    37,    20,    24
+       0,     0,     0,     0,    59,    60,    62,    63,    69,    70,
+      66,     0,    65,     0,     0,     0,    61,    64,     0,     0,
+       0,     0,    67,    71,     0,    68,    72,     0,     0,     5,
+      11,     9,     8,     7,     0,     0,     0,     0,    10,    12,
+      13,     4,     0,     0,    32,     0,    32,    32,    15,    15,
+      15,    32,     0,     1,     0,     2,     6,    15,    15,     0,
+       0,     0,     0,    33,    44,     0,    44,     0,    32,    19,
+       0,    16,    17,    19,     0,    19,     0,     0,    77,    76,
+       0,     3,    19,     0,    19,     0,     0,    30,    23,    23,
+      14,    75,    50,    47,    48,    49,     0,    45,    73,     0,
+      52,    51,     0,    29,    28,     0,    20,    21,    37,     0,
+       0,    39,     0,    41,    43,     0,     0,    53,     0,    55,
+      31,    27,     0,    24,    25,     0,    35,     0,    34,    36,
+      38,     0,    18,    40,    42,    78,    80,    81,    79,    84,
+      82,    83,     0,    54,    56,    57,     0,    58,    46,    22,
+      74,    26
 };
 
   /* YYPGOTO[NTERM-NUM].  */
 static const yytype_int8 yypgoto[] =
 {
-     -40,   -40,   -40,    64,   -40,    60,   -40,    15,   -40,    11,
-     -40,   -10,   -17,   -39,    61,   -24,   -40,    62,     2,   -40,
-     -40,   -40,   -40,   -40,   -40,   -40,   -40
+     -60,   -60,   -60,    95,   -60,    25,   -60,     3,   -60,    33,
+     -60,   -21,    15,   -59,    93,    26,   -60,    99,    -1,   -60,
+     -60,   -60,   -60,   -60,   -60,   -60,   -60,   -60,   -60,   -60,
+     -60,   -60,   -60,   -60
 };
 
   /* YYDEFGOTO[NTERM-NUM].  */
-static const yytype_int8 yydefgoto[] =
+static const yytype_int16 yydefgoto[] =
 {
-      -1,    15,    16,    17,    18,    50,    51,    73,    74,    82,
-      83,    84,    75,    52,    57,    43,    19,    64,    65,    70,
-      20,    21,    22,    23,    24,    25,    26
+      -1,    27,    28,    29,    30,    70,    71,   105,   106,   122,
+     123,   124,   107,    72,    88,    64,    31,    96,    97,   102,
+      32,    33,    34,    35,    36,    37,    38,    39,    40,    80,
+     139,   140,   141,   142
 };
 
   /* YYTABLE[YYPACT[STATE-NUM]] -- What to do in state STATE-NUM.  If
@@ -581,70 +649,94 @@ static const yytype_int8 yydefgoto[] =
      number is the opposite.  If YYTABLE_NINF, syntax error.  */
 static const yytype_uint8 yytable[] =
 {
-      56,    56,    34,    27,     2,     3,     4,    45,    46,    48,
-      49,    28,     5,     6,     7,     8,     9,    10,    11,    12,
-      13,    14,    48,    53,    71,    35,    68,    41,    69,     1,
-      29,     2,     3,     4,    48,    55,    86,    87,    92,     5,
-       6,     7,     8,     9,    10,    11,    12,    13,    14,    60,
-      61,    30,    62,    63,    88,    87,    31,    32,    33,    37,
-      38,    39,    40,    42,    44,    47,    59,    72,    78,    85,
-      80,    66,    81,    76,    98,    77,    79,    48,    89,    90,
-      36,    91,    95,    93,    94,    99,    96,     0,     0,    97,
-       0,     0,     0,     0,     0,     0,     0,     0,    54,     0,
-       0,    58,     0,     0,     0,     0,     0,    67
+      87,    87,    54,    78,     2,     3,     4,     5,   135,   136,
+      41,   137,   138,     6,     7,     8,     9,    10,    11,    12,
+      13,    14,    15,    16,    17,    18,    19,    20,    21,    22,
+      23,    24,    25,    26,    79,    42,   100,    43,   101,    55,
+       1,    61,     2,     3,     4,     5,    68,    69,    68,    73,
+     132,     6,     7,     8,     9,    10,    11,    12,    13,    14,
+      15,    16,    17,    18,    19,    20,    21,    22,    23,    24,
+      25,    26,    66,    67,    74,    76,   110,    77,   112,    68,
+      75,    44,    83,    85,    45,   116,    46,   118,    92,    93,
+      47,    94,    95,    48,   103,    68,    82,    68,    84,    68,
+      86,   126,   127,   128,   127,    53,    49,    50,    51,    52,
+      57,    58,    59,    60,    62,    81,    90,    63,    65,    91,
+      98,   104,   125,    56,   108,   151,   148,   109,   131,   111,
+     113,   114,   120,   117,   115,   119,   121,   129,   130,     0,
+      68,   133,   134,     0,   143,   144,   149,     0,   145,     0,
+     146,   147,   150,    89,     0,     0,     0,     0,     0,     0,
+       0,     0,     0,     0,     0,    99
 };
 
-static const yytype_int8 yycheck[] =
+static const yytype_int16 yycheck[] =
 {
-      39,    40,     1,    24,     3,     4,     5,    31,    32,    22,
-      23,    26,    11,    12,    13,    14,    15,    16,    17,    18,
-      19,    20,    22,    23,    48,    24,     8,    21,    10,     1,
-      26,     3,     4,     5,    22,    23,    27,    28,    77,    11,
-      12,    13,    14,    15,    16,    17,    18,    19,    20,     6,
-       7,    26,     9,    10,    27,    28,    26,    26,     0,    26,
-      26,    26,    26,    23,    22,    24,    27,    22,    53,    58,
-      22,    27,    22,    27,    91,    28,    27,    22,    27,    27,
-      16,    28,    28,    27,    27,    95,    27,    -1,    -1,    87,
-      -1,    -1,    -1,    -1,    -1,    -1,    -1,    -1,    38,    -1,
-      -1,    40,    -1,    -1,    -1,    -1,    -1,    45
+      59,    60,     1,     3,     3,     4,     5,     6,    33,    34,
+      38,    36,    37,    12,    13,    14,    15,    16,    17,    18,
+      19,    20,    21,    22,    23,    24,    25,    26,    27,    28,
+      29,    30,    31,    32,    34,    40,     9,    40,    11,    38,
+       1,    33,     3,     4,     5,     6,    34,    35,    34,    35,
+     109,    12,    13,    14,    15,    16,    17,    18,    19,    20,
+      21,    22,    23,    24,    25,    26,    27,    28,    29,    30,
+      31,    32,    46,    47,    49,    50,    73,    51,    75,    34,
+      35,    40,    57,    58,    40,    82,    40,    84,     7,     8,
+      40,    10,    11,    40,    68,    34,    35,    34,    35,    34,
+      35,    41,    42,    41,    42,     0,    40,    40,    40,    40,
+      40,    40,    40,    40,    34,    38,    41,    35,    34,    41,
+      41,    34,    89,    28,    41,   146,   127,    42,    42,    41,
+      41,    41,    34,    41,    43,    41,    34,    41,    41,    -1,
+      34,    41,    41,    -1,    41,    41,   131,    -1,    41,    -1,
+      42,    41,    41,    60,    -1,    -1,    -1,    -1,    -1,    -1,
+      -1,    -1,    -1,    -1,    -1,    66
 };
 
   /* YYSTOS[STATE-NUM] -- The (internal number of the) accessing
      symbol of state STATE-NUM.  */
 static const yytype_uint8 yystos[] =
 {
-       0,     1,     3,     4,     5,    11,    12,    13,    14,    15,
-      16,    17,    18,    19,    20,    30,    31,    32,    33,    45,
-      49,    50,    51,    52,    53,    54,    55,    24,    26,    26,
-      26,    26,    26,     0,     1,    24,    32,    26,    26,    26,
-      26,    21,    23,    44,    22,    44,    44,    24,    22,    23,
-      34,    35,    42,    23,    34,    23,    42,    43,    43,    27,
-       6,     7,     9,    10,    46,    47,    27,    46,     8,    10,
-      48,    44,    22,    36,    37,    41,    27,    28,    36,    27,
-      22,    22,    38,    39,    40,    38,    27,    28,    27,    27,
-      27,    28,    42,    27,    27,    28,    27,    47,    41,    40
+       0,     1,     3,     4,     5,     6,    12,    13,    14,    15,
+      16,    17,    18,    19,    20,    21,    22,    23,    24,    25,
+      26,    27,    28,    29,    30,    31,    32,    45,    46,    47,
+      48,    60,    64,    65,    66,    67,    68,    69,    70,    71,
+      72,    38,    40,    40,    40,    40,    40,    40,    40,    40,
+      40,    40,    40,     0,     1,    38,    47,    40,    40,    40,
+      40,    33,    34,    35,    59,    34,    59,    59,    34,    35,
+      49,    50,    57,    35,    49,    35,    49,    59,     3,    34,
+      73,    38,    35,    49,    35,    49,    35,    57,    58,    58,
+      41,    41,     7,     8,    10,    11,    61,    62,    41,    61,
+       9,    11,    63,    59,    34,    51,    52,    56,    41,    42,
+      51,    41,    51,    41,    41,    43,    51,    41,    51,    41,
+      34,    34,    53,    54,    55,    53,    41,    42,    41,    41,
+      41,    42,    57,    41,    41,    33,    34,    36,    37,    74,
+      75,    76,    77,    41,    41,    41,    42,    41,    62,    56,
+      41,    55
 };
 
   /* YYR1[YYN] -- Symbol number of symbol that rule YYN derives.  */
 static const yytype_uint8 yyr1[] =
 {
-       0,    29,    30,    30,    30,    31,    31,    32,    32,    32,
-      32,    32,    33,    34,    34,    35,    35,    36,    36,    37,
-      37,    38,    38,    39,    39,    40,    41,    42,    43,    43,
-      44,    44,    45,    45,    45,    46,    46,    46,    47,    47,
-      47,    47,    48,    48,    49,    49,    49,    49,    50,    50,
-      51,    51,    52,    52,    53,    53,    54,    54,    55
+       0,    44,    45,    45,    45,    46,    46,    47,    47,    47,
+      47,    47,    47,    47,    48,    49,    49,    50,    50,    51,
+      51,    52,    52,    53,    53,    54,    54,    55,    56,    57,
+      58,    58,    59,    59,    60,    60,    60,    60,    60,    60,
+      60,    60,    60,    60,    61,    61,    61,    62,    62,    62,
+      62,    63,    63,    64,    64,    64,    64,    65,    65,    66,
+      66,    66,    67,    67,    67,    68,    68,    68,    68,    69,
+      69,    69,    69,    70,    71,    72,    73,    73,    74,    74,
+      75,    75,    76,    77,    77
 };
 
   /* YYR2[YYN] -- Number of symbols on the right hand side of rule YYN.  */
 static const yytype_uint8 yyr2[] =
 {
        0,     2,     2,     3,     2,     1,     2,     1,     1,     1,
-       1,     1,     4,     0,     1,     1,     3,     0,     1,     1,
-       3,     0,     1,     1,     3,     1,     1,     2,     1,     2,
-       0,     1,     5,     5,     5,     0,     1,     3,     1,     1,
-       1,     1,     1,     1,     4,     5,     4,     5,     5,     5,
-       1,     1,     1,     1,     1,     1,     1,     1,     4
+       1,     1,     1,     1,     4,     0,     1,     1,     3,     0,
+       1,     1,     3,     0,     1,     1,     3,     1,     1,     2,
+       1,     2,     0,     1,     5,     5,     5,     4,     5,     4,
+       5,     4,     5,     4,     0,     1,     3,     1,     1,     1,
+       1,     1,     1,     4,     5,     4,     5,     5,     5,     1,
+       1,     1,     1,     1,     1,     1,     1,     1,     1,     1,
+       1,     1,     1,     4,     6,     4,     1,     1,     1,     1,
+       1,     1,     1,     1,     1
 };
 
 
@@ -1331,49 +1423,47 @@ yyreduce:
   switch (yyn)
     {
         case 2:
-#line 119 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+#line 165 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
     { *ret= (yyvsp[-1].hint_list); }
-#line 1337 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1429 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 3:
-#line 121 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+#line 167 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
     { *ret= (yyvsp[-2].hint_list); }
-#line 1343 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1435 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 4:
-#line 123 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+#line 169 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
     { *ret= NULL; }
-#line 1349 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1441 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 5:
-#line 128 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+#line 174 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint_list)= NEW_PTN PT_hint_list(thd->mem_root);
             if ((yyval.hint_list) == NULL || (yyval.hint_list)->push_back((yyvsp[0].hint)))
               YYABORT; // OOM
           }
-#line 1359 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1451 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 6:
-#line 134 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+#line 180 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
     {
             (yyvsp[-1].hint_list)->push_back((yyvsp[0].hint));
             (yyval.hint_list)= (yyvsp[-1].hint_list);
           }
-#line 1368 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1460 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
-  case 12:
-#line 151 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+  case 14:
+#line 199 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
     {
-            int error;
-            char *end= const_cast<char *>((yyvsp[-1].hint_string).str + (yyvsp[-1].hint_string).length);
-            longlong n= my_strtoll10((yyvsp[-1].hint_string).str, &end, &error);
-            if (error != 0 || end != (yyvsp[-1].hint_string).str + (yyvsp[-1].hint_string).length || n > UINT_MAX32)
+            longlong n;
+            if (parse_int(&n, (yyvsp[-1].hint_string).str, (yyvsp[-1].hint_string).length) || n > UINT_MAX32)
             {
               scanner->syntax_warning(ER_THD(thd,
                                              ER_WARN_BAD_MAX_EXECUTION_TIME));
@@ -1386,345 +1476,548 @@ yyreduce:
                 YYABORT; // OOM
             }
           }
-#line 1390 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
-    break;
-
-  case 13:
-#line 172 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
-    { (yyval.hint_param_table_list).init(thd->mem_root); }
-#line 1396 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1480 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 15:
-#line 178 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
-    {
-            (yyval.hint_param_table_list).init(thd->mem_root);
-            if ((yyval.hint_param_table_list).push_back((yyvsp[0].hint_param_table)))
-              YYABORT; // OOM
-          }
-#line 1406 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
-    break;
-
-  case 16:
-#line 184 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
-    {
-            if ((yyvsp[-2].hint_param_table_list).push_back((yyvsp[0].hint_param_table)))
-              YYABORT; // OOM
-            (yyval.hint_param_table_list)= (yyvsp[-2].hint_param_table_list);
-          }
-#line 1416 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 218 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+    { (yyval.hint_param_table_list).init(thd->mem_root); }
+#line 1486 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 17:
-#line 192 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
-    { (yyval.hint_param_table_list).init(thd->mem_root); }
-#line 1422 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
-    break;
-
-  case 19:
-#line 198 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+#line 224 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint_param_table_list).init(thd->mem_root);
             if ((yyval.hint_param_table_list).push_back((yyvsp[0].hint_param_table)))
               YYABORT; // OOM
           }
-#line 1432 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1496 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
-  case 20:
-#line 204 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+  case 18:
+#line 230 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
     {
             if ((yyvsp[-2].hint_param_table_list).push_back((yyvsp[0].hint_param_table)))
               YYABORT; // OOM
             (yyval.hint_param_table_list)= (yyvsp[-2].hint_param_table_list);
           }
-#line 1442 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1506 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+    break;
+
+  case 19:
+#line 238 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+    { (yyval.hint_param_table_list).init(thd->mem_root); }
+#line 1512 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 21:
-#line 212 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
-    { (yyval.hint_param_index_list).init(thd->mem_root); }
-#line 1448 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 244 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+    {
+            (yyval.hint_param_table_list).init(thd->mem_root);
+            if ((yyval.hint_param_table_list).push_back((yyvsp[0].hint_param_table)))
+              YYABORT; // OOM
+          }
+#line 1522 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+    break;
+
+  case 22:
+#line 250 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+    {
+            if ((yyvsp[-2].hint_param_table_list).push_back((yyvsp[0].hint_param_table)))
+              YYABORT; // OOM
+            (yyval.hint_param_table_list)= (yyvsp[-2].hint_param_table_list);
+          }
+#line 1532 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 23:
-#line 218 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+#line 258 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+    { (yyval.hint_param_index_list).init(thd->mem_root); }
+#line 1538 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+    break;
+
+  case 25:
+#line 264 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint_param_index_list).init(thd->mem_root);
             if ((yyval.hint_param_index_list).push_back((yyvsp[0].hint_string)))
               YYABORT; // OOM
           }
-#line 1458 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1548 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
-  case 24:
-#line 224 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+  case 26:
+#line 270 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
     {
             if ((yyvsp[-2].hint_param_index_list).push_back((yyvsp[0].hint_string)))
               YYABORT; // OOM
             (yyval.hint_param_index_list)= (yyvsp[-2].hint_param_index_list);
           }
-#line 1468 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1558 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
-  case 26:
-#line 237 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+  case 28:
+#line 283 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint_param_table).table= (yyvsp[0].hint_string);
             (yyval.hint_param_table).opt_query_block= NULL_CSTR;
           }
-#line 1477 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1567 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
-  case 27:
-#line 245 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+  case 29:
+#line 291 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint_param_table).table= (yyvsp[-1].hint_string);
             (yyval.hint_param_table).opt_query_block= (yyvsp[0].hint_string);
           }
-#line 1486 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1576 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
-  case 29:
-#line 254 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+  case 31:
+#line 300 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint_param_table).table= (yyvsp[0].hint_string);
             (yyval.hint_param_table).opt_query_block= (yyvsp[-1].hint_string);
           }
-#line 1495 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
-    break;
-
-  case 30:
-#line 261 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
-    { (yyval.hint_string)= NULL_CSTR; }
-#line 1501 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1585 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 32:
-#line 267 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
-    {
-            (yyval.hint)= NEW_PTN PT_qb_level_hint((yyvsp[-2].hint_string), TRUE, SEMIJOIN_HINT_ENUM, (yyvsp[-1].ulong_num));
-            if ((yyval.hint) == NULL)
-              YYABORT; // OOM
-          }
-#line 1511 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
-    break;
-
-  case 33:
-#line 274 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
-    {
-            (yyval.hint)= NEW_PTN PT_qb_level_hint((yyvsp[-2].hint_string), FALSE, SEMIJOIN_HINT_ENUM, (yyvsp[-1].ulong_num));
-            if ((yyval.hint) == NULL)
-              YYABORT; // OOM
-          }
-#line 1521 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 307 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+    { (yyval.hint_string)= NULL_CSTR; }
+#line 1591 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 34:
-#line 281 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+#line 313 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
     {
-            (yyval.hint)= NEW_PTN PT_qb_level_hint((yyvsp[-2].hint_string), TRUE, SUBQUERY_HINT_ENUM, (yyvsp[-1].ulong_num));
+            (yyval.hint)= NEW_PTN PT_qb_level_hint((yyvsp[-2].hint_string), true, SEMIJOIN_HINT_ENUM, (yyvsp[-1].ulong_num));
             if ((yyval.hint) == NULL)
               YYABORT; // OOM
           }
-#line 1531 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1601 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 35:
-#line 289 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
-    { (yyval.ulong_num)= 0; }
-#line 1537 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 320 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+    {
+            (yyval.hint)= NEW_PTN PT_qb_level_hint((yyvsp[-2].hint_string), false, SEMIJOIN_HINT_ENUM, (yyvsp[-1].ulong_num));
+            if ((yyval.hint) == NULL)
+              YYABORT; // OOM
+          }
+#line 1611 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 36:
-#line 291 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+#line 327 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
     {
-            (yyval.ulong_num)= (yyvsp[0].ulong_num);
+            (yyval.hint)= NEW_PTN PT_qb_level_hint((yyvsp[-2].hint_string), true, SUBQUERY_HINT_ENUM, (yyvsp[-1].ulong_num));
+            if ((yyval.hint) == NULL)
+              YYABORT; // OOM
           }
-#line 1545 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1621 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 37:
-#line 295 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+#line 334 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
     {
-            (yyval.ulong_num)= (yyvsp[-2].ulong_num) | (yyvsp[0].ulong_num);
+            (yyval.hint)= NEW_PTN PT_qb_level_hint(NULL_CSTR, true, JOIN_PREFIX_HINT_ENUM, (yyvsp[-1].hint_param_table_list));
+            if ((yyval.hint) == NULL)
+              YYABORT; // OOM
           }
-#line 1553 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1631 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 38:
-#line 301 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
-    { (yyval.ulong_num)= OPTIMIZER_SWITCH_FIRSTMATCH; }
-#line 1559 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 341 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+    {
+            (yyval.hint)= NEW_PTN PT_qb_level_hint((yyvsp[-2].hint_string), true, JOIN_PREFIX_HINT_ENUM, (yyvsp[-1].hint_param_table_list));
+            if ((yyval.hint) == NULL)
+              YYABORT; // OOM
+          }
+#line 1641 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 39:
-#line 302 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
-    { (yyval.ulong_num)= OPTIMIZER_SWITCH_LOOSE_SCAN; }
-#line 1565 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 348 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+    {
+            (yyval.hint)= NEW_PTN PT_qb_level_hint(NULL_CSTR, true, JOIN_SUFFIX_HINT_ENUM, (yyvsp[-1].hint_param_table_list));
+            if ((yyval.hint) == NULL)
+              YYABORT; // OOM
+          }
+#line 1651 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 40:
-#line 303 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
-    { (yyval.ulong_num)= OPTIMIZER_SWITCH_MATERIALIZATION; }
-#line 1571 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 355 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+    {
+            (yyval.hint)= NEW_PTN PT_qb_level_hint((yyvsp[-2].hint_string), true, JOIN_SUFFIX_HINT_ENUM, (yyvsp[-1].hint_param_table_list));
+            if ((yyval.hint) == NULL)
+              YYABORT; // OOM
+          }
+#line 1661 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 41:
-#line 304 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
-    { (yyval.ulong_num)= OPTIMIZER_SWITCH_DUPSWEEDOUT; }
-#line 1577 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 362 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+    {
+            (yyval.hint)= NEW_PTN PT_qb_level_hint(NULL_CSTR, true, JOIN_ORDER_HINT_ENUM, (yyvsp[-1].hint_param_table_list));
+            if ((yyval.hint) == NULL)
+              YYABORT; // OOM
+          }
+#line 1671 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 42:
-#line 308 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
-    { (yyval.ulong_num)=
-                                   Item_exists_subselect::EXEC_MATERIALIZATION; }
-#line 1584 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 369 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+    {
+            (yyval.hint)= NEW_PTN PT_qb_level_hint((yyvsp[-2].hint_string), true, JOIN_ORDER_HINT_ENUM, (yyvsp[-1].hint_param_table_list));
+            if ((yyval.hint) == NULL)
+              YYABORT; // OOM
+          }
+#line 1681 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 43:
-#line 310 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
-    { (yyval.ulong_num)= Item_exists_subselect::EXEC_EXISTS; }
-#line 1590 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 376 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+    {
+            (yyval.hint)= NEW_PTN PT_qb_level_hint((yyvsp[-1].hint_string), true, JOIN_FIXED_ORDER_HINT_ENUM, 0);
+            if ((yyval.hint) == NULL)
+              YYABORT; // OOM
+          }
+#line 1691 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 44:
-#line 316 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
-    {
-            (yyval.hint)= NEW_PTN PT_table_level_hint(NULL_CSTR, (yyvsp[-1].hint_param_table_list), TRUE, (yyvsp[-3].hint_type));
-            if ((yyval.hint) == NULL)
-              YYABORT; // OOM
-          }
-#line 1600 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 384 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+    { (yyval.ulong_num)= 0; }
+#line 1697 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 45:
-#line 323 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+#line 386 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
     {
-            (yyval.hint)= NEW_PTN PT_table_level_hint((yyvsp[-2].hint_string), (yyvsp[-1].hint_param_table_list), TRUE, (yyvsp[-4].hint_type));
-            if ((yyval.hint) == NULL)
-              YYABORT; // OOM
+            (yyval.ulong_num)= (yyvsp[0].ulong_num);
           }
-#line 1610 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1705 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 46:
-#line 329 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+#line 390 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
     {
-            (yyval.hint)= NEW_PTN PT_table_level_hint(NULL_CSTR, (yyvsp[-1].hint_param_table_list), FALSE, (yyvsp[-3].hint_type));
-            if ((yyval.hint) == NULL)
-              YYABORT; // OOM
+            (yyval.ulong_num)= (yyvsp[-2].ulong_num) | (yyvsp[0].ulong_num);
           }
-#line 1620 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1713 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 47:
-#line 336 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
-    {
-            (yyval.hint)= NEW_PTN PT_table_level_hint((yyvsp[-2].hint_string), (yyvsp[-1].hint_param_table_list), FALSE, (yyvsp[-4].hint_type));
-            if ((yyval.hint) == NULL)
-              YYABORT; // OOM
-          }
-#line 1630 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 396 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+    { (yyval.ulong_num)= OPTIMIZER_SWITCH_FIRSTMATCH; }
+#line 1719 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 48:
-#line 346 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
-    {
-            (yyval.hint)= NEW_PTN PT_key_level_hint((yyvsp[-2].hint_param_table), (yyvsp[-1].hint_param_index_list), TRUE, (yyvsp[-4].hint_type));
-            if ((yyval.hint) == NULL)
-              YYABORT; // OOM
-          }
-#line 1640 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 397 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+    { (yyval.ulong_num)= OPTIMIZER_SWITCH_LOOSE_SCAN; }
+#line 1725 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 49:
-#line 353 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
-    {
-            (yyval.hint)= NEW_PTN PT_key_level_hint((yyvsp[-2].hint_param_table), (yyvsp[-1].hint_param_index_list), FALSE, (yyvsp[-4].hint_type));
-            if ((yyval.hint) == NULL)
-              YYABORT; // OOM
-          }
-#line 1650 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 398 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+    { (yyval.ulong_num)= OPTIMIZER_SWITCH_MATERIALIZATION; }
+#line 1731 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 50:
-#line 362 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
-    {
-            (yyval.hint_type)= BKA_HINT_ENUM;
-          }
-#line 1658 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 399 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+    { (yyval.ulong_num)= OPTIMIZER_SWITCH_DUPSWEEDOUT; }
+#line 1737 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 51:
-#line 366 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
-    {
-            (yyval.hint_type)= BNL_HINT_ENUM;
-          }
-#line 1666 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 403 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+    { (yyval.ulong_num)=
+                                   Item_exists_subselect::EXEC_MATERIALIZATION; }
+#line 1744 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 52:
-#line 373 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
-    {
-            (yyval.hint_type)= BKA_HINT_ENUM;
-          }
-#line 1674 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 405 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+    { (yyval.ulong_num)= Item_exists_subselect::EXEC_EXISTS; }
+#line 1750 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 53:
-#line 377 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+#line 411 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
     {
-            (yyval.hint_type)= BNL_HINT_ENUM;
+            (yyval.hint)= NEW_PTN PT_table_level_hint(NULL_CSTR, (yyvsp[-1].hint_param_table_list), true, (yyvsp[-3].hint_type));
+            if ((yyval.hint) == NULL)
+              YYABORT; // OOM
           }
-#line 1682 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1760 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 54:
-#line 384 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+#line 418 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
     {
-            (yyval.hint_type)= MRR_HINT_ENUM;
+            (yyval.hint)= NEW_PTN PT_table_level_hint((yyvsp[-2].hint_string), (yyvsp[-1].hint_param_table_list), true, (yyvsp[-4].hint_type));
+            if ((yyval.hint) == NULL)
+              YYABORT; // OOM
           }
-#line 1690 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1770 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 55:
-#line 388 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+#line 424 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
     {
-            (yyval.hint_type)= NO_RANGE_HINT_ENUM;
+            (yyval.hint)= NEW_PTN PT_table_level_hint(NULL_CSTR, (yyvsp[-1].hint_param_table_list), false, (yyvsp[-3].hint_type));
+            if ((yyval.hint) == NULL)
+              YYABORT; // OOM
           }
-#line 1698 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1780 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 56:
-#line 395 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+#line 431 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
     {
-            (yyval.hint_type)= ICP_HINT_ENUM;
+            (yyval.hint)= NEW_PTN PT_table_level_hint((yyvsp[-2].hint_string), (yyvsp[-1].hint_param_table_list), false, (yyvsp[-4].hint_type));
+            if ((yyval.hint) == NULL)
+              YYABORT; // OOM
           }
-#line 1706 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1790 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 57:
-#line 399 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+#line 441 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
     {
-            (yyval.hint_type)= MRR_HINT_ENUM;
+            (yyval.hint)= NEW_PTN PT_key_level_hint((yyvsp[-2].hint_param_table), (yyvsp[-1].hint_param_index_list), true, (yyvsp[-4].hint_type));
+            if ((yyval.hint) == NULL)
+              YYABORT; // OOM
           }
-#line 1714 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1800 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 58:
-#line 406 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/mysql-5.7.24-release-export-13764372_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+#line 448 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+    {
+            (yyval.hint)= NEW_PTN PT_key_level_hint((yyvsp[-2].hint_param_table), (yyvsp[-1].hint_param_index_list), false, (yyvsp[-4].hint_type));
+            if ((yyval.hint) == NULL)
+              YYABORT; // OOM
+          }
+#line 1810 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+    break;
+
+  case 59:
+#line 457 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+    {
+            (yyval.hint_type)= BKA_HINT_ENUM;
+          }
+#line 1818 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+    break;
+
+  case 60:
+#line 461 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+    {
+            (yyval.hint_type)= BNL_HINT_ENUM;
+          }
+#line 1826 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+    break;
+
+  case 61:
+#line 465 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+    {
+            (yyval.hint_type)= DERIVED_MERGE_HINT_ENUM;
+          }
+#line 1834 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+    break;
+
+  case 62:
+#line 472 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+    {
+            (yyval.hint_type)= BKA_HINT_ENUM;
+          }
+#line 1842 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+    break;
+
+  case 63:
+#line 476 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+    {
+            (yyval.hint_type)= BNL_HINT_ENUM;
+          }
+#line 1850 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+    break;
+
+  case 64:
+#line 480 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+    {
+            (yyval.hint_type)= DERIVED_MERGE_HINT_ENUM;
+          }
+#line 1858 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+    break;
+
+  case 65:
+#line 487 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+    {
+            (yyval.hint_type)= MRR_HINT_ENUM;
+          }
+#line 1866 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+    break;
+
+  case 66:
+#line 491 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+    {
+            (yyval.hint_type)= NO_RANGE_HINT_ENUM;
+          }
+#line 1874 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+    break;
+
+  case 67:
+#line 495 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+    {
+            (yyval.hint_type)= INDEX_MERGE_HINT_ENUM;
+          }
+#line 1882 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+    break;
+
+  case 68:
+#line 499 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+    {
+            (yyval.hint_type)= SKIP_SCAN_HINT_ENUM;
+          }
+#line 1890 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+    break;
+
+  case 69:
+#line 506 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+    {
+            (yyval.hint_type)= ICP_HINT_ENUM;
+          }
+#line 1898 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+    break;
+
+  case 70:
+#line 510 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+    {
+            (yyval.hint_type)= MRR_HINT_ENUM;
+          }
+#line 1906 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+    break;
+
+  case 71:
+#line 514 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+    {
+            (yyval.hint_type)= INDEX_MERGE_HINT_ENUM;
+          }
+#line 1914 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+    break;
+
+  case 72:
+#line 518 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+    {
+            (yyval.hint_type)= SKIP_SCAN_HINT_ENUM;
+          }
+#line 1922 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+    break;
+
+  case 73:
+#line 525 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint)= NEW_PTN PT_hint_qb_name((yyvsp[-1].hint_string));
             if ((yyval.hint) == NULL)
               YYABORT; // OOM
           }
-#line 1724 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1932 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+    break;
+
+  case 74:
+#line 534 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+    {
+            (yyval.hint)= NEW_PTN PT_hint_sys_var((yyvsp[-3].hint_string), (yyvsp[-1].item));
+            if ((yyval.hint) == NULL)
+              YYABORT; // OOM
+          }
+#line 1942 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+    break;
+
+  case 75:
+#line 543 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+    {
+           (yyval.hint)= NEW_PTN PT_hint_resource_group((yyvsp[-1].hint_string));
+           if ((yyval.hint) == nullptr)
+              YYABORT; // OOM
+         }
+#line 1952 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+    break;
+
+  case 78:
+#line 557 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+    {
+            longlong n;
+            if (parse_int(&n, (yyvsp[0].hint_string).str, (yyvsp[0].hint_string).length))
+            {
+              scanner->syntax_warning(ER_THD(thd, ER_WRONG_SIZE_NUMBER));
+              (yyval.item)= NULL;
+            }
+            else
+            {
+              (yyval.item)= NEW_PTN Item_int((ulonglong)n);
+              if ((yyval.item) == NULL)
+                YYABORT; // OOM
+            }
+          }
+#line 1971 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+    break;
+
+  case 79:
+#line 572 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+    {
+            longlong n;
+            if (parse_int(&n, (yyvsp[0].hint_string).str, (yyvsp[0].hint_string).length - 1))
+            {
+              scanner->syntax_warning(ER_THD(thd, ER_WRONG_SIZE_NUMBER));
+              (yyval.item)= NULL;
+            }
+            else
+            {
+              int multiplier;
+              switch ((yyvsp[0].hint_string).str[(yyvsp[0].hint_string).length - 1]) {
+              case 'K': multiplier= 1024; break;
+              case 'M': multiplier= 1024 * 1024; break;
+              case 'G': multiplier= 1024 * 1024 * 1024; break;
+              default:
+                DBUG_ASSERT(0); // should not happen
+                YYABORT;        // for sure
+              }
+              if (1.0L * n * multiplier > LLONG_MAX)
+              {
+                scanner->syntax_warning(ER_THD(thd, ER_WRONG_SIZE_NUMBER));
+                (yyval.item)= NULL;
+              }
+              else
+              {
+                (yyval.item)= NEW_PTN Item_int((ulonglong)n * multiplier);
+                if ((yyval.item) == NULL)
+                  YYABORT; // OOM
+              }
+            }
+          }
+#line 2007 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+    break;
+
+  case 82:
+#line 612 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/mysql-8.0.13-release-export-13776648_gpl/sql/sql_hints.yy" /* yacc.c:1646  */
+    {
+          (yyval.item)= NEW_PTN Item_string((yyvsp[0].hint_string).str, (yyvsp[0].hint_string).length, thd->charset());
+          if ((yyval.item) == NULL)
+            YYABORT; // OOM
+        }
+#line 2017 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
 
-#line 1728 "/export/home2/pb2/build/sb_2-30854041-1538632219.7/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 2021 "/export/home2/pb2/build/sb_1-30892320-1538901964.59/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
       default: break;
     }
   /* User semantic actions sometimes alter yychar, and that requires

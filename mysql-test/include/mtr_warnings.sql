@@ -1,17 +1,24 @@
 -- Copyright (c) 2008, 2018, Oracle and/or its affiliates. All rights reserved.
 --
 -- This program is free software; you can redistribute it and/or modify
--- it under the terms of the GNU General Public License as published by
--- the Free Software Foundation; version 2 of the License.
+-- it under the terms of the GNU General Public License, version 2.0,
+-- as published by the Free Software Foundation.
+--
+-- This program is also distributed with certain software (including
+-- but not limited to OpenSSL) that is licensed under separate terms,
+-- as designated in a particular file or component or in included license
+-- documentation.  The authors of MySQL hereby grant you an additional
+-- permission to link the program and your derivative works with the
+-- separately licensed software that they have included with MySQL.
 --
 -- This program is distributed in the hope that it will be useful,
 -- but WITHOUT ANY WARRANTY; without even the implied warranty of
 -- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
--- GNU General Public License for more details.
+-- GNU General Public License, version 2.0, for more details.
 --
 -- You should have received a copy of the GNU General Public License
--- along with this program; if not, write to the Free Software Foundation,
--- 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
+-- along with this program; if not, write to the Free Software
+-- Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 delimiter ||;
 
@@ -42,7 +49,9 @@ CREATE DEFINER=root@localhost TRIGGER ts_insert
 BEFORE INSERT ON test_suppressions
 FOR EACH ROW BEGIN
   DECLARE dummy INT;
+  SET GLOBAL regexp_time_limit = 0;
   SELECT "" REGEXP NEW.pattern INTO dummy;
+  SET GLOBAL regexp_time_limit = DEFAULT;
 END
 */||
 SET @@character_set_client = @character_set_client_saved||
@@ -73,7 +82,9 @@ CREATE DEFINER=root@localhost TRIGGER gs_insert
 BEFORE INSERT ON global_suppressions
 FOR EACH ROW BEGIN
   DECLARE dummy INT;
+  SET GLOBAL regexp_time_limit = 0;
   SELECT "" REGEXP NEW.pattern INTO dummy;
+  SET GLOBAL regexp_time_limit = DEFAULT;
 END
 */||
 SET @@character_set_client = @character_set_client_saved||
@@ -86,17 +97,10 @@ SET @@collation_connection = @collation_connection_saved||
 -- Insert patterns that should always be suppressed
 --
 INSERT INTO global_suppressions VALUES
- (".SELECT UNIX_TIMESTAMP... failed on master"),
- ("Aborted connection"),
  ("Client requested master to start replication from position"),
- ("Could not find first log file name in binary log"),
- ("Enabling keys got errno"),
  ("Error reading master configuration"),
  ("Error reading packet"),
  ("Event Scheduler"),
- ("Failed to open log"),
- ("Failed to open the existing master info file"),
- ("Forcing shutdown of [0-9]* plugins"),
  ("Forcing close of thread"),
 
  ("innodb-page-size has been changed"),
@@ -108,19 +112,12 @@ INSERT INTO global_suppressions VALUES
  */
 
  ("Got error [0-9]* when reading table"),
- ("Incorrect definition of table"),
- ("Incorrect information in file"),
- ("InnoDB: Warning: we did not need to do crash recovery"),
- ("Invalid \\(old\\?\\) table or database name"),
  ("Lock wait timeout exceeded"),
  ("Log entry on master is longer than max_allowed_packet"),
  ("unknown option '--loose-"),
  ("unknown variable 'loose-"),
- ("You have forced lower_case_table_names to 0 through a command-line option"),
  ("Setting lower_case_table_names=2"),
  ("NDB Binlog:"),
- ("NDB: failed to setup table"),
- ("NDB: only row based binary logging"),
  ("Neither --relay-log nor --relay-log-index were used"),
  ("Query partially completed"),
  ("Slave I.O thread aborted while waiting for relay log"),
@@ -139,13 +136,10 @@ INSERT INTO global_suppressions VALUES
  ("Slave: Query caused different errors on master and slave"),
  ("Slave: Table .* doesn't exist"),
  ("Slave: Table width mismatch"),
- ("Slave: The incident LOST_EVENTS occured on the master"),
- ("Slave: Unknown error.* 1105"),
+ ("Slave: The incident LOST_EVENTS occurred on the master"),
+ ("Slave: Unknown error.* MY-001105"),
  ("Slave: Can't drop database.* database doesn't exist"),
- ("Sort aborted"),
  ("Time-out in NDB"),
- ("Warning:\s+One can only use the --user.*root"),
- ("Warning:\s+Table:.* on (delete|rename)"),
  ("You have an error in your SQL syntax"),
  ("deprecated"),
  ("description of time zone"),
@@ -159,15 +153,15 @@ INSERT INTO global_suppressions VALUES
 
  ("Statement may not be safe to log in statement format"),
 
- /* innodb foreign key tests that fail in ALTER or RENAME produce this */
- ("InnoDB: Error: in ALTER TABLE `test`.`t[123]`"),
- ("InnoDB: Error: in RENAME TABLE table `test`.`t1`"),
- ("InnoDB: Error: table `test`.`t[123]` does not exist in the InnoDB internal"),
+ /* 
+    innodb_dedicated_server warning which raised if innodb_buffer_pool_size,
+    innodb_log_file_size or innodb_flush_method is specified.
+ */
+ ("InnoDB: Option innodb_dedicated_server is ignored"),
 
- /*
-   BUG#32080 - Excessive warnings on Solaris: setrlimit could not
-   change the size of core files
-  */
+/*
+  Message seen on debian when built with -DWITH_ASAN=ON
+*/
  ("setrlimit could not change the size of core files to 'infinity'"),
 
  ("The slave I.O thread stops because a fatal error is encountered when it tries to get the value of SERVER_UUID variable from master.*"),
@@ -177,17 +171,9 @@ INSERT INTO global_suppressions VALUES
  ("No existing UUID has been found, so we assume that this is the first time that this server has been started.*"),
  /*It will print a warning if server is run without --explicit_defaults_for_timestamp.*/
  ("TIMESTAMP with implicit DEFAULT value is deprecated. Please use --explicit_defaults_for_timestamp server option (see documentation for more details)*"),
- /*It will print a warning if a server is run without NO_AUTO_CREATE_USER sql mode.*/
- ("'NO_AUTO_CREATE_USER' sql mode was not set."),
 
  /* Added 2009-08-XX after fixing Bug #42408 */
 
- ("Although a path was specified for the --general-log-file option, log tables are used"),
- ("Although a path was specified for the --slow-query-log-file option, log tables are used"),
- ("Backup: Operation aborted"),
- ("Restore: Operation aborted"),
- ("Restore: The grant .* was skipped because the user does not exist"),
- ("The path specified for the variable .* is not a directory or cannot be written:"),
  ("Master server does not support or not configured semi-sync replication, fallback to asynchronous"),
  (": The MySQL server is running with the --secure-backup-file-priv option so it cannot execute this statement"),
  ("Slave: Unknown table 'test.t1' Error_code: 1051"),
@@ -196,9 +182,6 @@ INSERT INTO global_suppressions VALUES
  ("==[0-9]*== Memcheck,"),
  ("==[0-9]*== Copyright"),
  ("==[0-9]*== Using"),
- ("==[0-9]*== For more details"),
- /* This comes with innodb plugin tests */
- ("==[0-9]*== Warning: set address range perms: large range"),
  /* valgrind-3.5.0 dumps this */
  ("==[0-9]*== Command: "),
  /* Messages from valgrind tools */
@@ -209,11 +192,6 @@ INSERT INTO global_suppressions VALUES
  ("==[0-9]*== I   refs:      [0-9]+"),
  ("==[0-9]*== Massif"),
  ("==[0-9]*== Helgrind"),
-
- /* valgrind warnings: invalid file descriptor -1 in syscall
-    write()/read(). Bug #50414 */
- ("==[0-9]*== Warning: invalid file descriptor -1 in syscall write()"),
- ("==[0-9]*== Warning: invalid file descriptor -1 in syscall read()"),
 
  /*
    Transient network failures that cause warnings on reconnect.
@@ -245,11 +223,12 @@ INSERT INTO global_suppressions VALUES
   of events, this warning is emitted.
   */
  ("Slave SQL.*: Coordinator thread of multi-threaded slave is being stopped in the middle of assigning a group of events.*"),
- 
+
+ /*
+  Warning messages seen on Fedora and older Debian and Ubuntu versions
+ */
  ("Changed limits: max_open_files: *"),
- ("Changed limits: max_connections: *"),
  ("Changed limits: table_open_cache: *"),
- ("Could not increase number of max_open_files to more than *"),
 
  /*
    Warning message introduced by wl#7706
@@ -287,16 +266,34 @@ INSERT INTO global_suppressions VALUES
  ("\\[GCS\\] Message cannot be sent because the member does not belong to a group."),
  ("\\[GCS\\] Automatically adding IPv4 localhost address to the whitelist. It is mandatory that it is added."),
  ("Slave SQL for channel 'group_replication_recovery': ... The slave coordinator and worker threads are stopped, possibly leaving data in inconsistent state.*"),
+ ("Skip re-populating collations and character sets tables in read-only mode"),
+ ("Skip updating information_schema metadata in read-only mode"),
  ("Member with address .* has become unreachable."),
  ("This server is not able to reach a majority of members in the group.*"),
  ("Member with address .* is reachable again."),
  ("The member has resumed contact with a majority of the members in the group.*"),
  ("Members removed from the group.*"),
+ ("Error while sending message for group replication recovery"),
+
+ /*
+   Warnings/errors related to SSL connection by mysqlx
+ */
+ ("Plugin mysqlx reported: 'Unable to use user mysql.session account when connecting the server for internal plugin requests.'"),
+ ("Plugin mysqlx reported: 'Failed at SSL configuration: \"SSL_CTX_new failed\""),
+ ("Plugin mysqlx reported: 'Could not open"),
+ ("Plugin mysqlx reported: 'All I/O interfaces are disabled"),
+ ("Plugin mysqlx reported: 'Failed at SSL configuration: \"SSL context is not usable without certificate and private key\"'"),
+
  /*
    Missing Private/Public key files
  */
  ("RSA private key file not found"),
  ("RSA public key file not found"),
+
+ /*
+   SSL Library instrumentation failed
+ */
+ ("The SSL library function CRYPTO_set_mem_functions failed"),
 
  ("THE_LAST_SUPPRESSION")||
 
@@ -315,6 +312,7 @@ BEGIN
   --
   -- Remove mark from lines that are suppressed by global suppressions
   --
+  SET GLOBAL regexp_time_limit = 0;
   UPDATE error_log el, global_suppressions gs
     SET suspicious=0
       WHERE el.suspicious=1 AND el.line REGEXP gs.pattern;
@@ -325,6 +323,7 @@ BEGIN
   UPDATE error_log el, test_suppressions ts
     SET suspicious=0
       WHERE el.suspicious=1 AND el.line REGEXP ts.pattern;
+  SET GLOBAL regexp_time_limit = DEFAULT;
 
   --
   -- Get the number of marked lines and return result
