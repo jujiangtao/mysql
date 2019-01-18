@@ -58,6 +58,8 @@ Depends: libmysqlclient21 (= ${binary:Version}),
          zlib1g-dev,
          ${misc:Depends},
          ${shlibs:Depends}
+Breaks: libmysqld-dev (<< 8.0)
+Replaces: libmysqld-dev (<< 8.0)
 Description: MySQL database development files
  MySQL is a fast, stable and true multi-user, multi-threaded SQL database
  server. SQL (Structured Query Language) is the most popular database query
