@@ -1,3 +1,15 @@
+mysql-5.7 (5.7.25-1) unstable; urgency=high (security fixes)
+
+  * Imported upstream version 5.7.25 to fix security issues:
+    - https://www.oracle.com/technetwork/security-advisory/cpujan2019-5072801.html
+    - CVE-2018-0734 CVE-2019-2420 CVE-2019-2434 CVE-2019-2455
+    - CVE-2019-2481 CVE-2019-2482 CVE-2019-2486 CVE-2019-2503
+    - CVE-2019-2507 CVE-2019-2510 CVE-2019-2528 CVE-2019-2529
+    - CVE-2019-2531 CVE-2019-2532 CVE-2019-2534 CVE-2019-2537
+    (Closes: #919817)
+
+ -- Lars Tangvald <lars.tangvald@oracle.com>  Tue, 22 Jan 2019 08:03:45 +0100
+
 mysql-5.7 (5.7.24-3) unstable; urgency=medium
 
   [ Julian Andres Klode ]
