@@ -12,8 +12,6 @@ usr/bin/mysqlbinlog
 usr/bin/mysqld_multi
 usr/bin/mysqld_safe
 usr/bin/perror
-usr/bin/resolve_stack_dump usr/lib/mysql/
-usr/bin/resolveip
 usr/bin/zlib_decompress /usr/lib/mysql
 usr/lib/mysql/plugin/adt_null.so
 usr/lib/mysql/plugin/auth_socket.so
