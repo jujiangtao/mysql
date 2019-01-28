@@ -24,6 +24,7 @@ Build-Depends: bison,
                libssl-dev,
                libwrap0-dev (>= 7.6-8.3),
                lsb-release,
+               lz4,
                perl,
                po-debconf,
                psmisc,
@@ -193,6 +194,7 @@ Description: MySQL regression tests
 Package: mysql-testsuite-8.0
 Architecture: any
 Depends: libjson-perl,
+         lz4,
          mysql-client-8.0 (= ${binary:Version}),
          mysql-server-8.0 (= ${binary:Version}),
          unzip,
