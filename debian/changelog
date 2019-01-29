@@ -1,6 +1,44 @@
-mysql-8.0 (8.0.13-1~dev1) UNRELEASED; urgency=medium
+mysql-8.0 (8.0.14-1) UNRELEASED; urgency=medium
 
-  * Initial 8.0 entry
+  [ Lars Tangvald ]
+  * New upstream major release
+  * libmysqlclient20 soname bump to libmysqlclient21
+  * Remove libmysqld (removed from upstream)
+  * Remove mysql_embedded and manpage (removed from upstream)
+  * General update of everything from 5.7 to 8.0 as required
+  * Breaks/Replaces/Conflicts as required
+  * d/rules, d/control: Build with native openssl instead of bundled yassl
+    following upstream licence change to allow openssl linking
+  * d/systemd service file:
+    - Increase open file limit
+    - Change type to notify
+    - Add environment variable needed for "restart" command
+  * d/additions:
+    - Remove deprecated config options
+    - Cleaned up default configuration files
+  * d/tests:
+    - Disable failing test main.mysqlpump_basic
+    - Skip test main.file_contents for dep8
+    - Fix test failures on openssl 1.1.1
+  * d/lintian-overrides:
+    - Override errors about the json license
+    - Override binary-without-manpage for test package
+  * d/patches: Remove mipsel64 patch (no longer required)
+  * d/rules: Enable pie (position independent executable)
+    - Update path for getting symbols list from server binary
+    - Disable WITH_LIBWRAP to fix build error in 8.0.13
+    - Run the innodb_fts.mecab-utf8 test
+    - Use bundled rapidjson headers in Ubuntu
+    - Remove unneeded copy of files
+  * d/copyright: Update intro to blanket license for 8.0
+  * d/rules: Disable broken test
+  * d/postinst: Automatically comment out options removed in 8.0
+  * d/control:
+    - Add dependency on libssl-dev to libmysqlclient-dev
+    - Add recommends on mecab-ipadic-utf8
+    - Add to build-dep and testsuite dependencies
+  * d/install: Remove sql files that are not in 8.0.13
+  * d/apparmor: Add access to mecab files
 
  -- Lars Tangvald <lars.tangvald@oracle.com>  Fri, 11 Jan 2019 13:05:54 +0100
 
