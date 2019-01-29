@@ -39,6 +39,7 @@ mysql-8.0 (8.0.14-1) UNRELEASED; urgency=medium
     - Add to build-dep and testsuite dependencies
   * d/install: Remove sql files that are not in 8.0.13
   * d/apparmor: Add access to mecab files
+  * d/install: Remove legacy utils resolveip and resolve_stack_dump
 
  -- Lars Tangvald <lars.tangvald@oracle.com>  Fri, 11 Jan 2019 13:05:54 +0100
 
