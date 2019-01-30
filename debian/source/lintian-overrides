@@ -3,7 +3,8 @@
 # the license text is untouched, so there is no code in the source
 # that uses this license.
 license-problem-json-evil extra/rapidjson/license.txt
-# This file merely lists all the different licenses used in the source
+# These two files merely list all the different licenses used in the source
 # The error is for the redundant entry of the rapidjson license
 license-problem-json-evil LICENSE
+license-problem-json-evil router/LICENSE.router
 
