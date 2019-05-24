@@ -1,3 +1,16 @@
+mysql-5.7 (5.7.26-1) unstable; urgency=high (security fixes)
+
+  * Imported upstream version 5.7.26 to fix security issues:
+    - https://www.oracle.com/technetwork/security-advisory/cpuapr2019-5072813.html
+    - CVE-2019-1559 CVE-2019-2566 CVE-2019-2581 CVE-2019-2592
+    - CVE-2019-2614 CVE-2019-2627 CVE-2019-2628 CVE-2019-2632
+    - CVE-2019-2683 CVE-2018-3123
+    (Closes: #927308)
+  * d/patches: Remove fix-mysqldump-test-dates
+    The issue has been resolved upstream
+
+ -- Lars Tangvald <lars.tangvald@oracle.com>  Fri, 14 Jun 2019 07:59:19 +0200
+
 mysql-5.7 (5.7.25-1) unstable; urgency=high (security fixes)
 
   * Imported upstream version 5.7.25 to fix security issues:
