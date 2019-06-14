@@ -2,4 +2,3 @@ fix_hurd_kfreebsd.patch
 mysql-test-run-paths
 fix_grant_user_lock_as_root.patch
 fix_tests_ppc64el.patch
-fix_tests_ssl_1.1.1.patch
