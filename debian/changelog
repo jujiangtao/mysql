@@ -8,6 +8,7 @@ mysql-5.7 (5.7.26-1) unstable; urgency=high (security fixes)
     (Closes: #927308)
   * d/patches: Remove fix-mysqldump-test-dates
     The issue has been resolved upstream
+  * d/control: Add build-dep on pkg-config
 
  -- Lars Tangvald <lars.tangvald@oracle.com>  Fri, 14 Jun 2019 07:59:19 +0200
 
