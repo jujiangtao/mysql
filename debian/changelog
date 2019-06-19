@@ -6,6 +6,7 @@ mysql-5.7 (5.7.26-1) unstable; urgency=high (security fixes)
     - CVE-2019-2614 CVE-2019-2627 CVE-2019-2628 CVE-2019-2632
     - CVE-2019-2683 CVE-2018-3123
     (Closes: #927308)
+  * Disable unstable test xa_prepared_binlog_off for dep8
   * d/patches: Remove fix-mysqldump-test-dates
     The issue has been resolved upstream
   * d/control: Add build-dep on pkg-config to fix FTBFS
@@ -21,7 +22,6 @@ mysql-5.7 (5.7.25-1) unstable; urgency=high (security fixes)
     - CVE-2019-2507 CVE-2019-2510 CVE-2019-2528 CVE-2019-2529
     - CVE-2019-2531 CVE-2019-2532 CVE-2019-2534 CVE-2019-2537
     (Closes: #919817)
-  * Disable unstable test xa_prepared_binlog_off for dep8
 
  -- Lars Tangvald <lars.tangvald@oracle.com>  Tue, 22 Jan 2019 08:03:45 +0100
 
