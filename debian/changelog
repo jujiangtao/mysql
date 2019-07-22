@@ -1,3 +1,10 @@
+mysql-8.0 (8.0.14-0ubuntu2) eoan; urgency=medium
+
+  * Re-upload to Eoan to transition this cycle following the previous abortive
+    transition in the Disco cycle.
+
+ -- Robie Basak <robie.basak@ubuntu.com>  Mon, 22 Jul 2019 14:26:01 +0100
+
 mysql-8.0 (8.0.14-0ubuntu1) disco; urgency=medium
 
   [ Lars Tangvald ]
