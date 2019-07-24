@@ -1,3 +1,18 @@
+mysql-8.0 (8.0.16-0ubuntu1) eoan; urgency=medium
+
+  * New upstream release.
+  * Drop patches adopted upstream:
+    - d/p/fix-mysqldump-test-dates
+    - d/p/fix_tests_ssl_1.1.1.patch
+  * d/p/my_bool.patch: provide a typedef for reverse dependency use of my_bool
+    to give them more time to drop usage.
+  * d/rules, d/tests/upstream: add bug references to all skipped tests as now
+    required by upstream, using 00000 when no bug number is available.
+  * Stop installing usr/share/mysql/magic (dropped upstream).
+  * d/control: add Build-Depends on pkg-config.
+
+ -- Robie Basak <robie.basak@ubuntu.com>  Wed, 24 Jul 2019 15:23:42 +0100
+
 mysql-8.0 (8.0.14-0ubuntu2) eoan; urgency=medium
 
   * Re-upload to Eoan to transition this cycle following the previous abortive
