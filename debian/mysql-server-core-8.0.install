@@ -1,13 +1,13 @@
+usr/bin/ibd2sdi
 usr/bin/innochecksum
 usr/bin/my_print_defaults
-usr/bin/mysql_upgrade
-usr/bin/ibd2sdi
 usr/bin/myisamchk
 usr/bin/myisamlog
 usr/bin/myisampack
 usr/bin/mysql_secure_installation
 usr/bin/mysql_ssl_rsa_setup
 usr/bin/mysql_tzinfo_to_sql
+usr/bin/mysql_upgrade
 usr/bin/mysqlbinlog
 usr/bin/mysqld_multi
 usr/bin/mysqld_safe
@@ -15,10 +15,17 @@ usr/bin/perror
 usr/bin/zlib_decompress /usr/lib/mysql
 usr/lib/mysql/plugin/adt_null.so
 usr/lib/mysql/plugin/auth_socket.so
+usr/lib/mysql/plugin/component_audit_api_message_emit.so
+usr/lib/mysql/plugin/component_log_filter_dragnet.so
+usr/lib/mysql/plugin/component_log_sink_json.so
+usr/lib/mysql/plugin/component_log_sink_syseventlog.so
+usr/lib/mysql/plugin/component_validate_password.so
 usr/lib/mysql/plugin/connection_control.so
+usr/lib/mysql/plugin/ddl_rewriter.so
 usr/lib/mysql/plugin/group_replication.so
 usr/lib/mysql/plugin/innodb_engine.so
 usr/lib/mysql/plugin/keyring_file.so
+usr/lib/mysql/plugin/keyring_udf.so
 usr/lib/mysql/plugin/libmemcached.so
 usr/lib/mysql/plugin/libpluginmecab.so
 usr/lib/mysql/plugin/locking_service.so
@@ -58,8 +65,3 @@ usr/share/mysql/slovak
 usr/share/mysql/spanish
 usr/share/mysql/swedish
 usr/share/mysql/ukrainian
-usr/lib/mysql/plugin/component_validate_password.so
-usr/lib/mysql/plugin/component_log_sink_syseventlog.so
-usr/lib/mysql/plugin/component_log_filter_dragnet.so
-usr/lib/mysql/plugin/component_log_sink_json.so
-usr/lib/mysql/plugin/keyring_udf.so
