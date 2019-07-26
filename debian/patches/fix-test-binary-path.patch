@@ -1,0 +1,19 @@
+Description: Look for mysqltest_safe_process binary in the correct place
+ We put test-specific binaries in usr/lib/mysql-test/bin, but mysql-test-run.pl
+ only looks for binary in the system bin directory.
+ Changed to look in usr/lib/mysql-test until a more complete upstream fix is made.
+Author: Lars Tangvald <lars.tangvald@oracle.com>
+Bug: https://bugs.mysql.com/bug.php?id=96336 
+Last-Update: 2019-07-26
+
+--- mysql-8.0-8.0.16.orig/mysql-test/lib/My/SafeProcess.pm
++++ mysql-8.0-8.0.16/mysql-test/lib/My/SafeProcess.pm
+@@ -101,7 +101,7 @@ sub find_bin {
+ 			     "mysqltest_safe_kill");
+   } else {
+     # Use mysqltest_safe_process
+-    my $exe = my_find_bin($bindir,  [ "runtime_output_directory", "bin" ],
++    my $exe = my_find_bin("/usr/lib/mysql-test",  [ "runtime_output_directory", "bin" ],
+                           "mysqltest_safe_process");
+     push(@safe_process_cmd, $exe);
+   }
