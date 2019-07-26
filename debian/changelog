@@ -1,3 +1,15 @@
+mysql-8.0 (8.0.16-0ubuntu2) eoan; urgency=medium
+
+  [ Lars Tangvald ]
+  * d/install: Add missing plugin files introduced after 8.0.15
+  * d/patches: Add patch for finding test binaries in the correct place
+  * d/tests: Shorten comment on skipped test to be within max length
+    allowed by mtr
+  * d/tests: Disable main.loaddata_special for dep8 runs inside
+    containers
+
+ -- Robie Basak <robie.basak@ubuntu.com>  Tue, 30 Jul 2019 00:40:07 +0100
+
 mysql-8.0 (8.0.16-0ubuntu1) eoan; urgency=medium
 
   * New upstream release.
