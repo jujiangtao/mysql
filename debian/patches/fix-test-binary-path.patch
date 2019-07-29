@@ -3,9 +3,8 @@ Description: Look for mysqltest_safe_process binary in the correct place
  only looks for binary in the system bin directory.
  Changed to look in usr/lib/mysql-test until a more complete upstream fix is made.
 Author: Lars Tangvald <lars.tangvald@oracle.com>
-Bug: https://bugs.mysql.com/bug.php?id=96336 
-Last-Update: 2019-07-26
-
+Bug: https://bugs.mysql.com/bug.php?id=96336
+Last-Update: 2019-07-29
 --- mysql-8.0-8.0.16.orig/mysql-test/lib/My/SafeProcess.pm
 +++ mysql-8.0-8.0.16/mysql-test/lib/My/SafeProcess.pm
 @@ -101,7 +101,7 @@ sub find_bin {
@@ -13,7 +12,29 @@ Last-Update: 2019-07-26
    } else {
      # Use mysqltest_safe_process
 -    my $exe = my_find_bin($bindir,  [ "runtime_output_directory", "bin" ],
-+    my $exe = my_find_bin("/usr/lib/mysql-test",  [ "runtime_output_directory", "bin" ],
++    my $exe = my_find_bin($bindir,  [ "","runtime_output_directory", "bin" ],
                            "mysqltest_safe_process");
      push(@safe_process_cmd, $exe);
    }
+--- mysql-8.0-8.0.16.orig/mysql-test/mysql-test-run.pl
++++ mysql-8.0-8.0.16/mysql-test/mysql-test-run.pl
+@@ -374,8 +374,18 @@ sub main {
+   print FH "# Unique id file paths\n";
+   close(FH);
+ 
++
++  # Look for the client binaries directory
++  if ($path_client_bindir) {
++    # --client-bindir=path set on command line, check that the path exists
++    $path_client_bindir = mtr_path_exists($path_client_bindir);
++  } else {
++    $path_client_bindir =
++      mtr_path_exists(vs_config_dirs('runtime_output_directory', ''),
++                      "$bindir/bin");
++  }
+   # --help will not reach here, so now it's safe to assume we have binaries
+-  My::SafeProcess::find_bin($bindir);
++  My::SafeProcess::find_bin($path_client_bindir);
+ 
+   if ($opt_gcov) {
+     gcov_prepare($basedir);
