@@ -227,3 +227,19 @@ Description: MySQL source
  This package includes the MySQL source code as configured before building
  - but after the arch specific configuration. This is currently required for
  building plugins.
+
+Package: mysql-router
+Architecture: any
+Depends: ${misc:Depends}, ${shlibs:Depends}
+Description: route connections from MySQL clients to MySQL servers
+ MySQL Router is part of InnoDB cluster, and is lightweight middleware that
+ provides transparent routing between your application and back-end MySQL
+ servers. It can be used for a wide variety of use cases, such as providing
+ high availability and scalability by effectively routing database traffic to
+ appropriate back-end MySQL servers. The pluggable architecture also enables
+ developers to extend MySQL Router for custom use cases.
+ .
+ Since MySQL Router is clustering software and needs to be configured and
+ managed across an entire cluster, packaging cannot manage it for you. This
+ package supplies the binary build only, ready for manual configuration.
+Homepage: https://dev.mysql.com/doc/mysql-router/8.0/en/
