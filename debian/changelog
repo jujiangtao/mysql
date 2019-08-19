@@ -1,3 +1,9 @@
+mysql-8.0 (8.0.16-0ubuntu3) eoan; urgency=medium
+
+  * Add mysql-router binary package.
+
+ -- Robie Basak <robie.basak@ubuntu.com>  Mon, 19 Aug 2019 12:55:12 +0100
+
 mysql-8.0 (8.0.16-0ubuntu2) eoan; urgency=medium
 
   [ Lars Tangvald ]
