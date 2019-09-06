@@ -1,3 +1,17 @@
+mysql-8.0 (8.0.17-0ubuntu1) eoan; urgency=medium
+
+  [ Robie Basak ]
+  * New upstream release.
+  * d/p/fix-test-binary-path.patch: refresh to remove fuzz.
+  * Remove main.mysql_plugin from autopkgtest skip list: the test no longer
+    exists upstream.
+  * d/t/upstream: fix tmpdir cleanup typo.
+
+  [ Lars Tangvald ]
+  * d/postinst: Fix bad trigger for commenting out removed 5.7 options
+
+ -- Robie Basak <robie.basak@ubuntu.com>  Fri, 06 Sep 2019 12:25:46 +0100
+
 mysql-8.0 (8.0.16-0ubuntu3) eoan; urgency=medium
 
   * Add mysql-router binary package.
