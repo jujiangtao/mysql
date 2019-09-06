@@ -24,7 +24,6 @@ echo "Setting up skip-tests-list"
 cat > $SKIP_TEST_LST << EOF
 binlog.binlog_server_start_options : BUG#00000 - Requires writable /usr
 main.ctype_uca                     : BUG#00000 - Requires writable /usr
-main.mysql_plugin                  : BUG#00000 - Requires writable /usr
 rpl.rpl_gtid_mode                  : BUG#70517 - Requires starting server as root ref http://bugs.mysql.com/bug.php?id=70517
 main.ssl_ca                        : BUG#90749 - Test is breaking on sid, ref https://bugs.mysql.com/bug.php?id=90749
 main.type_float                    : BUG#92375 - Test is breaking on ppc64el. Ref https://bugs.mysql.com/bug.php?id=92375
