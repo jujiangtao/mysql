@@ -4,6 +4,7 @@ usr/share/mysql/docs/sample_mysqlrouter.conf usr/share/doc/mysql-router
 usr/bin/mysqlrouter_plugin_info
 usr/bin/mysqlrouter
 usr/lib/*/libmysqlrouter.so.1 usr/lib/mysql-router
+usr/lib/*/libmysqlrouter_http.so.1 usr/lib/mysql-router
 usr/lib/*/libmysqlharness.so.1 usr/lib/mysql-router
 usr/lib/*/mysqlrouter/keepalive.so
 usr/lib/*/mysqlrouter/metadata_cache.so
