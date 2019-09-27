@@ -210,7 +210,7 @@ override_dh_installlogrotate-arch:
 	dh_installlogrotate --name mysql-server
 
 override_dh_install:
-	dh_install --list-missing		\
+	dh_install --fail-missing		\
 		-Xusr/share/man			\
 		-Xusr/share/mysql/mysql.server
 	dh_apparmor -pmysql-server-8.0 --profile-name=usr.sbin.mysqld
