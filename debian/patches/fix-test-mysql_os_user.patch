@@ -1,0 +1,19 @@
+Description: Unset SUDO_USER to avoid pollution from environment
+ The test is for a client feature that passes on the value of SUDO_USER,
+ but fails if the test environment has the variable set already.
+Author: Lars Tangvald <lars.tangvald@oracle.com>
+Bug: https://bugs.mysql.com/bug.php?id=97062
+Forwarded: not-needed
+Last-Update: 2019-09-30
+
+--- mysql-8.0-8.0.17.orig/mysql-test/t/mysql_os_user.test
++++ mysql-8.0-8.0.17/mysql-test/t/mysql_os_user.test
+@@ -3,7 +3,7 @@
+ --echo #
+ 
+ exec $MYSQL test -e "SELECT length(attr_value) > 0 AS must_be_non_zero FROM performance_schema.session_connect_attrs WHERE attr_name = 'os_user' AND PROCESSLIST_ID=CONNECTION_ID()";
+-exec $MYSQL test -e "SELECT COUNT(*) AS zero_sudo_count FROM performance_schema.session_connect_attrs WHERE attr_name = 'os_sudouser' AND PROCESSLIST_ID=CONNECTION_ID()";
++exec unset SUDO_USER && $MYSQL test -e "SELECT COUNT(*) AS zero_sudo_count FROM performance_schema.session_connect_attrs WHERE attr_name = 'os_sudouser' AND PROCESSLIST_ID=CONNECTION_ID()";
+ SELECT COUNT(*) AS must_be_zero_for_test FROM performance_schema.session_connect_attrs WHERE attr_name IN ('os_user', 'os_sudouser') AND PROCESSLIST_ID=CONNECTION_ID();
+ 
+ --echo # End of 8.0 tests
