@@ -4,3 +4,4 @@ fix_grant_user_lock_as_root.patch
 fix_tests_ppc64el.patch
 my_bool.patch
 fix-test-binary-path.patch
+fix-test-mysql_os_user.patch
