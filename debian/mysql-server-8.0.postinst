@@ -302,35 +302,6 @@ esac
 
 
 if [ "$1" = "configure" ]; then
-  # We want to run mysql_upgrade to cover users upgrading. Since
-  # mysql_upgrade is a client and we don't know the root credentials,
-  # we run the server in skip_grant mode to allow it access.
-  if [ $existingdatabase = 1 ]; then
-    # Generate a tmpdir to store socket and pid files
-    tmpdir=$(mktemp -d)
-    chown mysql:mysql "$tmpdir"
-    mysql_statedir=/var/lib/mysql
-    result=0
-    start_server "$mysql_statedir" "$tmpdir" "skip_grant" || result=$?
-    # If the server fails to start, then skip the various client operations
-    if [ $result -ne 0 ]; then
-      echo "Warning: Unable to start the server. Please restart MySQL and run mysql_upgrade to ensure the database is ready for use." >&2
-    else
-      # mysql_upgrade returns exit status 2 if the database is already upgraded
-      # (LP: #1566406) so ignore its exit status if it is 2.
-      result=0
-      mysql_upgrade --no-defaults --socket="$tmpdir/mysqld.sock" || result=$?
-      if [ $result -ne 0 -a $result -ne 2 ]; then
-        echo "mysql_upgrade failed with exit status $result" >&2
-        stop_server "$tmpdir"
-        rm -rf "$tmpdir"
-        exit 1
-      fi
-      # Stop the server
-      stop_server "$tmpdir"
-    fi
-    rm -rf "$tmpdir"
-  fi
   # Here we check to see if we can connect as root without a password
   # this should catch upgrades from previous versions where the root
   # password wasn't set.  If the connection succeeds we install the
