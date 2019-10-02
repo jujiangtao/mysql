@@ -350,7 +350,7 @@ if [ "$1" = "configure" ]; then
       rootpw=$(printf %q "${rootpw}")
       initfile=`mktemp --tmpdir=/var/lib/mysql-files/`
       chown mysql:mysql "$initfile"
-      echo "ALTER USER 'root'@'localhost' IDENTIFIED WITH 'mysql_native_password' BY '$rootpw';" >> "$initfile"
+      echo "ALTER USER 'root'@'localhost' IDENTIFIED WITH 'caching_sha2_password' BY '$rootpw';" >> "$initfile"
       echo "SHUTDOWN;"                                                                           >> "$initfile"
       run_init_sql "$initfile"
       rm "$initfile"
