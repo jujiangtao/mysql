@@ -147,7 +147,9 @@ Files: cmd-line-utils/libedit/config.h
  Doxyfile.in
  INSTALL
  VERSION
+ plugin/clone/*
  plugin/connection_control/*
+ plugin/ddl_rewriter/*
  plugin/group_replication/*
  plugin/innodb_memcached/daemon_memcached/*
  plugin/innodb_memcached/README-innodb_memcached
