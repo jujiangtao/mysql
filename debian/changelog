@@ -1,3 +1,29 @@
+mysql-8.0 (8.0.17-0ubuntu2) eoan; urgency=medium
+
+  [ Robie Basak ]
+  * Ship missing files newly built since MySQL 8.0:
+    libmysqlrouter_http.so.1, various MySQL Router plugins,
+    mysqlrouter_passwd.
+  * Ship missing mysql_clone.so MySQL plugin, newly built since
+    8.0.17.
+  * Protect against future new build files from being missed:
+    - Add debian/not-installed
+    - Switch from --list-missing to --fail-missing
+
+  [ Lars Tangvald ]
+  * Fix failing autopkgtest mysql_os_user.
+  * d/mysql-server-8.0.postinst: switch from mysql_native_password to
+    the upstream recommended mechanism caching_sha2_password for the
+    default root user when a default root password is set via debconf
+    (this is not the default case).
+  * d/mysql-server-8.0.postinst: drop mysql_upgrade since this is now
+    done automatically by the MySQL daemon on startup.
+  * d/additions/apparmor-profile: add missing AppArmor rules
+    (LP: #1658233).
+  * d/copyright: add missing entries for clone and ddl_rewriter plugins.
+
+ -- Robie Basak <robie.basak@ubuntu.com>  Wed, 09 Oct 2019 14:03:12 +0100
+
 mysql-8.0 (8.0.17-0ubuntu1) eoan; urgency=medium
 
   [ Robie Basak ]
