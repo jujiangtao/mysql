@@ -1,3 +1,9 @@
+mysql-8.0 (8.0.17-0ubuntu3) focal; urgency=medium
+
+  * No-change rebuild for libevent soname changes.
+
+ -- Matthias Klose <doko@ubuntu.com>  Sat, 19 Oct 2019 19:56:42 +0000
+
 mysql-8.0 (8.0.17-0ubuntu2) eoan; urgency=medium
 
   [ Robie Basak ]
