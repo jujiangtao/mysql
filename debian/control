@@ -23,6 +23,7 @@ Build-Depends: bison,
                libnuma-dev [amd64 arm64 i386 mips mips64el mipsel powerpc ppc64el],
                libwrap0-dev (>= 7.6-8.3),
                lsb-release,
+               libssl-dev,
                perl,
                pkg-config,
                po-debconf,
@@ -67,6 +68,7 @@ Package: libmysqlclient-dev
 Architecture: any
 Section: libdevel
 Depends: libmysqlclient20 (= ${binary:Version}),
+         libssl-dev,
          zlib1g-dev,
          ${misc:Depends},
          ${shlibs:Depends}
