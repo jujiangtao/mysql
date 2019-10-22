@@ -1,6 +1,18 @@
+mysql-5.7 (5.7.28-1) unstable; urgency=high (security fixes)
+
+  * Imported upstream version 5.7.28 to fix security issues:
+    - https://www.oracle.com/security-alerts/cpuoct2019.html
+    - CVE-2019-2910 CVE-2019-2911 CVE-2019-2914 CVE-2019-2922
+    - CVE-2019-2923 CVE-2019-2924 CVE-2019-2938 CVE-2019-2946
+    - CVE-2019-2948 CVE-2019-2960 CVE-2019-2969 CVE-2019-2974
+    - CVE-2019-2993 CVE-2019-5443
+    (Closes: 942443)
+
+ -- Lars Tangvald <lars.tangvald@oracle.com>  Tue, 22 Oct 2019 10:44:28 +0200
+
 mysql-5.7 (5.7.27-1) unstable; urgency=high (security fixes)
 
-  * Important upstream version 5.7.27 to fix security issues:
+  * Imported upstream version 5.7.27 to fix security issues:
     - https://www.oracle.com/technetwork/security-advisory/cpujul2019-5072835.html
     - CVE-2019-2737 CVE-2019-2738 CVE-2019-2739 CVE-2019-2740
     - CVE-2019-2741 CVE-2019-2757 CVE-2019-2758 CVE-2019-2774
