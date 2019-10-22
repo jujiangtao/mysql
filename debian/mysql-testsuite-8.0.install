@@ -3,6 +3,7 @@ usr/bin/mysqltest usr/lib/mysql-test/bin/
 usr/bin/mysqltest_safe_process usr/lib/mysql-test/bin/
 usr/bin/mysqlxtest usr/lib/mysql-test/bin/
 usr/lib/mysql-test/*
+usr/lib/mysql/private/libprotobuf.so.3.6.1 usr/lib/mysql-test/lib/mysql/private
 usr/lib/mysql/plugin/auth.so
 usr/lib/mysql/plugin/auth_test_plugin.so
 usr/lib/mysql/plugin/component_example_component1.so

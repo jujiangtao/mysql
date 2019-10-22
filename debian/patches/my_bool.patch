@@ -6,24 +6,24 @@ Description: Reintroduce my_bool to fix numerous third-party ftbfs
  Ref https://dev.mysql.com/doc/relnotes/mysql/8.0/en/news-8-0-1.html#mysqld-8-0-1-compiling
 Author: Lars Tangvald <lars.tangvald@oracle.com>
 Forwarded: not-needed
-Last-Update: 2019-06-14
+Last-Update: 2019-10-22
 
 --- a/include/mysql.h
 +++ b/include/mysql.h
-@@ -45,6 +45,9 @@
+@@ -46,6 +46,9 @@
  #include <sys/types.h>
  #endif
  
 +// Give third-party packages more time to drop my_bool
 +typedef bool my_bool;
 +
- // Small extra definitions to avoid pulling in my_inttypes.h in client code.
- // IWYU pragma: no_include "my_inttypes.h"
- #if defined(_WIN32)
+ // Legacy definition for the benefit of old code. Use uint64_t in new code.
+ // If you get warnings from printf, use the PRIu64 macro, or, if you need
+ // compatibility with older versions of the client library, cast
 --- a/include/mysql.h.pp
 +++ b/include/mysql.h.pp
 @@ -1,3 +1,4 @@
 +typedef bool my_bool;
- typedef unsigned long long my_ulonglong;
+ typedef uint64_t my_ulonglong;
  typedef int my_socket;
  #include "field_types.h"

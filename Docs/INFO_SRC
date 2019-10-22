@@ -1,7 +1,7 @@
-commit: a5b2e523c881ab8c68fd0adb478a6232dd69e522
-date: 2019-06-25 11:50:40 +0200
-build-date: 2019-06-25 12:24:04 +0200
-short: a5b2e52
-branch: mysql-8.0.17-release
+commit: a04ed819a740521a4d53088e3305bcc1c696c835
+date: 2019-09-20 10:29:23 +0200
+build-date: 2019-09-20 10:31:27 +0200
+short: a04ed81
+branch: mysql-8.0.18-release
 
-MySQL source 8.0.17
+MySQL source 8.0.18

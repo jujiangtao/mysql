@@ -1,3 +1,26 @@
+mysql-8.0 (8.0.18-0ubuntu1) focal; urgency=medium
+
+  * SECURITY UPDATE: Update to 8.0.18 to fix security issues
+    - CVE-2019-2911, CVE-2019-2914, CVE-2019-2920, CVE-2019-2922,
+      CVE-2019-2923, CVE-2019-2924, CVE-2019-2938, CVE-2019-2946,
+      CVE-2019-2948, CVE-2019-2950, CVE-2019-2957, CVE-2019-2960,
+      CVE-2019-2963, CVE-2019-2966, CVE-2019-2967, CVE-2019-2968,
+      CVE-2019-2969, CVE-2019-2974, CVE-2019-2982, CVE-2019-2991,
+      CVE-2019-2993, CVE-2019-2997, CVE-2019-2998, CVE-2019-3003,
+      CVE-2019-3004, CVE-2019-3009, CVE-2019-3011, CVE-2019-3018
+  * Removed patches no longer required:
+    - fix_tests_ppc64el.patch
+    - fix-test-binary-path.patch
+  * debian/*install: Install new files:
+    - usr/lib/mysql/private/libprotobuf-lite.so.3.6.1
+    - usr/lib/mysql/private/libprotobuf.so.3.6.1
+    - usr/lib/mysql/plugin/component_mysqlbackup.so
+    - usr/lib/mysql-router/mysqlrouter/libprotobuf-lite.so.3.6.1
+    - usr/bin/mysqlrouter_keyring
+  * debian/libmysqlclient21.symbols: added new 8.0.18 symbols.
+
+ -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Tue, 22 Oct 2019 09:50:59 -0400
+
 mysql-8.0 (8.0.17-0ubuntu3) focal; urgency=medium
 
   * No-change rebuild for libevent soname changes.
