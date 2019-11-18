@@ -1,3 +1,10 @@
+mysql-8.0 (8.0.18-0ubuntu2) focal; urgency=medium
+
+  * debian/patches/new_lz4_compat.patch: fix compatibility with lz4 1.9.2
+    (LP: #1851696)
+
+ -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Mon, 18 Nov 2019 14:42:20 -0500
+
 mysql-8.0 (8.0.18-0ubuntu1) focal; urgency=medium
 
   * SECURITY UPDATE: Update to 8.0.18 to fix security issues
