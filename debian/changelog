@@ -1,3 +1,10 @@
+mysql-8.0 (8.0.18-0ubuntu4) focal; urgency=medium
+
+  * Depend on perl:any instead of perl, so that mysql-server-8.0 is
+    cross-installable (mostly interesting for testing purposes).
+
+ -- Steve Langasek <steve.langasek@ubuntu.com>  Sat, 07 Dec 2019 11:59:09 -0800
+
 mysql-8.0 (8.0.18-0ubuntu3) focal; urgency=medium
 
   * debian/patches/new_lz4_compat.patch: fix patch to actually work with

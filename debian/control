@@ -141,7 +141,7 @@ Depends: lsb-base (>= 3.0-10),
          mysql-common (>= 5.8+1.0.4~),
          mysql-server-core-8.0 (= ${binary:Version}),
          passwd,
-         perl (>= 5.6),
+         perl:any (>= 5.6),
          psmisc,
          ${misc:Depends},
          ${shlibs:Depends}
