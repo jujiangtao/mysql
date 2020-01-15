@@ -1,0 +1,74 @@
+Description: Bump tests that assume 2020 is in the future, to use 2037 as the future date.
+Author: Dimitri John Ledkov <xnox@ubuntu.com>
+
+
+--- mysql-8.0-8.0.18.orig/mysql-test/r/events_bugs.result
++++ mysql-8.0-8.0.18/mysql-test/r/events_bugs.result
+@@ -42,11 +42,11 @@ Warnings:
+ Note	1588	Event execution time is in the past and ON COMPLETION NOT PRESERVE is set. The event was dropped immediately after creation.
+ show events;
+ Db	Name	Definer	Time zone	Type	Execute at	Interval value	Interval field	Starts	Ends	Status	Originator	character_set_client	collation_connection	Database Collation
+-create event e_55 on schedule at 20200101000000 starts 10000101000000 do drop table t;
++create event e_55 on schedule at 20370101000000 starts 10000101000000 do drop table t;
+ ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'starts 10000101000000 do drop table t' at line 1
+-create event e_55 on schedule at 20200101000000 ends 10000101000000 do drop table t;
++create event e_55 on schedule at 20370101000000 ends 10000101000000 do drop table t;
+ ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'ends 10000101000000 do drop table t' at line 1
+-create event e_55 on schedule at 20200101000000 starts 10000101000000 ends 10000101000000 do drop table t;
++create event e_55 on schedule at 20370101000000 starts 10000101000000 ends 10000101000000 do drop table t;
+ ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'starts 10000101000000 ends 10000101000000 do drop table t' at line 1
+ create event e_55 on schedule every 10 hour starts 10000101000000 do drop table t;
+ ERROR HY000: Incorrect STARTS value: '10000101000000'
+@@ -647,7 +647,7 @@ SET GLOBAL READ_ONLY = 1;
+ # Connection: u1_con (mysqltest_u1@localhost/events_test).
+ #
+ 
+-CREATE EVENT e1 ON SCHEDULE AT '2020-01-01 00:00:00' DO SET @a = 1;
++CREATE EVENT e1 ON SCHEDULE AT '2037-01-01 00:00:00' DO SET @a = 1;
+ ERROR HY000: The MySQL server is running with the --read-only option so it cannot execute this statement
+ 
+ ALTER EVENT e1 COMMENT 'comment';
+@@ -660,7 +660,7 @@ ERROR HY000: Unknown event 'e1'
+ # Connection: root_con (root@localhost/events_test).
+ #
+ 
+-CREATE EVENT e1 ON SCHEDULE AT '2020-01-01 00:00:00' DO SET @a = 1;
++CREATE EVENT e1 ON SCHEDULE AT '2037-01-01 00:00:00' DO SET @a = 1;
+ 
+ ALTER EVENT e1 COMMENT 'comment';
+ 
+--- mysql-8.0-8.0.18.orig/mysql-test/t/events_bugs.test
++++ mysql-8.0-8.0.18/mysql-test/t/events_bugs.test
+@@ -216,11 +216,11 @@ create event e_55 on schedule at 2000010
+ show events;
+ 
+ --error ER_PARSE_ERROR
+-create event e_55 on schedule at 20200101000000 starts 10000101000000 do drop table t;
++create event e_55 on schedule at 20370101000000 starts 10000101000000 do drop table t;
+ --error ER_PARSE_ERROR
+-create event e_55 on schedule at 20200101000000 ends 10000101000000 do drop table t;
++create event e_55 on schedule at 20370101000000 ends 10000101000000 do drop table t;
+ --error ER_PARSE_ERROR
+-create event e_55 on schedule at 20200101000000 starts 10000101000000 ends 10000101000000 do drop table t;
++create event e_55 on schedule at 20370101000000 starts 10000101000000 ends 10000101000000 do drop table t;
+ --error ER_WRONG_VALUE
+ create event e_55 on schedule every 10 hour starts 10000101000000 do drop table t;
+ 
+@@ -1033,7 +1033,7 @@ SET GLOBAL READ_ONLY = 1;
+ --echo
+ 
+ --error ER_OPTION_PREVENTS_STATEMENT
+-CREATE EVENT e1 ON SCHEDULE AT '2020-01-01 00:00:00' DO SET @a = 1;
++CREATE EVENT e1 ON SCHEDULE AT '2037-01-01 00:00:00' DO SET @a = 1;
+ 
+ --echo
+ 
+@@ -1057,7 +1057,7 @@ DROP EVENT e1;
+ 
+ --echo
+ 
+-CREATE EVENT e1 ON SCHEDULE AT '2020-01-01 00:00:00' DO SET @a = 1;
++CREATE EVENT e1 ON SCHEDULE AT '2037-01-01 00:00:00' DO SET @a = 1;
+ 
+ --echo
+ 

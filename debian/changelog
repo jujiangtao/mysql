@@ -1,3 +1,10 @@
+mysql-8.0 (8.0.18-0ubuntu5) focal; urgency=medium
+
+  * Bump tests that assume 2020 is in the future, to use 2037 as the
+    future date.
+
+ -- Dimitri John Ledkov <xnox@ubuntu.com>  Wed, 15 Jan 2020 12:51:30 +0000
+
 mysql-8.0 (8.0.18-0ubuntu4) focal; urgency=medium
 
   * Depend on perl:any instead of perl, so that mysql-server-8.0 is
