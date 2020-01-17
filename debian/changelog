@@ -1,3 +1,18 @@
+mysql-8.0 (8.0.19-0ubuntu1) focal; urgency=medium
+
+  * New upstream release.
+    - Drop patches fixed upstream:
+      + d/p/fix-test-mysql_os_user.patch
+      + d/p/new_lz4_compat.patch
+    - d/mysql-server-8.0.install: drop usr/share/mysql/errmsg-utf8.txt: no
+      longer shipped by upstream.
+    - d/mysql-testsuite-8.0.install: install new files shipped by upstream
+      that are needed by the test suite.
+    - d/mysql-testsuite-8.0.links: install mysqld_safe symlink into
+      usr/lib/mysql-test/bin/ so that the test suite can find it.
+
+ -- Robie Basak <robie.basak@ubuntu.com>  Thu, 23 Jan 2020 14:50:43 +0000
+
 mysql-8.0 (8.0.18-0ubuntu5) focal; urgency=medium
 
   * Bump tests that assume 2020 is in the future, to use 2037 as the
