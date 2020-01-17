@@ -2,6 +2,5 @@ fix_hurd_kfreebsd.patch
 mysql-test-run-paths
 fix_grant_user_lock_as_root.patch
 my_bool.patch
-fix-test-mysql_os_user.patch
 new_lz4_compat.patch
 year2020.patch
