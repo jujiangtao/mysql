@@ -1,3 +1,20 @@
+mysql-8.0 (8.0.19-0ubuntu1) focal; urgency=medium
+
+  * SECURITY UPDATE: Update to 8.0.19 to fix security issues
+    - CVE-2020-2570, CVE-2020-2572, CVE-2020-2573, CVE-2020-2574,
+      CVE-2020-2577, CVE-2020-2579, CVE-2020-2584, CVE-2020-2588,
+      CVE-2020-2589, CVE-2020-2627, CVE-2020-2660, CVE-2020-2679,
+      CVE-2020-2686, CVE-2020-2694
+  * Removed patches no longer required:
+    - debian/patches/fix-test-mysql_os_user.patch
+    - debian/patches/new_lz4_compat.patch
+  * debian/mysql-server-8.0.install: switch errmsg-utf8.txt to new files.
+  * debian/mysql-server-core-8.0.install: add comp_err binary.
+  * debian/mysql-testsuite-8.0.install: added
+    component_test_udf_services.so.
+
+ -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Mon, 20 Jan 2020 13:07:23 -0500
+
 mysql-8.0 (8.0.18-0ubuntu5) focal; urgency=medium
 
   * Bump tests that assume 2020 is in the future, to use 2037 as the
