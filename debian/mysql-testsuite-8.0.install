@@ -1,3 +1,4 @@
+usr/bin/comp_err usr/lib/mysql-test/bin/
 usr/bin/mysql_client_test usr/lib/mysql-test/bin/
 usr/bin/mysqltest usr/lib/mysql-test/bin/
 usr/bin/mysqltest_safe_process usr/lib/mysql-test/bin/
@@ -33,6 +34,7 @@ usr/lib/mysql/plugin/component_test_sys_var_service_same.so
 usr/lib/mysql/plugin/component_test_sys_var_service_str.so
 usr/lib/mysql/plugin/component_test_system_variable_source.so
 usr/lib/mysql/plugin/component_test_udf_registration.so
+usr/lib/mysql/plugin/component_test_udf_services.so
 usr/lib/mysql/plugin/component_udf_reg_3_func.so
 usr/lib/mysql/plugin/component_udf_reg_avg_func.so
 usr/lib/mysql/plugin/component_udf_reg_int_func.so
@@ -81,3 +83,5 @@ usr/lib/mysql/plugin/test_services_host_application_signal.so
 usr/lib/mysql/plugin/test_services_plugin_registry.so
 usr/lib/mysql/plugin/test_udf_services.so
 usr/lib/mysql/plugin/udf_example.so
+usr/share/mysql/messages_to_clients.txt
+usr/share/mysql/messages_to_error_log.txt
