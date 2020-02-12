@@ -1,3 +1,9 @@
+mysql-8.0 (8.0.19-0ubuntu3) focal; urgency=medium
+
+  * Bump some more tests that assume 2020 is in the future (LP: #1862364)
+
+ -- Rafael David Tinoco <rafaeldtinoco@ubuntu.com>  Wed, 12 Feb 2020 19:26:03 +0000
+
 mysql-8.0 (8.0.19-0ubuntu2) focal; urgency=medium
 
   * d/mysql-{server,server-core,testsuite}-8.0.install: move testsuite-only
