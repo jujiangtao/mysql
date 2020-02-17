@@ -1,3 +1,10 @@
+mysql-8.0 (8.0.19-0ubuntu4) focal; urgency=medium
+
+  * d/p/my_bool.patch: drop the my_bool workaround typedef
+    (LP: #1863026)
+
+ -- Andreas Hasenack <andreas@canonical.com>  Mon, 17 Feb 2020 11:04:18 -0300
+
 mysql-8.0 (8.0.19-0ubuntu3) focal; urgency=medium
 
   * Bump some more tests that assume 2020 is in the future (LP: #1862364)
