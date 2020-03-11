@@ -1,3 +1,13 @@
+mysql-8.0 (8.0.19-0ubuntu5) focal; urgency=medium
+
+  * debian/patches/atomic-test-words.patch: Adjust
+    HAVE_IB_GCC_ATOMIC_COMPARE_EXCHANGE test to use atomic builtins on ints
+    rather than chars, like the code that it enables. riscv64 needs -latomic
+    for atomic operations on chars, but MySQL doesn't actually need them.
+  * Link with -pthread everywhere on riscv64.
+
+ -- William Grant <wgrant@ubuntu.com>  Wed, 11 Mar 2020 12:34:54 +1100
+
 mysql-8.0 (8.0.19-0ubuntu4) focal; urgency=medium
 
   * d/p/my_bool.patch: drop the my_bool workaround typedef
