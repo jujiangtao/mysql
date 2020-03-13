@@ -200,3 +200,17 @@ the first test failure was after 5 minutes and that it aborted
 immediately. It will also give us more information, since we can see
 from the log if this was an unstable test that passed when rerun or if
 it is a real test failure.
+
+
+#
+# Bundled boost and rapidjson headers
+#
+
+MySQL bundles code from two projects that are technically available in Debian: boost and rapidjson
+For both of these projects, MySQL bundles header files only.
+
+For boost, MySQL relies on a very specific version, so using the version available on the system
+will generally not work.
+
+For rapidjson, they have not published a release for years (https://github.com/Tencent/rapidjson/issues/1006),
+and MySQL requires more recent patches (and will occasionally sync with their master branch).
