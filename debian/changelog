@@ -1,3 +1,17 @@
+mysql-8.0 (8.0.20-0ubuntu1) groovy; urgency=medium
+
+  * SECURITY UPDATE: Update to 8.0.20 to fix security issues
+    - CVE-2020-2759, CVE-2020-2760, CVE-2020-2762, CVE-2020-2763,
+      CVE-2020-2765, CVE-2020-2780, CVE-2020-2804, CVE-2020-2812,
+      CVE-2020-2892, CVE-2020-2893, CVE-2020-2895, CVE-2020-2896,
+      CVE-2020-2897, CVE-2020-2898, CVE-2020-2901, CVE-2020-2903,
+      CVE-2020-2904, CVE-2020-2921, CVE-2020-2923, CVE-2020-2924,
+      CVE-2020-2925, CVE-2020-2926, CVE-2020-2928, CVE-2020-2930
+  * debian/patches/year2020.patch: Dropped, no longer needed
+  * debian/mysql-router.install: updated paths for library locations.
+
+ -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Mon, 27 Apr 2020 12:48:11 -0400
+
 mysql-8.0 (8.0.19-0ubuntu5) focal; urgency=medium
 
   * debian/patches/atomic-test-words.patch: Adjust
