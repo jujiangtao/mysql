@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2012, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -586,7 +586,6 @@ extern int unblock_fd(int fd);
 extern int block_fd(int fd);
 extern int connect_tcp(char *server, xcom_port port, int *ret);
 extern result announce_tcp(xcom_port port);
-extern result announce_tcp_local_server();
 extern int accept_tcp(int fd, int *ret);
 
 extern int task_read(connection_descriptor const *con, void *buf, int n,

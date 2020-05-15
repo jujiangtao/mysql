@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2018, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1995, 2019, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -144,12 +144,11 @@ void buf_LRU_block_free_non_file_page(buf_block_t *block);
 /** Adds a block to the LRU list. Please make sure that the page_size is
  already set when invoking the function, so that we can get correct
  page_size from the buffer page when adding a block into LRU */
-void buf_LRU_add_block(
-    buf_page_t *bpage, /*!< in: control block */
-    ibool old);        /*!< in: TRUE if should be put to the old
-                       blocks in the LRU list, else put to the
-                       start; if the LRU list is very short, added to
-                       the start regardless of this parameter */
+void buf_LRU_add_block(buf_page_t *bpage, /*!< in: control block */
+                       ibool old); /*!< in: TRUE if should be put to the old
+                                   blocks in the LRU list, else put to the
+                                   start; if the LRU list is very short, added
+                                   to the start regardless of this parameter */
 
 /** Adds a block to the LRU list of decompressed zip pages.
 @param[in]	block	control block
@@ -247,8 +246,6 @@ extern buf_LRU_stat_t buf_LRU_stat_sum;
 #define buf_LRU_stat_inc_io() buf_LRU_stat_cur.io++
 /** Increments the page_zip_decompress() counter in buf_LRU_stat_cur. */
 #define buf_LRU_stat_inc_unzip() buf_LRU_stat_cur.unzip++
-
-#include "buf0lru.ic"
 
 #endif /* !UNIV_HOTBACKUP */
 

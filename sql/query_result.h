@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -61,7 +61,7 @@ class Query_result {
   */
   double estimated_cost;
 
-  Query_result() : unit(NULL), estimated_rowcount(0), estimated_cost(0) {}
+  Query_result() : unit(nullptr), estimated_rowcount(0), estimated_cost(0) {}
   virtual ~Query_result() {}
 
   virtual bool needs_file_privilege() const { return false; }
@@ -159,6 +159,13 @@ class Query_result {
     DBUG_ASSERT(false);
     return nullptr;
   } /* purecov: inspected */
+
+  /**
+    Checks if this Query_result intercepts and transforms the result set.
+
+    @return true if it is an interceptor, false otherwise
+  */
+  virtual bool is_interceptor() const { return false; }
 };
 
 /*
@@ -174,6 +181,7 @@ class Query_result_interceptor : public Query_result {
   bool send_result_set_metadata(THD *, List<Item> &, uint) override {
     return false;
   }
+  bool is_interceptor() const override final { return true; }
 };
 
 class Query_result_send : public Query_result {

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2012, 2018, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2012, 2020, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -43,6 +43,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
 #include <array>
 #include <atomic>
+#include <functional>
 
 /** CPU cache line size */
 #ifdef __powerpc__
@@ -80,8 +81,8 @@ struct counter_indexer_t : public generic_indexer_t<Type, N> {
     if (c != 0) {
       return (c);
     } else {
-    /* We may go here if my_timer_cycles() returns 0,
-    so we have to have the plan B for the counter. */
+      /* We may go here if my_timer_cycles() returns 0,
+      so we have to have the plan B for the counter. */
 #if !defined(_WIN32)
       return (size_t(os_thread_get_curr_id()));
 #else
@@ -224,7 +225,9 @@ class ib_counter_t {
 /** Sharded atomic counter. */
 namespace Counter {
 
-using N = std::atomic<size_t>;
+using Type = uint64_t;
+
+using N = std::atomic<Type>;
 
 static_assert(INNOBASE_CACHE_LINE_SIZE >= sizeof(N),
               "Atomic counter size > INNOBASE_CACHE_LINE_SIZE");
@@ -240,36 +243,113 @@ struct Shard {
   N m_n{};
 };
 
-using Shards = std::array<Shard, 128>;
+template <size_t COUNT = 128>
+using Shards = std::array<Shard, COUNT>;
 
-/** Increment the counter.
+using Function = std::function<void(const Type)>;
+
+constexpr auto Memory_order = std::memory_order_relaxed;
+
+/** Increment the counter for a shard by n.
 @param[in,out]  shards          Sharded counter to increment.
-@param[in] id                   Shard key. */
-inline void inc(Shards &shards, size_t id) {
-  shards[id % shards.size()].m_n.fetch_add(1, std::memory_order_relaxed);
+@param[in] id                   Shard key.
+@param[in] n                    Number to add.
+@return previous value. */
+template <size_t COUNT>
+inline Type add(Shards<COUNT> &shards, size_t id, size_t n) {
+  return (shards[id % shards.size()].m_n.fetch_add(n, Memory_order));
+}
+
+/** Decrement the counter for a shard by n.
+@param[in,out]  shards          Sharded counter to increment.
+@param[in] id                   Shard key.
+@param[in] n                    Number to add.
+@return previous value. */
+template <size_t COUNT>
+inline Type sub(Shards<COUNT> &shards, size_t id, size_t n) {
+  return (shards[id % shards.size()].m_n.fetch_sub(n, Memory_order));
+}
+
+/** Increment the counter of a shard by 1.
+@param[in,out]  shards          Sharded counter to increment.
+@param[in] id                   Shard key.
+@return previous value. */
+template <size_t COUNT>
+inline Type inc(Shards<COUNT> &shards, size_t id) {
+  return (add(shards, id, 1));
+}
+
+/** Decrement the counter of a shard by 1.
+@param[in,out]  shards          Sharded counter to decrement.
+@param[in] id                   Shard key.
+@return previous value. */
+template <size_t COUNT>
+inline Type dec(Shards<COUNT> &shards, size_t id) {
+  return (sub(shards, id, 1));
+}
+
+/** Get the counter value for a shard.
+@param[in,out]  shards          Sharded counter to increment.
+@param[in] id                   Shard key.
+@return current value. */
+template <size_t COUNT>
+inline Type get(const Shards<COUNT> &shards, size_t id) noexcept {
+  return (shards[id % shards.size()].m_n.load(Memory_order));
+}
+
+/** Iterate over the shards.
+@param[in] shards               Shards to iterate over
+@param[in] f                    Callback function
+*/
+template <size_t COUNT>
+inline void for_each(const Shards<COUNT> &shards, Function &&f) noexcept {
+  for (const auto &shard : shards) {
+    f(shard.m_n);
+  }
 }
 
 /** Get the total value of all shards.
 @param[in] shards               Shards to sum.
 @return total value. */
-inline size_t total(const Shards &shards) {
-  size_t n = 0;
+template <size_t COUNT>
+inline Type total(const Shards<COUNT> &shards) noexcept {
+  Type n = 0;
 
-  for (const auto &shard : shards) {
-    n += shard.m_n;
-  }
+  for_each(shards, [&](const Type count) { n += count; });
 
   return (n);
 }
 
 /** Clear the counter - reset to 0.
 @param[in,out] shards          Shards to clear. */
-inline void clear(Shards &shards) {
+template <size_t COUNT>
+inline void clear(Shards<COUNT> &shards) noexcept {
   for (auto &shard : shards) {
-    shard.m_n.store(0, std::memory_order_relaxed);
+    shard.m_n.store(0, Memory_order);
   }
 }
 
+/** Copy the counters, overwrite destination.
+@param[in,out] dst              Destination shard
+@param[in]     src              Source shard. */
+template <size_t COUNT>
+inline void copy(Shards<COUNT> &dst, const Shards<COUNT> &src) noexcept {
+  size_t i{0};
+  for_each(src, [&](const Type count) {
+    dst[i++].m_n.store(count, std::memory_order_relaxed);
+  });
+}
+
+/** Accumulate the counters, add source to destination.
+@param[in,out] dst              Destination shard
+@param[in]     src              Source shard. */
+template <size_t COUNT>
+inline void add(Shards<COUNT> &dst, const Shards<COUNT> &src) noexcept {
+  size_t i{0};
+  for_each(src, [&](const Type count) {
+    dst[i++].m_n.fetch_add(count, std::memory_order_relaxed);
+  });
+}
 }  // namespace Counter
 
 #endif /* ut0counter_h */

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2018, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2019, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -77,7 +77,7 @@ Tablespace::~Tablespace() {
 
   close();
 
-  ut_ad(srv_shutdown_state == SRV_SHUTDOWN_EXIT_THREADS);
+  ut_ad(srv_shutdown_state.load() == SRV_SHUTDOWN_EXIT_THREADS);
   bool file_pre_exists = false;
   bool success = os_file_delete_if_exists(innodb_temp_file_key, path().c_str(),
                                           &file_pre_exists);
@@ -93,7 +93,7 @@ dberr_t Tablespace::create() {
   ut_ad(m_space_id > dict_sys_t::s_min_temp_space_id);
 
   /* Create the filespace flags */
-  ulint fsp_flags =
+  uint32_t fsp_flags =
       fsp_flags_init(univ_page_size, /* page sizes and a flag if compressed */
                      false,          /* needed only for compressed tables */
                      false,          /* has DATA_DIR */
@@ -121,7 +121,7 @@ dberr_t Tablespace::create() {
   if (!ret) {
     return (DB_ERROR);
   }
-  buf_LRU_flush_or_remove_pages(m_space_id, BUF_REMOVE_FLUSH_WRITE, NULL);
+  buf_LRU_flush_or_remove_pages(m_space_id, BUF_REMOVE_FLUSH_WRITE, nullptr);
   return (DB_SUCCESS);
 }
 

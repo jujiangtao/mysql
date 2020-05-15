@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2018, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1996, 2020, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -48,6 +48,197 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "gis0rtree.h"
 #endif /* UNIV_HOTBACKUP */
 #include "lock0prdt.h"
+
+/**
+@page PAGE_INNODB_LOCK_SYS Innodb Lock-sys
+
+
+@section sect_lock_sys_introduction Introduction
+
+The Lock-sys orchestrates access to tables and rows. Each table, and each row,
+can be thought of as a resource, and a transaction may request access right for
+a resource. As two transactions operating on a single resource can lead to
+problems if the two operations conflict with each other, each lock request also
+specifies the way the transaction intends to use it, by providing a `mode`. For
+example a LOCK_X mode, means that transaction needs exclusive access
+(presumably, it will modify the resource), and LOCK_S mode means that a
+transaction can share the resource with other transaction which also use LOCK_S
+mode. There are many different possible modes beside these two, and the logic of
+checking if given two modes are in conflict is a responsibility of the Lock-sys.
+A lock request, is called "a lock" for short.
+A lock can be WAITING or GRANTED.
+
+So, a lock, conceptually is a tuple identifying:
+- requesting transaction
+- resource (a particular row, a particular table)
+- mode (LOCK_X, LOCK_S,...)
+- state (WAITING or GRANTED)
+
+@remark
+In current implementation the "resource" and "mode" are not cleanly separated as
+for example LOCK_GAP and LOCK_REC_NOT_GAP are often called "modes" even though
+their semantic is to specify which "sub-resource" (the gap before the row, or
+the row itself) the transaction needs to access.
+
+@remark
+The Lock-sys identifies records by their page_no (the identifier of the page
+which contains the record) and the heap_no (the position in page's internal
+array of allocated records), as opposed to table, index and primary key. This
+becomes important in case of B-tree merges, splits, or reallocation of variable-
+length records, all of which need to notify the Lock-sys to reflect the change.
+
+Conceptually, the Lock-sys maintains a separate queue for each resource, thus
+one can analyze and reason about its operations in the scope of a single queue.
+
+@remark
+In practice, locks for gaps and rows are treated as belonging to the same queue.
+Moreover, to save space locks of a transaction which refer to several rows on
+the same page might be stored in a single data structure, and thus the physical
+queue corresponds to a whole page, and not to a single row.
+Also, each predicate lock (from GIS) is tied to a page, not a record.
+Finally, the lock queue is implemented by reusing chain links in the hash table,
+which means that pages with equal hash are held together in a single linked
+list for their hash bucket.
+Therefore care must be taken to filter the subset of locks which refer to a
+given resource when accessing these data structures.
+
+The life cycle of a lock is usually as follows:
+
+-# The transaction requests the lock, which can either be immediately GRANTED,
+   or, in case of a conflict with an existing lock, goes to the WAITING state.
+-# In case the lock is WAITING the thread (voluntarily) goes to sleep.
+-# A WAITING lock either becomes GRANTED (once the conflicting transactions
+   finished and it is our turn) or (in case of a rollback) it gets canceled.
+-# Once the transaction is finishing (due to commit or rollback) it releases all
+   of its locks.
+
+@remark For performance reasons, in Read Committed and weaker Isolation Levels
+there is also a Step in between 3 and 4 in which we release some of the read
+locks on gaps, which is done to minimize risk of deadlocks during replication.
+
+When a lock is released (due to cancellation in Step 3, or clean up in Step 4),
+the Lock-sys inspects the corresponding lock queue to see if one or more of the
+WAITING locks in it can now be granted. If so, some locks become GRANTED and the
+Lock-sys signals their threads to wake up.
+
+
+@section sect_lock_sys_scheduling The scheduling algorithm
+
+We use a variant of the algorithm described in paper "Contention-Aware Lock
+Scheduling for Transactional Databases" by Boyu Tian, Jiamin Huang, Barzan
+Mozafari and Grant Schoenebeck.
+The algorithm, "CATS" for short, analyzes the Wait-for graph, and assigns a
+weight to each WAITING transaction, equal to the number of transactions which
+it (transitively) blocks. The idea being that favoring heavy transactions will
+help to make more progress by helping more transactions to become eventually
+runnable.
+
+The actual implementation of this theoretical idea is currently as follows.
+
+-# Locks can be thought of being in 2 logical groups (Granted & Waiting)
+   maintained in the same queue.
+
+  -# Granted locks are added at the HEAD of the queue.
+  -# Waiting locks are added at the TAIL of the queue.
+  .
+  The queue looks like:
+  ```
+                                           |
+Grows <---- [HEAD] [G7 -- G3 -- G2 -- G1] -|- [W4 -- W5 -- W6] [TAIL] ---> Grows
+                         Grant Group       |         Wait Group
+
+        G - Granted W - waiting,
+        suffix number is the chronological order of requests.
+  ```
+  @remark
+    - In the Wait Group the locks are in chronological order. We will not assert
+      this invariant as there is no significance of the order (and hence the
+      position) as the locks are re-ordered based on CATS weight while making a
+      choice for grant, and CATS weights change constantly to reflect current
+      shape of the Wait-for graph.
+    - In the Grant Group the locks are in reverse chronological order. We will
+      assert this invariant. CATS algorithm doesn't need it, but deadlock
+      detection does, as explained further below.
+-# When a new lock request comes, we check for conflict with all (GRANTED and
+   WAITING) locks already in the queue.
+    -# If there is a conflicting lock already in the queue, then the new lock
+       request is put into WAITING state and appended at the TAIL. The
+       transaction which requested the conflicting lock found is said to be the
+       Blocking Transaction for the incoming transaction. As each transaction
+       can have at most one WAITING lock, it also can have at most one Blocking
+       Transaction, and thus we store the information about Blocking Transaction
+       (if any) in the transaction object itself (as opposed to: separately for
+       each lock request).
+    -# If there is no conflict, the request can be GRANTED, and lock is
+       prepended at the HEAD.
+
+-# When we release a lock, locks which conflict with it need to be checked again
+if they can now be granted. Note that if there are multiple locks which could be
+granted, the order in which we decide to grant has an impact on who will have to
+wait: granting a lock to one transaction, can prevent another waiting
+transaction from being granted if their request conflict with each other.
+At the minimum, the Lock-sys must guarantee that a newly GRANTED lock,
+does not conflict with any other GRANTED lock.
+Therefore, we will specify the order in which the Lock-sys checks the WAITING
+locks one by one, and assume that such check involves checking if there is any
+conflict with already GRANTED locks - if so, the lock remains WAITING, we update
+the Blocking Transaction of the lock to be the newly identified conflicting
+transaction, and we check a next lock from the sorted list, otherwise, we grant
+it (and thus it is checked against in subsequent checks).
+The Lock-sys uses CATS weight for ordering: it favors transactions with highest
+CATS weight.
+Moreover, only the locks which point to the transaction currently releasing the
+lock as their Blocking Transaction participate as candidates for granting a
+lock.
+
+@remark
+For each WAITING lock the Blocking Transaction always points to a transaction
+which has a conflicting lock request, so if the Blocking Transaction is not the
+one which releases the lock right now, then we know that there is still at least
+one conflicting transaction. However, there is a subtle issue here: when we
+request a lock in point 2. we check for conflicts with both GRANTED and WAITING
+locks, while in point 3. we only check for conflicts with GRANTED locks. So, the
+Blocking Transaction might be a WAITING one identified in point 2., so we
+might be tempted to ignore it in point 3. Such "bypassing of waiters" is
+intentionally prevented to avoid starvation of a WAITING LOCK_X, by a steady
+stream of LOCK_S requests. Respecting the rule that a Blocking Transaction has
+to finish before a lock can be granted implies that at least one of WAITING
+LOCK_Xs will be granted before a LOCK_S can be granted.
+
+@remark
+High Priority transactions in Wait Group are unconditionally kept ahead while
+sorting the wait queue. The HP is a concept related to Group Replication, and
+currently has nothing to do with CATS weight.
+
+@subsection subsect_lock_sys_blocking How do we choose the Blocking Transaction?
+
+It is done differently for new lock requests in point 2. and differently for
+old lock requests in point 3.
+
+For new lock requests, we simply scan the whole queue in its natural order,
+and the first conflicting lock is chosen. In particular, a WAITING transaction
+can be chosen, if it is conflicting, and there are no GRATNED conflicting locks.
+
+For old lock requests we scan only the Grant Group, and we do so in the
+chronological order, starting from the oldest lock requests [G1,G2,G3,G7] that
+is from the middle of the queue towards HEAD. In particular we also check
+against the locks which recently become GRANTED as they were processed before us
+in the sorting order, and we do so in a chronological order as well.
+
+@remark
+The idea here is that if we chose G1 as the Blocking Transaction and if there
+existed a dead lock with another conflicting transaction G3, the deadlock
+detection would not be postponed indefinitely while new GRANTED locks are
+added as they are going to be added to HEAD only.
+In other words: each of the conflicting locks in the Grant Group will eventually
+be set as the Blocking Transaction at some point in time, and thus it will
+become visible for the deadlock detection.
+If, by contrast, we were always picking the first one in the natural order, it
+might happen that we never get to assign G3 as the Blocking Transaction
+because new conflicting locks appear in front of the queue (and are released).
+That might lead to the deadlock with G3 never being noticed.
+
+*/
 
 // Forward declaration
 class ReadView;
@@ -196,6 +387,7 @@ void lock_rec_restore_from_page_infimum(
                                 whose infimum stored the lock
                                 state; lock bits are reset on
                                 the infimum */
+
 /** Determines if there are explicit record locks on a page.
  @return an explicit record lock on the page, or NULL if there are none */
 lock_t *lock_rec_expl_exist_on_page(space_id_t space,  /*!< in: space id */
@@ -256,9 +448,29 @@ dberr_t lock_sec_rec_modify_check_and_lock(
     mtr_t *mtr)          /*!< in/out: mini-transaction */
     MY_ATTRIBUTE((warn_unused_result));
 
+/** Called to inform lock-sys that a statement processing for a trx has just
+finished.
+@param[in]  trx   transaction which has finished processing a statement */
+void lock_on_statement_end(trx_t *trx);
+
+/** Used to specify the intended duration of a record lock. */
+enum class lock_duration_t {
+  /** Keep the lock according to the rules of particular isolation level, in
+  particular in case of READ COMMITTED or less restricive modes, do not inherit
+  the lock if the record is purged. */
+  REGULAR = 0,
+  /** Keep the lock around for at least the duration of the current statement,
+  in particular make sure it is inherited as gap lock if the record is purged.*/
+  AT_LEAST_STATEMENT = 1,
+};
+
 /** Like lock_clust_rec_read_check_and_lock(), but reads a
 secondary index record.
-@param[in]	flags		if BTR_NO_LOCKING_FLAG bit is set, does nothing
+@param[in]	duration	If equal to AT_LEAST_STATEMENT, then makes sure
+                                that the lock will be kept around and inherited
+                                for at least the duration of current statement.
+                                If equal to REGULAR the life-cycle of the lock
+                                will depend on isolation level rules.
 @param[in]	block		buffer block of rec
 @param[in]	rec		user record or page supremum record which should
                                 be read or passed over by a read cursor
@@ -273,7 +485,8 @@ secondary index record.
 @param[in,out]	thr		query thread
 @return DB_SUCCESS, DB_SUCCESS_LOCKED_REC, DB_LOCK_WAIT, DB_DEADLOCK,
 DB_SKIP_LOCKED, or DB_LOCK_NOWAIT */
-dberr_t lock_sec_rec_read_check_and_lock(ulint flags, const buf_block_t *block,
+dberr_t lock_sec_rec_read_check_and_lock(lock_duration_t duration,
+                                         const buf_block_t *block,
                                          const rec_t *rec, dict_index_t *index,
                                          const ulint *offsets,
                                          select_mode sel_mode, lock_mode mode,
@@ -285,7 +498,11 @@ if the query thread should anyway be suspended for some reason; if not, then
 puts the transaction and the query thread to the lock wait state and inserts a
 waiting request for a record lock to the lock queue. Sets the requested mode
 lock on the record.
-@param[in]	flags		if BTR_NO_LOCKING_FLAG bit is set, does nothing
+@param[in]	duration	If equal to AT_LEAST_STATEMENT, then makes sure
+                                that the lock will be kept around and inherited
+                                for at least the duration of current statement.
+                                If equal to REGULAR the life-cycle of the lock
+                                will depend on isolation level rules.
 @param[in]	block		buffer block of rec
 @param[in]	rec		user record or page supremum record which should
                                 be read or passed over by a read cursor
@@ -301,7 +518,7 @@ lock on the record.
 @return DB_SUCCESS, DB_SUCCESS_LOCKED_REC, DB_LOCK_WAIT, DB_DEADLOCK,
 DB_SKIP_LOCKED, or DB_LOCK_NOWAIT */
 dberr_t lock_clust_rec_read_check_and_lock(
-    ulint flags, const buf_block_t *block, const rec_t *rec,
+    lock_duration_t duration, const buf_block_t *block, const rec_t *rec,
     dict_index_t *index, const ulint *offsets, select_mode sel_mode,
     lock_mode mode, ulint gap_mode, que_thr_t *thr);
 
@@ -315,8 +532,6 @@ dberr_t lock_clust_rec_read_check_and_lock(
  "offsets".
  @return DB_SUCCESS, DB_LOCK_WAIT, or DB_DEADLOCK */
 dberr_t lock_clust_rec_read_check_and_lock_alt(
-    ulint flags,              /*!< in: if BTR_NO_LOCKING_FLAG
-                              bit is set, does nothing */
     const buf_block_t *block, /*!< in: buffer block of rec */
     const rec_t *rec,         /*!< in: user record or page
                               supremum record which should
@@ -399,6 +614,20 @@ prepare to release locks early.
 @param[in]	only_gap	release only GAP locks */
 void lock_trx_release_read_locks(trx_t *trx, bool only_gap);
 
+/** Iterate over the granted locks which conflict with trx->lock.wait_lock and
+prepare the hit list for ASYNC Rollback.
+
+If the transaction is waiting for some other lock then wake up
+with deadlock error.  Currently we don't mark following transactions
+for ASYNC Rollback.
+
+1. Read only transactions
+2. Background transactions
+3. Other High priority transactions
+@param[in]      trx       High Priority transaction
+@param[in,out]  hit_list  List of transactions which need to be rolled back */
+void lock_make_trx_hit_list(trx_t *trx, hit_list_t &hit_list);
+
 /** Removes locks on a table to be dropped.
  If remove_also_table_sx_locks is TRUE then table-level S and X locks are
  also removed in addition to other table-level and record-level locks.
@@ -433,9 +662,8 @@ hash_table_t *lock_hash_get(ulint mode); /*!< in: lock mode */
  if none found.
  @return bit index == heap number of the record, or ULINT_UNDEFINED if
  none found */
-ulint lock_rec_find_set_bit(
-    const lock_t *lock); /*!< in: record lock with at least one
-                         bit set */
+ulint lock_rec_find_set_bit(const lock_t *lock); /*!< in: record lock with at
+                                                 least one bit set */
 
 /** Looks for the next set bit in the record lock bitmap.
 @param[in] lock		record lock with at least one bit set
@@ -446,12 +674,11 @@ ulint lock_rec_find_next_set_bit(const lock_t *lock, ulint heap_no);
 
 /** Checks if a lock request lock1 has to wait for request lock2.
  @return TRUE if lock1 has to wait for lock2 to be removed */
-bool lock_has_to_wait(
-    const lock_t *lock1,  /*!< in: waiting lock */
-    const lock_t *lock2); /*!< in: another lock; NOTE that it is
-                          assumed that this has a lock bit set
-                          on the same record as in lock1 if the
-                          locks are record locks */
+bool lock_has_to_wait(const lock_t *lock1,  /*!< in: waiting lock */
+                      const lock_t *lock2); /*!< in: another lock; NOTE that it
+                                            is assumed that this has a lock bit
+                                            set on the same record as in lock1
+                                            if the locks are record locks */
 /** Reports that a transaction id is insensible, i.e., in the future. */
 void lock_report_trx_id_insanity(
     trx_id_t trx_id,           /*!< in: trx id */
@@ -459,9 +686,10 @@ void lock_report_trx_id_insanity(
     const dict_index_t *index, /*!< in: index */
     const ulint *offsets,      /*!< in: rec_get_offsets(rec, index) */
     trx_id_t max_trx_id);      /*!< in: trx_sys_get_max_trx_id() */
+
 /** Prints info of locks for all transactions.
- @return false if not able to obtain lock mutex and exits without
- printing info */
+@return false if not able to obtain lock mutex and exits without
+printing info */
 bool lock_print_info_summary(
     FILE *file,   /*!< in: file where to print */
     ibool nowait) /*!< in: whether to wait for the lock mutex */
@@ -486,9 +714,9 @@ ulint lock_number_of_rows_locked(
     MY_ATTRIBUTE((warn_unused_result));
 
 /** Return the number of table locks for a transaction.
- The caller must be holding lock_sys->mutex. */
-ulint lock_number_of_tables_locked(
-    const trx_lock_t *trx_lock) /*!< in: transaction locks */
+ The caller must be holding trx->mutex.
+@param[in]  trx   the transaction for which we want the number of table locks */
+ulint lock_number_of_tables_locked(const trx_t *trx)
     MY_ATTRIBUTE((warn_unused_result));
 
 /** Gets the type of a lock. Non-inline version for using outside of the
@@ -577,14 +805,18 @@ bool lock_table_has_locks(
 /** A thread which wakes up threads whose lock wait may have lasted too long. */
 void lock_wait_timeout_thread();
 
+/** Notifies the thread which analyzes wait-for-graph that there was
+ at least one new edge added or modified ( trx->blocking_trx has changed ),
+ so that the thread will know it has to analyze it. */
+void lock_wait_request_check_for_cycles();
+
 /** Puts a user OS thread to wait for a lock to be released. If an error
  occurs during the wait trx->error_state associated with thr is
  != DB_SUCCESS when we return. DB_LOCK_WAIT_TIMEOUT and DB_DEADLOCK
  are possible errors. DB_DEADLOCK is returned if selective deadlock
  resolution chose this transaction as a victim. */
-void lock_wait_suspend_thread(
-    que_thr_t *thr); /*!< in: query thread associated with the
-                     user OS thread */
+void lock_wait_suspend_thread(que_thr_t *thr); /*!< in: query thread associated
+                                               with the user OS thread */
 /** Unlocks AUTO_INC type locks that were possibly reserved by a trx. This
  function should be called at the the end of an SQL statement, by the
  connection thread that owns the transaction (trx->mysql_thd). */
@@ -610,12 +842,13 @@ bool lock_check_trx_id_sanity(
     const ulint *offsets)      /*!< in: rec_get_offsets(rec, index) */
     MY_ATTRIBUTE((warn_unused_result));
 /** Check if the transaction holds an exclusive lock on a record.
- @return whether the locks are held */
-bool lock_trx_has_rec_x_lock(
-    const trx_t *trx,          /*!< in: transaction to check */
-    const dict_table_t *table, /*!< in: table to check */
-    const buf_block_t *block,  /*!< in: buffer block of the record */
-    ulint heap_no)             /*!< in: record heap number */
+@param[in]  thr     query thread of the transaction
+@param[in]  table   table to check
+@param[in]  block   buffer block of the record
+@param[in]  heap_no record heap number
+@return whether the locks are held */
+bool lock_trx_has_rec_x_lock(que_thr_t *thr, const dict_table_t *table,
+                             const buf_block_t *block, ulint heap_no)
     MY_ATTRIBUTE((warn_unused_result));
 #endif /* UNIV_DEBUG */
 
@@ -726,8 +959,7 @@ struct lock_sys_t {
                                        in the waiting_threads array,
                                        protected by
                                        lock_sys->wait_mutex */
-  int n_waiting;                       /*!< Number of slots in use.
-                                       Protected by lock_sys->mutex */
+
   ibool rollback_complete;
   /*!< TRUE if rollback of all
   recovered transactions is
@@ -741,14 +973,26 @@ struct lock_sys_t {
                             thread. A value of 0 means the
                             thread is not active */
 
-  /** Marker value before trx_t::age. */
-  uint64_t mark_age_updated;
-
 #ifdef UNIV_DEBUG
   /** Lock timestamp counter */
   uint64_t m_seq;
 #endif /* UNIV_DEBUG */
 };
+
+/*********************************************************************/ /**
+This function is kind of wrapper to lock_rec_convert_impl_to_expl_for_trx()
+function with functionailty added to facilitate lock conversion from implicit
+to explicit for partial rollback cases
+@param[in]	block		buffer block of rec
+@param[in]	rec		user record on page
+@param[in]	index		index of record
+@param[in]	offsets		rec_get_offsets(rec, index)
+@param[in,out]	trx		active transaction
+@param[in]	heap_no		rec heap number to lock */
+void lock_rec_convert_active_impl_to_expl(const buf_block_t *block,
+                                          const rec_t *rec, dict_index_t *index,
+                                          const ulint *offsets, trx_t *trx,
+                                          ulint heap_no);
 
 /** Removes a record lock request, waiting or granted, from the queue. */
 void lock_rec_discard(lock_t *in_lock); /*!< in: record lock object: all
@@ -782,7 +1026,7 @@ extern lock_sys_t *lock_sys;
 /** Test if lock_sys->mutex can be acquired without waiting. */
 #define lock_mutex_enter_nowait() (lock_sys->mutex.trylock(__FILE__, __LINE__))
 
-/** Test if lock_sys->mutex is owned. */
+/** Test if lock_sys->mutex is owned by the current thread. */
 #define lock_mutex_own() (lock_sys->mutex.is_owned())
 
 /** Acquire the lock_sys->mutex. */

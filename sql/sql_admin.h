@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -30,7 +30,7 @@
 #include "my_dbug.h"
 #include "my_sqlcommand.h"
 #include "sql/histograms/histogram.h"
-#include "sql/memroot_allocator.h"
+#include "sql/mem_root_allocator.h"
 #include "sql/sql_cmd.h"            // Sql_cmd
 #include "sql/sql_cmd_ddl_table.h"  // Sql_cmd_ddl_table
 #include "sql/sql_plugin_ref.h"
@@ -91,7 +91,7 @@ class Sql_cmd_analyze_table : public Sql_cmd_ddl_table {
 
  private:
   using columns_set =
-      std::set<String *, Column_name_comparator, Memroot_allocator<String *>>;
+      std::set<String *, Column_name_comparator, Mem_root_allocator<String *>>;
 
   /// Which histogram command (if any) is specified
   Histogram_command m_histogram_command = Histogram_command::NONE;
@@ -230,12 +230,12 @@ class Sql_cmd_set_role : public Sql_cmd {
   Sql_cmd_set_role(role_enum role_type_arg,
                    const List<LEX_USER> *except_roles_arg)
       : role_type(role_type_arg),
-        role_list(NULL),
+        role_list(nullptr),
         except_roles(except_roles_arg) {
     DBUG_ASSERT(role_type == role_enum::ROLE_NONE ||
                 role_type == role_enum::ROLE_DEFAULT ||
                 role_type == role_enum::ROLE_ALL);
-    DBUG_ASSERT(role_type == role_enum::ROLE_ALL || except_roles == NULL);
+    DBUG_ASSERT(role_type == role_enum::ROLE_ALL || except_roles == nullptr);
   }
   explicit Sql_cmd_set_role(const List<LEX_USER> *role_arg)
       : role_type(role_enum::ROLE_NAME), role_list(role_arg) {}
@@ -371,6 +371,9 @@ class Sql_cmd_show_grants : public Sql_cmd {
 
 enum alter_instance_action_enum {
   ROTATE_INNODB_MASTER_KEY,
+  ALTER_INSTANCE_RELOAD_TLS,
+  ALTER_INSTANCE_RELOAD_TLS_ROLLBACK_ON_ERROR,
+  ROTATE_BINLOG_MASTER_KEY,
   LAST_MASTER_KEY /* Add new master key type before this */
 };
 
@@ -389,7 +392,7 @@ class Sql_cmd_alter_instance : public Sql_cmd {
   explicit Sql_cmd_alter_instance(
       enum alter_instance_action_enum alter_instance_action_arg)
       : alter_instance_action(alter_instance_action_arg),
-        alter_instance(NULL) {}
+        alter_instance(nullptr) {}
 
   virtual bool execute(THD *thd);
   virtual enum_sql_command sql_command_code() const {
@@ -445,8 +448,10 @@ class Sql_cmd_clone : public Sql_cmd {
   bool load(THD *thd);
 
   /** Re-write clone statement to hide password.
-  @param[in,out] thd server session */
-  void rewrite(THD *thd);
+  @param[in,out] thd server session
+  @param[in,out] rlb the buffer to return the rewritten query in. empty if none.
+  @return true iff query is re-written */
+  bool rewrite(THD *thd, String &rlb);
 
   /** @return true, if it is local clone command */
   bool is_local() const { return (m_is_local); }

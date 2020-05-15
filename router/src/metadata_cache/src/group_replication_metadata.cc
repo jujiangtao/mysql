@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2016, 2018, Oracle and/or its affiliates. All rights reserved.
+  Copyright (c) 2016, 2020, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -23,15 +23,16 @@
 */
 
 #include "group_replication_metadata.h"
-#include "metadata.h"
-#include "mysql/harness/logging/logging.h"
-#include "mysqlrouter/mysql_session.h"
 
-#include <assert.h>  // <cassert> is flawed: assert() lands in global namespace on Ubuntu 14.04, not std::
+#include <cassert>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <sstream>
+
+#include "metadata.h"
+#include "mysql/harness/logging/logging.h"
+#include "mysqlrouter/mysql_session.h"
 
 using mysqlrouter::MySQLSession;
 IMPORT_LOG_FUNCTIONS()
@@ -51,12 +52,13 @@ static std::string find_group_replication_primary_member(
     // Typical reponse is shown below. If this node is part of group replication
     // AND we're in SM mode, 'Value' will show the primary node, else, it will
     // be empty.
+    // clang-format off
     // +----------------------------------+--------------------------------------+
-    // | Variable_name                    | Value |
+    // | Variable_name                    | Value                                |
     // +----------------------------------+--------------------------------------+
-    // | group_replication_primary_member | 3acfe4ca-861d-11e6-9e56-08002741aeb6
-    // |
+    // | group_replication_primary_member | 3acfe4ca-861d-11e6-9e56-08002741aeb6 |
     // +----------------------------------+--------------------------------------+
+    // clang-format on
 
     if (row.size() != 2) {  // TODO write a testcase for this
       throw metadata_cache::metadata_error(
@@ -79,7 +81,7 @@ static std::string find_group_replication_primary_member(
                      result_processor);
   } catch (const MySQLSession::Error &e) {
     throw metadata_cache::metadata_error(e.what());
-  } catch (const metadata_cache::metadata_error &e) {
+  } catch (const metadata_cache::metadata_error &) {
     throw;
   } catch (...) {
     assert(
@@ -101,26 +103,22 @@ std::map<std::string, GroupReplicationMember> fetch_group_replication_members(
 
   auto result_processor = [&members, &primary_member, &single_master](
                               const MySQLSession::Row &row) -> bool {
+    // clang-format off
     // example response from node that left GR (sees only itself):
     // +--------------------------------------+-------------+-------------+--------------+-----------------------------------------+
-    // | member_id                            | member_host | member_port |
-    // member_state | @@group_replication_single_primary_mode |
+    // | member_id                            | member_host | member_port | member_state | @@group_replication_single_primary_mode |
     // +--------------------------------------+-------------+-------------+--------------+-----------------------------------------+
-    // | 30ec658e-861d-11e6-9988-08002741aeb6 | ubuntu      |        3310 |
-    // OFFLINE      |                                       1 |
+    // | 30ec658e-861d-11e6-9988-08002741aeb6 | ubuntu      |        3310 | OFFLINE      |                                       1 |
     // +--------------------------------------+-------------+-------------+--------------+-----------------------------------------+
     //
-    // example response from node that is still part of GR (normally should see
-    // itself and all other GR members):
+    // example response from node that is still part of GR (normally should see itself and all other GR members):
     // +--------------------------------------+-------------+-------------+--------------+-----------------------------------------+
-    // | member_id                            | member_host | member_port |
-    // member_state | @@group_replication_single_primary_mode |
+    // | member_id                            | member_host | member_port | member_state | @@group_replication_single_primary_mode |
     // +--------------------------------------+-------------+-------------+--------------+-----------------------------------------+
-    // | 3acfe4ca-861d-11e6-9e56-08002741aeb6 | ubuntu      |        3320 |
-    // ONLINE       |                                       1 | |
-    // 4c08b4a2-861d-11e6-a256-08002741aeb6 | ubuntu      |        3330 | ONLINE
-    // |                                       1 |
+    // | 3acfe4ca-861d-11e6-9e56-08002741aeb6 | ubuntu      |        3320 | ONLINE       |                                       1 |
+    // | 4c08b4a2-861d-11e6-a256-08002741aeb6 | ubuntu      |        3330 | ONLINE       |                                       1 |
     // +--------------------------------------+-------------+-------------+--------------+-----------------------------------------+
+    // clang-format on
 
     if (row.size() != 5) {  // TODO write a testcase for this
       throw metadata_cache::metadata_error(
@@ -170,8 +168,9 @@ std::map<std::string, GroupReplicationMember> fetch_group_replication_members(
     }
 
     // if single_master == true, we're in single-master mode, implying at most 1
-    // Primary(RW) node if single_master == false, we're in multi-master mode,
-    // implying all nodes are Primary(RW)
+    // Primary(RW) node
+    // if single_master == false, we're in multi-master mode, implying all nodes
+    // are Primary(RW)
     if (primary_member == member.member_id || !single_master)
       member.role = GroupReplicationMember::Role::Primary;
     else
@@ -199,7 +198,7 @@ std::map<std::string, GroupReplicationMember> fetch_group_replication_members(
 
   } catch (const MySQLSession::Error &e) {
     throw metadata_cache::metadata_error(e.what());
-  } catch (const metadata_cache::metadata_error &e) {
+  } catch (const metadata_cache::metadata_error &) {
     throw;
   } catch (...) {
     assert(

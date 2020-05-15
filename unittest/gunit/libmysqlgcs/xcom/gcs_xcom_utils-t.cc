@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -78,7 +78,7 @@ TEST(GcsXcomProxyImpl, XcomClientSendDataBiggerThanUINT32) {
     is bigger than uint32.
   */
   test_logger.clear_event();
-  bool successful = xcom_proxy.xcom_client_send_data(1ULL << 32, NULL);
+  bool successful = xcom_proxy.xcom_client_send_data(1ULL << 32, nullptr);
 
   ASSERT_EQ(successful, false);
 
@@ -86,6 +86,14 @@ TEST(GcsXcomProxyImpl, XcomClientSendDataBiggerThanUINT32) {
                 << "not exceed " << std::numeric_limits<unsigned int>::max()
                 << " bytes.";
   test_logger.assert_error(error_message.str());
+}
+
+TEST(GcsXComUtils, GcsProtocolOutOfRange) {
+  ASSERT_FALSE(is_valid_protocol("1000000000000000000000000000000000000000"));
+}
+
+TEST(GcsXComUtils, InvalidGcsProtocolToConvertToMysqlVersion) {
+  ASSERT_EQ(gcs_protocol_to_mysql_version(Gcs_protocol_version::UNKNOWN), "");
 }
 
 }  // namespace gcs_xcom_utils_unittest

@@ -1,4 +1,4 @@
-/* Copyright (c) 2002, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2002, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -95,16 +95,17 @@ When one supplies long data for a placeholder:
 #include "my_config.h"
 
 #include <limits.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <algorithm>
-#include <atomic>
+#include <limits>
 #include <memory>
 #include <unordered_map>
 #include <utility>
 
-#include "binary_log_types.h"
 #include "decimal.h"
+#include "field_types.h"
 #include "m_ctype.h"
 #include "m_string.h"
 #include "map_helpers.h"
@@ -125,10 +126,12 @@ When one supplies long data for a placeholder:
 #include "mysql_com.h"
 #include "mysql_time.h"
 #include "mysqld_error.h"
+#include "scope_guard.h"
 #include "sql/auth/auth_acls.h"
 #include "sql/auth/auth_common.h"  // check_table_access
 #include "sql/auth/sql_security_ctx.h"
 #include "sql/binlog.h"
+#include "sql/debug_sync.h"
 #include "sql/derror.h"  // ER_THD
 #include "sql/field.h"
 #include "sql/handler.h"
@@ -140,7 +143,10 @@ When one supplies long data for a placeholder:
 #include "sql/mysqld.h"     // opt_general_log
 #include "sql/opt_trace.h"  // Opt_trace_array
 #include "sql/protocol.h"
+#include "sql/protocol_classic.h"
 #include "sql/psi_memory_key.h"
+#include "sql/query_options.h"
+#include "sql/query_result.h"
 #include "sql/resourcegroups/resource_group_basic_types.h"
 #include "sql/resourcegroups/resource_group_mgr.h"
 #include "sql/session_tracker.h"
@@ -148,6 +154,7 @@ When one supplies long data for a placeholder:
 #include "sql/sp_cache.h"   // sp_cache_enforce_limit
 #include "sql/sql_audit.h"  // mysql_global_audit_mask
 #include "sql/sql_base.h"   // open_tables_for_query, open_temporary_table
+#include "sql/sql_class.h"
 #include "sql/sql_cmd.h"
 #include "sql/sql_cmd_ddl_table.h"
 #include "sql/sql_const.h"
@@ -156,6 +163,7 @@ When one supplies long data for a placeholder:
 #include "sql/sql_digest_stream.h"
 #include "sql/sql_handler.h"  // mysql_ha_rm_tables
 #include "sql/sql_lex.h"
+#include "sql/sql_list.h"
 #include "sql/sql_parse.h"  // sql_command_flags
 #include "sql/sql_profile.h"
 #include "sql/sql_query_rewrite.h"
@@ -178,6 +186,8 @@ using std::min;
 
 /****************************************************************************/
 
+namespace {
+
 /**
   Execute one SQL statement in an isolated context.
 */
@@ -190,6 +200,24 @@ class Execute_sql_statement : public Server_runnable {
  private:
   LEX_STRING m_sql_text;
 };
+
+/**
+  A result class used to send cursor rows using the binary protocol.
+*/
+
+class Query_fetch_protocol_binary final : public Query_result_send {
+  Protocol_binary protocol;
+
+ public:
+  explicit Query_fetch_protocol_binary(THD *thd)
+      : Query_result_send(), protocol(thd) {}
+  bool send_result_set_metadata(THD *thd, List<Item> &list,
+                                uint flags) override;
+  bool send_data(THD *thd, List<Item> &items) override;
+  bool send_eof(THD *thd) override;
+};
+
+}  // namespace
 
 /**
   Protocol_local: a helper class to intercept the result
@@ -212,61 +240,63 @@ class Execute_sql_statement : public Server_runnable {
   m_fields to accept the next result set.
 */
 
-class Protocol_local : public Protocol {
+class Protocol_local final : public Protocol {
  public:
   Protocol_local(THD *thd, Ed_connection *ed_connection);
-  ~Protocol_local() { free_root(&m_rset_root, MYF(0)); }
+  ~Protocol_local() override { free_root(&m_rset_root, MYF(0)); }
 
-  virtual int read_packet();
+  int read_packet() override;
 
-  virtual int get_command(COM_DATA *com_data, enum_server_command *cmd);
-  virtual ulong get_client_capabilities();
-  virtual bool has_client_capability(unsigned long client_capability);
-  virtual void end_partial_result_set();
-  virtual int shutdown(bool server_shutdown = false);
-  virtual bool connection_alive();
-  virtual void start_row();
-  virtual bool end_row();
-  virtual void abort_row() {}
-  virtual uint get_rw_status();
-  virtual bool get_compression();
+  int get_command(COM_DATA *com_data, enum_server_command *cmd) override;
+  ulong get_client_capabilities() override;
+  bool has_client_capability(unsigned long client_capability) override;
+  void end_partial_result_set() override;
+  int shutdown(bool server_shutdown = false) override;
+  bool connection_alive() const override;
+  void start_row() override;
+  bool end_row() override;
+  void abort_row() override {}
+  uint get_rw_status() override;
+  bool get_compression() override;
 
-  virtual bool start_result_metadata(uint num_cols, uint flags,
-                                     const CHARSET_INFO *resultcs);
-  virtual bool end_result_metadata();
-  virtual bool send_field_metadata(Send_field *field,
-                                   const CHARSET_INFO *charset);
-  virtual bool flush() { return true; }
-  virtual bool send_parameters(List<Item_param> *, bool) { return false; }
-  bool store_ps_status(ulong, uint, uint, ulong) { return false; }
+  char *get_compression_algorithm() override;
+  uint get_compression_level() override;
+
+  bool start_result_metadata(uint num_cols, uint flags,
+                             const CHARSET_INFO *resultcs) override;
+  bool end_result_metadata() override;
+  bool send_field_metadata(Send_field *field,
+                           const CHARSET_INFO *charset) override;
+  bool flush() override { return true; }
+  bool send_parameters(List<Item_param> *, bool) override { return false; }
+  bool store_ps_status(ulong, uint, uint, ulong) override { return false; }
 
  protected:
-  virtual bool store_null();
-  virtual bool store_tiny(longlong from);
-  virtual bool store_short(longlong from);
-  virtual bool store_long(longlong from);
-  virtual bool store_longlong(longlong from, bool unsigned_flag);
-  virtual bool store_decimal(const my_decimal *, uint, uint);
-  virtual bool store(const char *from, size_t length, const CHARSET_INFO *cs);
-  virtual bool store(const char *from, size_t length,
-                     const CHARSET_INFO *fromcs, const CHARSET_INFO *tocs);
-  virtual bool store(MYSQL_TIME *time, uint precision);
-  virtual bool store_date(MYSQL_TIME *time);
-  virtual bool store_time(MYSQL_TIME *time, uint precision);
-  virtual bool store(float value, uint32 decimals, String *buffer);
-  virtual bool store(double value, uint32 decimals, String *buffer);
-  virtual bool store(Proto_field *field);
+  bool store_null() override;
+  bool store_tiny(longlong from, uint32) override;
+  bool store_short(longlong from, uint32) override;
+  bool store_long(longlong from, uint32) override;
+  bool store_longlong(longlong from, bool unsigned_flag, uint32) override;
+  bool store_decimal(const my_decimal *, uint, uint) override;
+  bool store_string(const char *from, size_t length,
+                    const CHARSET_INFO *cs) override;
+  bool store_datetime(const MYSQL_TIME &time, uint precision) override;
+  bool store_date(const MYSQL_TIME &time) override;
+  bool store_time(const MYSQL_TIME &time, uint precision) override;
+  bool store_float(float value, uint32 decimals, uint32 zerofill) override;
+  bool store_double(double value, uint32 decimals, uint32 zerofill) override;
+  bool store_field(const Field *field) override;
 
-  virtual enum enum_protocol_type type() { return PROTOCOL_LOCAL; }
-  virtual enum enum_vio_type connection_type() { return VIO_TYPE_LOCAL; }
+  enum enum_protocol_type type() const override { return PROTOCOL_LOCAL; }
+  enum enum_vio_type connection_type() const override { return VIO_TYPE_LOCAL; }
 
-  virtual bool send_ok(uint server_status, uint statement_warn_count,
-                       ulonglong affected_rows, ulonglong last_insert_id,
-                       const char *message);
+  bool send_ok(uint server_status, uint statement_warn_count,
+               ulonglong affected_rows, ulonglong last_insert_id,
+               const char *message) override;
 
-  virtual bool send_eof(uint server_status, uint statement_warn_count);
-  virtual bool send_error(uint sql_errno, const char *err_msg,
-                          const char *sqlstate);
+  bool send_eof(uint server_status, uint statement_warn_count) override;
+  bool send_error(uint sql_errno, const char *err_msg,
+                  const char *sqlstate) override;
 
  private:
   bool store_string(const char *str, size_t length, const CHARSET_INFO *src_cs,
@@ -305,8 +335,20 @@ static inline void rewrite_query_if_needed(THD *thd) {
   bool general =
       (opt_general_log && !(opt_general_log_raw || thd->slave_thread));
 
-  if ((thd->sp_runtime_ctx == NULL) && (general || opt_slow_log || opt_bin_log))
+  if ((thd->sp_runtime_ctx == nullptr) &&
+      (general || opt_slow_log || opt_bin_log)) {
+    /*
+      thd->m_rewritten_query may already contain "PREPARE stmt FROM ..."
+      at this point, so we reset it here so mysql_rewrite_query()
+      won't complain.
+    */
+    thd->reset_rewritten_query();
+    /*
+      Now replace the "PREPARE ..." with the obfuscated version of the
+      actual query were prepare.
+    */
     mysql_rewrite_query(thd);
+  }
 }
 
 /**
@@ -325,12 +367,12 @@ static inline void log_execute_line(THD *thd) {
     sub-statements inside stored procedures are not logged into
     the general log.
   */
-  if (thd->sp_runtime_ctx != NULL) return;
+  if (thd->sp_runtime_ctx != nullptr) return;
 
-  if (thd->rewritten_query.length())
+  if (thd->rewritten_query().length())
     query_logger.general_log_write(thd, COM_STMT_EXECUTE,
-                                   thd->rewritten_query.c_ptr_safe(),
-                                   thd->rewritten_query.length());
+                                   thd->rewritten_query().ptr(),
+                                   thd->rewritten_query().length());
   else
     query_logger.general_log_write(thd, COM_STMT_EXECUTE, thd->query().str,
                                    thd->query().length);
@@ -349,7 +391,7 @@ class Statement_backup {
     Save the current THD statement state.
   */
   void set_thd_to_ps(THD *thd, Prepared_statement *stmt) {
-    DBUG_ENTER("Statement_backup::set_thd_to_ps");
+    DBUG_TRACE;
 
     mysql_mutex_lock(&thd->LOCK_thd_data);
     m_lex = thd->lex;
@@ -359,7 +401,7 @@ class Statement_backup {
     m_query_string = thd->query();
     thd->set_query(stmt->m_query_string);
 
-    DBUG_VOID_RETURN;
+    return;
   }
 
   /**
@@ -367,7 +409,7 @@ class Statement_backup {
     statement has finished executing.
   */
   void restore_thd(THD *thd, Prepared_statement *stmt) {
-    DBUG_ENTER("Statement_backup::restore_thd");
+    DBUG_TRACE;
 
     mysql_mutex_lock(&thd->LOCK_thd_data);
     stmt->lex = thd->lex;
@@ -377,7 +419,7 @@ class Statement_backup {
     stmt->m_query_string = thd->query();
     thd->set_query(m_query_string);
 
-    DBUG_VOID_RETURN;
+    return;
   }
 
   /**
@@ -385,16 +427,16 @@ class Statement_backup {
     rewriting the prepared statement.
   */
   void save_rlb(THD *thd) {
-    DBUG_ENTER("Statement_backup::save_rlb");
+    DBUG_TRACE;
 
-    if (thd->rewritten_query.length() > 0) {
+    if (thd->rewritten_query().length() > 0) {
       /* Duplicate the original rewritten query. */
-      m_rewritten_query.copy(thd->rewritten_query);
+      m_rewritten_query.copy(thd->rewritten_query());
       /* Swap the duplicate with the original. */
-      thd->rewritten_query.swap(m_rewritten_query);
+      thd->swap_rewritten_query(m_rewritten_query);
     }
 
-    DBUG_VOID_RETURN;
+    return;
   }
 
   /**
@@ -402,16 +444,16 @@ class Statement_backup {
     statement has finished executing.
   */
   void restore_rlb(THD *thd) {
-    DBUG_ENTER("Statement_backup::restore_rlb");
+    DBUG_TRACE;
 
     if (m_rewritten_query.length() > 0) {
       /* Restore with swap() instead of '='. */
-      thd->rewritten_query.swap(m_rewritten_query);
+      thd->swap_rewritten_query(m_rewritten_query);
       /* Free the rewritten prepared statement. */
       m_rewritten_query.mem_free();
     }
 
-    DBUG_VOID_RETURN;
+    return;
   }
 };
 
@@ -465,16 +507,14 @@ static void set_param_int64(Item_param *param, uchar **pos, ulong len) {
 }
 
 static void set_param_float(Item_param *param, uchar **pos, ulong len) {
-  float data;
   if (len < 4) return;
-  float4get(&data, *pos);
+  float data = float4get(*pos);
   param->set_double((double)data);
 }
 
 static void set_param_double(Item_param *param, uchar **pos, ulong len) {
-  double data;
   if (len < 8) return;
-  float8get(&data, *pos);
+  double data = float8get(*pos);
   param->set_double(data);
 }
 
@@ -520,25 +560,33 @@ static void set_param_time(Item_param *param, uchar **pos, ulong len) {
 
 static void set_param_datetime(Item_param *param, uchar **pos, ulong len) {
   MYSQL_TIME tm;
+  enum_mysql_timestamp_type type = MYSQL_TIMESTAMP_DATETIME;
+  uchar *to = *pos;
 
-  if (len >= 4) {
-    uchar *to = *pos;
-
-    tm.neg = 0;
+  DBUG_ASSERT(len == 0 || len == 4 || len == 7 || len == 11 || len == 13);
+  if (len < 4) {
+    set_zero_time(&tm, MYSQL_TIMESTAMP_DATETIME);
+  } else {
+    tm.neg = false;
     tm.year = (uint)sint2korr(to);
     tm.month = (uint)to[2];
     tm.day = (uint)to[3];
-    if (len > 4) {
-      tm.hour = (uint)to[4];
-      tm.minute = (uint)to[5];
-      tm.second = (uint)to[6];
-    } else
-      tm.hour = tm.minute = tm.second = 0;
+  }
+  if (len >= 7) {
+    tm.hour = (uint)to[4];
+    tm.minute = (uint)to[5];
+    tm.second = (uint)to[6];
+  } else  // len == 4
+    tm.hour = tm.minute = tm.second = 0;
 
-    tm.second_part = (len > 7) ? (ulong)sint4korr(to + 7) : 0;
-  } else
-    set_zero_time(&tm, MYSQL_TIMESTAMP_DATETIME);
-  param->set_time(&tm, MYSQL_TIMESTAMP_DATETIME,
+  tm.second_part =
+      (len >= 11) ? static_cast<std::uint64_t>(sint4korr(to + 7)) : 0;
+
+  if (len >= 13) {
+    tm.time_zone_displacement = sint2korr(to + 11) * SECS_PER_MIN;
+    type = MYSQL_TIMESTAMP_DATETIME_TZ;
+  }
+  param->set_time(&tm, type,
                   MAX_DATETIME_FULL_WIDTH * MY_CHARSET_BIN_MB_MAXLEN);
 }
 
@@ -554,7 +602,7 @@ static void set_param_date(Item_param *param, uchar **pos, ulong len) {
 
     tm.hour = tm.minute = tm.second = 0;
     tm.second_part = 0;
-    tm.neg = 0;
+    tm.neg = false;
   } else
     set_zero_time(&tm, MYSQL_TIMESTAMP_DATE);
   param->set_time(&tm, MYSQL_TIMESTAMP_DATE,
@@ -730,11 +778,11 @@ bool Prepared_statement::insert_params(String *query, PS_PARAM *parameters) {
   size_t length = 0;
   String str;
   const String *res;
-  DBUG_ENTER("insert_params");
+  DBUG_TRACE;
 
   if (with_log && query->copy(m_query_string.str, m_query_string.length,
                               default_charset_info))
-    DBUG_RETURN(true);
+    return true;
 
   uint i = 0;
   for (Item_param **it = begin; it < end; ++it, ++i) {
@@ -746,14 +794,13 @@ bool Prepared_statement::insert_params(String *query, PS_PARAM *parameters) {
         // TODO: Add error handling for set_param_func functions.
         param->set_param_func(param, const_cast<uchar **>(&parameters[i].value),
                               parameters[i].length);
-        if (param->state == Item_param::NO_VALUE) DBUG_RETURN(true);
+        if (param->state == Item_param::NO_VALUE) return true;
 
         if (with_log && param->limit_clause_param &&
             param->state != Item_param::INT_VALUE) {
           param->set_int(param->val_int(), MY_INT64_NUM_DECIMAL_DIGITS);
           param->item_type = Item::INT_ITEM;
-          if (!param->unsigned_flag && param->value.integer < 0)
-            DBUG_RETURN(true);
+          if (!param->unsigned_flag && param->value.integer < 0) return true;
         }
       }
     }
@@ -764,26 +811,25 @@ bool Prepared_statement::insert_params(String *query, PS_PARAM *parameters) {
       supplied type of placeholder can accept a data stream.
     */
     else if (!is_param_long_data_type(param))
-      DBUG_RETURN(true);
+      return true;
     if (with_log) {
       res = param->query_val_str(thd, &str);
-      if (param->convert_str_value(thd)) DBUG_RETURN(true); /* out of memory */
+      if (param->convert_str_value()) return true; /* out of memory */
 
-      if (query->replace(param->pos_in_query + length, 1, *res))
-        DBUG_RETURN(true);
+      if (query->replace(param->pos_in_query + length, 1, *res)) return true;
 
       length += res->length() - 1;
     } else {
-      if (param->convert_str_value(thd)) DBUG_RETURN(true); /* out of memory */
+      if (param->convert_str_value()) return true; /* out of memory */
     }
     param->sync_clones();
   }
-  DBUG_RETURN(false);
+  return false;
 }
 
 static bool setup_conversion_functions(Prepared_statement *stmt,
                                        PS_PARAM *parameters) {
-  DBUG_ENTER("setup_conversion_functions");
+  DBUG_TRACE;
   /*
     First execute or types altered by the client, setup the
     conversion routines for all parameters (one time)
@@ -793,10 +839,10 @@ static bool setup_conversion_functions(Prepared_statement *stmt,
   for (uint i = 0; it < end; ++it, ++i) {
     (**it).unsigned_flag = parameters[i].unsigned_type;
     if (setup_one_conversion_function(stmt->thd, *it, parameters[i].type))
-      DBUG_RETURN(true);
+      return true;
     (**it).sync_clones();
   }
-  DBUG_RETURN(false);
+  return false;
 }
 
 /**
@@ -867,7 +913,7 @@ bool Prepared_statement::insert_params_from_vars(List<LEX_STRING> &varnames,
   const String *val;
   size_t length = 0;
 
-  DBUG_ENTER("insert_params_from_vars");
+  DBUG_TRACE;
 
   // Reserve an extra space of 32 bytes for each placeholder parameter.
   if (with_log) query->reserve(m_query_string.length + 32 * param_count);
@@ -892,7 +938,7 @@ bool Prepared_statement::insert_params_from_vars(List<LEX_STRING> &varnames,
       if (param->set_from_user_var(thd, entry)) goto error;
       val = param->query_val_str(thd, &buf);
 
-      if (param->convert_str_value(thd)) goto error;
+      if (param->convert_str_value()) goto error;
 
       size_t num_bytes = param->pos_in_query - length;
       if (query->length() + num_bytes + val->length() >
@@ -910,7 +956,7 @@ bool Prepared_statement::insert_params_from_vars(List<LEX_STRING> &varnames,
       if (entry) length += entry->length();
 
       if (length > std::numeric_limits<uint32>::max() ||
-          param->convert_str_value(thd))
+          param->convert_str_value())
         goto error;
     }
     param->sync_clones();
@@ -923,11 +969,11 @@ bool Prepared_statement::insert_params_from_vars(List<LEX_STRING> &varnames,
     query->append(m_query_string.str + length, m_query_string.length - length);
 
   mysql_mutex_unlock(&thd->LOCK_thd_data);
-  DBUG_RETURN(0);
+  return false;
 
 error:
   mysql_mutex_unlock(&thd->LOCK_thd_data);
-  DBUG_RETURN(1);
+  return true;
 }
 
 /**
@@ -946,7 +992,7 @@ bool mysql_test_show(Prepared_statement *stmt, TABLE_LIST *tables) {
   THD *thd = stmt->thd;
   LEX *lex = stmt->lex;
   SELECT_LEX_UNIT *unit = lex->unit;
-  DBUG_ENTER("mysql_test_show");
+  DBUG_TRACE;
 
   DBUG_ASSERT(!thd->is_error());
 
@@ -954,7 +1000,7 @@ bool mysql_test_show(Prepared_statement *stmt, TABLE_LIST *tables) {
 
   if (show_precheck(thd, lex, false)) goto error;
 
-  DBUG_ASSERT(lex->result == NULL);
+  DBUG_ASSERT(lex->result == nullptr);
   DBUG_ASSERT(lex->sql_command != SQLCOM_DO);
   DBUG_ASSERT(!lex->is_explain());
 
@@ -966,18 +1012,16 @@ bool mysql_test_show(Prepared_statement *stmt, TABLE_LIST *tables) {
   if (open_tables_for_query(thd, tables, MYSQL_OPEN_FORCE_SHARED_MDL))
     goto error;
 
-  thd->lex->used_tables = 0;  // Updated by setup_fields
-
   /*
     SELECT_LEX::prepare calls
     It is not SELECT COMMAND for sure, so setup_tables will be called as
     usual, and we pass 0 as setup_tables_done_option
   */
-  if (unit->prepare(thd, 0, 0, 0)) goto error;
+  if (unit->prepare(thd, nullptr, 0, 0)) goto error;
 
-  DBUG_RETURN(false);
+  return false;
 error:
-  DBUG_RETURN(true);
+  return true;
 }
 
 bool send_statement(THD *thd, const Prepared_statement *stmt, uint no_columns,
@@ -1028,21 +1072,21 @@ static bool mysql_test_set_fields(Prepared_statement *stmt, TABLE_LIST *tables,
   List_iterator_fast<set_var_base> it(*var_list);
   THD *thd = stmt->thd;
   set_var_base *var;
-  DBUG_ENTER("mysql_test_set_fields");
+  DBUG_TRACE;
   DBUG_ASSERT(stmt->m_arena.is_stmt_prepare());
 
   if (tables &&
       check_table_access(thd, SELECT_ACL, tables, false, UINT_MAX, false))
-    DBUG_RETURN(true); /* purecov: inspected */
+    return true; /* purecov: inspected */
 
   if (open_tables_for_query(thd, tables, MYSQL_OPEN_FORCE_SHARED_MDL))
-    DBUG_RETURN(true); /* purecov: inspected */
+    return true; /* purecov: inspected */
 
   while ((var = it++)) {
-    if (var->light_check(thd)) DBUG_RETURN(true); /* purecov: inspected */
+    if (var->light_check(thd)) return true; /* purecov: inspected */
   }
 
-  DBUG_RETURN(false);
+  return false;
 }
 
 /**
@@ -1066,16 +1110,14 @@ static bool mysql_test_set_fields(Prepared_statement *stmt, TABLE_LIST *tables,
 */
 
 static bool select_like_stmt_test(THD *thd) {
-  DBUG_ENTER("select_like_stmt_test");
+  DBUG_TRACE;
   LEX *const lex = thd->lex;
 
   lex->select_lex->context.resolve_in_select_list = true;
 
-  thd->lex->used_tables = 0;  // Updated by setup_fields
-
   /* Calls SELECT_LEX::prepare */
-  const bool ret = lex->unit->prepare(thd, 0, 0, 0);
-  DBUG_RETURN(ret);
+  const bool ret = lex->unit->prepare(thd, nullptr, 0, 0);
+  return ret;
 }
 
 /**
@@ -1093,10 +1135,10 @@ bool Sql_cmd_create_table::prepare(THD *thd) {
   LEX *const lex = thd->lex;
   SELECT_LEX *select_lex = lex->select_lex;
   TABLE_LIST *create_table = lex->query_tables;
-  DBUG_ENTER("mysql_test_create_table");
+  DBUG_TRACE;
 
   if (create_table_precheck(thd, query_expression_tables, create_table))
-    DBUG_RETURN(true);
+    return true;
 
   if (select_lex->item_list.elements) {
     /* Base table and temporary table are not in the same name space. */
@@ -1105,7 +1147,7 @@ bool Sql_cmd_create_table::prepare(THD *thd) {
 
     if (open_tables_for_query(thd, lex->query_tables,
                               MYSQL_OPEN_FORCE_SHARED_MDL))
-      DBUG_RETURN(true);
+      return true;
 
     select_lex->context.resolve_in_select_list = true;
 
@@ -1113,7 +1155,7 @@ bool Sql_cmd_create_table::prepare(THD *thd) {
     lex->unlink_first_table(&link_to_local);
     const bool res = select_like_stmt_test(thd);
     lex->link_first_table_back(create_table, link_to_local);
-    if (res) DBUG_RETURN(true);
+    if (res) return true;
   } else {
     /*
       Check that the source table exist, and also record
@@ -1123,11 +1165,11 @@ bool Sql_cmd_create_table::prepare(THD *thd) {
     */
     if (open_tables_for_query(thd, lex->query_tables,
                               MYSQL_OPEN_FORCE_SHARED_MDL))
-      DBUG_RETURN(true);
+      return true;
   }
 
   set_prepared();
-  DBUG_RETURN(false);
+  return false;
 }
 
 /**
@@ -1138,7 +1180,7 @@ bool Sql_cmd_create_table::prepare(THD *thd) {
   @note This function handles create view commands.
 
   @retval false Operation was a success.
-  @retval true An error occured.
+  @retval true An error occurred.
 */
 
 static bool mysql_test_create_view(Prepared_statement *stmt) {
@@ -1149,7 +1191,7 @@ static bool mysql_test_create_view(Prepared_statement *stmt) {
   bool link_to_local;
   TABLE_LIST *view = lex->unlink_first_table(&link_to_local);
   TABLE_LIST *tables = lex->query_tables;
-  DBUG_ENTER("mysql_test_create_view");
+  DBUG_TRACE;
   DBUG_ASSERT(stmt->m_arena.is_stmt_prepare());
 
   if (create_view_precheck(thd, tables, view, lex->create_view_mode)) goto err;
@@ -1168,7 +1210,7 @@ static bool mysql_test_create_view(Prepared_statement *stmt) {
 err:
   /* put view back for PS rexecuting */
   lex->link_first_table_back(view, link_to_local);
-  DBUG_RETURN(res);
+  return res;
 }
 
 /**
@@ -1195,7 +1237,7 @@ static bool check_prepared_statement(Prepared_statement *stmt) {
   SELECT_LEX *select_lex = lex->select_lex;
   enum enum_sql_command sql_command = lex->sql_command;
   int res = 0;
-  DBUG_ENTER("check_prepared_statement");
+  DBUG_TRACE;
   DBUG_PRINT("enter",
              ("command: %d  param_count: %u", sql_command, stmt->param_count));
 
@@ -1211,7 +1253,7 @@ static bool check_prepared_statement(Prepared_statement *stmt) {
     of what is done at statement execution (in mysql_execute_command()).
   */
   Opt_trace_start ots(thd, tables, sql_command, &lex->var_list,
-                      thd->query().str, thd->query().length, NULL,
+                      thd->query().str, thd->query().length, nullptr,
                       thd->variables.character_set_client);
 
   Opt_trace_object trace_command(&thd->opt_trace);
@@ -1220,7 +1262,7 @@ static bool check_prepared_statement(Prepared_statement *stmt) {
   if ((thd->lex->keep_diagnostics == DA_KEEP_COUNTS) ||
       (thd->lex->keep_diagnostics == DA_KEEP_DIAGNOSTICS)) {
     my_error(ER_UNSUPPORTED_PS, MYF(0));
-    DBUG_RETURN(true);
+    return true;
   }
 
   if (sql_command_flags[sql_command] & CF_HA_CLOSE)
@@ -1231,7 +1273,7 @@ static bool check_prepared_statement(Prepared_statement *stmt) {
     prelocking will be opened afterwards (during open_tables()).
   */
   if (sql_command_flags[sql_command] & CF_PREOPEN_TMP_TABLES) {
-    if (open_temporary_tables(thd, tables)) DBUG_RETURN(true);
+    if (open_temporary_tables(thd, tables)) return true;
   }
 
   switch (sql_command) {
@@ -1248,16 +1290,17 @@ static bool check_prepared_statement(Prepared_statement *stmt) {
     case SQLCOM_SHOW_TABLE_STATUS:
     case SQLCOM_SHOW_STATUS_PROC:
     case SQLCOM_SHOW_STATUS_FUNC:
-      if (mysql_test_show(stmt, tables)) DBUG_RETURN(true);
+      if (mysql_test_show(stmt, tables)) return true;
       break;
     case SQLCOM_CREATE_VIEW:
       if (lex->create_view_mode == enum_view_create_mode::VIEW_ALTER) {
         my_error(ER_UNSUPPORTED_PS, MYF(0));
-        DBUG_RETURN(true);
+        return true;
       }
       res = mysql_test_create_view(stmt);
       break;
 
+    case SQLCOM_SET_PASSWORD:
     case SQLCOM_SET_OPTION:
       res = mysql_test_set_fields(stmt, tables, &lex->var_list);
       break;
@@ -1340,13 +1383,13 @@ static bool check_prepared_statement(Prepared_statement *stmt) {
           (sql_command_flags[sql_command] & CF_DIAGNOSTIC_STMT)) {
         /* All other statements are not supported yet. */
         my_error(ER_UNSUPPORTED_PS, MYF(0));
-        DBUG_RETURN(true);
+        return true;
       }
       break;
   }
-  if (res) DBUG_RETURN(true);
+  if (res) return true;
 
-  if (stmt->is_sql_prepare()) DBUG_RETURN(false);
+  if (stmt->is_sql_prepare()) return false;
 
   List<Item> *types = nullptr;
   Query_result *result = nullptr;
@@ -1362,7 +1405,7 @@ static bool check_prepared_statement(Prepared_statement *stmt) {
     no_columns = result->field_count(*types);
   }
 
-  DBUG_RETURN(send_statement(thd, stmt, no_columns, result, types));
+  return send_statement(thd, stmt, no_columns, result, types);
 }
 
 /**
@@ -1383,9 +1426,9 @@ static bool init_param_array(Prepared_statement *stmt) {
     Item_param **to;
     List_iterator<Item_param> param_iterator(lex->param_list);
     /* Use thd->mem_root as it points at statement mem_root */
-    stmt->param_array = (Item_param **)alloc_root(
-        stmt->thd->mem_root, sizeof(Item_param *) * stmt->param_count);
-    if (!stmt->param_array) return true;
+    stmt->param_array =
+        stmt->thd->mem_root->ArrayAlloc<Item_param *>(stmt->param_count);
+    if (stmt->param_array == nullptr) return true;
     for (to = stmt->param_array; to < stmt->param_array + stmt->param_count;
          ++to) {
       *to = param_iterator++;
@@ -1423,37 +1466,43 @@ static bool init_param_array(Prepared_statement *stmt) {
 
 void mysqld_stmt_prepare(THD *thd, const char *query, uint length,
                          Prepared_statement *stmt) {
-  DBUG_ENTER("mysqld_stmt_prepare");
+  DBUG_TRACE;
   DBUG_PRINT("prep_query", ("%s", query));
   DBUG_ASSERT(stmt != nullptr);
 
   bool switch_protocol = thd->is_classic_protocol();
   if (switch_protocol) {
     // set the current client capabilities before switching the protocol
-    thd->protocol_binary.set_client_capabilities(
+    thd->protocol_binary->set_client_capabilities(
         thd->get_protocol()->get_client_capabilities());
-    thd->push_protocol(&thd->protocol_binary);
+    thd->push_protocol(thd->protocol_binary);
   }
 
+  // Initially, optimize the statement for the primary storage engine.
+  // If an eligible secondary storage engine is found, the statement
+  // may be reprepared for the secondary storage engine later.
+  const auto saved_secondary_engine = thd->secondary_engine_optimization();
+  thd->set_secondary_engine_optimization(
+      Secondary_engine_optimization::PRIMARY_TENTATIVELY);
   /* Create PS table entry, set query text after rewrite. */
   stmt->m_prepared_stmt =
       MYSQL_CREATE_PS(stmt, stmt->id, thd->m_statement_psi, stmt->name().str,
-                      stmt->name().length, NULL, 0);
+                      stmt->name().length, nullptr, 0);
 
-  if (stmt->prepare(query, length, false)) {
+  if (stmt->prepare(query, length)) {
     /* Delete this stmt stats from PS table. */
     MYSQL_DESTROY_PS(stmt->m_prepared_stmt);
     /* Statement map deletes statement on erase */
     thd->stmt_map.erase(stmt);
   }
 
+  thd->set_secondary_engine_optimization(saved_secondary_engine);
   if (switch_protocol) thd->pop_protocol();
 
   sp_cache_enforce_limit(thd->sp_proc_cache, stored_program_cache_size);
   sp_cache_enforce_limit(thd->sp_func_cache, stored_program_cache_size);
 
   /* check_prepared_statement sends the metadata packet in case of success */
-  DBUG_VOID_RETURN;
 }
 
 /**
@@ -1559,7 +1608,7 @@ silent_error:
 
 static const char *get_dynamic_sql_string(LEX *lex, size_t *query_len) {
   THD *thd = lex->thd;
-  char *query_str = 0;
+  char *query_str = nullptr;
 
   if (lex->prepared_stmt_code_is_varref) {
     /* This is PREPARE stmt FROM or EXECUTE IMMEDIATE @var. */
@@ -1583,7 +1632,7 @@ static const char *get_dynamic_sql_string(LEX *lex, size_t *query_len) {
     if (it != thd->user_vars.end() && it->second->ptr()) {
       user_var_entry *entry = it->second.get();
       bool is_var_null;
-      var_value = entry->val_str(&is_var_null, &str, NOT_FIXED_DEC);
+      var_value = entry->val_str(&is_var_null, &str, DECIMAL_NOT_SPECIFIED);
 
       mysql_mutex_unlock(&thd->LOCK_thd_data);
 
@@ -1608,7 +1657,7 @@ static const char *get_dynamic_sql_string(LEX *lex, size_t *query_len) {
 
     len = (needs_conversion ? var_value->length() * to_cs->mbmaxlen
                             : var_value->length());
-    if (!(query_str = (char *)alloc_root(thd->mem_root, len + 1))) goto end;
+    if (!(query_str = (char *)thd->mem_root->Alloc(len + 1))) goto end;
 
     if (needs_conversion) {
       uint dummy_errors;
@@ -1646,7 +1695,7 @@ void mysql_sql_stmt_prepare(THD *thd) {
   Prepared_statement *stmt;
   const char *query;
   size_t query_len = 0;
-  DBUG_ENTER("mysql_sql_stmt_prepare");
+  DBUG_TRACE;
 
   if ((stmt = thd->stmt_map.find_by_name(name))) {
     /*
@@ -1655,7 +1704,7 @@ void mysql_sql_stmt_prepare(THD *thd) {
     */
     if (stmt->is_in_use()) {
       my_error(ER_PS_NO_RECURSION, MYF(0));
-      DBUG_VOID_RETURN;
+      return;
     }
 
     MYSQL_DESTROY_PS(stmt->m_prepared_stmt);
@@ -1664,7 +1713,7 @@ void mysql_sql_stmt_prepare(THD *thd) {
 
   if (!(query = get_dynamic_sql_string(lex, &query_len)) ||
       !(stmt = new Prepared_statement(thd))) {
-    DBUG_VOID_RETURN; /* out of memory */
+    return; /* out of memory */
   }
 
   stmt->set_sql_prepare();
@@ -1672,20 +1721,20 @@ void mysql_sql_stmt_prepare(THD *thd) {
   /* Set the name first, insert should know that this statement has a name */
   if (stmt->set_name(name)) {
     delete stmt;
-    DBUG_VOID_RETURN;
+    return;
   }
 
   if (thd->stmt_map.insert(stmt)) {
     /* The statement is deleted and an error is set if insert fails */
-    DBUG_VOID_RETURN;
+    return;
   }
 
   /* Create PS table entry, set query text after rewrite. */
   stmt->m_prepared_stmt =
       MYSQL_CREATE_PS(stmt, stmt->id, thd->m_statement_psi, stmt->name().str,
-                      stmt->name().length, NULL, 0);
+                      stmt->name().length, nullptr, 0);
 
-  if (stmt->prepare(query, query_len, false)) {
+  if (stmt->prepare(query, query_len)) {
     /* Delete this stmt stats from PS table. */
     MYSQL_DESTROY_PS(stmt->m_prepared_stmt);
     /* Statement map deletes the statement on erase */
@@ -1696,11 +1745,9 @@ void mysql_sql_stmt_prepare(THD *thd) {
     if (thd->session_tracker.get_tracker(SESSION_STATE_CHANGE_TRACKER)
             ->is_enabled())
       thd->session_tracker.get_tracker(SESSION_STATE_CHANGE_TRACKER)
-          ->mark_as_changed(thd, NULL);
+          ->mark_as_changed(thd, nullptr);
     my_ok(thd, 0L, 0L, "Statement prepared");
   }
-
-  DBUG_VOID_RETURN;
 }
 
 /**
@@ -1719,7 +1766,7 @@ void mysql_sql_stmt_prepare(THD *thd) {
 
 bool reinit_stmt_before_use(THD *thd, LEX *lex) {
   SELECT_LEX *sl = lex->all_selects_list;
-  DBUG_ENTER("reinit_stmt_before_use");
+  DBUG_TRACE;
 
   // Default to READ access for every field that is resolved
   thd->mark_used_columns = MARK_COLUMNS_READ;
@@ -1730,7 +1777,7 @@ bool reinit_stmt_before_use(THD *thd, LEX *lex) {
   */
   lex->thd = thd;
 
-  if (lex->m_sql_cmd != NULL) lex->m_sql_cmd->cleanup(thd);
+  if (lex->m_sql_cmd != nullptr) lex->m_sql_cmd->cleanup(thd);
 
   for (; sl; sl = sl->next_select_in_list()) {
     if (!sl->first_execution) {
@@ -1755,7 +1802,7 @@ bool reinit_stmt_before_use(THD *thd, LEX *lex) {
         DBUG_ASSERT(sl->having_cond()->real_item());
         sl->having_cond()->cleanup();
       }
-      DBUG_ASSERT(sl->join == 0);
+      DBUG_ASSERT(sl->join == nullptr);
       ORDER *order;
       /* Fix GROUP list */
       if (sl->group_list_ptrs && sl->group_list_ptrs->size() > 0) {
@@ -1787,7 +1834,6 @@ bool reinit_stmt_before_use(THD *thd, LEX *lex) {
       unit->types.empty();
       /* for derived tables & PS (which can't be reset by Item_subquery) */
       unit->reinit_exec_mechanism();
-      unit->set_thd(thd);
     }
   }
 
@@ -1819,7 +1865,7 @@ bool reinit_stmt_before_use(THD *thd, LEX *lex) {
 
   lex->allow_sum_func = 0;
   lex->m_deny_window_func = 0;
-  lex->in_sum_func = NULL;
+  lex->in_sum_func = nullptr;
 
   lex->reset_exec_started();
 
@@ -1828,11 +1874,11 @@ bool reinit_stmt_before_use(THD *thd, LEX *lex) {
     Reprepare_observer *reprepare_observer = thd->get_reprepare_observer();
     if (reprepare_observer && reprepare_observer->report_error(thd)) {
       DBUG_ASSERT(thd->is_error());
-      DBUG_RETURN(true);
+      return true;
     }
   }
 
-  DBUG_RETURN(false);
+  return false;
 }
 
 /**
@@ -1871,7 +1917,7 @@ static void reset_stmt_params(Prepared_statement *stmt) {
 
 void mysqld_stmt_execute(THD *thd, Prepared_statement *stmt, bool has_new_types,
                          ulong execute_flags, PS_PARAM *parameters) {
-  DBUG_ENTER("mysqld_stmt_execute");
+  DBUG_TRACE;
 
 #if defined(ENABLED_PROFILING)
   thd->profiling->set_query_source(stmt->m_query_string.str,
@@ -1882,12 +1928,19 @@ void mysqld_stmt_execute(THD *thd, Prepared_statement *stmt, bool has_new_types,
   bool switch_protocol = thd->is_classic_protocol();
   if (switch_protocol) {
     // set the current client capabilities before switching the protocol
-    thd->protocol_binary.set_client_capabilities(
+    thd->protocol_binary->set_client_capabilities(
         thd->get_protocol()->get_client_capabilities());
-    thd->push_protocol(&thd->protocol_binary);
+    thd->push_protocol(thd->protocol_binary);
   }
 
   MYSQL_EXECUTE_PS(thd->m_statement_psi, stmt->m_prepared_stmt);
+
+  // Initially, optimize the statement for the primary storage engine.
+  // If an eligible secondary storage engine is found, the statement
+  // may be reprepared for the secondary storage engine later.
+  const auto saved_secondary_engine = thd->secondary_engine_optimization();
+  thd->set_secondary_engine_optimization(
+      Secondary_engine_optimization::PRIMARY_TENTATIVELY);
 
   // Query text for binary, general or slow log, if any of them is open
   String expanded_query;
@@ -1898,6 +1951,8 @@ void mysqld_stmt_execute(THD *thd, Prepared_statement *stmt, bool has_new_types,
     stmt->execute_loop(&expanded_query, open_cursor);
   }
 
+  thd->set_secondary_engine_optimization(saved_secondary_engine);
+
   if (switch_protocol) thd->pop_protocol();
 
   sp_cache_enforce_limit(thd->sp_proc_cache, stored_program_cache_size);
@@ -1906,8 +1961,6 @@ void mysqld_stmt_execute(THD *thd, Prepared_statement *stmt, bool has_new_types,
   /* Close connection socket; for use with client testing (Bug#43560). */
   DBUG_EXECUTE_IF("close_conn_after_stmt_execute",
                   thd->get_protocol()->shutdown(););
-
-  DBUG_VOID_RETURN;
 }
 
 /**
@@ -1929,19 +1982,19 @@ void mysqld_stmt_execute(THD *thd, Prepared_statement *stmt, bool has_new_types,
 void mysql_sql_stmt_execute(THD *thd) {
   LEX *lex = thd->lex;
   const LEX_CSTRING &name = lex->prepared_stmt_name;
-  DBUG_ENTER("mysql_sql_stmt_execute");
+  DBUG_TRACE;
   DBUG_PRINT("info", ("EXECUTE: %.*s\n", (int)name.length, name.str));
 
   Prepared_statement *stmt;
   if (!(stmt = thd->stmt_map.find_by_name(name))) {
     my_error(ER_UNKNOWN_STMT_HANDLER, MYF(0), static_cast<int>(name.length),
              name.str, "EXECUTE");
-    DBUG_VOID_RETURN;
+    return;
   }
 
   if (stmt->param_count != lex->prepared_stmt_params.elements) {
     my_error(ER_WRONG_ARGUMENTS, MYF(0), "EXECUTE");
-    DBUG_VOID_RETURN;
+    return;
   }
 
   DBUG_PRINT("info", ("stmt: %p", stmt));
@@ -1949,11 +2002,9 @@ void mysql_sql_stmt_execute(THD *thd) {
 
   // Query text for binary, general or slow log, if any of them is open
   String expanded_query;
-  if (stmt->set_parameters(&expanded_query)) DBUG_VOID_RETURN;
+  if (stmt->set_parameters(&expanded_query)) return;
 
   stmt->execute_loop(&expanded_query, false);
-
-  DBUG_VOID_RETURN;
 }
 
 /**
@@ -1965,13 +2016,13 @@ void mysql_sql_stmt_execute(THD *thd) {
 */
 
 void mysqld_stmt_fetch(THD *thd, Prepared_statement *stmt, ulong num_rows) {
-  DBUG_ENTER("mysqld_stmt_fetch");
+  DBUG_TRACE;
   thd->status_var.com_stmt_fetch++;
 
   Server_side_cursor *cursor = stmt->cursor;
   if (!cursor) {
     my_error(ER_STMT_HAS_NO_OPEN_CURSOR, MYF(0), stmt->id);
-    DBUG_VOID_RETURN;
+    return;
   }
 
   thd->stmt_arena = &stmt->m_arena;
@@ -1987,8 +2038,6 @@ void mysqld_stmt_fetch(THD *thd, Prepared_statement *stmt, ulong num_rows) {
 
   stmt_backup.restore_thd(thd, stmt);
   thd->stmt_arena = thd;
-
-  DBUG_VOID_RETURN;
 }
 
 /**
@@ -2008,7 +2057,7 @@ void mysqld_stmt_fetch(THD *thd, Prepared_statement *stmt, ulong num_rows) {
 */
 
 void mysqld_stmt_reset(THD *thd, Prepared_statement *stmt) {
-  DBUG_ENTER("mysqld_stmt_reset");
+  DBUG_TRACE;
 
   thd->status_var.com_stmt_reset++;
   stmt->close_cursor();
@@ -2024,8 +2073,6 @@ void mysqld_stmt_reset(THD *thd, Prepared_statement *stmt) {
   query_logger.general_log_print(thd, thd->get_command(), NullS);
 
   my_ok(thd);
-
-  DBUG_VOID_RETURN;
 }
 
 /**
@@ -2036,7 +2083,7 @@ void mysqld_stmt_reset(THD *thd, Prepared_statement *stmt) {
 */
 
 void mysqld_stmt_close(THD *thd, Prepared_statement *stmt) {
-  DBUG_ENTER("mysqld_stmt_close");
+  DBUG_TRACE;
   /*
     The only way currently a statement can be deallocated when it's
     in use is from within Dynamic SQL.
@@ -2045,8 +2092,6 @@ void mysqld_stmt_close(THD *thd, Prepared_statement *stmt) {
   MYSQL_DESTROY_PS(stmt->m_prepared_stmt);
   stmt->deallocate();
   query_logger.general_log_print(thd, thd->get_command(), NullS);
-
-  DBUG_VOID_RETURN;
 }
 
 /**
@@ -2077,7 +2122,7 @@ void mysql_sql_stmt_close(THD *thd) {
     if (thd->session_tracker.get_tracker(SESSION_STATE_CHANGE_TRACKER)
             ->is_enabled())
       thd->session_tracker.get_tracker(SESSION_STATE_CHANGE_TRACKER)
-          ->mark_as_changed(thd, NULL);
+          ->mark_as_changed(thd, nullptr);
     my_ok(thd);
   }
 }
@@ -2100,7 +2145,7 @@ void mysql_sql_stmt_close(THD *thd) {
 
 void mysql_stmt_get_longdata(THD *thd, Prepared_statement *stmt,
                              uint param_number, uchar *str, ulong length) {
-  DBUG_ENTER("mysql_stmt_get_longdata");
+  DBUG_TRACE;
 
   thd->status_var.com_stmt_send_long_data++;
   Diagnostics_area new_stmt_da(false);
@@ -2117,13 +2162,13 @@ void mysql_stmt_get_longdata(THD *thd, Prepared_statement *stmt,
   thd->pop_diagnostics_area();
 
   query_logger.general_log_print(thd, thd->get_command(), NullS);
-
-  DBUG_VOID_RETURN;
 }
 
 /***************************************************************************
- Select_fetch_protocol_binary
+ Query_fetch_protocol_binary
 ****************************************************************************/
+
+namespace {
 
 bool Query_fetch_protocol_binary::send_result_set_metadata(THD *thd,
                                                            List<Item> &list,
@@ -2168,6 +2213,8 @@ bool Query_fetch_protocol_binary::send_data(THD *thd, List<Item> &fields) {
   return rc;
 }
 
+}  // namespace
+
 /*******************************************************************
  * Reprepare_observer
  *******************************************************************/
@@ -2201,6 +2248,8 @@ Server_runnable::~Server_runnable() {}
 
 ///////////////////////////////////////////////////////////////////////////
 
+namespace {
+
 Execute_sql_statement::Execute_sql_statement(LEX_STRING sql_text)
     : m_sql_text(sql_text) {}
 
@@ -2229,9 +2278,9 @@ bool Execute_sql_statement::execute_server_code(THD *thd) {
 
   parent_digest = thd->m_digest;
   parent_locker = thd->m_statement_psi;
-  thd->m_digest = NULL;
-  thd->m_statement_psi = NULL;
-  error = parse_sql(thd, &parser_state, NULL) || thd->is_error();
+  thd->m_digest = nullptr;
+  thd->m_statement_psi = nullptr;
+  error = parse_sql(thd, &parser_state, nullptr) || thd->is_error();
   thd->m_digest = parent_digest;
   thd->m_statement_psi = parent_locker;
 
@@ -2240,7 +2289,7 @@ bool Execute_sql_statement::execute_server_code(THD *thd) {
   thd->lex->set_trg_event_type_for_tables();
 
   parent_locker = thd->m_statement_psi;
-  thd->m_statement_psi = NULL;
+  thd->m_statement_psi = nullptr;
 
   /*
     Rewrite first (if needed); execution might replace passwords
@@ -2258,6 +2307,8 @@ end:
 
   return error;
 }
+
+}  // namespace
 
 /***************************************************************************
  Prepared_statement
@@ -2321,7 +2372,7 @@ void Prepared_statement::setup_set_params() {
 */
 
 Prepared_statement::~Prepared_statement() {
-  DBUG_ENTER("Prepared_statement::~Prepared_statement");
+  DBUG_TRACE;
   DBUG_PRINT("enter", ("stmt: %p  cursor: %p", this, cursor));
   destroy(result);
   delete cursor;
@@ -2331,31 +2382,28 @@ Prepared_statement::~Prepared_statement() {
   */
   m_arena.free_items();
   if (lex) {
-    DBUG_ASSERT(lex->sphead == NULL);
+    DBUG_ASSERT(lex->sphead == nullptr);
     lex_end(lex);
     destroy(lex->result);
     delete (st_lex_local *)lex;  // TRASH memory
   }
   free_root(&main_mem_root, MYF(0));
-  DBUG_VOID_RETURN;
 }
 
 void Prepared_statement::cleanup_stmt() {
-  DBUG_ENTER("Prepared_statement::cleanup_stmt");
+  DBUG_TRACE;
   DBUG_PRINT("enter", ("stmt: %p", this));
 
   cleanup_items(m_arena.item_list());
   thd->cleanup_after_query();
   thd->rollback_item_tree_changes();
-
-  DBUG_VOID_RETURN;
 }
 
 bool Prepared_statement::set_name(const LEX_CSTRING &name_arg) {
   m_name.length = name_arg.length;
   m_name.str = static_cast<char *>(
       memdup_root(m_arena.mem_root, name_arg.str, name_arg.length));
-  return m_name.str == NULL;
+  return m_name.str == nullptr;
 }
 
 /**
@@ -2376,7 +2424,7 @@ bool Prepared_statement::set_db(const LEX_CSTRING &db_arg) {
   } else {
     m_db = NULL_CSTR;
   }
-  return db_arg.str != NULL && m_db.str == NULL;
+  return db_arg.str != nullptr && m_db.str == nullptr;
 }
 
 /**************************************************************************
@@ -2395,8 +2443,6 @@ bool Prepared_statement::set_db(const LEX_CSTRING &db_arg) {
 
   @param query_str             statement text
   @param query_length          the length of the statement text
-  @param force_primary_storage_engine  true if the statement should be forced
-                                       to use primary storage engines only
 
   @note
     Precondition:
@@ -2409,16 +2455,15 @@ bool Prepared_statement::set_db(const LEX_CSTRING &db_arg) {
     thd->mem_root contains unused memory allocated during validation.
 */
 
-bool Prepared_statement::prepare(const char *query_str, size_t query_length,
-                                 bool force_primary_storage_engine) {
+bool Prepared_statement::prepare(const char *query_str, size_t query_length) {
   bool error;
   Query_arena arena_backup;
   Query_arena *old_stmt_arena;
   sql_digest_state *parent_digest = thd->m_digest;
   PSI_statement_locker *parent_locker = thd->m_statement_psi;
-  unsigned char *token_array = NULL;
+  unsigned char *token_array = nullptr;
 
-  DBUG_ENTER("Prepared_statement::prepare");
+  DBUG_TRACE;
   /*
     If this is an SQLCOM_PREPARE, we also increase Com_prepare_sql.
     However, it seems handy if com_stmt_prepare is increased always,
@@ -2426,9 +2471,9 @@ bool Prepared_statement::prepare(const char *query_str, size_t query_length,
   */
   thd->status_var.com_stmt_prepare++;
 
-  if (!(lex = new (m_arena.mem_root) st_lex_local)) DBUG_RETURN(true);
+  if (!(lex = new (m_arena.mem_root) st_lex_local)) return true;
 
-  if (set_db(thd->db())) DBUG_RETURN(true);
+  if (set_db(thd->db())) return true;
 
   /*
     alloc_query() uses thd->memroot && thd->query, so we should call
@@ -2443,7 +2488,7 @@ bool Prepared_statement::prepare(const char *query_str, size_t query_length,
     stmt_backup.restore_thd(thd, this);
     stmt_backup.restore_rlb(thd);
     thd->swap_query_arena(arena_backup, &m_arena);
-    DBUG_RETURN(true);
+    return true;
   }
 
   if (max_digest_length > 0) {
@@ -2459,7 +2504,7 @@ bool Prepared_statement::prepare(const char *query_str, size_t query_length,
     stmt_backup.restore_rlb(thd);
     thd->swap_query_arena(arena_backup, &m_arena);
     thd->stmt_arena = old_stmt_arena;
-    DBUG_RETURN(true);
+    return true;
   }
 
   parser_state.m_lip.stmt_prepare_mode = true;
@@ -2468,8 +2513,8 @@ bool Prepared_statement::prepare(const char *query_str, size_t query_length,
   lex_start(thd);
   lex->context_analysis_only |= CONTEXT_ANALYSIS_ONLY_PREPARE;
 
-  thd->m_digest = NULL;
-  thd->m_statement_psi = NULL;
+  thd->m_digest = nullptr;
+  thd->m_statement_psi = nullptr;
 
   sql_digest_state digest;
   digest.reset(token_array, max_digest_length);
@@ -2481,12 +2526,12 @@ bool Prepared_statement::prepare(const char *query_str, size_t query_length,
 
   thd->m_parser_state = &parser_state;
   invoke_pre_parse_rewrite_plugins(thd);
-  thd->m_parser_state = NULL;
+  thd->m_parser_state = nullptr;
 
   error = thd->is_error();
 
   if (!error) {
-    error = parse_sql(thd, &parser_state, NULL) || thd->is_error() ||
+    error = parse_sql(thd, &parser_state, nullptr) || thd->is_error() ||
             init_param_array(this);
   }
   if (!error) {  // We've just created the statement maybe there is a rewrite
@@ -2496,9 +2541,6 @@ bool Prepared_statement::prepare(const char *query_str, size_t query_length,
 
   // Bind Sql command object with this prepared statement
   if (lex->m_sql_cmd) lex->m_sql_cmd->set_owner(this);
-
-  if (force_primary_storage_engine && lex->m_sql_cmd != nullptr)
-    lex->m_sql_cmd->disable_secondary_storage_engine();
 
   lex->set_trg_event_type_for_tables();
 
@@ -2543,18 +2585,14 @@ bool Prepared_statement::prepare(const char *query_str, size_t query_length,
   if (error == 0) error = check_prepared_statement(this);
   DBUG_ASSERT(error || !thd->is_error());
 
-  const bool secondary_engine_preparation_error =
-      error && lex->m_sql_cmd != nullptr &&
-      lex->m_sql_cmd->using_secondary_storage_engine();
-
   /*
     Currently CREATE PROCEDURE/TRIGGER/EVENT are prohibited in prepared
     statements: ensure we have no memory leak here if by someone tries
     to PREPARE stmt FROM "CREATE PROCEDURE ..."
   */
-  DBUG_ASSERT(lex->sphead == NULL || error != 0);
+  DBUG_ASSERT(lex->sphead == nullptr || error != 0);
   /* The order is important */
-  lex->unit->cleanup(true);
+  lex->unit->cleanup(thd, true);
 
   lex->clear_values_map();
 
@@ -2579,10 +2617,13 @@ bool Prepared_statement::prepare(const char *query_str, size_t query_length,
 
   rewrite_query_if_needed(thd);
 
-  if (thd->rewritten_query.length()) {
-    MYSQL_SET_PS_TEXT(m_prepared_stmt, thd->rewritten_query.c_ptr_safe(),
-                      thd->rewritten_query.length());
+  if (thd->rewritten_query().length()) {
+    thd->set_query_for_display(thd->rewritten_query().ptr(),
+                               thd->rewritten_query().length());
+    MYSQL_SET_PS_TEXT(m_prepared_stmt, thd->rewritten_query().ptr(),
+                      thd->rewritten_query().length());
   } else {
+    thd->set_query_for_display(thd->query().str, thd->query().length);
     MYSQL_SET_PS_TEXT(m_prepared_stmt, thd->query().str, thd->query().length);
   }
 
@@ -2623,11 +2664,11 @@ bool Prepared_statement::prepare(const char *query_str, size_t query_length,
       sub-statements inside stored procedures are not logged into
       the general log.
     */
-    if (thd->sp_runtime_ctx == NULL) {
-      if (thd->rewritten_query.length())
+    if (thd->sp_runtime_ctx == nullptr) {
+      if (thd->rewritten_query().length())
         query_logger.general_log_write(thd, COM_STMT_PREPARE,
-                                       thd->rewritten_query.c_ptr_safe(),
-                                       thd->rewritten_query.length());
+                                       thd->rewritten_query().ptr(),
+                                       thd->rewritten_query().length());
       else
         query_logger.general_log_write(
             thd, COM_STMT_PREPARE, m_query_string.str, m_query_string.length);
@@ -2643,18 +2684,7 @@ bool Prepared_statement::prepare(const char *query_str, size_t query_length,
   thd->m_digest = parent_digest;
   thd->m_statement_psi = parent_locker;
 
-  // If the preparation against a secondary storage engine failed with
-  // a non-fatal error, retry the preparation without the secondary
-  // storage engine.
-  if (secondary_engine_preparation_error && !thd->is_fatal_error() &&
-      !thd->is_killed()) {
-    DBUG_ASSERT(!force_primary_storage_engine);
-    thd->clear_error();
-    error = prepare(query_str, query_length, true);
-    if (!error) DBUG_ASSERT(!lex->m_sql_cmd->using_secondary_storage_engine());
-  }
-
-  DBUG_RETURN(error);
+  return error;
 }
 
 /**
@@ -2702,6 +2732,22 @@ bool Prepared_statement::set_parameters(String *expanded_query) {
     return true;
   }
   return false;
+}
+
+/**
+  Disables the general log for the current session by setting the OPTION_LOG_OFF
+  bit in thd->variables.option_bits.
+
+  @param thd the session
+  @return whether the setting was changed
+  @retval false if the general log was already disabled for this session
+  @retval true if the general log was enabled for the session and is now
+  disabled
+*/
+static bool disable_general_log(THD *thd) {
+  if ((thd->variables.option_bits & OPTION_LOG_OFF) != 0) return false;
+  thd->variables.option_bits |= OPTION_LOG_OFF;
+  return true;
 }
 
 /**
@@ -2753,13 +2799,17 @@ bool Prepared_statement::execute_loop(String *expanded_query,
     return true;
   }
 
+  // Remember if the general log was temporarily disabled when repreparing the
+  // statement for a secondary engine.
+  bool general_log_temporarily_disabled = false;
+
 reexecute:
   /*
     If the item_list is not empty, we'll wrongly free some externally
     allocated items when cleaning up after validation of the prepared
     statement.
   */
-  DBUG_ASSERT(thd->item_list() == NULL);
+  DBUG_ASSERT(thd->item_list() == nullptr);
 
   /*
     Install the metadata observer. If some metadata version is
@@ -2767,7 +2817,7 @@ reexecute:
     the observer method will be invoked to push an error into
     the error stack.
   */
-  Reprepare_observer *stmt_reprepare_observer = NULL;
+  Reprepare_observer *stmt_reprepare_observer = nullptr;
 
   if (sql_command_flags[lex->sql_command] & CF_REEXECUTION_FRAGILE) {
     reprepare_observer.reset_reprepare_observer();
@@ -2792,7 +2842,8 @@ reexecute:
           DBUG_EVALUATE_IF("simulate_max_reprepare_attempts_hit_case", false,
                            true)) {
         thd->clear_error();
-        error = reprepare(false);
+        error = reprepare();
+        DEBUG_SYNC(thd, "after_statement_reprepare");
       } else {
         /*
           Reprepare_observer sets error status in DA but Sql_condition is not
@@ -2803,24 +2854,57 @@ reexecute:
         da->push_warning(thd, da->mysql_errno(), da->returned_sqlstate(),
                          Sql_condition::SL_ERROR, da->message_text());
       }
-    }
-    // Otherwise, if execution failed during optimization and the
-    // statement used a secondary storage engine, we disable the
-    // secondary storage engine and try again without it.
-    else if (lex->m_sql_cmd != nullptr &&
-             lex->m_sql_cmd->using_secondary_storage_engine() &&
-             !lex->unit->is_executed()) {
-      thd->clear_error();
-      error = reprepare(true);
-      // The reprepared statement should not use a secondary engine.
-      if (!error)
-        DBUG_ASSERT(!lex->m_sql_cmd->using_secondary_storage_engine());
+    } else {
+      // Otherwise, if repreparation was requested, try again in the primary
+      // or secondary engine, depending on cause.
+      const uint err_seen = thd->get_stmt_da()->mysql_errno();
+      if (err_seen == ER_PREPARE_FOR_SECONDARY_ENGINE ||
+          (err_seen == ER_NEED_REPREPARE &&
+           reprepare_attempt++ < MAX_REPREPARE_ATTEMPTS)) {
+        DBUG_ASSERT((thd->secondary_engine_optimization() ==
+                     Secondary_engine_optimization::PRIMARY_TENTATIVELY) ||
+                    err_seen == ER_NEED_REPREPARE);
+        DBUG_ASSERT(!lex->unit->is_executed());
+        thd->clear_error();
+        if (err_seen == ER_PREPARE_FOR_SECONDARY_ENGINE)
+          thd->set_secondary_engine_optimization(
+              Secondary_engine_optimization::SECONDARY);
+        else
+          thd->set_secondary_engine_optimization(
+              Secondary_engine_optimization::PRIMARY_ONLY);
+        // Disable the general log. The query was written to the general log in
+        // the first attempt to execute it. No need to write it twice.
+        general_log_temporarily_disabled |= disable_general_log(thd);
+        error = reprepare();
+      }
+
+      // If preparation or optimization failed and the statement used
+      // a secondary storage engine, disable the secondary storage
+      // engine and try again without it.
+      if (error && lex->m_sql_cmd != nullptr &&
+          lex->m_sql_cmd->using_secondary_storage_engine() &&
+          !lex->unit->is_executed()) {
+        thd->clear_error();
+        thd->set_secondary_engine_optimization(
+            Secondary_engine_optimization::PRIMARY_ONLY);
+        error = reprepare();
+        if (!error) {
+          // The reprepared statement should not use a secondary engine.
+          DBUG_ASSERT(!lex->m_sql_cmd->using_secondary_storage_engine());
+          lex->m_sql_cmd->disable_secondary_storage_engine();
+        }
+      }
     }
 
     if (!error) /* Success */
       goto reexecute;
   }
   reset_stmt_params(this);
+
+  // Reenable the general log if it was temporarily disabled while repreparing
+  // and executing a statement for a secondary engine.
+  if (general_log_temporarily_disabled)
+    thd->variables.option_bits &= ~OPTION_LOG_OFF;
 
   return error;
 }
@@ -2862,9 +2946,15 @@ bool Prepared_statement::execute_server_runnable(
 /**
   Reprepare this prepared statement.
 
-  Currently this is implemented by creating a new prepared
-  statement, preparing it with the original query and then
-  swapping the new statement and the original one.
+  Performs a light reset of the Prepared_statement object (resets its MEM_ROOT
+  and clears its MEM_ROOT allocated members), and calls prepare() on it again.
+
+  The resetting of the MEM_ROOT and clearing of the MEM_ROOT allocated members
+  is performed by a swap operation (swap_prepared_statement()) on this
+  Prepared_statement and a newly created, intermediate Prepared_statement. This
+  both clears the data from this object and stores a backup of the original data
+  in the intermediate object. If the repreparation fails, the original data is
+  swapped back into this Prepared_statement.
 
   @retval  true   an error occurred. Possible errors include
                   incompatibility of new and old result set
@@ -2872,47 +2962,73 @@ bool Prepared_statement::execute_server_runnable(
   @retval  false  success, the statement has been reprepared
 */
 
-bool Prepared_statement::reprepare(bool force_primary_storage_engine) {
+bool Prepared_statement::reprepare() {
   char saved_cur_db_name_buf[NAME_LEN + 1];
   LEX_STRING saved_cur_db_name = {saved_cur_db_name_buf,
                                   sizeof(saved_cur_db_name_buf)};
-  bool cur_db_changed;
-  bool error;
 
+  /*
+    Create an intermediate Prepared_statement object and move the MEM_ROOT
+    allocated data of the original Prepared_statement into it. Set up a guard
+    that moves the data back into the original statement if the repreparation
+    fails.
+  */
   Prepared_statement copy(thd);
-
-  copy.set_sql_prepare(); /* To suppress sending metadata to the client. */
+  swap_prepared_statement(&copy);
+  auto copy_guard =
+      create_scope_guard([&]() { swap_prepared_statement(&copy); });
 
   thd->status_var.com_stmt_reprepare++;
 
-  if (mysql_opt_change_db(thd, m_db, &saved_cur_db_name, true, &cur_db_changed))
+  /*
+    m_name has been moved to the copy. Allocate it again in the original
+    statement.
+  */
+  if (copy.m_name.str != nullptr && set_name(copy.m_name)) return true;
+
+  bool cur_db_changed;
+  if (mysql_opt_change_db(thd, copy.m_db, &saved_cur_db_name, true,
+                          &cur_db_changed))
     return true;
 
-  error = ((m_name.str && copy.set_name(m_name)) ||
-           copy.prepare(m_query_string.str, m_query_string.length,
-                        force_primary_storage_engine) ||
-           validate_metadata(&copy));
+  /*
+    Suppress sending metadata to the client while repreparing. It was sent
+    during the initial preparation.
+  */
+  const unsigned saved_flags = flags;
+  set_sql_prepare();
+  const bool prepare_error =
+      prepare(copy.m_query_string.str, copy.m_query_string.length);
+  flags = saved_flags;
 
   if (cur_db_changed)
     mysql_change_db(thd, to_lex_cstring(saved_cur_db_name), true);
 
-  if (!error) {
-    copy.m_prepared_stmt = m_prepared_stmt;
-    /* Update reprepare count for this prepared statement in P_S table. */
-    MYSQL_REPREPARE_PS(copy.m_prepared_stmt);
+  if (prepare_error) return true;
 
-    swap_prepared_statement(&copy);
-    swap_parameter_array(param_array, copy.param_array, param_count);
-    /*
-      Clear possible warnings during reprepare, it has to be completely
-      transparent to the user. We use clear_warning_info() since
-      there were no separate query id issued for re-prepare.
-      Sic: we can't simply silence warnings during reprepare, because if
-      it's failed, we need to return all the warnings to the user.
-    */
-    thd->get_stmt_da()->reset_condition_info(thd);
-  }
-  return error;
+  if (validate_metadata(&copy)) return true;
+
+  /* Update reprepare count for this prepared statement in P_S table. */
+  MYSQL_REPREPARE_PS(m_prepared_stmt);
+
+  /*
+    A new parameter array was created by prepare(). Make sure it contains the
+    same values as the original array.
+  */
+  DBUG_ASSERT(param_count == copy.param_count);
+  swap_parameter_array(param_array, copy.param_array, param_count);
+
+  /*
+    Clear possible warnings during reprepare, it has to be completely
+    transparent to the user. We use reset_condition_info() since
+    there were no separate query id issued for re-prepare.
+    Sic: we can't simply silence warnings during reprepare, because if
+    it's failed, we need to return all the warnings to the user.
+  */
+  thd->get_stmt_da()->reset_condition_info(thd);
+
+  copy_guard.commit();
+  return false;
 }
 
 /**
@@ -2948,10 +3064,17 @@ bool Prepared_statement::validate_metadata(Prepared_statement *copy) {
 }
 
 /**
-  Replace the original prepared statement with a prepared copy.
+  Swap the MEM_ROOT allocated data of two prepared statements.
 
-  This is a private helper that is used as part of statement
-  reprepare.
+  This is a private helper that is used as part of statement reprepare. It is
+  used in the beginning of reprepare() to clear the MEM_ROOT of the statement
+  before the new preparation, while keeping the data available as some of it is
+  needed later in the repreparation. It is also used for restoring the original
+  data from the copy, should the repreparation fail.
+
+  The operation is symmetric. It can be used both for saving an original
+  statement into a backup, and for restoring the original state of the statement
+  from the backup.
 */
 
 void Prepared_statement::swap_prepared_statement(Prepared_statement *copy) {
@@ -2975,6 +3098,8 @@ void Prepared_statement::swap_prepared_statement(Prepared_statement *copy) {
     is allocated in the old arena.
   */
   std::swap(param_array, copy->param_array);
+  std::swap(param_count, copy->param_count);
+
   /* Don't swap flags: the copy has IS_SQL_PREPARE always set. */
   /* std::swap(flags, copy->flags); */
   /* Swap names, the old name is allocated in the wrong memory root */
@@ -2982,17 +3107,7 @@ void Prepared_statement::swap_prepared_statement(Prepared_statement *copy) {
   /* Ditto */
   std::swap(m_db, copy->m_db);
 
-  // The call to copy.prepare() will have set the copy as the owner of
-  // the Sql_cmd object, if there is one. Set it back to this.
-  if (lex->m_sql_cmd != nullptr) {
-    DBUG_ASSERT(lex->m_sql_cmd->get_owner() == copy);
-    lex->m_sql_cmd->set_owner(this);
-  }
-
-  DBUG_ASSERT(param_count == copy->param_count);
   DBUG_ASSERT(thd == copy->thd);
-  last_error[0] = '\0';
-  last_errno = 0;
 }
 
 /**
@@ -3101,8 +3216,7 @@ bool Prepared_statement::execute(String *expanded_query, bool open_cursor) {
   /* Allocate query. */
 
   if (expanded_query->length() &&
-      alloc_query(thd, (char *)expanded_query->ptr(),
-                  expanded_query->length())) {
+      alloc_query(thd, expanded_query->ptr(), expanded_query->length())) {
     my_error(ER_OUTOFMEMORY, MYF(ME_FATALERROR), expanded_query->length());
     flags &= ~(uint)IS_IN_USE;
     stmt_backup.restore_thd(thd, this);
@@ -3131,7 +3245,7 @@ bool Prepared_statement::execute(String *expanded_query, bool open_cursor) {
   if (!error) {
     // Execute
     if (open_cursor) {
-      lex->safe_to_cache_query = 0;
+      lex->safe_to_cache_query = false;
       // Initialize Query_result_send before opening the cursor
       if (thd->is_classic_protocol())
         result = new (m_arena.mem_root) Query_fetch_protocol_binary(thd);
@@ -3263,7 +3377,7 @@ Ed_result_set::Ed_result_set(List<Ed_row> *rows_arg, Ed_row *fields,
       m_column_count(column_count_arg),
       m_rows(rows_arg),
       m_fields(fields),
-      m_next_rset(NULL) {}
+      m_next_rset(nullptr) {}
 
 /***************************************************************************
  * Ed_result_set
@@ -3274,7 +3388,10 @@ Ed_result_set::Ed_result_set(List<Ed_row> *rows_arg, Ed_row *fields,
 */
 
 Ed_connection::Ed_connection(THD *thd)
-    : m_diagnostics_area(false), m_thd(thd), m_rsets(0), m_current_rset(0) {}
+    : m_diagnostics_area(false),
+      m_thd(thd),
+      m_rsets(nullptr),
+      m_current_rset(nullptr) {}
 
 /**
   Free all result sets of the previous statement, if any,
@@ -3319,7 +3436,7 @@ bool Ed_connection::execute_direct(LEX_STRING sql_text) {
 */
 
 bool Ed_connection::execute_direct(Server_runnable *server_runnable) {
-  DBUG_ENTER("Ed_connection::execute_direct");
+  DBUG_TRACE;
 
   free_old_result(); /* Delete all data from previous execution, if any */
 
@@ -3340,7 +3457,15 @@ bool Ed_connection::execute_direct(Server_runnable *server_runnable) {
   */
   m_current_rset = m_rsets;
 
-  DBUG_RETURN(rc);
+  /*
+    Reset rewritten (for password obfuscation etc.) query after
+    internal call from NDB etc.  Without this, a rewritten query
+    would get "stuck" in SHOW PROCESSLIST.
+  */
+  m_thd->reset_rewritten_query();
+  m_thd->reset_query_for_display();
+
+  return rc;
 }
 
 /**
@@ -3368,10 +3493,10 @@ void Ed_connection::add_result_set(Ed_result_set *ed_result_set) {
 
 Protocol_local::Protocol_local(THD *thd, Ed_connection *ed_connection)
     : m_connection(ed_connection),
-      m_rset(NULL),
+      m_rset(nullptr),
       m_column_count(0),
-      m_current_row(NULL),
-      m_current_column(NULL),
+      m_current_row(nullptr),
+      m_current_column(nullptr),
       m_send_metadata(false),
       m_thd(thd) {}
 
@@ -3394,7 +3519,7 @@ void Protocol_local::opt_add_row_to_rset() {
 */
 
 bool Protocol_local::store_null() {
-  if (m_current_column == NULL)
+  if (m_current_column == nullptr)
     return true; /* start_row() failed to allocate memory. */
 
   memset(m_current_column, 0, sizeof(*m_current_column));
@@ -3410,16 +3535,13 @@ bool Protocol_local::store_null() {
 */
 
 bool Protocol_local::store_column(const void *data, size_t length) {
-  if (m_current_column == NULL)
+  if (m_current_column == nullptr)
     return true; /* start_row() failed to allocate memory. */
-  /*
-    alloc_root() automatically aligns memory, so we don't need to
-    do any extra alignment if we're pointing to, say, an integer.
-  */
-  m_current_column->str =
-      (char *)memdup_root(&m_rset_root, data, length + 1 /* Safety */);
+
+  m_current_column->str = new (&m_rset_root) char[length + 1];
   if (!m_current_column->str) return true;
-  m_current_column->str[length] = '\0'; /* Safety */
+  memcpy(m_current_column->str, data, length);
+  m_current_column->str[length + 1] = '\0'; /* Safety */
   m_current_column->length = length;
   ++m_current_column;
   return false;
@@ -3443,33 +3565,41 @@ bool Protocol_local::store_string(const char *str, size_t length,
     str = convert.ptr();
     length = convert.length();
   }
-  return store_column(str, length);
+
+  if (m_current_column == nullptr)
+    return true; /* start_row() failed to allocate memory. */
+
+  m_current_column->str = strmake_root(&m_rset_root, str, length);
+  if (!m_current_column->str) return true;
+  m_current_column->length = length;
+  ++m_current_column;
+  return false;
 }
 
 /** Store a tiny int as is (1 byte) in a result set column. */
 
-bool Protocol_local::store_tiny(longlong value) {
+bool Protocol_local::store_tiny(longlong value, uint32) {
   char v = (char)value;
   return store_column(&v, 1);
 }
 
 /** Store a short as is (2 bytes, host order) in a result set column. */
 
-bool Protocol_local::store_short(longlong value) {
+bool Protocol_local::store_short(longlong value, uint32) {
   int16 v = (int16)value;
   return store_column(&v, 2);
 }
 
 /** Store a "long" as is (4 bytes, host order) in a result set column.  */
 
-bool Protocol_local::store_long(longlong value) {
+bool Protocol_local::store_long(longlong value, uint32) {
   int32 v = (int32)value;
   return store_column(&v, 4);
 }
 
 /** Store a "longlong" as is (8 bytes, host order) in a result set column. */
 
-bool Protocol_local::store_longlong(longlong value, bool) {
+bool Protocol_local::store_longlong(longlong value, bool, uint32) {
   int64 v = (int64)value;
   return store_column(&v, 8);
 }
@@ -3478,11 +3608,8 @@ bool Protocol_local::store_longlong(longlong value, bool) {
 
 bool Protocol_local::store_decimal(const my_decimal *value, uint prec,
                                    uint dec) {
-  char buf[DECIMAL_MAX_STR_LENGTH];
-  String str(buf, sizeof(buf), &my_charset_bin);
-  int rc;
-
-  rc = my_decimal2string(E_DEC_FATAL_ERROR, value, prec, dec, '0', &str);
+  StringBuffer<DECIMAL_MAX_STR_LENGTH> str;
+  const int rc = my_decimal2string(E_DEC_FATAL_ERROR, value, prec, dec, &str);
 
   if (rc) return true;
 
@@ -3491,58 +3618,48 @@ bool Protocol_local::store_decimal(const my_decimal *value, uint prec,
 
 /** Convert to cs_results and store a string. */
 
-bool Protocol_local::store(const char *str, size_t length,
-                           const CHARSET_INFO *src_cs) {
+bool Protocol_local::store_string(const char *str, size_t length,
+                                  const CHARSET_INFO *src_cs) {
   const CHARSET_INFO *dst_cs;
 
   dst_cs = m_connection->m_thd->variables.character_set_results;
   return store_string(str, length, src_cs, dst_cs);
 }
 
-/** Store a string. */
-
-bool Protocol_local::store(const char *str, size_t length,
-                           const CHARSET_INFO *src_cs,
-                           const CHARSET_INFO *dst_cs) {
-  return store_string(str, length, src_cs, dst_cs);
-}
-
 /* Store MYSQL_TIME (in binary format) */
 
-bool Protocol_local::store(MYSQL_TIME *time,
-                           uint precision MY_ATTRIBUTE((unused))) {
-  return store_column(time, sizeof(MYSQL_TIME));
+bool Protocol_local::store_datetime(const MYSQL_TIME &time, uint) {
+  return store_column(&time, sizeof(MYSQL_TIME));
 }
 
 /** Store MYSQL_TIME (in binary format) */
 
-bool Protocol_local::store_date(MYSQL_TIME *time) {
-  return store_column(time, sizeof(MYSQL_TIME));
+bool Protocol_local::store_date(const MYSQL_TIME &time) {
+  return store_column(&time, sizeof(MYSQL_TIME));
 }
 
 /** Store MYSQL_TIME (in binary format) */
 
-bool Protocol_local::store_time(MYSQL_TIME *time,
-                                uint precision MY_ATTRIBUTE((unused))) {
-  return store_column(time, sizeof(MYSQL_TIME));
+bool Protocol_local::store_time(const MYSQL_TIME &time, uint) {
+  return store_column(&time, sizeof(MYSQL_TIME));
 }
 
 /* Store a floating point number, as is. */
 
-bool Protocol_local::store(float value, uint32, String *) {
+bool Protocol_local::store_float(float value, uint32, uint32) {
   return store_column(&value, sizeof(float));
 }
 
 /* Store a double precision number, as is. */
 
-bool Protocol_local::store(double value, uint32, String *) {
+bool Protocol_local::store_double(double value, uint32, uint32) {
   return store_column(&value, sizeof(double));
 }
 
 /* Store a Field. */
 
-bool Protocol_local::store(Proto_field *field) {
-  return field->send_binary(this);
+bool Protocol_local::store_field(const Field *field) {
+  return field->send_to_protocol(this);
 }
 
 /** Called for statements that don't have a result set, at statement end. */
@@ -3568,13 +3685,13 @@ bool Protocol_local::send_eof(uint, uint) {
   Ed_result_set *ed_result_set;
 
   DBUG_ASSERT(m_rset);
-  m_current_row = NULL;
+  m_current_row = nullptr;
 
   ed_result_set = new (&m_rset_root)
       Ed_result_set(m_rset, m_fields, m_column_count, &m_rset_root);
 
-  m_rset = NULL;
-  m_fields = NULL;
+  m_rset = nullptr;
+  m_fields = nullptr;
 
   if (!ed_result_set) return true;
 
@@ -3604,7 +3721,7 @@ ulong Protocol_local::get_client_capabilities() { return 0; }
 
 bool Protocol_local::has_client_capability(unsigned long) { return false; }
 
-bool Protocol_local::connection_alive() { return false; }
+bool Protocol_local::connection_alive() const { return false; }
 
 void Protocol_local::end_partial_result_set() {}
 
@@ -3619,30 +3736,29 @@ int Protocol_local::shutdown(bool) { return 0; }
   in methods such as @sa store_column().
 */
 void Protocol_local::start_row() {
-  DBUG_ENTER("Protocol_local::start_row");
+  DBUG_TRACE;
 
-  if (m_send_metadata) DBUG_VOID_RETURN;
+  if (m_send_metadata) return;
   DBUG_ASSERT(alloc_root_inited(&m_rset_root));
 
   /* Start a new row. */
   m_current_row =
-      (Ed_column *)alloc_root(&m_rset_root, sizeof(Ed_column) * m_column_count);
+      (Ed_column *)m_rset_root.Alloc(sizeof(Ed_column) * m_column_count);
   m_current_column = m_current_row;
-  DBUG_VOID_RETURN;
 }
 
 /**
   Add the current row to the result set
 */
 bool Protocol_local::end_row() {
-  DBUG_ENTER("Protocol_local::end_row");
-  if (m_send_metadata) DBUG_RETURN(false);
+  DBUG_TRACE;
+  if (m_send_metadata) return false;
 
   DBUG_ASSERT(m_rset);
   opt_add_row_to_rset();
-  m_current_row = NULL;
+  m_current_row = nullptr;
 
-  DBUG_RETURN(false);
+  return false;
 }
 
 uint Protocol_local::get_rw_status() { return 0; }
@@ -3653,23 +3769,27 @@ bool Protocol_local::start_result_metadata(uint elements, uint,
   start_row();
   m_send_metadata = true;
   m_rset = new (&m_rset_root) List<Ed_row>;
-  return 0;
+  return false;
 }
 
 bool Protocol_local::end_result_metadata() {
   m_send_metadata = false;
   m_fields = new (&m_rset_root) Ed_row(m_current_row, m_column_count);
-  m_current_row = NULL;
+  m_current_row = nullptr;
   return false;
 }
 
 bool Protocol_local::send_field_metadata(Send_field *field,
                                          const CHARSET_INFO *cs) {
-  store(field->col_name, strlen(field->col_name), cs);
+  store_string(field->col_name, strlen(field->col_name), cs);
   return false;
 }
 
 bool Protocol_local::get_compression() { return false; }
+
+char *Protocol_local::get_compression_algorithm() { return nullptr; }
+
+uint Protocol_local::get_compression_level() { return 0; }
 
 int Protocol_local::get_command(COM_DATA *, enum_server_command *) {
   return -1;

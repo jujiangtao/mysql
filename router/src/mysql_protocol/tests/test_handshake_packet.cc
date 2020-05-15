@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2016, 2018, Oracle and/or its affiliates. All rights reserved.
+  Copyright (c) 2016, 2020, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -22,38 +22,19 @@
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
-#include <gmock/gmock.h>
-
-#include <string.h>
 #include <cstdlib>
 #include <cstring>
 #include <stdexcept>
 
+#include <gmock/gmock.h>
+
+#include "helpers/router_test_helpers.h"
 #include "mysqlrouter/mysql_protocol.h"
 #include "mysqlrouter/utils.h"
 
-// TODO This is already defined in ../../../tests/helpers/router_test_helpers.h,
-// but
-//     we don't want to include that (different sub-project).  Instead, it
-//     should be moved to mysql_harness/shared/include/test/helpers.h first, and
-//     then #included from here.
-#define EXPECT_THROW_LIKE(expr, exc, msg)                                     \
-  try {                                                                       \
-    expr;                                                                     \
-    ADD_FAILURE() << "Expected exception of type " #exc << " but got none\n"; \
-  } catch (exc & e) {                                                         \
-    if (std::string(e.what()).find(msg) == std::string::npos) {               \
-      ADD_FAILURE() << "Expected exception with message: " << msg             \
-                    << "\nbut got: " << e.what() << "\n";                     \
-    }                                                                         \
-  } catch (...) {                                                             \
-    ADD_FAILURE() << "Expected exception of type " #exc                       \
-                  << " but got another\n";                                    \
-  }
-
+using std::string;
 using ::testing::ContainerEq;
 using ::testing::NotNull;
-using std::string;
 using namespace mysql_protocol;
 
 /**
@@ -881,4 +862,9 @@ TEST_F(HandshakeResponseParseTest, all) {
     EXPECT_EQ(database, pkt.database_);
     EXPECT_EQ(auth_plugin, pkt.auth_plugin_);
   }
+}
+
+int main(int argc, char **argv) {
+  ::testing::InitGoogleTest(&argc, argv);
+  return RUN_ALL_TESTS();
 }

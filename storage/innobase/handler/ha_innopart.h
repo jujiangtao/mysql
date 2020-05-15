@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2014, 2018, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2014, 2020, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -33,8 +33,10 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include <sys/types.h>
 
 #include "ha_innodb.h"
+#include "my_compiler.h"
 #include "partitioning/partition_handler.h"
 #include "row0mysql.h"
+#include "ut0bitset.h"
 
 /* Forward declarations */
 class Altered_partitions;
@@ -51,54 +53,6 @@ Full text and geometry is not yet supported. */
 const handler::Table_flags HA_INNOPART_DISABLED_TABLE_FLAGS =
     (HA_CAN_FULLTEXT | HA_CAN_FULLTEXT_EXT | HA_CAN_GEOMETRY |
      HA_DUPLICATE_POS | HA_READ_BEFORE_WRITE_REMOVAL);
-
-/** A simple bitset wrapper class, whose size is dynamic */
-class Bitset {
- public:
-  /** Constructor */
-  Bitset() : m_bitset(nullptr), m_width(0) {}
-
-  /** Destructor */
-  ~Bitset() {}
-
-  /** Initialize the bitset with a byte array and width
-  @param[in]	bitset	byte array for this bitset
-  @param[in]	width	width of the byte array */
-  void init(byte *bitset, size_t width) {
-    m_bitset = bitset;
-    m_width = width;
-  }
-
-  /** Set the specified bit to the value 'bit'
-  @param[in]	pos	Specified bit
-  @param[in]	v	True or false */
-  void set(size_t pos, bool v = true) {
-    ut_ad(pos / 8 < m_width);
-    m_bitset[pos / 8] &= ~(0x1 << (pos & 0x7));
-    m_bitset[pos / 8] |= (static_cast<uint>(v) << (pos & 0x7));
-  }
-
-  /** Set all bits to true */
-  void set() { memset(m_bitset, 0xFF, m_width); }
-
-  /** Set all bits to false */
-  void reset() { memset(m_bitset, 0, m_width); }
-
-  /** Test if the specified bit is set or not
-  @param[in]	pos	The specified bit
-  @return True if this bit is set, otherwise false */
-  bool test(size_t pos) const {
-    ut_ad(pos / 8 < m_width);
-    return ((m_bitset[pos / 8] >> (pos & 0x7)) & 0x1);
-  }
-
- private:
-  /** Bitset bytes */
-  byte *m_bitset;
-
-  /** Bitset width in bytes */
-  size_t m_width;
-};
 
 typedef Bitset Sql_stat_start_parts;
 
@@ -133,16 +87,22 @@ class Ha_innopart_share : public Partition_share {
   @param[in]	part_id	Partition number.
   @param[in]	table	Table. */
   inline void set_table_part(uint part_id, dict_table_t *table) {
-    ut_ad(m_table_parts != NULL);
+    ut_ad(m_table_parts != nullptr);
     ut_ad(part_id < m_tot_parts);
     m_table_parts[part_id] = table;
+  }
+  /** Get table reference for given partition.
+  @param[in]    part_id Partition number
+  @return	InnoDB table reference. */
+  inline dict_table_t **get_table_part_ref(uint part_id) {
+    return (&m_table_parts[part_id]);
   }
 
   /** Return innodb table for given partition.
   @param[in]	part_id	Partition number.
   @return	InnoDB table. */
   inline dict_table_t *get_table_part(uint part_id) const {
-    ut_ad(m_table_parts != NULL);
+    ut_ad(m_table_parts != nullptr);
     ut_ad(part_id < m_tot_parts);
     return (m_table_parts[part_id]);
   }
@@ -187,12 +147,8 @@ class Ha_innopart_share : public Partition_share {
                                    dict_table_t **table_parts);
 
   /** Close the table partitions.
-  If all instances are closed, also release the resources.
-  @param[in]	only_free	true if the tables have already been
-                                  closed, which happens during inplace
-                                  DDL, and we just need to release the
-                                  resources */
-  void close_table_parts(bool only_free);
+  If all instances are closed, also release the resources.*/
+  void close_table_parts();
 
   /** Close InnoDB tables for partitions.
   @param[in]	table_parts	Array of InnoDB tables for partitions.
@@ -209,34 +165,12 @@ class Ha_innopart_share : public Partition_share {
     return (m_tot_parts);
   }
 
-  /* Static helper functions. */
-  /** Fold to lower case if windows or lower_case_table_names == 1.
-  @param[in,out]	s	String to fold.*/
-  static void partition_name_casedn_str(char *s);
-
-  /** Translate and append partition name.
-  @param[out]	to	String to write in filesystem charset
-  @param[in]	from	Name in system charset
-  @param[in]	sep	Separator
-  @param[in]	len	Max length of to buffer
-  @return	length of written string. */
-  static size_t append_sep_and_name(char *to, const char *from, const char *sep,
-                                    size_t len);
-
   /** Set up the virtual column template for partition table, and points
   all m_table_parts[]->vc_templ to it.
   @param[in]	table		MySQL TABLE object
   @param[in]	ib_table	InnoDB dict_table_t
   @param[in]	name		Table name (db/table_name) */
   void set_v_templ(TABLE *table, dict_table_t *ib_table, const char *name);
-
-  /** Create the postfix of a partitioned table name
-  @param[in,out]	partition_name	Buffer to write the postfix
-  @param[in]	size		Size of the buffer
-  @param[in]	dd_part		Partition
-  @return	the length of written postfix. */
-  static size_t create_partition_postfix(char *partition_name, size_t size,
-                                         const dd::Partition *dd_part);
 
  private:
   /** Disable default constructor. */
@@ -508,11 +442,16 @@ class ha_innopart : public ha_innobase,
   @return 0 or error code. */
   int repair(THD *thd, HA_CHECK_OPT *repair_opt) override;
 
-  uint referenced_by_foreign_key() override;
-
   void get_auto_increment(ulonglong offset, ulonglong increment,
                           ulonglong nb_desired_values, ulonglong *first_value,
                           ulonglong *nb_reserved_values) override;
+
+  /* Get partition row type
+  @param[in] partition_table partition table
+  @param[in] part_id Id of partition for which row type to be retrieved
+  @return Partition row type. */
+  enum row_type get_partition_row_type(const dd::Table *partition_table,
+                                       uint part_id) override;
 
   int cmp_ref(const uchar *ref1, const uchar *ref2) const override;
 
@@ -539,8 +478,6 @@ class ha_innopart : public ha_innobase,
 
   int enable_indexes(uint mode) override { return (HA_ERR_WRONG_COMMAND); }
 
-  void free_foreign_key_create_info(char *str) override { ut_ad(0); }
-
   int ft_init() override {
     ut_ad(0);
     return (HA_ERR_WRONG_COMMAND);
@@ -548,13 +485,13 @@ class ha_innopart : public ha_innobase,
 
   FT_INFO *ft_init_ext(uint flags, uint inx, String *key) override {
     ut_ad(0);
-    return (NULL);
+    return (nullptr);
   }
 
   FT_INFO *ft_init_ext_with_hints(uint inx, String *key,
                                   Ft_hints *hints) override {
     ut_ad(0);
-    return (NULL);
+    return (nullptr);
   }
 
   int ft_read(uchar *buf) override {
@@ -567,27 +504,6 @@ class ha_innopart : public ha_innobase,
                            uint child_key_name_len) override {
     ut_ad(0);
     return (false);
-  }
-
-  // TODO: not yet supporting FK.
-  char *get_foreign_key_create_info() override { return (NULL); }
-
-  // TODO: not yet supporting FK.
-  int get_foreign_key_list(THD *thd,
-                           List<FOREIGN_KEY_INFO> *f_key_list) override {
-    return (0);
-  }
-
-  // TODO: not yet supporting FK.
-  int get_parent_foreign_key_list(THD *thd,
-                                  List<FOREIGN_KEY_INFO> *f_key_list) override {
-    return (0);
-  }
-
-  // TODO: not yet supporting FK.
-  int get_cascade_foreign_key_table_list(
-      THD *thd, List<st_handler_tablename> *fk_table_list) override {
-    return (0);
   }
 
   int read_range_next() override {
@@ -637,27 +553,33 @@ class ha_innopart : public ha_innobase,
   /** @} */
 
   /** Get number of threads that would be spawned for parallel read.
-  @param[in, out]   num_threads     number of threads to be spawned
+  @param[out]   scan_ctx        a scan context created by this method that is
+                                used in parallel_scan
+  @param[out]   num_threads     number of threads to be spawned
   @return error code
   @return 0 on success */
-  int pread_adapter_scan_get_num_threads(size_t &num_threads) override;
+  int parallel_scan_init(void *&scan_ctx, size_t &num_threads) override;
 
-  /**
-    Start parallel read of data.
-    @param[in] thread_contexts   context for each of the spawned threads
-    @param[in] load_init_fn      callback called by each parallel load
-                                 thread at the beginning of the parallel load.
-    @param[in] load_rows_fn      callback called by each parallel load
-                                 thread when processing of rows is required.
-    @param[in] load_end_fn       callback called by each parallel load
-                                 thread when processing of rows has ended.
-    @return error code
-    @return 0 on success
-   */
-  int pread_adapter_scan_parallel_load(
-      void **thread_contexts, pread_adapter_pload_init_cbk load_init_fn,
-      pread_adapter_pload_row_cbk load_rows_fn,
-      pread_adapter_pload_end_cbk load_end_fn) override;
+  using Reader = Parallel_reader_adapter;
+
+  /** Start parallel read of data.
+  @param[in] scan_ctx           Scan context created by parallel_scan_init
+  @param[in] thread_ctxs        context for each of the spawned threads
+  @param[in] init_fn            callback called by each parallel load
+                                thread at the beginning of the parallel load.
+  @param[in] load_fn            callback called by each parallel load
+                                thread when processing of rows is required.
+  @param[in] end_fn             callback called by each parallel load
+                                thread when processing of rows has ended.
+  @return error code
+  @return 0 on success */
+  int parallel_scan(void *scan_ctx, void **thread_ctxs, Reader::Init_fn init_fn,
+                    Reader::Load_fn load_fn, Reader::End_fn end_fn) override;
+  /** Run the parallel read of data.
+  @param[in]      parallel_scan_ctx a scan context created by
+                                    parallel_scan_init
+  */
+  void parallel_scan_end(void *parallel_scan_ctx) override;
 
  private:
   /** Pointer to Ha_innopart_share on the TABLE_SHARE. */
@@ -777,9 +699,9 @@ class ha_innopart : public ha_innobase,
   /** Set the autoinc column max value.
   This should only be called once from ha_innobase::open().
   Therefore there's no need for a covering lock.
-  @param[in]	-	If locking should be skipped. Not used!
+  @param[in]	no_lock	If locking should be skipped. Not used!
   @return 0 on success else error code. */
-  int initialize_auto_increment(bool /* no_lock */) override;
+  int initialize_auto_increment(bool no_lock MY_ATTRIBUTE((unused))) override;
 
   /** Save currently highest auto increment value.
   @param[in]	nr	Auto increment value to save. */
@@ -891,13 +813,11 @@ class ha_innopart : public ha_innobase,
   if NULL use table->record[0] as return buffer.
   @param[in]	start_key	Start key to match.
   @param[in]	end_key	End key to match.
-  @param[in]	eq_range	Is equal range, start_key == end_key.
   @param[in]	sorted	Return rows in sorted order.
   @return error number or 0. */
   int read_range_first_in_part(uint part, uchar *record,
                                const key_range *start_key,
-                               const key_range *end_key, bool eq_range,
-                               bool sorted) override;
+                               const key_range *end_key, bool sorted) override;
 
   /** Return next record in index range scan from a partition.
   @param[in]	part	Partition to read from.
@@ -919,6 +839,31 @@ class ha_innopart : public ha_innobase,
   int index_read_idx_map_in_part(uint part, uchar *record, uint index,
                                  const uchar *key, key_part_map keypart_map,
                                  enum ha_rkey_function find_flag) override;
+
+  /** Initialize sampling.
+  @param[out] scan_ctx  A scan context created by this method that has to be
+  used in sample_next
+  @param[in]  sampling_percentage percentage of records that need to be
+  sampled
+  @param[in]  sampling_seed       random seed that the random generator will
+  use
+  @param[in]  sampling_method     sampling method to be used; currently only
+  SYSTEM sampling is supported
+  @return 0 for success, else one of the HA_xxx values in case of error. */
+  int sample_init(void *&scan_ctx, double sampling_percentage,
+                  int sampling_seed,
+                  enum_sampling_method sampling_method) override;
+
+  /** Get the next record for sampling.
+  @param[in]  scan_ctx  Scan context of the sampling
+  @param[in]  buf       buffer to place the read record
+  @return 0 for success, else one of the HA_xxx values in case of error. */
+  int sample_next(void *scan_ctx, uchar *buf) override;
+
+  /** End sampling.
+  @param[in] scan_ctx  Scan context of the sampling
+  @return 0 for success, else one of the HA_xxx values in case of error. */
+  int sample_end(void *scan_ctx) override;
 
   /** Initialize random read/scan of a specific partition.
   @param[in]	part_id		Partition to initialize.
@@ -1064,10 +1009,6 @@ class ha_innopart : public ha_innobase,
 
   /** Exchange partition.
   Low-level primitive which implementation is provided here.
-  @param[in]	part_table_path	data file path of the
-                                  partitioned table
-  @param[in]	swap_table_path	data file path of the to be
-                                  swapped table
   @param[in]	part_id		The id of the partition to
                                   be exchanged
   @param[in,out]	part_table	partitioned table to be
@@ -1075,9 +1016,7 @@ class ha_innopart : public ha_innobase,
   @param[in,out]	swap_table	table to be exchanged
   @return	error number
   @retval	0	on success */
-  int exchange_partition_low(const char *part_table_path,
-                             const char *swap_table_path, uint part_id,
-                             dd::Table *part_table,
+  int exchange_partition_low(uint part_id, dd::Table *part_table,
                              dd::Table *swap_table) override;
 
   /** Access methods to protected areas in handler to avoid adding
@@ -1117,6 +1056,11 @@ class ha_innopart : public ha_innobase,
   int rnd_pos(uchar *record, uchar *pos) override;
 
   int records(ha_rows *num_rows) override;
+
+  int records_from_index(ha_rows *num_rows, uint) override {
+    /* Force use of cluster index until we implement sec index parallel scan. */
+    return ha_innopart::records(num_rows);
+  }
 
   int index_next(uchar *record) override {
     return (Partition_helper::ph_index_next(record));

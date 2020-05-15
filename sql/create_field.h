@@ -1,7 +1,7 @@
 #ifndef SQL_CREATE_FIELD_INCLUDED
 #define SQL_CREATE_FIELD_INCLUDED
 
-/* Copyright (c) 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,18 +23,17 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include "binary_log_types.h"
+#include "field_types.h"
 #include "lex_string.h"
 #include "m_ctype.h"
 #include "my_alloc.h"
 #include "my_base.h"
 #include "nullable.h"
-#include "sql_list.h"
-#include "typelib.h"
-
 #include "sql/dd/types/column.h"
 #include "sql/field.h"
 #include "sql/gis/srid.h"
+#include "sql/sql_list.h"
+#include "typelib.h"
 
 class Item;
 class String;
@@ -68,7 +67,10 @@ class Create_field {
   ///          location where the actual data is stored. So LONGBLOB would
   ///          return 4 bytes for the length variable + 8 bytes for the pointer
   ///          to the data (12 bytes in total).
-  size_t pack_length() const;
+  ///  @param dont_override  Don't use pack_length_override even if non-zero
+  ///                        Used by multi-valued index, where pack_length
+  ///                        and key_length aren't the same.
+  size_t pack_length(bool dont_override = false) const;
 
   /// @returns the key length for this column.
   size_t key_length() const;
@@ -93,8 +95,8 @@ class Create_field {
     NULL for columns added.
   */
   const char *change;
-  const char *after;   // Put column after this one
-  LEX_STRING comment;  // Comment for field
+  const char *after;    // Put column after this one
+  LEX_CSTRING comment;  // Comment for field
 
   /**
      The declared default value, if any, otherwise NULL. Note that this member
@@ -105,7 +107,7 @@ class Create_field {
      @see Create_field::auto_flags
   */
   Item *constant_default;
-  enum enum_field_types sql_type;
+  enum_field_types sql_type;
   uint decimals;
   uint flags{0};
   /**
@@ -131,7 +133,7 @@ class Create_field {
     Initialized based on flags and other members at prepare_create_field()/
     init_for_tmp_table() stage.
   */
-  bool maybe_null;
+  bool is_nullable;
   bool is_zerofill;
   bool is_unsigned;
 
@@ -173,11 +175,14 @@ class Create_field {
   Value_generator *m_default_val_expr{nullptr};
   Nullable<gis::srid_t> m_srid;
 
+  // Whether the field is actually an array of the field's type;
+  bool is_array{false};
+
   Create_field()
-      : after(NULL),
+      : after(nullptr),
         is_explicit_collation(false),
         geom_type(Field::GEOM_GEOMETRY),
-        maybe_null(false),
+        is_nullable(false),
         is_zerofill(false),
         is_unsigned(false),
         /*
@@ -202,18 +207,18 @@ class Create_field {
 
   /* Init for a tmp table field. To be extended if need be. */
   void init_for_tmp_table(enum_field_types sql_type_arg, uint32 max_length,
-                          uint32 decimals, bool maybe_null, bool is_unsigned,
+                          uint32 decimals, bool is_nullable, bool is_unsigned,
                           uint pack_length_override,
                           const char *field_name = "");
 
   bool init(THD *thd, const char *field_name, enum_field_types type,
             const char *length, const char *decimals, uint type_modifier,
-            Item *default_value, Item *on_update_value, LEX_STRING *comment,
+            Item *default_value, Item *on_update_value, LEX_CSTRING *comment,
             const char *change, List<String> *interval_list,
             const CHARSET_INFO *cs, bool has_explicit_collation,
             uint uint_geom_type, Value_generator *gcol_info,
             Value_generator *default_val_expr, Nullable<gis::srid_t> srid,
-            dd::Column::enum_hidden_type hidden);
+            dd::Column::enum_hidden_type hidden, bool is_array = false);
 
   ha_storage_media field_storage_type() const {
     return (ha_storage_media)((flags >> FIELD_FLAGS_STORAGE_MEDIA) & 3);
@@ -261,5 +266,9 @@ class Create_field {
   /// The maximum number of bytes a LONGBLOB can hold.
   static constexpr size_t LONGBLOB_MAX_SIZE_IN_BYTES{4294967295};
 };
+
+/// @returns whether or not this field is a hidden column that represents a
+///          functional index.
+bool is_field_for_functional_index(const Create_field *create_field);
 
 #endif

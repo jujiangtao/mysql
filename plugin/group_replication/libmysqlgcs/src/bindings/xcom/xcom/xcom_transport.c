@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -57,23 +57,21 @@
 #include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/xcom_vp_str.h"
 #include "plugin/group_replication/libmysqlgcs/xdr_gen/xcom_vp.h"
 
-#ifdef XCOM_HAVE_OPENSSL
+#ifndef XCOM_WITHOUT_OPENSSL
 #ifdef WIN32
 // In OpenSSL before 1.1.0, we need this first.
 #include <winsock2.h>
 #endif  // WIN32
-#include <wolfssl_fix_namespace_pollution_pre.h>
 
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 
-#include <wolfssl_fix_namespace_pollution.h>
 #endif
-#ifdef XCOM_HAVE_OPENSSL
+#ifndef XCOM_WITHOUT_OPENSSL
 #include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/xcom_ssl_transport.h"
 #endif
 
-#define MY_XCOM_PROTO x_1_5
+#define MY_XCOM_PROTO x_1_6
 
 xcom_proto const my_min_xcom_version =
     x_1_0; /* The minimum protocol version I am able to understand */
@@ -748,6 +746,12 @@ static server *mksrv(char *srv, xcom_port port) {
                                 "reply_handler_task", XCOM_THREAD_DEBUG);
   }
   reset_srv_buf(&s->out_buf);
+  /*
+   Keep the server from being freed if the acceptor_learner_task calls
+   srv_unref on the server before the {local_,}server_task and
+   reply_handler_task begin.
+  */
+  srv_ref(s);
   return s;
 }
 
@@ -853,6 +857,9 @@ static void shut_srv(server *s) {
   /* Tasks will free the server object when they terminate */
   if (s->sender) task_terminate(s->sender);
   if (s->reply_handler) task_terminate(s->reply_handler);
+
+  // Allow the server to be freed. This unref pairs with the ref from mksrv.
+  srv_unref(s);
 }
 
 int srv_ref(server *s) {
@@ -914,7 +921,7 @@ int tcp_server(task_arg arg) {
   TASK_END;
 }
 
-#ifdef XCOM_HAVE_OPENSSL
+#ifndef XCOM_WITHOUT_OPENSSL
 #define SSL_CONNECT(con, hostname)                                   \
   {                                                                  \
     result ret;                                                      \
@@ -980,7 +987,7 @@ static int dial(server *s) {
     }
 
     unblock_fd(s->con.fd);
-#ifdef XCOM_HAVE_OPENSSL
+#ifndef XCOM_WITHOUT_OPENSSL
     if (xcom_use_ssl()) {
       SSL_CONNECT(s->con, s->srv);
     }
@@ -989,7 +996,6 @@ static int dial(server *s) {
            NDBG(s->port, u));
     set_connected(&s->con, CON_FD);
     alive(s);
-    server_detected(s);
     update_detected(get_site_def_rw());
   }
   FINALLY
@@ -1161,6 +1167,8 @@ static int read_bytes(connection_descriptor const *rfd, char *p, uint32_t n,
 
   TASK_BEGIN
 
+      (void)
+  s;
   ep->left = n;
   ep->bytes = (char *)p;
   while (ep->left > 0) {
@@ -1176,7 +1184,6 @@ static int read_bytes(connection_descriptor const *rfd, char *p, uint32_t n,
     } else {
       ep->bytes += nread;
       ep->left -= (uint32_t)nread;
-      if (s) server_detected(s);
     }
   }
   assert(ep->left == 0);
@@ -1210,6 +1217,9 @@ static int buffered_read_bytes(connection_descriptor const *rfd, srv_buf *buf,
   uint32_t nget = 0;
 
   TASK_BEGIN
+
+      (void)
+  s;
   ep->left = n;
   ep->bytes = (char *)p;
 
@@ -1246,7 +1256,6 @@ static int buffered_read_bytes(connection_descriptor const *rfd, srv_buf *buf,
         nget = get_srv_buf(buf, ep->bytes, ep->left);
         ep->bytes += nget;
         ep->left -= nget;
-        if (s) server_detected(s);
       }
     }
   }
@@ -1585,7 +1594,7 @@ int sender_task(task_arg arg) {
       }
       CHANNEL_GET(&ep->s->outgoing, &ep->link, msg_link);
       {
-        int64_t ret;
+        int64_t ret_code;
         DBGOUT(FN; PTREXP(stack); PTREXP(ep->link));
         DBGOUT(FN; PTREXP(&ep->s->outgoing);
                COPY_AND_FREE_GOUT(dbg_msg_link(ep->link)););
@@ -1604,8 +1613,8 @@ int sender_task(task_arg arg) {
                      add_event(string_arg("to"));
                      add_event(uint_arg(ep->link->p->to));
                      add_event(string_arg(pax_op_to_str(ep->link->p->op))););
-          TASK_CALL(_send_msg(ep->s, ep->link->p, ep->link->to, &ret));
-          if (ret < 0) {
+          TASK_CALL(_send_msg(ep->s, ep->link->p, ep->link->to, &ret_code));
+          if (ret_code < 0) {
             goto next;
           }
           ADD_EVENTS(add_event(string_arg("sent ep->link->p->synode"));
@@ -1618,12 +1627,12 @@ int sender_task(task_arg arg) {
           /* Send protocol negotiation request */
           do {
             TASK_CALL(send_proto(&ep->s->con, my_xcom_version, x_version_req,
-                                 ep->tag, &ret));
+                                 ep->tag, &ret_code));
             if (!is_connected(&ep->s->con)) {
               goto next;
             }
             ep->tag = incr_tag(ep->tag);
-          } while (ret < 0);
+          } while (ret_code < 0);
           G_DEBUG("sent negotiation request for protocol %d fd %d",
                   my_xcom_version, ep->s->con.fd);
           ADD_EVENTS(
@@ -1731,6 +1740,7 @@ void update_servers(site_def *s, cargo_type operation) {
       if (get_ip_and_port(addr, name, &port)) {
         G_INFO("Error parsing ip:port for new server. Incorrect value is %s",
                addr ? addr : "unknown");
+        free(name);
         continue;
       }
 
@@ -1852,7 +1862,7 @@ static int client_dial(char *srv, xcom_port port, connection_descriptor *con) {
     }
 
     unblock_fd(con->fd);
-#ifdef XCOM_HAVE_OPENSSL
+#ifndef XCOM_WITHOUT_OPENSSL
     if (xcom_use_ssl()) {
       SSL_CONNECT((*con), srv);
     }
@@ -1880,7 +1890,7 @@ int client_task(task_arg arg) {
 
   ep->s = (envelope *)get_void_arg(arg);
   ep->c_descriptor.fd = -1;
-#ifdef XCOM_HAVE_OPENSSL
+#ifndef XCOM_WITHOUT_OPENSSL
   ep->c_descriptor.ssl_fd = 0;
 #endif
   ep->buf = 0;
@@ -1894,7 +1904,7 @@ int client_task(task_arg arg) {
     }
   }
 
-#ifdef XCOM_HAVE_OPENSSL
+#ifndef XCOM_WITHOUT_OPENSSL
   if (xcom_use_ssl()) {
     SSL_CONNECT(ep->c_descriptor, ep->s->srv);
   }
@@ -1953,9 +1963,9 @@ int client_task(task_arg arg) {
   free(ep->s);
   TASK_END;
 }
-  /* purecov: end */
+/* purecov: end */
 
-#ifdef XCOM_HAVE_OPENSSL
+#ifndef XCOM_WITHOUT_OPENSSL
 void ssl_free_con(connection_descriptor *con) {
   SSL_free(con->ssl_fd);
   con->ssl_fd = NULL;
@@ -1978,7 +1988,7 @@ void close_connection(connection_descriptor *con) {
 void shutdown_connection(connection_descriptor *con) {
   /* printstack(1); */
   ADD_EVENTS(add_event(string_arg("con->fd")); add_event(int_arg(con->fd)););
-#ifdef XCOM_HAVE_OPENSSL
+#ifndef XCOM_WITHOUT_OPENSSL
   ssl_shutdown_con(con);
 #endif
   close_connection(con);
@@ -1986,7 +1996,7 @@ void shutdown_connection(connection_descriptor *con) {
 
 void reset_connection(connection_descriptor *con) {
   con->fd = -1;
-#ifdef XCOM_HAVE_OPENSSL
+#ifndef XCOM_WITHOUT_OPENSSL
   con->ssl_fd = 0;
 #endif
   set_connected(con, CON_NULL);
@@ -2063,6 +2073,7 @@ bool_t xdr_node_list_1_1(XDR *xdrs, node_list_1_1 *objp) {
     case x_1_3:
     case x_1_4:
     case x_1_5:
+    case x_1_6:
       retval = xdr_array(xdrs, &x, (u_int *)&objp->node_list_len, NSERVERS,
                          sizeof(node_address), (xdrproc_t)xdr_node_address);
       objp->node_list_val = (node_address *)x;
@@ -2094,20 +2105,37 @@ bool_t xdr_pax_msg(XDR *xdrs, pax_msg *objp) {
     case x_1_1:
       if (!xdr_pax_msg_1_1(xdrs, (pax_msg_1_1 *)objp)) return FALSE;
       if (xdrs->x_op == XDR_DECODE) {
-        objp->delivered_msg = get_delivered_msg(); /* Use our own minimum */
-        objp->event_horizon = 0; /* Won't be used, so use 0 to spot if it is */
+        /* Use our own minimum */
+        objp->delivered_msg = get_delivered_msg();
+        /* Won't be used, so use 0 to spot if it is */
+        objp->event_horizon = 0;
+        /* Won't be used, so set as empty */
+        objp->requested_synode_app_data.synode_app_data_array_len = 0;
+        objp->requested_synode_app_data.synode_app_data_array_val = NULL;
       }
       return TRUE;
     case x_1_2:
     case x_1_3:
       if (!xdr_pax_msg_1_2(xdrs, (pax_msg_1_2 *)objp)) return FALSE;
       if (xdrs->x_op == XDR_DECODE) {
-        objp->event_horizon = 0; /* Won't be used, so use 0 to spot if it is */
+        /* Won't be used, so use 0 to spot if it is */
+        objp->event_horizon = 0;
+        /* Won't be used, so set as empty */
+        objp->requested_synode_app_data.synode_app_data_array_len = 0;
+        objp->requested_synode_app_data.synode_app_data_array_val = NULL;
       }
       return TRUE;
     case x_1_4:
     case x_1_5:
-      return xdr_pax_msg_1_4(xdrs, objp);
+      if (!xdr_pax_msg_1_4(xdrs, (pax_msg_1_4 *)objp)) return FALSE;
+      if (xdrs->x_op == XDR_DECODE) {
+        /* Won't be used, so set as empty */
+        objp->requested_synode_app_data.synode_app_data_array_len = 0;
+        objp->requested_synode_app_data.synode_app_data_array_val = NULL;
+      }
+      return TRUE;
+    case x_1_6:
+      return xdr_pax_msg_1_6(xdrs, objp);
     default:
       return FALSE;
   }
@@ -2126,6 +2154,7 @@ bool_t xdr_config(XDR *xdrs, config *objp) {
       return TRUE;
     case x_1_4:
     case x_1_5:
+    case x_1_6:
       return xdr_config_1_4(xdrs, objp);
     default:
       return FALSE;

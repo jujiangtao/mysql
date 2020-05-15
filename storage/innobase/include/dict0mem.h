@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2018, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1996, 2019, Oracle and/or its affiliates. All Rights Reserved.
 Copyright (c) 2012, Facebook Inc.
 
 This program is free software; you can redistribute it and/or modify it under
@@ -73,6 +73,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include <iterator>
 #include <memory> /* std::unique_ptr */
 #include <set>
+#include <string>
 #include <vector>
 
 /* Forward declaration. */
@@ -98,13 +99,14 @@ combination of types */
                          other flags */
 #define DICT_VIRTUAL 128 /* Index on Virtual column */
 
-#define DICT_SDI                                  \
-  256 /* Tablespace dictionary Index. Set only in \
-      in-memory index structure. */
+#define DICT_SDI                                                         \
+  256                        /* Tablespace dictionary Index. Set only in \
+                             in-memory index structure. */
+#define DICT_MULTI_VALUE 512 /* Multi-value index */
 
-#define DICT_IT_BITS             \
-  9 /*!< number of bits used for \
-    SYS_INDEXES.TYPE */
+#define DICT_IT_BITS              \
+  10 /*!< number of bits used for \
+     SYS_INDEXES.TYPE */
 /* @} */
 
 #if 0                         /* not implemented, retained for history */
@@ -450,6 +452,9 @@ struct dict_col_default_t {
   byte *value;
   /** Length of default value */
   size_t len;
+
+  bool operator==(const dict_col_default_t &other);
+  bool operator!=(const dict_col_default_t &other);
 };
 
 /** Data structure for a column in a table */
@@ -516,6 +521,10 @@ struct dict_col_t {
   @return true if it is a virtual column, false otherwise */
   bool is_virtual() const { return (prtype & DATA_VIRTUAL); }
 
+  /** Check if a column is a multi-value virtual column
+  @return true if it is a multi-value virtual column, false otherwise */
+  bool is_multi_value() const { return ((prtype & DATA_MULTI_VALUE) != 0); }
+
   /** Check if a column is nullable
   @return true if it is nullable, otherwise false */
   bool is_nullable() const { return ((prtype & DATA_NOT_NULL) == 0); }
@@ -523,7 +532,7 @@ struct dict_col_t {
   /** Gets the column data type.
   @param[out] type	data type */
   void copy_type(dtype_t *type) const {
-    ut_ad(type != NULL);
+    ut_ad(type != nullptr);
 
     type->mtype = mtype;
     type->prtype = prtype;
@@ -829,8 +838,8 @@ class last_ops_cur_t {
     if (mtr.is_active()) {
       mtr_commit(&mtr);
     }
-    rec = NULL;
-    block = NULL;
+    rec = nullptr;
+    block = nullptr;
     invalid = false;
   }
 
@@ -1072,6 +1081,14 @@ struct dict_index_t {
     return (type & DICT_CLUSTERED);
   }
 
+  /** Check whether the index is the multi-value index
+  @return nonzero for multi-value index, zero for other indexes */
+  bool is_multi_value() const {
+    ut_ad(magic_n == DICT_INDEX_MAGIC_N);
+
+    return (type & DICT_MULTI_VALUE);
+  }
+
   /** Returns the minimum data size of an index record.
   @return minimum data size in bytes */
   ulint get_min_size() const {
@@ -1199,6 +1216,39 @@ struct dict_index_t {
   /** Check if the underlying table is compressed.
   @return true if compressed, false otherwise. */
   bool is_compressed() const;
+
+  /** Check if a multi-value index is built on specified multi-value
+  virtual column. Please note that there could be only one multi-value
+  virtual column on the multi-value index, but not necessary the first
+  field of the index.
+  @param[in]	mv_col	multi-value virtual column
+  @return non-zero means the column is on the index and this is the
+  nth position of the column, zero means it's not on the index */
+  uint32_t has_multi_value_col(const dict_v_col_t *mv_col) const {
+    ut_ad(is_multi_value());
+    for (uint32_t i = 0; i < n_fields; ++i) {
+      const dict_col_t *col = get_col(i);
+      if (mv_col->m_col.ind == col->ind) {
+        return (i + 1);
+      }
+
+      /* Only one multi-value field, if not match then no match. */
+      if (col->is_multi_value()) {
+        break;
+      }
+    }
+
+    return (0);
+  }
+
+ public:
+  /** Get the page size of the tablespace to which this index belongs.
+  @return the page size. */
+  page_size_t get_page_size() const;
+
+  /** Get the space id of the tablespace to which this index belongs.
+  @return the space id. */
+  space_id_t space_id() const { return space; }
 };
 
 /** The status of online index creation */
@@ -1309,28 +1359,6 @@ struct dict_foreign_different_tables {
   }
 };
 
-/** A function object to check if the foreign key constraint has the same
-name as given.  If the full name of the foreign key constraint doesn't match,
-then, check if removing the database name from the foreign key constraint
-matches. Return true if it matches, false otherwise. */
-struct dict_foreign_matches_id {
-  dict_foreign_matches_id(const char *id) : m_id(id) {}
-
-  bool operator()(const dict_foreign_t *foreign) const {
-    if (0 == innobase_strcasecmp(foreign->id, m_id)) {
-      return (true);
-    }
-    if (const char *pos = strchr(foreign->id, '/')) {
-      if (0 == innobase_strcasecmp(m_id, pos + 1)) {
-        return (true);
-      }
-    }
-    return (false);
-  }
-
-  const char *m_id;
-};
-
 typedef std::set<dict_foreign_t *, dict_foreign_compare,
                  ut_allocator<dict_foreign_t *>>
     dict_foreign_set;
@@ -1367,7 +1395,7 @@ bool dict_foreign_set_validate(const dict_table_t &table);
 inline void dict_foreign_free(
     dict_foreign_t *foreign) /*!< in, own: foreign key struct */
 {
-  if (foreign->v_cols != NULL) {
+  if (foreign->v_cols != nullptr) {
     UT_DELETE(foreign->v_cols);
   }
 
@@ -1512,6 +1540,11 @@ struct dict_table_t {
   inline void unlock();
 
 #ifndef UNIV_HOTBACKUP
+  /** Get schema and table name in system character set.
+  @param[out]	schema	schema name
+  @param[out]	table	table name */
+  void get_table_name(std::string &schema, std::string &table);
+
   /** Mutex of the table for concurrency access. */
   ib_mutex_t *mutex;
 
@@ -1619,6 +1652,9 @@ struct dict_table_t {
   /** Number of virtual columns. */
   unsigned n_v_cols : 10;
 
+  /** Number of multi-value virtual columns. */
+  unsigned n_m_v_cols : 10;
+
   /** TRUE if this table is expected to be kept in memory. This table
   could be a table that has FK relationships or is undergoing DDL */
   unsigned can_be_evicted : 1;
@@ -1652,6 +1688,10 @@ struct dict_table_t {
 
   /** Virtual column names */
   const char *v_col_names;
+
+  /** True if the table belongs to a system database (mysql, information_schema
+  or performance_schema) */
+  bool is_system_table;
 
   /** Hash chain node. */
   hash_node_t name_hash;
@@ -1754,7 +1794,7 @@ struct dict_table_t {
   unsigned stat_initialized : 1;
 
   /** Timestamp of last recalc of the stats. */
-  ib_time_t stats_last_recalc;
+  ib_time_monotonic_t stats_last_recalc;
 
 /** The two bits below are set in the 'stat_persistent' member. They
 have the following meaning:
@@ -2043,9 +2083,9 @@ detect this and will eventually quit sooner. */
     the clustered index may be NULL.  If the clustered index is corrupted,
     the table is corrupt.  We do not consider the table corrupt if only
     a secondary index is corrupt. */
-    ut_ad(index == NULL || index->is_clustered());
+    ut_ad(index == nullptr || index->is_clustered());
 
-    return (index != NULL && index->type & DICT_CORRUPT);
+    return (index != nullptr && index->type & DICT_CORRUPT);
   }
 
   /** Returns a column's name.
@@ -2463,12 +2503,12 @@ or from a thread that has not shared the table object with other threads.
 @param[in,out]	table	table whose stats latch to destroy */
 inline void dict_table_autoinc_destroy(dict_table_t *table) {
   if (table->autoinc_mutex_created == os_once::DONE) {
-    if (table->autoinc_mutex != NULL) {
+    if (table->autoinc_mutex != nullptr) {
       mutex_free(table->autoinc_mutex);
       UT_DELETE(table->autoinc_mutex);
     }
 
-    if (table->autoinc_persisted_mutex != NULL) {
+    if (table->autoinc_persisted_mutex != nullptr) {
       mutex_free(table->autoinc_persisted_mutex);
       UT_DELETE(table->autoinc_persisted_mutex);
     }
@@ -2480,8 +2520,8 @@ This function is only called from either single threaded environment
 or from a thread that has not shared the table object with other threads.
 @param[in,out]	table	table whose autoinc latch is to be created. */
 inline void dict_table_autoinc_create_lazy(dict_table_t *table) {
-  table->autoinc_mutex = NULL;
-  table->autoinc_persisted_mutex = NULL;
+  table->autoinc_mutex = nullptr;
+  table->autoinc_persisted_mutex = nullptr;
   table->autoinc_mutex_created = os_once::NEVER_DONE;
 }
 
@@ -2490,7 +2530,7 @@ This function is only called from either single threaded environment
 or from a thread that has not shared the table object with other threads.
 @param[in,out]	index	index whose zip_pad mutex is to be created */
 inline void dict_index_zip_pad_mutex_create_lazy(dict_index_t *index) {
-  index->zip_pad.mutex = NULL;
+  index->zip_pad.mutex = nullptr;
   index->zip_pad.mutex_created = os_once::NEVER_DONE;
 }
 
@@ -2500,7 +2540,7 @@ or from a thread that has not shared the table object with other threads.
 @param[in,out]	index	index whose stats latch to destroy */
 inline void dict_index_zip_pad_mutex_destroy(dict_index_t *index) {
   if (index->zip_pad.mutex_created == os_once::DONE &&
-      index->zip_pad.mutex != NULL) {
+      index->zip_pad.mutex != nullptr) {
     mutex_free(index->zip_pad.mutex);
     UT_DELETE(index->zip_pad.mutex);
   }

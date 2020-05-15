@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2020, Oracle and/or its affiliates. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -35,7 +35,9 @@ namespace xpl {
 template <typename Variable_type>
 class Sync_variable {
  public:
-  Sync_variable(const Variable_type value) : m_value(value) {}
+  Sync_variable(const Variable_type value, const PSI_mutex_key mutex_key,
+                const PSI_cond_key cond_key)
+      : m_value(value), m_sync(mutex_key, cond_key) {}
 
   bool is(const Variable_type value_to_check) const {
     auto sync = m_sync.block();
@@ -56,7 +58,7 @@ class Sync_variable {
     const Variable_type *begin_element = expected_value;
     const Variable_type *end_element = expected_value + NUM_OF_ELEMENTS;
 
-    return find(begin_element, end_element, m_value);
+    return end_element != std::find(begin_element, end_element, m_value);
   }
 
   bool exchange(const Variable_type expected_value,

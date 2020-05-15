@@ -34,6 +34,10 @@
 #     channels are deleted in multi-source. set it to 1, if channel deletion
 #     is not required.
 #
+#  $rpl_skip_stop_slave
+#     If set to '1' the slaves are not stopped. Useful if the slaves are stopped
+#     in the test case before sourcing this file.
+#
 #   $rpl_only_running_threads
 #     If one or both of the IO and SQL threads is stopped, sync and
 #     stop only the threads that are running.  See
@@ -138,13 +142,17 @@ if ($rpl_group_replication)
     {
       --source include/stop_group_replication.inc
     }
+    --source include/stop_dump_threads.inc
     --dec $_rpl_server
   }
 }
 
 if (!$rpl_group_replication)
 {
-  --source include/rpl_stop_slaves.inc
+  if (!$rpl_skip_stop_slave)
+  {
+    --source include/rpl_stop_slaves.inc
+  }
 }
 
 # Restore the server state by deleting all channels
@@ -186,6 +194,46 @@ while ($_rpl_server)
     --source include/gtid_utils_end.inc
     --connection default
   }
+  # Stop the Binlog Dump thread
+  --let $rpl_connection_name= server_$_rpl_server
+  --source include/rpl_connection.inc
+  --source include/stop_dump_threads.inc
+
+  # Drop applier user, if created
+  --let $_rpl_change_topology_user_created_index= `SELECT LOCATE('$_rpl_server:', "$rpl_change_topology_user_created")`
+  if ($_rpl_change_topology_user_created_index)
+  {
+    --disable_query_log
+    --let $_rpl_change_topology_user_created= `SELECT SUBSTRING_INDEX(SUBSTRING_INDEX(SUBSTRING("$rpl_change_topology_user_created", $_rpl_change_topology_user_created_index), ' ', 1), ':', -1)`
+    --eval DROP USER $_rpl_change_topology_user_created
+    if ($rpl_privilege_checks_use_roles != '')
+    {
+        --eval DROP ROLE 'sql_applier_thread'
+    }
+    --enable_query_log
+  }
+
+  # Restore state for PRIVILEGE_CHECKS_USER
+  if ($rpl_privilege_checks_user)
+  {
+    --disable_query_log
+    SET @@sql_log_bin = 0;
+    # Drop created privileged database
+    DROP DATABASE rpl_priv;
+    SET @@sql_log_bin = 1;
+    CHANGE MASTER TO PRIVILEGE_CHECKS_USER=NULL;
+    --enable_query_log
+  }
+  # Restore state for REQUIRE_ROW_FORMAT
+  if ($rpl_require_row_format)
+  {
+    --disable_query_log
+    CHANGE MASTER TO REQUIRE_ROW_FORMAT=0;
+    --enable_query_log
+  }
+
+  --connection default
+
   # Unconfigure connections
   --disconnect server_$_rpl_server
   --disconnect server_$_rpl_server$_rpl_one

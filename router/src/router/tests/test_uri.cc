@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2015, 2018, Oracle and/or its affiliates. All rights reserved.
+  Copyright (c) 2015, 2020, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -21,21 +21,20 @@
   along with this program; if not, write to the Free Software
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
-
-#include "gmock/gmock.h"
-#include "gtest/gtest.h"
+#include "mysqlrouter/uri.h"
 
 #include <exception>
 
-#include "mysqlrouter/uri.h"
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
 
-using ::testing::StrEq;
 using mysqlrouter::URI;
 using mysqlrouter::URIAuthority;
 using mysqlrouter::URIError;
 using mysqlrouter::URIPath;
 using mysqlrouter::URIQuery;
 using std::string;
+using ::testing::StrEq;
 
 class URISimpleTests : public ::testing::Test {};
 
@@ -595,6 +594,19 @@ URIParseGoodTestData uri_test_data[] = {
         },
         {"ham", "", 0, "", "", URIPath(), URIQuery(), ""},
     },
+    {
+        {"w://7.7.3.7."},
+        {
+            "w",
+            "7.7.3.7.",
+            0,
+            "",
+            "",
+            URIPath(),
+            URIQuery(),
+            "",
+        },
+    },
 };
 
 INSTANTIATE_TEST_CASE_P(URITests, URIParseGoodTests,
@@ -1141,6 +1153,19 @@ URItoStringTestData uri_to_string_test_data[] = {
         },
         {"v://:v(@"},
     },
+    {
+        {
+            "w",
+            "7.7.3.7.",
+            0,
+            "",
+            "",
+            URIPath(),
+            URIQuery(),
+            "",
+        },
+        {"w://7.7.3.7."},
+    },
 };
 
 INSTANTIATE_TEST_CASE_P(URITests, URItoStringGoodTests,
@@ -1195,3 +1220,8 @@ URIRootlessTestFailData uri_rootless_test_fail_data[] = {
 
 INSTANTIATE_TEST_CASE_P(URITests, URIRootlessThrowingTests,
                         ::testing::ValuesIn(uri_rootless_test_fail_data));
+
+int main(int argc, char **argv) {
+  ::testing::InitGoogleTest(&argc, argv);
+  return RUN_ALL_TESTS();
+}

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2015, 2018, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2015, 2019, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -81,6 +81,13 @@ namespace lob {
 
 /** The maximum size possible for an LOB */
 const ulint MAX_SIZE = UINT32_MAX;
+
+/** The compressed LOB is stored as a collection of zlib streams.  The
+ * uncompressed LOB is divided into chunks of size Z_CHUNK_SIZE and each of
+ * these chunks are compressed individually and stored as compressed LOB.
+data. */
+#define KB128 (128 * 1024)
+#define Z_CHUNK_SIZE KB128
 
 /** The reference in a field for which data is stored on a different page.
 The reference is at the end of the 'locally' stored part of the field.
@@ -171,6 +178,12 @@ struct ref_mem_t {
 
   /** Whether the blob is being modified. */
   bool m_being_modified;
+
+  /** Check if the LOB has already been purged.
+  @return true if LOB has been purged, false otherwise. */
+  bool is_purged() const {
+    return ((m_page_no == FIL_NULL) && (m_length == 0));
+  }
 };
 
 extern const byte field_ref_almost_zero[FIELD_REF_SIZE];
@@ -198,6 +211,14 @@ struct ref_t {
   /** Constructor.
   @param[in]	ptr	Pointer to the external field reference. */
   explicit ref_t(byte *ptr) : m_ref(ptr) {}
+
+  /** For compressed LOB, if the length is less than or equal to Z_CHUNK_SIZE
+  then use the older single z stream format to store the LOB.  */
+  bool use_single_z_stream() const { return (length() <= Z_CHUNK_SIZE); }
+
+  /** For compressed LOB, if the length is less than or equal to Z_CHUNK_SIZE
+  then use the older single z stream format to store the LOB.  */
+  static bool use_single_z_stream(ulint len) { return (len <= Z_CHUNK_SIZE); }
 
   /** Check if this LOB is big enough to do partial update.
   @param[in]	page_size	the page size
@@ -374,6 +395,12 @@ struct ref_t {
   static space_id_t space_id(const byte *ref) {
     return (mach_read_from_4(ref));
   }
+
+  /** Read the page no from the blob reference.
+  @return the page no */
+  static page_no_t page_no(const byte *ref) {
+    return (mach_read_from_4(ref + BTR_EXTERN_PAGE_NO));
+  }
 #endif /* UNIV_DEBUG */
 
   /** Read the space id from the blob reference.
@@ -462,7 +489,7 @@ struct ref_t {
 
     buf_block_t *block = mtr->memo_contains_page_flagged(
         m_ref, MTR_MEMO_PAGE_X_FIX | MTR_MEMO_PAGE_SX_FIX);
-    ut_ad(block != NULL);
+    ut_ad(block != nullptr);
     return (true);
   }
 
@@ -629,12 +656,12 @@ class BtrContext {
  public:
   /** Default Constructor */
   BtrContext()
-      : m_mtr(NULL),
-        m_pcur(NULL),
-        m_index(NULL),
-        m_rec(NULL),
-        m_offsets(NULL),
-        m_block(NULL),
+      : m_mtr(nullptr),
+        m_pcur(nullptr),
+        m_index(nullptr),
+        m_rec(nullptr),
+        m_offsets(nullptr),
+        m_block(nullptr),
         m_op(OPCODE_UNKNOWN),
         m_btr_page_no(FIL_NULL) {}
 
@@ -649,10 +676,10 @@ class BtrContext {
         m_block(block),
         m_op(OPCODE_UNKNOWN),
         m_btr_page_no(FIL_NULL) {
-    ut_ad(m_pcur == NULL || rec_offs_validate());
-    ut_ad(m_block == NULL || m_rec == NULL ||
+    ut_ad(m_pcur == nullptr || rec_offs_validate());
+    ut_ad(m_block == nullptr || m_rec == nullptr ||
           m_block->frame == page_align(m_rec));
-    ut_ad(m_pcur == NULL || m_rec == btr_pcur_get_rec(m_pcur));
+    ut_ad(m_pcur == nullptr || m_rec == btr_pcur_get_rec(m_pcur));
   }
 
   /** Constructor **/
@@ -666,9 +693,9 @@ class BtrContext {
         m_block(block),
         m_op(op),
         m_btr_page_no(FIL_NULL) {
-    ut_ad(m_pcur == NULL || rec_offs_validate());
+    ut_ad(m_pcur == nullptr || rec_offs_validate());
     ut_ad(m_block->frame == page_align(m_rec));
-    ut_ad(m_pcur == NULL || m_rec == btr_pcur_get_rec(m_pcur));
+    ut_ad(m_pcur == nullptr || m_rec == btr_pcur_get_rec(m_pcur));
   }
 
   /** Copy Constructor **/
@@ -710,7 +737,7 @@ class BtrContext {
     page_zip_des_t *page_zip = get_page_zip();
 
     if (page_zip) {
-      ref.set_owner(val, NULL);
+      ref.set_owner(val, nullptr);
       page_zip_write_blob_ptr(page_zip, m_rec, m_index, m_offsets, i, m_mtr);
     } else {
       ref.set_owner(val, m_mtr);
@@ -776,7 +803,7 @@ class BtrContext {
   /** Get the clustered index record pointer.
   @return clustered index record pointer. */
   rec_t *rec() const {
-    ut_ad(m_pcur == NULL || m_rec == btr_pcur_get_rec(m_pcur));
+    ut_ad(m_pcur == nullptr || m_rec == btr_pcur_get_rec(m_pcur));
     return (m_rec);
   }
 
@@ -897,8 +924,7 @@ class BtrContext {
   /** Restore the position of the persistent cursor. */
   void restore_position() {
     ut_ad(m_pcur->m_rel_pos == BTR_PCUR_ON);
-    bool ret = btr_pcur_restore_position(BTR_MODIFY_LEAF | BTR_MODIFY_EXTERNAL,
-                                         m_pcur, m_mtr);
+    bool ret = btr_pcur_restore_position(m_pcur->m_latch_mode, m_pcur, m_mtr);
 
     ut_a(ret);
 
@@ -943,6 +969,9 @@ class BtrContext {
     is_bulk() ? check_redolog_bulk() : check_redolog_normal();
   }
 
+  /** The btr mini transaction will be restarted. */
+  void restart_mtr() { is_bulk() ? restart_mtr_bulk() : restart_mtr_normal(); }
+
   /** Mark the nth field as externally stored.
   @param[in]	field_no	the field number. */
   void make_nth_extern(ulint field_no) {
@@ -966,7 +995,7 @@ class BtrContext {
   /** Validate the record offsets array.
   @return true if validation succeeds, false otherwise. */
   bool rec_offs_validate() const {
-    if (m_rec != NULL) {
+    if (m_rec != nullptr) {
       ut_ad(::rec_offs_validate(m_rec, m_index, m_offsets));
     }
     return (true);
@@ -990,6 +1019,12 @@ class BtrContext {
   /** When bulk load is being done, check if there is enough space in redo
   log file. */
   void check_redolog_bulk();
+
+  /** Commit and re-start the mini transaction. */
+  void restart_mtr_normal();
+
+  /** When bulk load is being done, Commit and re-start the mini transaction. */
+  void restart_mtr_bulk();
 
   /** Recalculate some of the members after restoring the persistent
   cursor. */
@@ -1298,7 +1333,7 @@ struct zReader {
 struct Reader {
   /** Constructor. */
   Reader(const ReadContext &ctx)
-      : m_rctx(ctx), m_cur_block(NULL), m_copied_len(0) {}
+      : m_rctx(ctx), m_cur_block(nullptr), m_copied_len(0) {}
 
   /** Fetch the complete or prefix of the uncompressed LOB data.
   @return bytes of LOB data fetched. */
@@ -1321,11 +1356,6 @@ struct Reader {
 /** The context information when the delete operation on LOB is
 taking place. */
 struct DeleteContext : public BtrContext {
-  DeleteContext(byte *field_ref)
-      : m_blobref(field_ref),
-        m_page_size(table() == nullptr ? get_page_size()
-                                       : dict_table_page_size(table())) {}
-
   /** Constructor. */
   DeleteContext(const BtrContext &btr, byte *field_ref, ulint field_no,
                 bool rollback)
@@ -1334,7 +1364,13 @@ struct DeleteContext : public BtrContext {
         m_field_no(field_no),
         m_rollback(rollback),
         m_page_size(table() == nullptr ? get_page_size()
-                                       : dict_table_page_size(table())) {}
+                                       : dict_table_page_size(table())) {
+    m_blobref.parse(m_blobref_mem);
+  }
+
+  bool is_ref_valid() const {
+    return (m_blobref_mem.m_page_no == m_blobref.page_no());
+  }
 
   /** Determine if it is compressed page format.
   @return true if compressed. */
@@ -1344,8 +1380,16 @@ struct DeleteContext : public BtrContext {
   @return true if tablespace has atomic blobs. */
   bool has_atomic_blobs() const {
     space_id_t space_id = m_blobref.space_id();
-    ulint flags = fil_space_get_flags(space_id);
+    uint32_t flags = fil_space_get_flags(space_id);
     return (DICT_TF_HAS_ATOMIC_BLOBS(flags));
+  }
+
+  bool is_delete_marked() const {
+    rec_t *clust_rec = rec();
+    if (clust_rec == nullptr) {
+      return (true);
+    }
+    return (rec_get_deleted_flag(clust_rec, page_rec_is_comp(clust_rec)));
   }
 
 #ifdef UNIV_DEBUG
@@ -1353,7 +1397,7 @@ struct DeleteContext : public BtrContext {
   @return true if valid, false otherwise. */
   bool validate_blobref() const {
     rec_t *clust_rec = rec();
-    if (clust_rec != NULL) {
+    if (clust_rec != nullptr) {
       const byte *v2 =
           btr_rec_get_field_ref(clust_rec, get_offsets(), m_field_no);
 
@@ -1361,7 +1405,6 @@ struct DeleteContext : public BtrContext {
     }
     return (true);
   }
-
 #endif /* UNIV_DEBUG */
 
   /** Acquire an x-latch on the index page containing the clustered
@@ -1381,6 +1424,9 @@ struct DeleteContext : public BtrContext {
   page_size_t m_page_size;
 
  private:
+  /** Memory copy of the original LOB reference. */
+  ref_mem_t m_blobref_mem;
+
   /** Obtain the page size from the tablespace flags.
   @return the page size. */
   page_size_t get_page_size() const {
@@ -1482,16 +1528,6 @@ byte *btr_copy_externally_stored_field_func(
 #endif /* UNIV_DEBUG */
     mem_heap_t *heap);
 
-/** Flags the data tuple fields that are marked as extern storage in the
-update vector.  We use this function to remember which fields we must
-mark as extern storage in a record inserted for an update.
-@param[in,out]	tuple	data tuple
-@param[in]	update	update vector
-@param[in]	heap	memory heap
-@return number of flagged external columns */
-ulint btr_push_update_extern_fields(dtuple_t *tuple, const upd_t *update,
-                                    mem_heap_t *heap);
-
 /** Gets the externally stored size of a record, in units of a database page.
 @param[in]	rec	record
 @param[in]	offsets	array returned by rec_get_offsets()
@@ -1504,11 +1540,10 @@ ulint btr_rec_get_externally_stored_len(const rec_t *rec, const ulint *offsets);
 @param[in]	trxid		the transaction that is being purged.
 @param[in]	undo_no		during rollback to savepoint, purge only upto
                                 this undo number.
-@param[in]	ref		reference to LOB that is purged.
-@param[in]	rec_type	undo record type.*/
+@param[in]	rec_type	undo record type.
+@param[in]	uf		the update vector for the field. */
 void purge(lob::DeleteContext *ctx, dict_index_t *index, trx_id_t trxid,
-           undo_no_t undo_no, lob::ref_t ref, ulint rec_type,
-           const upd_field_t *uf);
+           undo_no_t undo_no, ulint rec_type, const upd_field_t *uf);
 
 /** Update a portion of the given LOB.
 @param[in]	ctx		update operation context information.
@@ -1565,6 +1600,15 @@ valid space_id in it.
 bool rec_check_lobref_space_id(dict_index_t *index, const rec_t *rec,
                                const ulint *offsets);
 #endif /* UNIV_DEBUG */
+
+/** Mark an LOB that it is not partially updatable anymore.
+@param[in]  trx  the current transaction.
+@param[in]  index  the clustered index to which the LOB belongs.
+@param[in]  update  the update vector.
+@param[in]  mtr     the mini transaction context.
+@return DB_SUCCESS on success, error code on failure. */
+dberr_t mark_not_partially_updatable(trx_t *trx, dict_index_t *index,
+                                     const upd_t *update, mtr_t *mtr);
 
 }  // namespace lob
 

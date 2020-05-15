@@ -151,22 +151,26 @@ INSERT INTO t2 VALUES (2,25);
 INSERT INTO t3 VALUES (1,'123 Park Place');
 INSERT INTO t3 VALUES (2,'453 Boardwalk');
 
+--sorted_result
 SELECT    a,b,if(b = 1,i,if(b = 2,v,''))
 FROM      t1
 LEFT JOIN t2 USING(c)
 LEFT JOIN t3 ON t3.c = t1.c;
 
+--sorted_result
 SELECT    a,b,if(b = 1,i,if(b = 2,v,''))
 FROM      t1
 LEFT JOIN t2 ON t1.c = t2.c
 LEFT JOIN t3 ON t3.c = t1.c;
 
+--sorted_result
 SELECT    a,b,if(b = 1,i,if(b = 2,v,''))
 FROM      t1
 LEFT JOIN t2 USING(c)
 LEFT JOIN t3 ON t3.c = t1.c
 ORDER BY a;
 
+--sorted_result
 SELECT    a,b,if(b = 1,i,if(b = 2,v,''))
 FROM      t1
 LEFT JOIN t2 ON t1.c = t2.c
@@ -425,11 +429,17 @@ drop table t1;
 
 #
 # REF_OR_NULL optimization + filesort (bug #2419)
+# Also tests printing of RefOrNullIterator with index condition pushdown.
+# Do note, however, that this given index condition pushdown is pretty
+# nonsensical (the condition should have been removed when setting up
+# the ref_or_null, so that there was nothing left to push); if that issue
+# is fixed, you'll need to make a new test.
 #
 
 create table t1(a int, b int, index(b));
 insert into t1 values (2, 1), (1, 1), (4, NULL), (3, NULL), (6, 2), (5, 2);
 explain select * from t1 where b=1 or b is null order by a;
+explain format=tree select * from t1 where b=1 or b is null order by a;
 select * from t1 where b=1 or b is null order by a;
 explain select * from t1 where b=2 or b is null order by a;
 select * from t1 where b=2 or b is null order by a;

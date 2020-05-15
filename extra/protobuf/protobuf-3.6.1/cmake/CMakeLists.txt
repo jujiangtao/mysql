@@ -19,20 +19,21 @@ project(protobuf C CXX)
 if (CYGWIN)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++11")
 else()
-  set(CMAKE_CXX_STANDARD 11)
-  set(CMAKE_CXX_STANDARD_REQUIRED ON)
-  set(CMAKE_CXX_EXTENSIONS OFF)
+  # cmake 3.9.1 does not understand that Developer Studio understands C++14
+  IF(NOT SOLARIS)
+    set(CMAKE_CXX_STANDARD 14)
+    set(CMAKE_CXX_STANDARD_REQUIRED ON)
+    set(CMAKE_CXX_EXTENSIONS OFF)
+  ENDIF()
 endif()
 
 # Options
 option(protobuf_BUILD_TESTS "Build tests" ON)
 option(protobuf_BUILD_EXAMPLES "Build examples" OFF)
 option(protobuf_BUILD_PROTOC_BINARIES "Build libprotoc and protoc compiler" ON)
-if (BUILD_SHARED_LIBS)
-  set(protobuf_BUILD_SHARED_LIBS_DEFAULT ON)
-else (BUILD_SHARED_LIBS)
-  set(protobuf_BUILD_SHARED_LIBS_DEFAULT OFF)
-endif (BUILD_SHARED_LIBS)
+
+set(protobuf_BUILD_SHARED_LIBS_DEFAULT ON)
+
 option(protobuf_BUILD_SHARED_LIBS "Build Shared Libraries" ${protobuf_BUILD_SHARED_LIBS_DEFAULT})
 include(CMakeDependentOption)
 cmake_dependent_option(protobuf_MSVC_STATIC_RUNTIME "Link static runtime libraries" ON
@@ -147,7 +148,7 @@ else (protobuf_BUILD_SHARED_LIBS)
   endif (MSVC AND protobuf_MSVC_STATIC_RUNTIME)
 endif (protobuf_BUILD_SHARED_LIBS)
 
-if (MSVC)
+if (MSVC AND NOT WIN32_CLANG)
   # Build with multiple processes
   add_definitions(/MP)
   # MSVC warning suppressions
@@ -175,7 +176,7 @@ if (MSVC)
 
   # Suppress linker warnings about files with no symbols defined.
   set(CMAKE_STATIC_LINKER_FLAGS /ignore:4221)
-endif (MSVC)
+endif (MSVC AND NOT WIN32_CLANG)
 
 get_filename_component(protobuf_source_dir ${protobuf_SOURCE_DIR} PATH)
 
@@ -196,6 +197,12 @@ endif (MSVC)
 if (protobuf_UNICODE)
   add_definitions(-DUNICODE -D_UNICODE)
 endif (protobuf_UNICODE)
+
+# Bug in std::call_once in optimized mode
+IF(SOLARIS_SPARC AND MY_COMPILER_IS_GNU AND
+    CMAKE_BUILD_TYPE_UPPER MATCHES "REL")
+  ADD_COMPILE_OPTIONS("-O0")
+ENDIF()
 
 include(libprotobuf-lite.cmake)
 include(libprotobuf.cmake)

@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -37,6 +37,7 @@
 #include "plugin/group_replication/include/handlers/pipeline_handlers.h"
 #include "plugin/group_replication/include/pipeline_factory.h"
 #include "plugin/group_replication/include/pipeline_stats.h"
+#include "plugin/group_replication/include/plugin_handlers/stage_monitor_handler.h"
 #include "plugin/group_replication/include/plugin_utils.h"
 #include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/gcs_member_identifier.h"
 #include "sql/sql_class.h"
@@ -161,10 +162,10 @@ class Transaction_prepared_action_packet : public Packet {
   Transaction_prepared_action_packet(const rpl_sid *sid, rpl_gno gno,
                                      const Gcs_member_identifier &gcs_member_id)
       : Packet(TRANSACTION_PREPARED_PACKET_TYPE),
-        m_sid_specified(sid != NULL ? true : false),
+        m_sid_specified(sid != nullptr ? true : false),
         m_gno(gno),
         m_gcs_member_id(gcs_member_id.get_member_id()) {
-    if (sid != NULL) {
+    if (sid != nullptr) {
       m_sid.copy_from(*sid);
     }
   }
@@ -175,7 +176,7 @@ class Transaction_prepared_action_packet : public Packet {
   const rpl_gno m_gno;
   const Gcs_member_identifier m_gcs_member_id;
 
-  const rpl_sid *get_sid() { return m_sid_specified ? &m_sid : NULL; }
+  const rpl_sid *get_sid() { return m_sid_specified ? &m_sid : nullptr; }
 
  private:
   rpl_sid m_sid;
@@ -271,10 +272,6 @@ class Applier_module_interface {
   virtual Flow_control_module *get_flow_control_module() = 0;
   virtual void run_flow_control_step() = 0;
   virtual int purge_applier_queue_and_restart_applier_module() = 0;
-  virtual void kill_pending_transactions(
-      bool set_read_mode, bool threaded_sql_session,
-      Gcs_operations::enum_leave_state leave_state,
-      Plugin_gcs_view_modification_notifier *view_notifier) = 0;
   virtual bool queue_and_wait_on_queue_checkpoint(
       std::shared_ptr<Continuation> checkpoint_condition) = 0;
   virtual Pipeline_stats_member_collector *
@@ -294,6 +291,11 @@ class Applier_module : public Applier_module_interface {
       @retval !=0    Error
   */
   int initialize_applier_thread();
+
+  /**
+   * Return the local applier stats.
+   */
+  Pipeline_member_stats *get_local_pipeline_stats();
 
   /**
     Terminates the applier thread.
@@ -635,9 +637,8 @@ class Applier_module : public Applier_module_interface {
 
     @param[out] retrieved_set the set in string format.
 
-    @return
-      @retval true there was an error.
-      @retval false the operation has succeeded.
+    @retval true there was an error.
+    @retval false the operation has succeeded.
   */
   virtual bool get_retrieved_gtid_set(std::string &retrieved_set);
 
@@ -699,20 +700,6 @@ class Applier_module : public Applier_module_interface {
   virtual void run_flow_control_step() {
     flow_control_module.flow_control_step(&pipeline_stats_member_collector);
   }
-
-  /**
-    Kill pending transactions and enable super_read_only mode, if chosen.
-
-    @param set_read_mode         if true, enable super_read_only mode
-    @param threaded_sql_session  if true, creates a thread to open the
-                                 SQL session
-    @param leave_state           the result of the leave attempt
-    @param view_notifier         the view notification object
-  */
-  void kill_pending_transactions(
-      bool set_read_mode, bool threaded_sql_session,
-      Gcs_operations::enum_leave_state leave_state,
-      Plugin_gcs_view_modification_notifier *view_notifier);
 
   virtual bool queue_and_wait_on_queue_checkpoint(
       std::shared_ptr<Continuation> checkpoint_condition);
@@ -821,10 +808,8 @@ class Applier_module : public Applier_module_interface {
     mysql_mutex_lock(&suspend_lock);
 
     suspended = true;
-
-#ifndef _WIN32
-    THD_STAGE_INFO(applier_thd, stage_suspending);
-#endif
+    stage_handler.set_stage(info_GR_STAGE_module_suspending.m_key, __FILE__,
+                            __LINE__, 0, 0);
 
     // Alert any interested party about the applier suspension
     mysql_cond_broadcast(&suspension_waiting_condition);
@@ -832,10 +817,8 @@ class Applier_module : public Applier_module_interface {
     while (suspended) {
       mysql_cond_wait(&suspend_cond, &suspend_lock);
     }
-
-#ifndef _WIN32
-    THD_STAGE_INFO(applier_thd, stage_executing);
-#endif
+    stage_handler.set_stage(info_GR_STAGE_module_executing.m_key, __FILE__,
+                            __LINE__, 0, 0);
 
     mysql_mutex_unlock(&suspend_lock);
   }
@@ -852,11 +835,6 @@ class Applier_module : public Applier_module_interface {
     such tasks as queuing to a relay log.
   */
   void set_applier_thread_context();
-
-  /**
-    Prints an error to the log and tries to leave the group
-  */
-  void leave_group_on_failure();
 
   /**
     This method calculates the intersection of the given sets passed as a list
@@ -923,6 +901,7 @@ class Applier_module : public Applier_module_interface {
 
   Pipeline_stats_member_collector pipeline_stats_member_collector;
   Flow_control_module flow_control_module;
+  Plugin_stage_monitor_handler stage_handler;
 };
 
 #endif /* APPLIER_INCLUDE */

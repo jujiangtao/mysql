@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2011, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -62,7 +62,7 @@ TEST_F(ItemTimeFuncTest, dateAddInterval) {
                                           INTERVAL_SECOND_MICROSECOND, false);
   Parse_context pc(thd(), thd()->lex->current_select());
   EXPECT_FALSE(item->itemize(&pc, &item));
-  EXPECT_FALSE(item->fix_fields(thd(), NULL));
+  EXPECT_FALSE(item->fix_fields(thd(), nullptr));
 
   // The below result is not correct, see Bug#16198372
   EXPECT_DOUBLE_EQ(20130122145222.234567, item->val_real());
@@ -120,7 +120,7 @@ void testItemTimeFunctions(Item_time_func *item, MYSQL_TIME *ltime,
       10000 * ltime->hour + 100 * ltime->minute + ltime->second;
   EXPECT_EQ(mysql_time, item->val_int());
 
-  long long int packed = TIME_to_longlong_packed(ltime);
+  long long int packed = TIME_to_longlong_packed(*ltime);
   EXPECT_EQ(packed, item->val_time_temporal());
 
   double d = mysql_time + ltime->second_part / 1000000.0;
@@ -164,7 +164,7 @@ TEST_P(ItemTimeFuncTestP, secToTime) {
   Item *item;
   EXPECT_FALSE(time->itemize(&pc, &item));
   EXPECT_EQ(time, item);
-  EXPECT_FALSE(time->fix_fields(thd(), NULL));
+  EXPECT_FALSE(time->fix_fields(thd(), nullptr));
 
   MYSQL_TIME ltime;
   time->get_time(&ltime);
@@ -224,7 +224,7 @@ TEST_P(ItemTimeFuncTruncFracTestP, secToTime) {
   Item *item;
   EXPECT_FALSE(time->itemize(&pc, &item));
   EXPECT_EQ(time, item);
-  EXPECT_FALSE(time->fix_fields(thd(), NULL));
+  EXPECT_FALSE(time->fix_fields(thd(), nullptr));
 
   MYSQL_TIME ltime;
   time->get_time(&ltime);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2020, Oracle and/or its affiliates. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -41,7 +41,6 @@ namespace xpl {
 class Query_string_builder {
  public:
   Query_string_builder(size_t reserve = 256);
-  ~Query_string_builder();
 
   Query_string_builder &bquote() {
     m_str.push_back('\'');
@@ -71,6 +70,7 @@ class Query_string_builder {
                                                    size_t length);
   Query_string_builder &quote_identifier(const char *s, size_t length);
   Query_string_builder &quote_string(const char *s, size_t length);
+  Query_string_builder &quote_json_string(const char *s, size_t length);
 
   Query_string_builder &quote_identifier_if_needed(const std::string &s) {
     return quote_identifier_if_needed(s.data(), s.length());
@@ -84,17 +84,22 @@ class Query_string_builder {
     return quote_string(s.data(), s.length());
   }
 
+  Query_string_builder &quote_json_string(const std::string &s) {
+    return quote_json_string(s.data(), s.length());
+  }
+
   Query_string_builder &escape_identifier(const char *s, size_t length);
   Query_string_builder &escape_string(const char *s, size_t length);
+  Query_string_builder &escape_json_string(const char *s, size_t length);
 
   Query_string_builder &dot() { return put(".", 1); }
 
-  Query_string_builder &put(const int64_t i) { return put(ngs::to_string(i)); }
-  Query_string_builder &put(const uint64_t u) { return put(ngs::to_string(u)); }
-  Query_string_builder &put(const int32_t i) { return put(ngs::to_string(i)); }
-  Query_string_builder &put(const uint32_t u) { return put(ngs::to_string(u)); }
-  Query_string_builder &put(const float f) { return put(ngs::to_string(f)); }
-  Query_string_builder &put(const double d) { return put(ngs::to_string(d)); }
+  Query_string_builder &put(const int64_t i) { return put(to_string(i)); }
+  Query_string_builder &put(const uint64_t u) { return put(to_string(u)); }
+  Query_string_builder &put(const int32_t i) { return put(to_string(i)); }
+  Query_string_builder &put(const uint32_t u) { return put(to_string(u)); }
+  Query_string_builder &put(const float f) { return put(to_string(f)); }
+  Query_string_builder &put(const double d) { return put(to_string(d)); }
 
   Query_string_builder &put(const char *s, size_t length);
 

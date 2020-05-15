@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2016, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -130,7 +130,7 @@ bool get_local_addresses(Gcs_sock_probe_interface &sock_probe_if,
       }
 
       if (ip->sa_family == AF_INET) {
-        struct in_addr *inaddr = NULL, *inmask = NULL;
+        struct in_addr *inaddr = nullptr, *inmask = nullptr;
 
         inaddr = &((struct sockaddr_in *)ip)->sin_addr;
         inmask = &((struct sockaddr_in *)netmask)->sin_addr;
@@ -155,7 +155,7 @@ bool get_local_addresses(Gcs_sock_probe_interface &sock_probe_if,
 
         addr_to_cidr_bits.insert(std::make_pair(sname, prefix.count()));
       } else if (ip->sa_family == AF_INET6) {
-        struct in6_addr *inaddrv6 = NULL, *inmaskv6 = NULL;
+        struct in6_addr *inaddrv6 = nullptr, *inmaskv6 = nullptr;
 
         inaddrv6 = &((struct sockaddr_in6 *)ip)->sin6_addr;
         inmaskv6 = &((struct sockaddr_in6 *)netmask)->sin6_addr;
@@ -259,12 +259,12 @@ bool resolve_ip_addr_from_hostname(std::string name,
   int res = true;
   char cip[INET6_ADDRSTRLEN];
   socklen_t cip_len = static_cast<socklen_t>(sizeof(cip));
-  struct addrinfo *addrinf = NULL, *addrinf_cycle = NULL, hints;
-  struct sockaddr *sa = NULL;
-  void *in_addr = NULL;
+  struct addrinfo *addrinf = nullptr, *addrinf_cycle = nullptr, hints;
+  struct sockaddr *sa = nullptr;
+  void *in_addr = nullptr;
 
   memset(&hints, 0, sizeof(hints));
-  checked_getaddrinfo(name.c_str(), 0, &hints, &addrinf);
+  checked_getaddrinfo(name.c_str(), nullptr, &hints, &addrinf);
   if (!addrinf) goto end;
 
   addrinf_cycle = addrinf;
@@ -301,12 +301,12 @@ bool resolve_all_ip_addr_from_hostname(
   int res = true;
   char cip[INET6_ADDRSTRLEN];
   socklen_t cip_len = static_cast<socklen_t>(sizeof(cip));
-  struct addrinfo *addrinf = NULL, *addrinfo_list = NULL, hints;
-  struct sockaddr *sa = NULL;
-  void *in_addr = NULL;
+  struct addrinfo *addrinf = nullptr, *addrinfo_list = nullptr, hints;
+  struct sockaddr *sa = nullptr;
+  void *in_addr = nullptr;
 
   memset(&hints, 0, sizeof(hints));
-  checked_getaddrinfo(name.c_str(), 0, &hints, &addrinf);
+  checked_getaddrinfo(name.c_str(), nullptr, &hints, &addrinf);
   if (!addrinf) goto end;
 
   addrinfo_list = addrinf;
@@ -520,7 +520,6 @@ bool Gcs_ip_whitelist_entry_hostname::init_value() { return false; }
 
 std::vector<std::pair<std::vector<unsigned char>, std::vector<unsigned char>>>
     *Gcs_ip_whitelist_entry_hostname::get_value() {
-  std::string ip;
   bool error = false;
   std::pair<std::vector<unsigned char>, std::vector<unsigned char>> value;
 
@@ -533,10 +532,19 @@ std::vector<std::pair<std::vector<unsigned char>, std::vector<unsigned char>>>
     return nullptr;
   }
 
+  auto has_v4_addresses_it =
+      std::find_if(ips.begin(), ips.end(),
+                   [](std::pair<sa_family_t, std::string> const &ip_entry) {
+                     return ip_entry.first == AF_INET;
+                   });
+  bool has_v4_addresses = has_v4_addresses_it != ips.end();
+
   auto *retval = new std::vector<
       std::pair<std::vector<unsigned char>, std::vector<unsigned char>>>();
 
   for (auto &ip : ips) {
+    if (has_v4_addresses && ip.first == AF_INET6) continue;
+
     std::string mask = get_mask();
     // If mask is empty, lets hand out a default value.
     // 32 to IPv4 and 128 to IPv6

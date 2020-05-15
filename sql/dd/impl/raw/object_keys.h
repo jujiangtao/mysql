@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -56,7 +56,7 @@ class Void_key : public Object_key {
 
  public:
   /* purecov: begin inspected */
-  virtual Raw_key *create_access_key(Raw_table *) const { return NULL; }
+  virtual Raw_key *create_access_key(Raw_table *) const { return nullptr; }
   /* purecov: end */
 
   /* purecov: begin inspected */
@@ -293,8 +293,9 @@ class Composite_pk : public Object_key {
 
 class Composite_char_key : public Object_key {
  public:
-  Composite_char_key(int index_no, uint first_column_no, String_type first_name,
-                     uint second_column_no, String_type second_name)
+  Composite_char_key(int index_no, uint first_column_no,
+                     const String_type &first_name, uint second_column_no,
+                     const String_type &second_name)
       : m_index_no(index_no),
         m_first_column_no(first_column_no),
         m_first_name(first_name),
@@ -321,10 +322,10 @@ class Composite_char_key : public Object_key {
 class Composite_4char_key : public Object_key {
  public:
   Composite_4char_key(int index_no, uint first_column_no,
-                      String_type first_name, uint second_column_no,
-                      String_type second_name, uint third_column_no,
-                      String_type third_name, uint fourth_column_no,
-                      String_type fourth_name)
+                      const String_type &first_name, uint second_column_no,
+                      const String_type &second_name, uint third_column_no,
+                      const String_type &third_name, uint fourth_column_no,
+                      const String_type &fourth_name)
       : m_index_no(index_no),
         m_first_column_no(first_column_no),
         m_first_name(first_name),

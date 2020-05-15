@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2016, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -113,7 +113,7 @@ bool Sql_cmd_create_table::execute(THD *thd) {
 
   if (((lex->create_info->used_fields & HA_CREATE_USED_DATADIR) != 0 ||
        (lex->create_info->used_fields & HA_CREATE_USED_INDEXDIR) != 0) &&
-      check_access(thd, FILE_ACL, any_db, NULL, NULL, false, false)) {
+      check_access(thd, FILE_ACL, any_db, nullptr, nullptr, false, false)) {
     my_error(ER_SPECIFIC_ACCESS_DENIED_ERROR, MYF(0), "FILE");
     return true;
   }
@@ -165,8 +165,8 @@ bool Sql_cmd_create_table::execute(THD *thd) {
 
   {
     partition_info *part_info = thd->lex->part_info;
-    if (part_info != NULL && has_external_data_or_index_dir(*part_info) &&
-        check_access(thd, FILE_ACL, any_db, NULL, NULL, false, false)) {
+    if (part_info != nullptr && has_external_data_or_index_dir(*part_info) &&
+        check_access(thd, FILE_ACL, any_db, nullptr, nullptr, false, false)) {
       return true;
     }
     if (part_info && !(part_info = thd->lex->part_info->get_clone(thd, true)))
@@ -328,7 +328,7 @@ bool Sql_cmd_create_table::execute(THD *thd) {
           thd->session_tracker.get_tracker(SESSION_STATE_CHANGE_TRACKER)
               ->is_enabled())
         thd->session_tracker.get_tracker(SESSION_STATE_CHANGE_TRACKER)
-            ->mark_as_changed(thd, NULL);
+            ->mark_as_changed(thd, nullptr);
       my_ok(thd);
     }
   }
@@ -365,7 +365,7 @@ bool Sql_cmd_create_or_drop_index_base::execute(THD *thd) {
   */
   thd->enable_slow_log = opt_log_slow_admin_statements;
 
-  create_info.db_type = 0;
+  create_info.db_type = nullptr;
   create_info.row_type = ROW_TYPE_NOT_USED;
   create_info.default_table_charset = thd->variables.collation_database;
 
@@ -383,18 +383,15 @@ bool Sql_cmd_create_or_drop_index_base::execute(THD *thd) {
 
 bool Sql_cmd_cache_index::execute(THD *thd) {
   TABLE_LIST *const first_table = thd->lex->select_lex->get_table_list();
-  if (check_access(thd, INDEX_ACL, first_table->db,
-                   &first_table->grant.privilege,
-                   &first_table->grant.m_internal, 0, 0))
+  if (check_table_access(thd, INDEX_ACL, first_table, true, UINT_MAX, false))
     return true;
+
   return assign_to_keycache(thd, first_table);
 }
 
 bool Sql_cmd_load_index::execute(THD *thd) {
   TABLE_LIST *const first_table = thd->lex->select_lex->get_table_list();
-  if (check_access(thd, INDEX_ACL, first_table->db,
-                   &first_table->grant.privilege,
-                   &first_table->grant.m_internal, 0, 0))
+  if (check_table_access(thd, INDEX_ACL, first_table, true, UINT_MAX, false))
     return true;
   return preload_keys(thd, first_table);
 }

@@ -24,10 +24,12 @@ libmysqlclient.so.21 libmysqlclient21 #MINVER#
  mysql_fetch_fields@libmysqlclient_21.0 8.0.11
  mysql_fetch_lengths@libmysqlclient_21.0 8.0.11
  mysql_fetch_row@libmysqlclient_21.0 8.0.11
+ mysql_fetch_row_nonblocking@libmysqlclient_21.0 8.0.18
  mysql_field_count@libmysqlclient_21.0 8.0.11
  mysql_field_seek@libmysqlclient_21.0 8.0.11
  mysql_field_tell@libmysqlclient_21.0 8.0.11
  mysql_free_result@libmysqlclient_21.0 8.0.11
+ mysql_free_result_nonblocking@libmysqlclient_21.0 8.0.18
  mysql_get_character_set_info@libmysqlclient_21.0 8.0.11
  mysql_get_client_info@libmysqlclient_21.0 8.0.11
  mysql_get_client_version@libmysqlclient_21.0 8.0.11
@@ -50,6 +52,7 @@ libmysqlclient.so.21 libmysqlclient21 #MINVER#
  mysql_load_plugin_v@libmysqlclient_21.0 8.0.11
  mysql_more_results@libmysqlclient_21.0 8.0.11
  mysql_next_result@libmysqlclient_21.0 8.0.11
+ mysql_next_result_nonblocking@libmysqlclient_21.0 8.0.18
  mysql_num_fields@libmysqlclient_21.0 8.0.11
  mysql_num_rows@libmysqlclient_21.0 8.0.11
  mysql_options4@libmysqlclient_21.0 8.0.11
@@ -59,9 +62,11 @@ libmysqlclient.so.21 libmysqlclient21 #MINVER#
  mysql_query@libmysqlclient_21.0 8.0.11
  mysql_read_query_result@libmysqlclient_21.0 8.0.11
  mysql_real_connect@libmysqlclient_21.0 8.0.11
+ mysql_real_connect_nonblocking@libmysqlclient_21.0 8.0.18
  mysql_real_escape_string@libmysqlclient_21.0 8.0.11
  mysql_real_escape_string_quote@libmysqlclient_21.0 8.0.11
  mysql_real_query@libmysqlclient_21.0 8.0.11
+ mysql_real_query_nonblocking@libmysqlclient_21.0 8.0.18
  mysql_refresh@libmysqlclient_21.0 8.0.11
  mysql_reset_connection@libmysqlclient_21.0 8.0.11
  mysql_reset_server_public_key@libmysqlclient_21.0 8.0.11
@@ -71,6 +76,7 @@ libmysqlclient.so.21 libmysqlclient21 #MINVER#
  mysql_row_tell@libmysqlclient_21.0 8.0.11
  mysql_select_db@libmysqlclient_21.0 8.0.11
  mysql_send_query@libmysqlclient_21.0 8.0.11
+ mysql_send_query_nonblocking@libmysqlclient_21.0 8.0.18
  mysql_server_end@libmysqlclient_21.0 8.0.11
  mysql_server_init@libmysqlclient_21.0 8.0.11
  mysql_session_track_get_first@libmysqlclient_21.0 8.0.11
@@ -112,6 +118,7 @@ libmysqlclient.so.21 libmysqlclient21 #MINVER#
  mysql_stmt_sqlstate@libmysqlclient_21.0 8.0.11
  mysql_stmt_store_result@libmysqlclient_21.0 8.0.11
  mysql_store_result@libmysqlclient_21.0 8.0.11
+ mysql_store_result_nonblocking@libmysqlclient_21.0 8.0.18
  mysql_thread_end@libmysqlclient_21.0 8.0.11
  mysql_thread_id@libmysqlclient_21.0 8.0.11
  mysql_thread_init@libmysqlclient_21.0 8.0.11

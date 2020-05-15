@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -72,6 +72,7 @@ DD_properties::DD_properties() : m_properties() {
       DD_VERSION                Actual DD version.
       IS_VERSION                Actual I_S version.
       PS_VERSION                Actual P_S version.
+      NDBINFO_VERSION           Actual ndbinfo version.
       SDI_VERSION               Actual SDI version.
       LCTN                      L_C_T_N setting used during
                                 --initialize.
@@ -90,11 +91,14 @@ DD_properties::DD_properties() : m_properties() {
                                 upgrade.
       UPGRADE_ACTUAL_SCHEMA     Temporary schema used during
                                 upgrade.
+      MYSQLD_VERSION_UPGRADED   The server version of the last
+                                completed successful upgrade.
   */
   m_property_desc = {
       {"DD_VERSION", Property_type::UNSIGNED_INT_32},
       {"IS_VERSION", Property_type::UNSIGNED_INT_32},
       {"PS_VERSION", Property_type::UNSIGNED_INT_32},
+      {"NDBINFO_VERSION", Property_type::UNSIGNED_INT_32},
       {"SDI_VERSION", Property_type::UNSIGNED_INT_32},
       {"LCTN", Property_type::UNSIGNED_INT_32},
       {"MYSQLD_VERSION_LO", Property_type::UNSIGNED_INT_32},
@@ -103,7 +107,8 @@ DD_properties::DD_properties() : m_properties() {
       {"MINOR_DOWNGRADE_THRESHOLD", Property_type::UNSIGNED_INT_32},
       {"SYSTEM_TABLES", Property_type::PROPERTIES},
       {"UPGRADE_TARGET_SCHEMA", Property_type::CHARACTER_STRING},
-      {"UPGRADE_ACTUAL_SCHEMA", Property_type::CHARACTER_STRING}};
+      {"UPGRADE_ACTUAL_SCHEMA", Property_type::CHARACTER_STRING},
+      {"MYSQLD_VERSION_UPGRADED", Property_type::UNSIGNED_INT_32}};
 }
 
 // Read all properties from disk and populate the cache.

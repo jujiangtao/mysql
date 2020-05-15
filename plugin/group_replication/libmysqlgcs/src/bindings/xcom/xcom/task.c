@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2012, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -41,17 +41,15 @@
 #include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/x_platform.h"
 #include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/xcom_profile.h"
 
-#ifdef XCOM_HAVE_OPENSSL
+#ifndef XCOM_WITHOUT_OPENSSL
 #ifdef WIN32
 // In OpenSSL before 1.1.0, we need this first.
 #include <winsock2.h>
 #endif  // WIN32
-#include <wolfssl_fix_namespace_pollution_pre.h>
 
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 
-#include <wolfssl_fix_namespace_pollution.h>
 #endif
 
 #include <limits.h>
@@ -769,18 +767,18 @@ static task_env *extract_first_delayed() {
 
 static iotasks iot;
 
-static void iotasks_init(iotasks *iot) {
+static void iotasks_init(iotasks *iot_to_init) {
   DBGOUT(FN);
-  iot->nwait = 0;
-  init_pollfd_array(&iot->fd);
-  init_task_env_p_array(&iot->tasks);
+  iot_to_init->nwait = 0;
+  init_pollfd_array(&iot_to_init->fd);
+  init_task_env_p_array(&iot_to_init->tasks);
 }
 
-static void iotasks_deinit(iotasks *iot) {
+static void iotasks_deinit(iotasks *iot_to_deinit) {
   DBGOUT(FN);
-  iot->nwait = 0;
-  free_pollfd_array(&iot->fd);
-  free_task_env_p_array(&iot->tasks);
+  iot_to_deinit->nwait = 0;
+  free_pollfd_array(&iot_to_deinit->fd);
+  free_task_env_p_array(&iot_to_deinit->tasks);
 }
 
 static void poll_wakeup(int i) {
@@ -901,7 +899,7 @@ static uint64_t receive_count;
 static uint64_t send_bytes;
 static uint64_t receive_bytes;
 
-#ifdef XCOM_HAVE_OPENSSL
+#ifndef XCOM_WITHOUT_OPENSSL
 result con_read(connection_descriptor const *rfd, void *buf, int n) {
   result ret = {0, 0};
 
@@ -968,7 +966,7 @@ int task_read(connection_descriptor const *con, void *buf, int n,
   TASK_END;
 }
 
-#ifdef XCOM_HAVE_OPENSSL
+#ifndef XCOM_WITHOUT_OPENSSL
 result con_write(connection_descriptor const *wfd, void *buf, int n) {
   result ret = {0, 0};
 
@@ -1115,7 +1113,7 @@ void task_loop() {
   for (;;) {
     // check forced exit callback
     if (get_should_exit()) {
-      xcom_fsm(xa_exit, int_arg(0));
+      terminate_and_exit();
     }
 
     t = first_runnable();
@@ -1183,8 +1181,8 @@ void task_loop() {
       done_wait:
         /* While tasks with expired timers */
         while (delayed_tasks() && msdiff(time) <= 0) {
-          task_env *t = extract_first_delayed(); /* May be NULL */
-          if (t) activate(t);                    /* Make it runnable */
+          task_env *delayed_task = extract_first_delayed(); /* May be NULL */
+          if (delayed_task) activate(delayed_task); /* Make it runnable */
         }
       } else {
         ADD_T_EV(task_now(), __FILE__, __LINE__, "poll_wait(-1)");
@@ -1390,6 +1388,33 @@ static result create_server_socket() {
   return fd;
 }
 
+static result create_server_socket_v4() {
+  result fd = {0, 0};
+  /* Create socket */
+  if ((fd = xcom_checked_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)).val < 0) {
+    G_MESSAGE(
+        "Unable to create socket v4"
+        "(socket=%d, errno=%d)!",
+        fd.val, to_errno(GET_OS_ERR));
+    return fd;
+  }
+  {
+    int reuse = 1;
+    SET_OS_ERR(0);
+    if (setsockopt(fd.val, SOL_SOCKET, SOCK_OPT_REUSEADDR, (void *)&reuse,
+                   sizeof(reuse)) < 0) {
+      fd.funerr = to_errno(GET_OS_ERR);
+      G_MESSAGE(
+          "Unable to set socket options "
+          "(socket=%d, errno=%d)!",
+          fd.val, to_errno(GET_OS_ERR));
+      close_socket(&fd.val);
+      return fd;
+    }
+  }
+  return fd;
+}
+
 /**
  * @brief Initializes a sockaddr prepared to be used in bind()
  *
@@ -1398,9 +1423,10 @@ static result create_server_socket() {
  * @param sock_len socklen_t out parameter. It will contain the length of
  *                 sock_addr
  * @param port the port to bind.
+ * @param family the address family
  */
 static void init_server_addr(struct sockaddr **sock_addr, socklen_t *sock_len,
-                             xcom_port port) {
+                             xcom_port port, int family) {
   struct addrinfo *address_info = NULL, hints, *address_info_loop;
   memset(&hints, 0, sizeof(hints));
 
@@ -1412,7 +1438,7 @@ static void init_server_addr(struct sockaddr **sock_addr, socklen_t *sock_len,
 
   address_info_loop = address_info;
   while (address_info_loop) {
-    if (address_info_loop->ai_family == AF_INET6) {
+    if (address_info_loop->ai_family == family) {
       if (*sock_addr == NULL) {
         *sock_addr = (struct sockaddr *)malloc(address_info_loop->ai_addrlen);
       }
@@ -1430,21 +1456,44 @@ static void init_server_addr(struct sockaddr **sock_addr, socklen_t *sock_len,
 }
 
 result announce_tcp(xcom_port port) {
-  result fd;
+  result fd = {0, 0};
   struct sockaddr *sock_addr = NULL;
-  socklen_t sock_addr_len;
+  socklen_t sock_addr_len = 0;
+  int server_socket_v6_ok = 0;
 
+  // Try and create a V6 server socket. It should succeed if the OS
+  // supports IPv6, and fail otherwise.
   fd = create_server_socket();
   if (fd.val < 0) {
-    return fd;
+    // If the OS does not support IPv6, we fall back to IPv4.
+    fd = create_server_socket_v4();
+    if (fd.val < 0) {
+      return fd;
+    }
+  } else {
+    server_socket_v6_ok = 1;
   }
-  init_server_addr(&sock_addr, &sock_addr_len, port);
+  init_server_addr(&sock_addr, &sock_addr_len, port,
+                   server_socket_v6_ok ? AF_INET6 : AF_INET);
   if (sock_addr == NULL || (bind(fd.val, sock_addr, sock_addr_len) < 0)) {
-    int err = to_errno(GET_OS_ERR);
-    G_MESSAGE("Unable to bind to %s:%d (socket=%d, errno=%d)!", "INADDR_ANY",
-              port, fd.val, err);
-    goto err;
+    // If we fail to bind to the desired address, we fall back to an
+    // IPv4 socket.
+    fd = create_server_socket_v4();
+    if (fd.val < 0) {
+      return fd;
+    }
+
+    free(sock_addr);
+    sock_addr = NULL;
+    init_server_addr(&sock_addr, &sock_addr_len, port, AF_INET);
+    if (bind(fd.val, sock_addr, sock_addr_len) < 0) {
+      int err = to_errno(GET_OS_ERR);
+      G_MESSAGE("Unable to bind to %s:%d (socket=%d, errno=%d)!", "INADDR_ANY",
+                port, fd.val, err);
+      goto err;
+    }
   }
+
   G_DEBUG("Successfully bound to %s:%d (socket=%d).", "INADDR_ANY", port,
           fd.val);
   if (listen(fd.val, 32) < 0) {
@@ -1478,89 +1527,6 @@ err:
 
   free(sock_addr);
 
-  return fd;
-}
-
-/* init_local_server_addr binds the sock_addr to the loopback address on any
- * available socket.
- *
- * announce_tcp_local_server does exactly the same thing as announce_tcp, but it
- * initializes its socket with init_local_server_addr.
- *
- * These are used by the local_server and the XCom queue. They will use a local
- * TCP connection to signal that the queue has work to be consumed.
- */
-static void init_local_server_addr(struct sockaddr_in6 *sock_addr) {
-  memset(sock_addr, 0, sizeof(*sock_addr));
-  sock_addr->sin6_family = AF_INET6;
-  sock_addr->sin6_addr = in6addr_loopback;
-  sock_addr->sin6_port = 0;
-}
-
-result announce_tcp_local_server() {
-  result fd;
-  struct sockaddr_in6 sock_addr;
-  struct sockaddr_in6 bound_addr;
-  socklen_t bound_addr_len = sizeof(bound_addr);
-  int error_code = 0;
-
-  fd = create_server_socket();
-  if (fd.val < 0) {
-    /* purecov: begin inspected */
-    return fd;
-    /* purecov: end */
-  }
-  init_local_server_addr(&sock_addr);
-  xcom_port port = 0;
-  if (bind(fd.val, (struct sockaddr *)&sock_addr, sizeof(sock_addr)) < 0) {
-    /* purecov: begin inspected */
-    int err = to_errno(GET_OS_ERR);
-    G_MESSAGE("Unable to bind to %s:%d (socket=%d, errno=%d)!", "0.0.0.0", port,
-              fd.val, err);
-    goto err;
-    /* purecov: end */
-  }
-  error_code =
-      getsockname(fd.val, (struct sockaddr *)&bound_addr, &bound_addr_len);
-  if (error_code != 0) {
-    /* purecov: begin inspected */
-    G_MESSAGE(
-        "Unable to retrieve the tcp port announce_tcp_local_server bound to "
-        "(socket=%d, error_code=%d)!",
-        fd.val, error_code);
-    goto err;
-    /* purecov: end */
-  }
-  port = ntohs(bound_addr.sin6_port);
-  G_DEBUG("Successfully bound to %s:%d (socket=%d).", "0.0.0.0", port, fd.val);
-  if (listen(fd.val, 32) < 0) {
-    /* purecov: begin inspected */
-    int err = to_errno(GET_OS_ERR);
-    G_MESSAGE(
-        "Unable to listen backlog to 32. "
-        "(socket=%d, errno=%d)!",
-        fd.val, err);
-    goto err;
-    /* purecov: end */
-  }
-  G_DEBUG(
-      "Successfully set listen backlog to 32 "
-      "(socket=%d)!",
-      fd.val);
-  /* Make socket non-blocking */
-  unblock_fd(fd.val);
-  if (fd.val < 0) {
-    int err = to_errno(GET_OS_ERR);
-    G_MESSAGE("Unable to unblock socket (socket=%d, errno=%d)!", fd.val, err);
-  } else {
-    G_DEBUG("Successfully unblocked socket (socket=%d)!", fd.val);
-  }
-  return fd;
-
-err:
-  fd.funerr = to_errno(GET_OS_ERR);
-  task_dump_err(fd.funerr);
-  close_socket(&fd.val);
   return fd;
 }
 

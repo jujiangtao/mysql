@@ -5,6 +5,9 @@
 # This test needs MyISAM for some sub tests
 --source include/have_myisam.inc
 
+# Different number of warnings with/without ps-protocol
+--source include/no_ps_protocol.inc
+
 --disable_warnings
 drop table if exists t1, t2;
 --enable_warnings
@@ -2039,6 +2042,7 @@ SUBPARTITION BY HASH (a) SUBPARTITIONS 2
  (SUBPARTITION p2spFirst COMMENT "SubPartition comment in p2spFirst",
   SUBPARTITION p2spSecond COMMENT "SubPartition comment in p2spSecond"));
 SHOW CREATE TABLE t1;
+--sorted_result
 SELECT PARTITION_NAME, SUBPARTITION_NAME, PARTITION_COMMENT FROM INFORMATION_SCHEMA.PARTITIONS
 WHERE TABLE_NAME = 't1' AND TABLE_SCHEMA = 'test';
 DROP TABLE t1;
@@ -2053,6 +2057,7 @@ SUBPARTITION BY HASH (a) SUBPARTITIONS 2
  (SUBPARTITION p2spFirst,
   SUBPARTITION p2spSecond COMMENT "SubPartition comment in p2spSecond"));
 SHOW CREATE TABLE t1;
+--sorted_result
 SELECT PARTITION_NAME, SUBPARTITION_NAME, PARTITION_COMMENT FROM INFORMATION_SCHEMA.PARTITIONS
 WHERE TABLE_NAME = 't1' AND TABLE_SCHEMA = 'test';
 DROP TABLE t1;

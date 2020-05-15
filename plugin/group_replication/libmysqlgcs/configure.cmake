@@ -1,4 +1,4 @@
-# Copyright (c) 2015, 2018, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2015, 2019, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -20,29 +20,6 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#TODO If deemed necessary, these checks must go to config.h of the server
-# which we must include
-
-INCLUDE(CheckSymbolExists)
-
-# Depending on the platform, we may or may not have this file
-CHECK_INCLUDE_FILES(endian.h HAVE_ENDIAN_H)
-
-# The header for glibc versions less than 2.9 will not
-# have the endian conversion macros defined
-IF(HAVE_ENDIAN_H)
-  CHECK_SYMBOL_EXISTS(le64toh endian.h HAVE_LE64TOH)
-  CHECK_SYMBOL_EXISTS(le32toh endian.h HAVE_LE32TOH)
-  CHECK_SYMBOL_EXISTS(le16toh endian.h HAVE_LE16TOH)
-  CHECK_SYMBOL_EXISTS(htole64 endian.h HAVE_HTOLE64)
-  CHECK_SYMBOL_EXISTS(htole32 endian.h HAVE_HTOLE32)
-  CHECK_SYMBOL_EXISTS(htole16 endian.h HAVE_HTOLE16)
-  IF(HAVE_LE32TOH AND HAVE_LE16TOH AND HAVE_LE64TOH AND
-     HAVE_HTOLE64 AND HAVE_HTOLE32 AND HAVE_HTOLE16)
-    SET(HAVE_ENDIAN_CONVERSION_MACROS 1)
-  ENDIF()
-ENDIF()
-
 #
 # XDR related checks
 #
@@ -54,17 +31,11 @@ IF (WIN32)
 ENDIF()
 
 IF (NOT WIN32)
-  # First look for tirpc, then the old Sun RPC
-  FIND_PATH(RPC_INCLUDE_DIR
-    NAMES rpc/rpc.h
-    HINTS /usr/include/tirpc
-    NO_DEFAULT_PATH
-    )
-  FIND_PATH(RPC_INCLUDE_DIR NAMES rpc/rpc.h)
+  MYSQL_CHECK_RPC()
 
   SET (CMAKE_REQUIRED_FLAGS_BACKUP ${CMAKE_REQUIRED_FLAGS})
   SET (CMAKE_REQUIRED_FLAGS "-Wno-error")
-  SET (CMAKE_REQUIRED_INCLUDES ${RPC_INCLUDE_DIR})
+  SET (CMAKE_REQUIRED_INCLUDES ${RPC_INCLUDE_DIRS})
 ENDIF()
 
 #
@@ -73,10 +44,6 @@ ENDIF()
 
 #All the code below needs to be here because CMake is dumb and generates code
 # with unused vars
-CHECK_STRUCT_HAS_MEMBER("struct sockaddr" sa_len sys/socket.h
-                        HAVE_STRUCT_SOCKADDR_SA_LEN)
-CHECK_STRUCT_HAS_MEMBER("struct ifreq" ifr_name net/if.h
-                        HAVE_STRUCT_IFREQ_IFR_NAME)
 
 CHECK_STRUCT_HAS_MEMBER("struct xdr_ops" x_putint32 rpc/xdr.h
                         HAVE_XDR_OPS_X_PUTINT32)
@@ -98,7 +65,7 @@ ENDIF()
 
 IF(NOT APPLE
    AND NOT WIN32
-   AND NOT CMAKE_SYSTEM_NAME MATCHES "FreeBSD")
+   AND NOT FREEBSD)
 
   SET(SAVED_CMAKE_REQUIRED_FLAGS ${CMAKE_REQUIRED_FLAGS})
 

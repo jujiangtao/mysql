@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2011, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,10 +25,11 @@
 
 #include <set>
 #include "my_sqlcommand.h"
-#include "table.h"
+#include "sql/table.h"
 
 /* Forward declarations */
 class THD;
+class LEX_GRANT_AS;
 /**
   Target types where the rewritten query will be added. Query rewrite might
   vary based on this type.
@@ -41,7 +42,7 @@ enum class Consumer_type {
 
 /**
   An interface to wrap the paramters required by specific Rewriter.
-  Paramaters required by specific Rewriter must be added in the concrete
+  Parameters required by specific Rewriter must be added in the concrete
   implementation.
   Clients need to wrap the parameters in specific concrete object.
 */
@@ -49,8 +50,9 @@ class Rewrite_params {
  protected:
   virtual ~Rewrite_params() {}
 };
+
 /**
-  Wrapper object for user related paramaters required by:
+  Wrapper object for user related parameters required by:
   SET PASSWORD|CREATE USER|ALTER USER statements.
 */
 class User_params : public Rewrite_params {
@@ -59,14 +61,31 @@ class User_params : public Rewrite_params {
       : Rewrite_params(), users(users_set) {}
   std::set<LEX_USER *> *users;
 };
+
 /**
-  Wrapper object for paramaters required by SHOW CREATE USER statement.
+  Wrapper object for parameters required by SHOW CREATE USER statement.
 */
 class Show_user_params : public Rewrite_params {
  public:
-  Show_user_params(bool hide_password_hash)
-      : Rewrite_params(), hide_password_hash(hide_password_hash) {}
+  Show_user_params(bool hide_password_hash, bool print_identified_with_as_hex)
+      : Rewrite_params(),
+        hide_password_hash(hide_password_hash),
+        print_identified_with_as_hex_(print_identified_with_as_hex) {}
   bool hide_password_hash;
+  bool print_identified_with_as_hex_;
+};
+
+/**
+  Wrapper object for parameters required for GRANT statement.
+*/
+class Grant_params : public Rewrite_params {
+ public:
+  Grant_params(bool grant_as_specified, LEX_GRANT_AS *grant_as)
+      : Rewrite_params(),
+        grant_as_provided(grant_as_specified),
+        grant_as_info(grant_as) {}
+  bool grant_as_provided;
+  LEX_GRANT_AS *grant_as_info;
 };
 
 /**
@@ -79,9 +98,10 @@ void mysql_rewrite_query(THD *thd, Consumer_type type = Consumer_type::TEXTLOG,
                          Rewrite_params *params = nullptr);
 /**
   Provides the default interface to rewrite the ACL query.
-  It sets the thd->rewritten_query with a rewritten query.
+  If do_ps_instrument, it sets the thd->rewritten_query with
+  a rewritten query.
 */
-void mysql_rewrite_acl_query(THD *thd, Consumer_type type,
+void mysql_rewrite_acl_query(THD *thd, String &rlb, Consumer_type type,
                              Rewrite_params *params = nullptr,
                              bool do_ps_instrument = true);
 
@@ -109,7 +129,7 @@ class I_rewriter {
   /* Return the current consumer type */
   Consumer_type consumer_type();
   /* Concrete classes must implement the logic to rewrite query here */
-  virtual bool rewrite() const = 0;
+  virtual bool rewrite(String &rlb) const = 0;
 
  protected:
   THD *const m_thd;
@@ -131,14 +151,14 @@ class Rewriter_user : public I_rewriter {
   /* Append the literal value <secret> to the str */
   void append_literal_secret(String *str) const;
   /* Append the password hash to the output string */
-  void append_auth_str(LEX_USER *lex, String *str) const;
+  virtual void append_auth_str(LEX_USER *lex, String *str) const;
   /* Append the authentication plugin name for the user */
   void append_plugin_name(const LEX_USER *user, String *str) const;
   /*
     Rewrites some of the user specific properties which are common to
     concrete classes.
   */
-  virtual bool rewrite() const;
+  virtual bool rewrite(String &rlb) const;
   /*
     Abstract method to be implemented by the concrete classes.
     The implementation methos should add the user authID, plugin info and
@@ -162,6 +182,10 @@ class Rewriter_user : public I_rewriter {
   void rewrite_password_expired(const LEX *lex, String *str) const;
   /* Append the PASSWORD REQUIRE CURRENT clause for users */
   void rewrite_password_require_current(LEX *lex, String *str) const;
+  /* Append FAILED_LOGIN_ATTEMPTS/PASSWORD_LOCK_TIME */
+  void rewrite_account_lock_state(LEX *lex, String *str) const;
+  /* Append the DEFAULT ROLE OPTIONS clause */
+  void rewrite_default_roles(const LEX *lex, String *str) const;
 };
 /** Rewrites the CREATE USER statement. */
 class Rewriter_create_user final : public Rewriter_user {
@@ -169,7 +193,7 @@ class Rewriter_create_user final : public Rewriter_user {
 
  public:
   Rewriter_create_user(THD *thd, Consumer_type type);
-  bool rewrite() const override;
+  bool rewrite(String &rlb) const override;
 
  private:
   void append_user_auth_info(LEX_USER *user, bool comma,
@@ -183,7 +207,7 @@ class Rewriter_alter_user final : public Rewriter_user {
 
  public:
   Rewriter_alter_user(THD *thd, Consumer_type type = Consumer_type::TEXTLOG);
-  bool rewrite() const override;
+  bool rewrite(String &rlb) const override;
 
  private:
   void append_user_auth_info(LEX_USER *user, bool comma,
@@ -198,22 +222,24 @@ class Rewriter_show_create_user final : public Rewriter_user {
  public:
   Rewriter_show_create_user(THD *thd, Consumer_type type,
                             Rewrite_params *params);
-  bool rewrite() const override;
+  bool rewrite(String &rlb) const override;
+
+ protected:
+  /* Append the password hash to the output string */
+  virtual void append_auth_str(LEX_USER *lex, String *str) const override;
 
  private:
   void append_user_auth_info(LEX_USER *user, bool comma,
                              String *str) const override;
   void rewrite_password_history(const LEX *lex, String *str) const override;
   void rewrite_password_reuse(const LEX *lex, String *str) const override;
-  /* Append the DEFAULT ROLE OPTIONS clause */
-  void rewrite_default_roles(const LEX *lex, String *str) const;
-  bool m_hide_password_hash = false;
+  Show_user_params *show_params_;
 };
 /** Rewrites the SET statement. */
 class Rewriter_set : public I_rewriter {
  public:
   Rewriter_set(THD *thd, Consumer_type type);
-  bool rewrite() const override;
+  bool rewrite(String &rlb) const override;
 };
 /*
   Rewrites the SET PASSWORD statement
@@ -223,7 +249,7 @@ class Rewriter_set_password final : public Rewriter_set {
 
  public:
   Rewriter_set_password(THD *thd, Consumer_type type, Rewrite_params *params);
-  bool rewrite() const override;
+  bool rewrite(String &rlb) const override;
 
  private:
   /* Name of the user whose password has to be changed */
@@ -233,22 +259,26 @@ class Rewriter_set_password final : public Rewriter_set {
 /** Rewrites the GRANT statement. */
 class Rewriter_grant final : public I_rewriter {
  public:
-  Rewriter_grant(THD *thd, Consumer_type type = Consumer_type::TEXTLOG);
-  bool rewrite() const override;
+  Rewriter_grant(THD *thd, Consumer_type type, Rewrite_params *params);
+  bool rewrite(String &rlb) const override;
+
+ private:
+  /* GRANT AS information */
+  Grant_params *grant_params = nullptr;
 };
 
 /** Rewrites the CHANGE MASTER statement. */
 class Rewriter_change_master final : public I_rewriter {
  public:
   Rewriter_change_master(THD *thd, Consumer_type);
-  bool rewrite() const override;
+  bool rewrite(String &rlb) const override;
 };
 
 /** Rewrites the START SLAVE statement. */
 class Rewriter_slave_start final : public I_rewriter {
  public:
   Rewriter_slave_start(THD *thd, Consumer_type type);
-  bool rewrite() const override;
+  bool rewrite(String &rlb) const override;
 };
 /** Base class for SERVER OPTIONS related statement */
 class Rewriter_server_option : public I_rewriter {
@@ -265,7 +295,7 @@ class Rewriter_create_server final : public Rewriter_server_option {
 
  public:
   Rewriter_create_server(THD *thd, Consumer_type type);
-  bool rewrite() const override;
+  bool rewrite(String &rlb) const override;
 };
 /** Rewrites the ALTER SERVER statement. */
 class Rewriter_alter_server final : public Rewriter_server_option {
@@ -273,13 +303,20 @@ class Rewriter_alter_server final : public Rewriter_server_option {
 
  public:
   Rewriter_alter_server(THD *thd, Consumer_type type);
-  bool rewrite() const override;
+  bool rewrite(String &rlb) const override;
 };
 
 /** Rewrites the PREPARE statement.*/
 class Rewriter_prepare final : public I_rewriter {
  public:
   Rewriter_prepare(THD *thd, Consumer_type type);
-  bool rewrite() const override;
+  bool rewrite(String &rlb) const override;
+};
+
+/** Rewrites CLONE statement.*/
+class Rewriter_clone final : public I_rewriter {
+ public:
+  Rewriter_clone(THD *thd, Consumer_type type);
+  bool rewrite(String &rlb) const override;
 };
 #endif /* SQL_REWRITE_INCLUDED */

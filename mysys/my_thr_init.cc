@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -58,7 +58,7 @@
 static bool my_thread_global_init_done = false;
 #ifndef DBUG_OFF
 static uint THR_thread_count = 0;
-static uint my_thread_end_wait_time = 5;
+static Timeout_type my_thread_end_wait_time = 5;
 static my_thread_id thread_id = 0;
 struct st_my_thread_var;
 static thread_local st_my_thread_var *THR_mysys = nullptr;
@@ -320,7 +320,7 @@ extern "C" void my_thread_end() {
     if (tmp->dbug) {
       DBUG_POP();
       free(tmp->dbug);
-      tmp->dbug = NULL;
+      tmp->dbug = nullptr;
     }
     free(tmp);
 
@@ -335,7 +335,7 @@ extern "C" void my_thread_end() {
     if (--THR_thread_count == 0) mysql_cond_signal(&THR_COND_threads);
     mysql_mutex_unlock(&THR_LOCK_threads);
   }
-  set_mysys_thread_var(NULL);
+  set_mysys_thread_var(nullptr);
 #endif
 }
 
@@ -356,7 +356,7 @@ void set_my_thread_var_id(my_thread_id id) { mysys_thread_var()->id = id; }
 
 CODE_STATE **my_thread_var_dbug() {
   struct st_my_thread_var *tmp = THR_mysys;
-  return tmp ? &tmp->dbug : NULL;
+  return tmp ? &tmp->dbug : nullptr;
 }
 #endif /* DBUG_OFF */
 

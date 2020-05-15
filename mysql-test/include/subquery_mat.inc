@@ -139,10 +139,14 @@ select b1, c2 from t2, t3 where b2 > c2;
 create algorithm=temptable view v2m as
 select b1, c2 from t2, t3 group by b2, c2;
 
+--sorted_result
 select * from v1 where (c2, b1) in (select c2, b1 from v2 where b1 is not null);
+--sorted_result
 select * from v1 where (c2, b1) in (select distinct c2, b1 from v2 where b1 is not null);
 
+--sorted_result
 select * from v1m where (c2, b1) in (select c2, b1 from v2m where b1 is not null);
+--sorted_result
 select * from v1m where (c2, b1) in (select distinct c2, b1 from v2m where b1 is not null);
 
 --source include/restore_sql_mode_after_turn_off_only_full_group_by.inc
@@ -1544,20 +1548,13 @@ WHERE t1.a NOT IN (
 set @save_heap_size= @@max_heap_table_size;
 set @@max_heap_table_size= 16384;
 
-# Test both disk-based engines:
-set @saved_engine=@@internal_tmp_disk_storage_engine;
-set global internal_tmp_disk_storage_engine = 'myisam';
+# Test disk-based engine:
 
 # Subq-materialization can be used and gives correct result:
 eval EXPLAIN $query;
 eval $query;
 
-set global internal_tmp_disk_storage_engine = 'innodb';
-eval EXPLAIN $query;
-eval $query;
-
 DROP TABLE t1;
-set global internal_tmp_disk_storage_engine = @saved_engine;
 set @@max_heap_table_size= @save_heap_size;
 
 --echo #

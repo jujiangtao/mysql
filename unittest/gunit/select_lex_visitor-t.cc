@@ -1,4 +1,4 @@
-/* Copyright (c) 2006, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2006, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -91,7 +91,7 @@ class Remembering_visitor : public Select_lex_visitor {
 template <class Item_class>
 class Stack_allocated_item : public Item_class {
  public:
-  Stack_allocated_item(int value) : Item_class(value) {
+  Stack_allocated_item(int value_arg) : Item_class(value_arg) {
     // Undo what Item::Item() does.
     THD *thd = current_thd;
     thd->set_item_list(this->next_free);
@@ -102,7 +102,7 @@ class Stack_allocated_item : public Item_class {
 class Mock_item_int : public Stack_allocated_item<Item_int> {
  public:
   Mock_item_int() : Stack_allocated_item<Item_int>(42) {}
-  MOCK_METHOD3(walk, bool(Item_processor, Item::enum_walk, uchar *));
+  MOCK_METHOD3(walk, bool(Item_processor, enum_walk, uchar *));
 };
 
 TEST_F(SelectLexVisitorTest, SelectLex) {
@@ -113,7 +113,7 @@ TEST_F(SelectLexVisitorTest, SelectLex) {
   EXPECT_CALL(where, walk(_, _, _)).Times(1);
   EXPECT_CALL(having, walk(_, _, _)).Times(1);
 
-  SELECT_LEX query_block(&where, &having);
+  SELECT_LEX query_block(thd()->mem_root, &where, &having);
 
   SELECT_LEX_UNIT unit(CTX_NONE);
 
@@ -135,7 +135,7 @@ TEST_F(SelectLexVisitorTest, SelectLex) {
 
 TEST_F(SelectLexVisitorTest, InsertList) {
   SELECT_LEX *select_lex = parse("INSERT INTO t VALUES (1, 2, 3)", 0);
-  ASSERT_FALSE(select_lex == NULL);
+  ASSERT_FALSE(select_lex == nullptr);
 
   Remembering_visitor visitor;
   thd()->lex->accept(&visitor);
@@ -147,7 +147,7 @@ TEST_F(SelectLexVisitorTest, InsertList) {
 
 TEST_F(SelectLexVisitorTest, InsertList2) {
   SELECT_LEX *select_lex = parse("INSERT INTO t VALUES (1, 2), (3, 4)", 0);
-  ASSERT_FALSE(select_lex == NULL);
+  ASSERT_FALSE(select_lex == nullptr);
 
   Remembering_visitor visitor;
   thd()->lex->accept(&visitor);
@@ -160,7 +160,7 @@ TEST_F(SelectLexVisitorTest, InsertList2) {
 
 TEST_F(SelectLexVisitorTest, InsertSet) {
   SELECT_LEX *select_lex = parse("INSERT INTO t SET a=1, b=2, c=3", 0);
-  ASSERT_FALSE(select_lex == NULL);
+  ASSERT_FALSE(select_lex == nullptr);
 
   Remembering_visitor visitor;
   thd()->lex->accept(&visitor);
@@ -178,7 +178,7 @@ TEST_F(SelectLexVisitorTest, InsertSet) {
 TEST_F(SelectLexVisitorTest, ReplaceList) {
   SELECT_LEX *select_lex =
       parse("REPLACE INTO t(a, b, c) VALUES (1,2,3), (4,5,6)", 0);
-  ASSERT_FALSE(select_lex == NULL);
+  ASSERT_FALSE(select_lex == nullptr);
 
   Remembering_visitor visitor;
   thd()->lex->accept(&visitor);
@@ -196,7 +196,7 @@ TEST_F(SelectLexVisitorTest, ReplaceList) {
 TEST_F(SelectLexVisitorTest, InsertOnDuplicateKey) {
   SELECT_LEX *select_lex = parse(
       "INSERT INTO t VALUES (1,2) ON DUPLICATE KEY UPDATE c= 44, a= 55", 0);
-  ASSERT_FALSE(select_lex == NULL);
+  ASSERT_FALSE(select_lex == nullptr);
 
   Remembering_visitor visitor;
   thd()->lex->accept(&visitor);
@@ -212,7 +212,7 @@ TEST_F(SelectLexVisitorTest, InsertOnDuplicateKey) {
 
 TEST_F(SelectLexVisitorTest, Update) {
   SELECT_LEX *select_lex = parse("UPDATE t SET a= 0, c= 25", 0);
-  ASSERT_FALSE(select_lex == NULL);
+  ASSERT_FALSE(select_lex == nullptr);
 
   Remembering_visitor visitor;
   thd()->lex->accept(&visitor);

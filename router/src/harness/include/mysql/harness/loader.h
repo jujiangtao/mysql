@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2015, 2018, Oracle and/or its affiliates. All rights reserved.
+  Copyright (c) 2015, 2020, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -618,6 +618,7 @@ end). Actions taken for each plugin function are as follows:
 
 #include "config_parser.h"
 #include "filesystem.h"
+#include "mysql/harness/dynamic_loader.h"
 #include "mysql/harness/loader_config.h"
 #include "mysql/harness/plugin.h"
 
@@ -684,7 +685,7 @@ DECLARE_TEST(LifecycleTest, NoInstances);
 DECLARE_TEST(LifecycleTest, EmptyErrorMessage);
 DECLARE_TEST(LifecycleTest, send_signals);
 DECLARE_TEST(LifecycleTest, send_signals2);
-DECLARE_TEST(LifecycleTest, DISABLED_wait_for_stop);
+DECLARE_TEST(LifecycleTest, wait_for_stop);
 DECLARE_TEST(LifecycleTest, InitThrows);
 DECLARE_TEST(LifecycleTest, StartThrows);
 DECLARE_TEST(LifecycleTest, StopThrows);
@@ -767,6 +768,36 @@ class HARNESS_EXPORT PluginFuncEnv {
   mutable std::mutex mutex_;
 };
 
+class HARNESS_EXPORT PluginThreads {
+ public:
+  void push_back(std::thread &&thr);
+
+  // wait for the first non-fatal exit from plugin or all plugins exited
+  // cleanly
+  void try_stopped(std::exception_ptr &first_exc);
+
+  void push_exit_status(std::exception_ptr &&eptr) {
+    plugin_stopped_events_.push(std::move(eptr));
+  }
+
+  size_t running() const { return running_; }
+
+  void wait_all_stopped(std::exception_ptr &first_exc);
+
+  void join();
+
+ private:
+  std::vector<std::thread> threads_;
+  size_t running_{0};
+
+  /**
+   * queue of events after plugin's start() function exited.
+   *
+   * nullptr if "finished without error", pointer to an exception otherwise
+   */
+  WaitingMPSCQueue<std::exception_ptr> plugin_stopped_events_;
+};
+
 class HARNESS_EXPORT Loader {
  public:
   /**
@@ -836,8 +867,6 @@ class HARNESS_EXPORT Loader {
     Unloading,
   };
 
-  void platform_specific_init();
-
   /**
    * Load the named plugin from a specific library.
    *
@@ -848,10 +877,10 @@ class HARNESS_EXPORT Loader {
    *
    * @throws bad_plugin (std::runtime_error) on load error
    */
-  Plugin *load_from(const std::string &plugin_name,
-                    const std::string &library_name);
+  const Plugin *load_from(const std::string &plugin_name,
+                          const std::string &library_name);
 
-  Plugin *load(const std::string &plugin_name);
+  const Plugin *load(const std::string &plugin_name);
 
   /**
    * Load the named plugin and all dependent plugins.
@@ -867,7 +896,7 @@ class HARNESS_EXPORT Loader {
    * plugins required by that plugin will be loaded.
    */
   /** @overload */
-  Plugin *load(const std::string &plugin_name, const std::string &key);
+  const Plugin *load(const std::string &plugin_name, const std::string &key);
 
   // IMPORTANT design note: start_all() will block until PluginFuncEnv objects
   // have been created for all plugins. This guarantees that the required
@@ -879,14 +908,23 @@ class HARNESS_EXPORT Loader {
   std::exception_ptr
   run();  // returns first exception returned from below harness functions
   std::exception_ptr init_all();  // returns first exception triggered by init()
+
   void
   start_all();  // forwards first exception triggered by start() to main_loop()
+
   std::exception_ptr
   main_loop();  // returns first exception triggered by start() or stop()
+
+  // class stop_all() and waits for plugins the terminate
+  std::exception_ptr stop_and_wait_all();
+
   std::exception_ptr stop_all();  // returns first exception triggered by stop()
+
   std::exception_ptr
   deinit_all();  // returns first exception triggered by deinit()
+
   void unload_all();
+  size_t external_plugins_to_load_count();
 
   /**
    * Topological sort of all plugins and their dependencies.
@@ -905,30 +943,18 @@ class HARNESS_EXPORT Loader {
    */
   class HARNESS_EXPORT PluginInfo {
    public:
-    PluginInfo(const std::string &folder,
-               const std::string &library);  // throws bad_plugin
-    PluginInfo(const PluginInfo &) = delete;
-    PluginInfo(PluginInfo &&);
-    PluginInfo(void *h, Plugin *ext) : handle(h), plugin(ext) {}
-    ~PluginInfo();
+    PluginInfo(const std::string &folder, const std::string &libname);
+    PluginInfo(const Plugin *const plugin) : plugin_(plugin) {}
 
-    void load_plugin(const std::string &name);  // throws bad_plugin
+    void load_plugin_descriptor(const std::string &name);  // throws bad_plugin
 
-    /**
-     * Pointer to plugin structure.
-     *
-     * @note This pointer can be null, so remember to check it before
-     * using it.
-     *
-     * @todo Make this member private to avoid exposing the internal
-     * state.
-     */
-    void *handle;
-    Plugin *plugin;
+    const Plugin *plugin() const { return plugin_; }
+
+    const DynamicLibrary &library() const { return module_; }
 
    private:
-    class Impl;
-    Impl *impl_;
+    DynamicLibrary module_;
+    const Plugin *plugin_{};
   };
 
   using PluginMap = std::map<std::string, PluginInfo>;
@@ -958,9 +984,9 @@ class HARNESS_EXPORT Loader {
       plugin_start_env_;
 
   /**
-   * List of all active session.
+   * active plugin threads.
    */
-  std::vector<std::thread> plugin_threads_;
+  PluginThreads plugin_threads_;
 
   /**
    * Initialization order.
@@ -974,13 +1000,6 @@ class HARNESS_EXPORT Loader {
   std::string data_folder_;
   std::string program_;
   AppInfo appinfo_;
-
-  /**
-   * queue of events after plugin's start() function exited.
-   *
-   * nullptr if "finished without error", pointer to an exception otherwise
-   */
-  WaitingMPSCQueue<std::exception_ptr> plugin_stopped_events_;
 
 #ifdef FRIEND_TEST
   friend class ::TestLoader;
@@ -1012,7 +1031,7 @@ class HARNESS_EXPORT Loader {
   FRIEND_TEST(::LifecycleTest, EmptyErrorMessage);
   FRIEND_TEST(::LifecycleTest, send_signals);
   FRIEND_TEST(::LifecycleTest, send_signals2);
-  FRIEND_TEST(::LifecycleTest, DISABLED_wait_for_stop);
+  FRIEND_TEST(::LifecycleTest, wait_for_stop);
   FRIEND_TEST(::LifecycleTest, InitThrows);
   FRIEND_TEST(::LifecycleTest, StartThrows);
   FRIEND_TEST(::LifecycleTest, StopThrows);

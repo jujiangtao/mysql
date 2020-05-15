@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2014, 2018, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2014, 2019, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -116,11 +116,9 @@ class PageBulk {
   @param[in]  tuple     tuple to insert
   @param[in]  big_rec   external record
   @param[in]  rec_size  record size
-  @param[in]  n_ext     number of externally stored columns
   @return error code */
   dberr_t insert(const dtuple_t *tuple, const big_rec_t *big_rec,
-                 ulint rec_size, ulint n_ext)
-      MY_ATTRIBUTE((warn_unused_result));
+                 ulint rec_size) MY_ATTRIBUTE((warn_unused_result));
 
   /** Mark end of insertion to the page. Scan records to set page dirs,
   and set page header members. The scan is incremental (slots and records
@@ -191,6 +189,11 @@ class PageBulk {
   /** Check if table is compressed.
   @return true if table is compressed, false otherwise. */
   bool isTableCompressed() const { return (m_page_zip != nullptr); }
+
+#ifdef UNIV_DEBUG
+  /** Check if index is X locked */
+  bool isIndexXLocked();
+#endif  // UNIV_DEBUG
 
  private:
   /** Get page split point. We split a page in half when compression
@@ -376,11 +379,9 @@ class BtrBulk {
   @param[in]  big_rec     big record vector, maybe NULL if there is no
                           data to be stored externally.
   @param[in]  rec_size    record size
-  @param[in]  n_ext       number of externally stored columns
   @return error code */
   dberr_t insert(PageBulk *page_bulk, dtuple_t *tuple, big_rec_t *big_rec,
-                 ulint rec_size, ulint n_ext)
-      MY_ATTRIBUTE((warn_unused_result));
+                 ulint rec_size) MY_ATTRIBUTE((warn_unused_result));
 
   /** Log free check */
   void logFreeCheck();
@@ -408,6 +409,13 @@ class BtrBulk {
 
   /** Page cursor vector for all level */
   page_bulk_vector *m_page_bulks;
+
+#ifdef UNIV_DEBUG
+  /** State of the index. Used for asserting at the end of a
+  bulk load operation to ensure that the online status of the
+  index does not change */
+  unsigned m_index_online;
+#endif  // UNIV_DEBUG
 };
 
 #endif

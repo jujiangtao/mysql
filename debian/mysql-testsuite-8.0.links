@@ -11,6 +11,7 @@ usr/bin/mysql_upgrade usr/lib/mysql-test/bin/mysql_upgrade
 usr/bin/mysqladmin usr/lib/mysql-test/bin/mysqladmin
 usr/bin/mysqlbinlog usr/lib/mysql-test/bin/mysqlbinlog
 usr/bin/mysqlcheck usr/lib/mysql-test/bin/mysqlcheck
+usr/bin/mysqld_safe usr/lib/mysql-test/bin/mysqld_safe
 usr/bin/mysqldump usr/lib/mysql-test/bin/mysqldump
 usr/bin/mysqldumpslow usr/lib/mysql-test/bin/mysqldumpslow
 usr/bin/mysqlimport usr/lib/mysql-test/bin/mysqlimport

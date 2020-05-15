@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2018, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1995, 2019, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -225,7 +225,7 @@ enum latch_level_t {
 
   SYNC_FIL_SHARD,
 
-  SYNC_DOUBLEWRITE,
+  SYNC_DBLWR,
 
   SYNC_PAGE_ARCH_OPER,
 
@@ -239,9 +239,6 @@ enum latch_level_t {
   SYNC_BUF_LRU_LIST,
   SYNC_BUF_CHUNKS,
 
-  SYNC_POOL,
-  SYNC_POOL_MANAGER,
-
   SYNC_SEARCH_SYS,
 
   SYNC_WORK_QUEUE,
@@ -252,6 +249,7 @@ enum latch_level_t {
   SYNC_FTS_CACHE_INIT,
   SYNC_RECV,
 
+  SYNC_LOG_LIMITS,
   SYNC_LOG_WRITER,
   SYNC_LOG_WRITE_NOTIFIER,
   SYNC_LOG_FLUSH_NOTIFIER,
@@ -260,6 +258,7 @@ enum latch_level_t {
   SYNC_LOG_CHECKPOINTER,
   SYNC_LOG_SN,
   SYNC_PAGE_ARCH,
+  SYNC_PAGE_ARCH_CLIENT,
   SYNC_LOG_ARCH,
 
   SYNC_PAGE_CLEANER,
@@ -268,6 +267,8 @@ enum latch_level_t {
   SYNC_REC_LOCK,
   SYNC_THREADS,
   SYNC_TRX,
+  SYNC_POOL,
+  SYNC_POOL_MANAGER,
   SYNC_TRX_SYS,
   SYNC_LOCK_SYS,
   SYNC_LOCK_WAIT_SYS,
@@ -338,7 +339,8 @@ enum latch_level_t {
 };
 
 /** Each latch has an ID. This id is used for creating the latch and to look
-up its meta-data. See sync0debug.c. */
+up its meta-data. See sync0debug.c. The order does not matter here, but
+alphabetical ordering seems useful */
 enum latch_id_t {
   LATCH_ID_NONE = 0,
   LATCH_ID_AUTOINC,
@@ -350,6 +352,7 @@ enum latch_id_t {
   LATCH_ID_BUF_POOL_ZIP_FREE,
   LATCH_ID_BUF_POOL_ZIP_HASH,
   LATCH_ID_BUF_POOL_FLUSH_STATE,
+  LATCH_ID_DBLWR,
   LATCH_ID_CACHE_LAST_READ,
   LATCH_ID_DICT_FOREIGN_ERR,
   LATCH_ID_DICT_SYS,
@@ -373,10 +376,12 @@ enum latch_id_t {
   LATCH_ID_LOG_FLUSHER,
   LATCH_ID_LOG_WRITE_NOTIFIER,
   LATCH_ID_LOG_FLUSH_NOTIFIER,
+  LATCH_ID_LOG_LIMITS,
   LATCH_ID_PARSER,
   LATCH_ID_LOG_ARCH,
   LATCH_ID_PAGE_ARCH,
   LATCH_ID_PAGE_ARCH_OPER,
+  LATCH_ID_PAGE_ARCH_CLIENT,
   LATCH_ID_PERSIST_METADATA_BUFFER,
   LATCH_ID_DICT_PERSIST_DIRTY_TABLES,
   LATCH_ID_PERSIST_AUTOINC,
@@ -396,12 +401,10 @@ enum latch_id_t {
   LATCH_ID_RTR_PATH_MUTEX,
   LATCH_ID_RW_LOCK_LIST,
   LATCH_ID_RW_LOCK_MUTEX,
-  LATCH_ID_SRV_DICT_TMPFILE,
   LATCH_ID_SRV_INNODB_MONITOR,
   LATCH_ID_SRV_MISC_TMPFILE,
   LATCH_ID_SRV_MONITOR_FILE,
   LATCH_ID_SYNC_THREAD,
-  LATCH_ID_BUF_DBLWR,
   LATCH_ID_TRX_UNDO,
   LATCH_ID_TRX_POOL,
   LATCH_ID_TRX_POOL_MANAGER,
@@ -449,6 +452,10 @@ enum latch_id_t {
   LATCH_ID_CLONE_SYS,
   LATCH_ID_CLONE_TASK,
   LATCH_ID_CLONE_SNAPSHOT,
+  LATCH_ID_PARALLEL_READ,
+  LATCH_ID_DBLR,
+  LATCH_ID_REDO_LOG_ARCHIVE_ADMIN_MUTEX,
+  LATCH_ID_REDO_LOG_ARCHIVE_QUEUE_MUTEX,
   LATCH_ID_TEST_MUTEX,
   LATCH_ID_MAX = LATCH_ID_TEST_MUTEX
 };
@@ -469,7 +476,7 @@ struct OSMutex {
     InitializeCriticalSection((LPCRITICAL_SECTION)&m_mutex);
 #else
     {
-      int ret = pthread_mutex_init(&m_mutex, NULL);
+      int ret = pthread_mutex_init(&m_mutex, nullptr);
       ut_a(ret == 0);
     }
 #endif /* _WIN32 */
@@ -1015,7 +1022,7 @@ struct latch_t {
     for library. We will never reach here because
     mutexes are disabled in library. */
     ut_error;
-    return (NULL);
+    return (nullptr);
 #endif /* !UNIV_LIBRARY */
   }
 

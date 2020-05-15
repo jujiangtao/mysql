@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2008, 2020, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -101,22 +101,24 @@ int initialize_performance_schema(
     PSI_error_bootstrap **error_bootstrap,
     PSI_data_lock_bootstrap **data_lock_bootstrap,
     PSI_system_bootstrap **system_bootstrap) {
-  *thread_bootstrap = NULL;
-  *mutex_bootstrap = NULL;
-  *rwlock_bootstrap = NULL;
-  *cond_bootstrap = NULL;
-  *file_bootstrap = NULL;
-  *socket_bootstrap = NULL;
-  *table_bootstrap = NULL;
-  *mdl_bootstrap = NULL;
-  *idle_bootstrap = NULL;
-  *stage_bootstrap = NULL;
-  *statement_bootstrap = NULL;
-  *transaction_bootstrap = NULL;
-  *memory_bootstrap = NULL;
-  *error_bootstrap = NULL;
-  *data_lock_bootstrap = NULL;
-  *system_bootstrap = NULL;
+  bool init_failed = false;
+
+  *thread_bootstrap = nullptr;
+  *mutex_bootstrap = nullptr;
+  *rwlock_bootstrap = nullptr;
+  *cond_bootstrap = nullptr;
+  *file_bootstrap = nullptr;
+  *socket_bootstrap = nullptr;
+  *table_bootstrap = nullptr;
+  *mdl_bootstrap = nullptr;
+  *idle_bootstrap = nullptr;
+  *stage_bootstrap = nullptr;
+  *statement_bootstrap = nullptr;
+  *transaction_bootstrap = nullptr;
+  *memory_bootstrap = nullptr;
+  *error_bootstrap = nullptr;
+  *data_lock_bootstrap = nullptr;
+  *system_bootstrap = nullptr;
 
   pfs_enabled = param->m_enabled;
 
@@ -159,10 +161,10 @@ int initialize_performance_schema(
       Free the memory used, and disable the instrumentation.
     */
     cleanup_performance_schema();
-    return 2;
+    init_failed = true;
   }
 
-  if (param->m_enabled) {
+  if (param->m_enabled && !init_failed) {
     /** Default values for SETUP_CONSUMERS */
     flag_events_stages_current =
         param->m_consumer_events_stages_current_enabled;
@@ -209,30 +211,45 @@ int initialize_performance_schema(
     flag_statements_digest = false;
   }
 
-  pfs_initialized = true;
+  if (!init_failed) {
+    pfs_initialized = true;
 
-  if (param->m_enabled) {
-    install_default_setup(&pfs_thread_bootstrap);
-    *thread_bootstrap = &pfs_thread_bootstrap;
-    *mutex_bootstrap = &pfs_mutex_bootstrap;
-    *rwlock_bootstrap = &pfs_rwlock_bootstrap;
-    *cond_bootstrap = &pfs_cond_bootstrap;
-    *file_bootstrap = &pfs_file_bootstrap;
-    *socket_bootstrap = &pfs_socket_bootstrap;
-    *table_bootstrap = &pfs_table_bootstrap;
-    *mdl_bootstrap = &pfs_mdl_bootstrap;
-    *idle_bootstrap = &pfs_idle_bootstrap;
-    *stage_bootstrap = &pfs_stage_bootstrap;
-    *statement_bootstrap = &pfs_statement_bootstrap;
-    *transaction_bootstrap = &pfs_transaction_bootstrap;
-    *memory_bootstrap = &pfs_memory_bootstrap;
-    *error_bootstrap = &pfs_error_bootstrap;
-    *data_lock_bootstrap = &pfs_data_lock_bootstrap;
-    *system_bootstrap = &pfs_system_bootstrap;
+    if (param->m_enabled) {
+      install_default_setup(&pfs_thread_bootstrap);
+      *thread_bootstrap = &pfs_thread_bootstrap;
+      *mutex_bootstrap = &pfs_mutex_bootstrap;
+      *rwlock_bootstrap = &pfs_rwlock_bootstrap;
+      *cond_bootstrap = &pfs_cond_bootstrap;
+      *file_bootstrap = &pfs_file_bootstrap;
+      *socket_bootstrap = &pfs_socket_bootstrap;
+      *table_bootstrap = &pfs_table_bootstrap;
+      *mdl_bootstrap = &pfs_mdl_bootstrap;
+      *idle_bootstrap = &pfs_idle_bootstrap;
+      *stage_bootstrap = &pfs_stage_bootstrap;
+      *statement_bootstrap = &pfs_statement_bootstrap;
+      *transaction_bootstrap = &pfs_transaction_bootstrap;
+      *memory_bootstrap = &pfs_memory_bootstrap;
+      *error_bootstrap = &pfs_error_bootstrap;
+      *data_lock_bootstrap = &pfs_data_lock_bootstrap;
+      *system_bootstrap = &pfs_system_bootstrap;
+    }
   }
 
-  /* Initialize plugin table services */
+  /*
+    Initialize plugin table services.
+    This must be done:
+    - after the memory allocations for the mutex instrumentation,
+      so that mutex LOCK_pfs_share_list gets instrumented
+      (if the instrumentation is enabled),
+    - in all cases, even when init_failed due to out of memory errors,
+      as the plugin table service is independent of
+      the main performance schema instrumentation.
+  */
   init_pfs_plugin_table();
+
+  if (init_failed) {
+    return 1;
+  }
 
   return 0;
 }
@@ -349,11 +366,11 @@ void init_pfs_instrument_array() {
   Deallocate the PFS_INSTRUMENT array.
 */
 void cleanup_instrument_config() {
-  if (pfs_instr_config_array != NULL) {
+  if (pfs_instr_config_array != nullptr) {
     my_free_container_pointers(*pfs_instr_config_array);
   }
   delete pfs_instr_config_array;
-  pfs_instr_config_array = NULL;
+  pfs_instr_config_array = nullptr;
 }
 
 /**

@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2012, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,16 +25,14 @@
 
 #include <stdlib.h>
 
-#ifdef XCOM_HAVE_OPENSSL
+#ifndef XCOM_WITHOUT_OPENSSL
 #ifdef WIN32
 // In OpenSSL before 1.1.0, we need this first.
 #include <winsock2.h>
 #endif  // WIN32
-#include <wolfssl_fix_namespace_pollution_pre.h>
 
 #include <openssl/ssl.h>
 
-#include <wolfssl_fix_namespace_pollution.h>
 #endif
 
 #include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/xcom_proto.h"
@@ -49,7 +47,7 @@ typedef enum con_state con_state;
 
 struct connection_descriptor {
   int fd;
-#ifdef XCOM_HAVE_OPENSSL
+#ifndef XCOM_WITHOUT_OPENSSL
   SSL *ssl_fd;
 #endif
   con_state connected_;
@@ -59,7 +57,7 @@ struct connection_descriptor {
 
 typedef struct connection_descriptor connection_descriptor;
 
-#ifdef XCOM_HAVE_OPENSSL
+#ifndef XCOM_WITHOUT_OPENSSL
 static inline connection_descriptor *new_connection(int fd, SSL *ssl_fd) {
   connection_descriptor *c =
       (connection_descriptor *)calloc((size_t)1, sizeof(connection_descriptor));

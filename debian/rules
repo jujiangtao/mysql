@@ -123,7 +123,9 @@ configure-stamp:
 		-DWITH_BLACKHOLE_STORAGE_ENGINE=ON \
 		-DWITH_FEDERATED_STORAGE_ENGINE=ON \
 		-DWITH_INNODB_MEMCACHED=1 \
-		-DWITH_EXTRA_CHARSETS=all ..'
+		-DWITH_EXTRA_CHARSETS=all \
+		-DROUTER_INSTALL_LIBDIR=lib/mysql-router \
+		..'
 	touch $@
 
 override_dh_auto_build: build-stamp
@@ -154,14 +156,14 @@ else
 	touch $(builddir)/mysql-test/skiplist
 	# Tests that are known to be unstable on all platforms are skipped
 	# http://bugs.mysql.com/bug.php?id=83340
-	echo "main.xa_prepared_binlog_off	: unstable test" >> $(builddir)/mysql-test/skiplist
-	echo "main.type_float			: fails on ppc64el. Ref https://bugs.mysql.com/bug.php?id=92375" >> $(builddir)/mysql-test/skiplist
-	echo "main.type_newdecimal		: Same as above" >> $(builddir)/mysql-test/skiplist
-	echo "main.type_ranges			: Same as above" >> $(builddir)/mysql-test/skiplist
+	echo "main.xa_prepared_binlog_off	: BUG#00000 - unstable test" >> $(builddir)/mysql-test/skiplist
+	echo "main.type_float			: BUG#92375 - fails on ppc64el. Ref https://bugs.mysql.com/bug.php?id=92375" >> $(builddir)/mysql-test/skiplist
+	echo "main.type_newdecimal		: BUG#92375 - Same as above" >> $(builddir)/mysql-test/skiplist
+	echo "main.type_ranges			: BUG#92375 - Same as above" >> $(builddir)/mysql-test/skiplist
 	# https://bugs.mysql.com/bug.php?id=86608
-	echo "main.mysqlpump_basic		: needs openssl with zlib" >> $(builddir)/mysql-test/skiplist
+	echo "main.mysqlpump_basic		: BUG#00000 - needs openssl with zlib" >> $(builddir)/mysql-test/skiplist
 	# Test is broken for 32bit. Fixed upstream, so remove in 8.0.12+
-	echo "main.window_functions_explain	: broken on i386" >> $(builddir)/mysql-test/skiplist
+	echo "main.window_functions_explain	: BUG#00000 -  broken on i386" >> $(builddir)/mysql-test/skiplist
 
 	# Skip replication tests since they are timing sensitive and may
 	# result in false positives.
@@ -208,7 +210,7 @@ override_dh_installlogrotate-arch:
 	dh_installlogrotate --name mysql-server
 
 override_dh_install:
-	dh_install --list-missing		\
+	dh_install --fail-missing		\
 		-Xusr/share/man			\
 		-Xusr/share/mysql/mysql.server
 	dh_apparmor -pmysql-server-8.0 --profile-name=usr.sbin.mysqld

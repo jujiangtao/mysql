@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2016, 2018, Oracle and/or its affiliates. All rights reserved.
+  Copyright (c) 2016, 2019, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -33,21 +33,24 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 #include "lifecycle.h"
-#include "config_parser.h"
+
+#include <array>
+#include <bitset>
+#include <chrono>
+#include <condition_variable>
+#include <cstdarg>
+#include <cstdlib>
+#include <mutex>
+#include <stdexcept>
+#include <thread>
+
 #include "harness_assert.h"
+#include "mysql/harness/config_parser.h"
 #include "mysql/harness/logging/logging.h"
 #include "mysql/harness/plugin.h"
 #include "router_config.h"
 
 #include "my_compiler.h"
-
-#include <stdarg.h>  // some things not in std:: in cstdarg (Ubuntu 14.04)
-#include <chrono>
-#include <condition_variable>
-#include <cstdlib>
-#include <mutex>
-#include <stdexcept>
-#include <thread>
 
 IMPORT_LOG_FUNCTIONS()
 
@@ -55,16 +58,17 @@ namespace mysql_harness {
 class PluginFuncEnv;
 }
 
-using mysql_harness::ARCHITECTURE_DESCRIPTOR;
 using mysql_harness::AppInfo;
+using mysql_harness::ARCHITECTURE_DESCRIPTOR;
 using mysql_harness::ConfigSection;
-using mysql_harness::PLUGIN_ABI_VERSION;
-using mysql_harness::Plugin;
-using mysql_harness::PluginFuncEnv;
 using mysql_harness::kRuntimeError;
+using mysql_harness::Plugin;
+using mysql_harness::PLUGIN_ABI_VERSION;
+using mysql_harness::PluginFuncEnv;
 
 const int kExitCheckInterval = 1;
-const int kPersistDuration = 100;
+const int kExitOnStopShortTimeout = 100;
+const int kExitOnStopLongTimeout = 60 * 1000;
 
 ////////////////////////////////////////////////////////////////////////////////
 // ITC STUFF (InterThread Communication)
@@ -72,19 +76,11 @@ const int kPersistDuration = 100;
 
 namespace {
 
-// these are made visible to unit test via passing back &g_lifecycle_plugin_ITC
-// during a special init() call
-static mysql_harness::test::LifecyclePluginSyncBus *get_bus_from_key(
-    const char *key);
-static mysql_harness::test::LifecyclePluginSyncBusSet g_lifecycle_plugin_logs;
-static mysql_harness::test::LifecyclePluginITC g_lifecycle_plugin_ITC{
-    &get_bus_from_key,
-};
+static std::array<mysql_harness::test::LifecyclePluginSyncBus, 3>
+    g_lifecycle_plugin_logs;
 
 static mysql_harness::test::LifecyclePluginSyncBus *get_bus_from_key(
-    const char *key) {
-  std::string k(key);  // easier than typing strcmp() everywhere
-
+    const std::string &k) {
   if (k == "instance1" || k == "all")
     return &g_lifecycle_plugin_logs[0];
   else if (k == "instance2")
@@ -110,8 +106,7 @@ static void log_info(bool notify, const std::string &key, const char *format,
 
   // and also post notification on ITC bus, if requested
   if (notify) {
-    mysql_harness::test::LifecyclePluginSyncBus &bus =
-        *get_bus_from_key(key.c_str());
+    mysql_harness::test::LifecyclePluginSyncBus &bus = *get_bus_from_key(key);
     bus.mtx.lock();
     bus.msg = buf;
     bus.mtx.unlock();
@@ -148,7 +143,8 @@ namespace {
 // (uninitialized memory often contains 0)
 enum ExitType {
   ET_EXIT = 123,
-  ET_EXIT_SLOW,
+  ET_EXIT_ON_STOP_SHORT_TIMEOUT,
+  ET_EXIT_ON_STOP_LONG_TIMEOUT,
   ET_EXIT_ON_STOP,
   ET_EXIT_ON_STOP_SYNC,
   ET_THROW,
@@ -178,6 +174,8 @@ void init_exit_strategies(const ConfigSection *section) {
     g_strategies[section->key].strategy_set = true;
   }
 
+  // clang-format off
+  //
   // Each function's behavior (exit strategy) is defined inside the
   // configuration file, one line per function. General definition form:
   //
@@ -185,14 +183,14 @@ void init_exit_strategies(const ConfigSection *section) {
   //
   // where <option> is one of:
   //   exit         - exit right away
-  //   exit_slow    - exit after a significant delay
+  //   exitonstop_shorttimeout - exit after stop() or short timeout
+  //   exitonstop_longtimeout  - exit after stop() or long timeout
   //   exitonstop   - exit after stop(), async polling (valid for start() only)
   //   exitonstop_s - exit after stop(), blocking      (valid for start() only)
   //   throw        - throw a typical exception (derived from std::exception)
-  //   throw_weird  - throw an unusual exception (not derived from
-  //   std::exception) error        - exit with error (like 'exit', but call
-  //   set_error() before exiting) error_empty  - like above, but set_error(...,
-  //   NULL)
+  //   throw_weird  - throw an unusual exception (not derived from std::exception)
+  //   error        - exit with error (like 'exit', but call set_error() before exiting)
+  //   error_empty  - like above, but set_error(..., NULL)
   //
   // Example configuration section:
   //
@@ -200,7 +198,9 @@ void init_exit_strategies(const ConfigSection *section) {
   //   init   = exit        # init() will exit
   //   start  = exitonstop  # start() will exit after it gets notified to do so
   //   stop   = throw       # stop() will throw
-  //   deinit = exit_slow   # deinit() will never exit
+  //   deinit = exitonstop_shorttimeout   # deinit() will never exit
+  //
+  // clang-format on
 
   // process configuration
   for (const std::string &func : {"init", "start", "stop", "deinit"}) {
@@ -208,8 +208,12 @@ void init_exit_strategies(const ConfigSection *section) {
       const std::string &line = section->get(func);
 
       // assign exit strategy
-      if (line.find("exit_slow") != std::string::npos) {
-        g_strategies[section->key].exit_type[func] = ET_EXIT_SLOW;
+      if (line.find("exitonstop_shorttimeout") != std::string::npos) {
+        g_strategies[section->key].exit_type[func] =
+            ET_EXIT_ON_STOP_SHORT_TIMEOUT;
+      } else if (line.find("exitonstop_longtimeout") != std::string::npos) {
+        g_strategies[section->key].exit_type[func] =
+            ET_EXIT_ON_STOP_LONG_TIMEOUT;
       } else if (line.find("throw_weird") != std::string::npos) {
         g_strategies[section->key].exit_type[func] = ET_THROW_WEIRD;
       } else if (line.find("throw") != std::string::npos) {
@@ -238,10 +242,12 @@ void execute_exit_strategy(const std::string &func, PluginFuncEnv *env) {
   // init() and deinit() are called only once per plugin (not per plugin
   // instance), but we need an instance name for our logic to work, therefore
   // we pick the first plugin instance in such case
-  const std::string &key =
-      (func == "init" || func == "deinit")
-          ? get_app_info(env)->config->get("lifecycle").front()->key
-          : get_config_section(env)->key;
+  const std::string &key = (func == "init" || func == "deinit")
+                               ? get_app_info(env)
+                                     ->config->get("routertestplugin_lifecycle")
+                                     .front()
+                                     ->key
+                               : get_config_section(env)->key;
 
   std::unique_lock<std::mutex> lock(g_strategies_mtx);
 
@@ -283,17 +289,36 @@ void execute_exit_strategy(const std::string &func, PluginFuncEnv *env) {
       set_error(env, kRuntimeError, nullptr);
       return;
 
-    case ET_EXIT_SLOW:
-      log_info(notify, key_for_log, "  lifecycle:%s %s():EXIT_SLOW:sleeping",
+    case ET_EXIT_ON_STOP_SHORT_TIMEOUT:
+      log_info(notify, key_for_log,
+               "  lifecycle:%s %s():EXIT_ON_STOP_SHORT_TIMEOUT:sleeping",
                key_for_log, func.c_str());
-      if (wait_for_stop(env, kPersistDuration))
+      if (wait_for_stop(env, kExitOnStopShortTimeout))
         log_info(notify, key_for_log,
-                 "  lifecycle:%s %s():EXIT_SLOW:done, stop request received",
+                 "  lifecycle:%s %s():EXIT_ON_STOP_SHORT_TIMEOUT:done, ret = "
+                 "true (stop request received)",
                  key_for_log, func.c_str());
       else
         log_info(notify, key_for_log,
-                 "  lifecycle:%s %s():EXIT_SLOW:done, timed out", key_for_log,
-                 func.c_str());
+                 "  lifecycle:%s %s():EXIT_ON_STOP_SHORT_TIMEOUT:done, ret = "
+                 "false (timed out)",
+                 key_for_log, func.c_str());
+      return;
+
+    case ET_EXIT_ON_STOP_LONG_TIMEOUT:
+      log_info(notify, key_for_log,
+               "  lifecycle:%s %s():EXIT_ON_STOP_LONG_TIMEOUT:sleeping",
+               key_for_log, func.c_str());
+      if (wait_for_stop(env, kExitOnStopLongTimeout))
+        log_info(notify, key_for_log,
+                 "  lifecycle:%s %s():EXIT_ON_STOP_LONG_TIMEOUT:done, ret = "
+                 "true (stop request received)",
+                 key_for_log, func.c_str());
+      else
+        log_info(notify, key_for_log,
+                 "  lifecycle:%s %s():EXIT_ON_STOP_LONG_TIMEOUT:done, ret = "
+                 "false (timed out)",
+                 key_for_log, func.c_str());
       return;
 
     case ET_EXIT_ON_STOP:
@@ -329,56 +354,26 @@ void execute_exit_strategy(const std::string &func, PluginFuncEnv *env) {
 // PLUGIN API
 ////////////////////////////////////////////////////////////////////////////////
 
-#if defined(_MSC_VER) && defined(lifecycle_EXPORTS)
+#if defined(_MSC_VER) && defined(routertestplugin_lifecycle_EXPORTS)
 /* We are building this library */
 #define LIFECYCLE_API __declspec(dllexport)
 #else
 #define LIFECYCLE_API
 #endif
 
-static const char *requires[] = {
-    "magic (>>1.0)",
-    "lifecycle3",
+static std::array<const char *, 2> requires = {
+    "routertestplugin_magic (>>1.0)",
+    "routertestplugin_lifecycle3",
 };
 
 static void init(PluginFuncEnv *env) {
-  // for explanation of pointer tagging, see
-  // https://en.wikipedia.org/wiki/Pointer_tagging PluginFuncEnv* ending with
-  // bit0 == 1 is special - it's a hack to perform pre-initialization:
-  // - tell the plugin to pre-initialize (unit test level init, not the normal
-  // plugin init())
-  // - return the necessary ITC info back to unit test
-  uintptr_t ptr = reinterpret_cast<uintptr_t>(env);
-  if (ptr & 0x01) {
-    // initialize the plugin
-    {
-      std::lock_guard<std::mutex> lock(g_strategies_mtx);
-      g_strategies.clear();
-
-      for (const std::string &key : {"instance1", "instance2", "instance3"}) {
-        g_strategies[key].strategy_set = false;  // optimisation,
-      }                                          // doesn't affect behavior
-    }
-
-    // pass ITC struct ptr back to unit test
-    {
-      // env is really LifecyclePluginITC**
-      using mysql_harness::test::LifecyclePluginITC;
-      ptr--;  // untag the ptr
-      LifecyclePluginITC **ppitc = reinterpret_cast<LifecyclePluginITC **>(ptr);
-      *ppitc = &g_lifecycle_plugin_ITC;
-    }
-
-    // return, since this is not a real init() call
-    return;
-  }
-
   const AppInfo *info = get_app_info(env);
 
   // init() and deinit() are called only once per plugin (not per plugin
   // instance), but we need an instance name for our logic to work, therefore
   // we pick the first plugin instance in such case
-  const ConfigSection *section = info->config->get("lifecycle").front();
+  const ConfigSection *section =
+      info->config->get("routertestplugin_lifecycle").front();
 
   // only 3 predefined instances are supported
   harness_assert(section->key == "instance1" || section->key == "instance2" ||
@@ -416,7 +411,8 @@ static void deinit(PluginFuncEnv *env) {
   // init() and deinit() are called only once per plugin (not per plugin
   // instance), but we need an instance name for our logic to work, therefore
   // we pick the first plugin instance in such case
-  const ConfigSection *section = info->config->get("lifecycle").front();
+  const ConfigSection *section =
+      info->config->get("routertestplugin_lifecycle").front();
 
   // only 3 predefined instances are supported
   harness_assert(section->key == "instance1" || section->key == "instance2" ||
@@ -429,13 +425,13 @@ static void deinit(PluginFuncEnv *env) {
 }
 
 extern "C" {
-Plugin LIFECYCLE_API harness_plugin_lifecycle = {
+LIFECYCLE_API Plugin harness_plugin_routertestplugin_lifecycle = {
     PLUGIN_ABI_VERSION,
     ARCHITECTURE_DESCRIPTOR,
     "Lifecycle test plugin",
     VERSION_NUMBER(1, 0, 0),
-    sizeof(requires) / sizeof(*requires),
-    requires,
+    requires.size(),
+    requires.data(),
     0,        // \_ conflicts
     nullptr,  // /
     init,     // init
@@ -443,4 +439,30 @@ Plugin LIFECYCLE_API harness_plugin_lifecycle = {
     start,    // start
     stop,     // stop
 };
+
+LIFECYCLE_API void lifecycle_init(int flags) {
+  using namespace mysql_harness::test::PluginDescriptorFlags;
+
+  auto &plugin_info = harness_plugin_routertestplugin_lifecycle;
+
+  plugin_info.init = (flags & NoInit) ? nullptr : init;
+  plugin_info.deinit = (flags & NoDeinit) ? nullptr : deinit;
+  plugin_info.start = (flags & NoStart) ? nullptr : start;
+  plugin_info.stop = (flags & NoStop) ? nullptr : stop;
+
+  // initialize the plugin
+  {
+    std::lock_guard<std::mutex> lock(g_strategies_mtx);
+    g_strategies.clear();
+
+    for (const std::string &key : {"instance1", "instance2", "instance3"}) {
+      g_strategies[key].strategy_set = false;  // optimisation,
+    }                                          // doesn't affect behavior
+  }
+}
+
+LIFECYCLE_API mysql_harness::test::LifecyclePluginSyncBus *
+lifecycle_get_bus_from_key(const std::string &name) {
+  return get_bus_from_key(name);
+}
 }

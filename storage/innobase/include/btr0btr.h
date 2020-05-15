@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1994, 2018, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1994, 2019, Oracle and/or its affiliates. All Rights Reserved.
 Copyright (c) 2012, Facebook Inc.
 
 This program is free software; you can redistribute it and/or modify it under
@@ -126,11 +126,6 @@ constexpr size_t BTR_MODIFY_EXTERNAL = 262144;
 /** Try to delete mark the record at the searched position when the
 record is in spatial index */
 constexpr size_t BTR_RTREE_DELETE_MARK = 524288;
-
-/** Caller has acquired the dict_index_t::lock in SX mode. This is to
-prevent structure modifications while the persistent cursors are being
-created. */
-constexpr size_t BTR_PARALLEL_READ_INIT = 1048576;
 
 #define BTR_LATCH_MODE_WITHOUT_FLAGS(latch_mode)                            \
   ((latch_mode) &                                                           \
@@ -268,6 +263,16 @@ page_no_t btr_node_ptr_get_child_page_no(
     const rec_t *rec,     /*!< in: node pointer record */
     const ulint *offsets) /*!< in: array returned by rec_get_offsets() */
     MY_ATTRIBUTE((warn_unused_result));
+
+/** Returns the child page of a node pointer and sx-latches it.
+@param[in]  node_ptr  node pointer
+@param[in]  index index
+@param[in]  offsets array returned by rec_get_offsets()
+@param[in]  mtr mtr
+@return child page, sx-latched */
+buf_block_t *btr_node_ptr_get_child(const rec_t *node_ptr, dict_index_t *index,
+                                    const ulint *offsets, mtr_t *mtr);
+
 /** Create the root node for a new index tree.
 @param[in]	type			type of the index
 @param[in]	space			space where created
@@ -313,7 +318,7 @@ void btr_truncate_recover(const dict_index_t *index);
  guaranteed to be available before this function is called.
  @return inserted record */
 rec_t *btr_root_raise_and_insert(
-    ulint flags,           /*!< in: undo logging and locking flags */
+    uint32_t flags,        /*!< in: undo logging and locking flags */
     btr_cur_t *cursor,     /*!< in: cursor at which to insert: must be
                            on the root page; when the function returns,
                            the cursor is positioned on the predecessor
@@ -322,7 +327,6 @@ rec_t *btr_root_raise_and_insert(
     mem_heap_t **heap,     /*!< in/out: pointer to memory heap
                            that can be emptied, or NULL */
     const dtuple_t *tuple, /*!< in: tuple to insert */
-    ulint n_ext,           /*!< in: number of externally stored columns */
     mtr_t *mtr)            /*!< in: mtr */
     MY_ATTRIBUTE((warn_unused_result));
 /** Reorganizes an index page.
@@ -389,7 +393,7 @@ ibool btr_page_get_split_rec_to_right(
 
  @return inserted record */
 rec_t *btr_page_split_and_insert(
-    ulint flags,           /*!< in: undo logging and locking flags */
+    uint32_t flags,        /*!< in: undo logging and locking flags */
     btr_cur_t *cursor,     /*!< in: cursor at which to insert; when the
                            function returns, the cursor is positioned
                            on the predecessor of the inserted record */
@@ -397,13 +401,12 @@ rec_t *btr_page_split_and_insert(
     mem_heap_t **heap,     /*!< in/out: pointer to memory heap
                            that can be emptied, or NULL */
     const dtuple_t *tuple, /*!< in: tuple to insert */
-    ulint n_ext,           /*!< in: number of externally stored columns */
     mtr_t *mtr)            /*!< in: mtr */
     MY_ATTRIBUTE((warn_unused_result));
 /** Inserts a data tuple to a tree on a non-leaf level. It is assumed
  that mtr holds an x-latch on the tree. */
 void btr_insert_on_non_leaf_level_func(
-    ulint flags,         /*!< in: undo logging and locking flags */
+    uint32_t flags,      /*!< in: undo logging and locking flags */
     dict_index_t *index, /*!< in: index */
     ulint level,         /*!< in: level, must be > 0 */
     dtuple_t *tuple,     /*!< in: the record to be inserted */
@@ -448,10 +451,9 @@ ibool btr_compress(
 /** Discards a page from a B-tree. This is used to remove the last record from
  a B-tree page: the whole page must be removed at the same time. This cannot
  be used for the root page, which is allowed to be empty. */
-void btr_discard_page(
-    btr_cur_t *cursor, /*!< in: cursor on the page to discard: not on
-                       the root page */
-    mtr_t *mtr);       /*!< in: mtr */
+void btr_discard_page(btr_cur_t *cursor, /*!< in: cursor on the page to discard:
+                                         not on the root page */
+                      mtr_t *mtr);       /*!< in: mtr */
 /** Parses the redo log record for setting an index record as the predefined
  minimum record.
  @return end of log record or NULL */
@@ -537,12 +539,11 @@ void btr_print_index(dict_index_t *index, /*!< in: index */
 /** Checks the size and number of fields in a record based on the definition of
  the index.
  @return true if ok */
-ibool btr_index_rec_validate(
-    const rec_t *rec,          /*!< in: index record */
-    const dict_index_t *index, /*!< in: index */
-    ibool dump_on_error)       /*!< in: TRUE if the function
-                               should print hex dump of record
-                               and page on error */
+ibool btr_index_rec_validate(const rec_t *rec,          /*!< in: index record */
+                             const dict_index_t *index, /*!< in: index */
+                             ibool dump_on_error) /*!< in: TRUE if the function
+                                                  should print hex dump of
+                                                  record and page on error */
     MY_ATTRIBUTE((warn_unused_result));
 /** Checks the consistency of an index tree.
  @return true if ok */

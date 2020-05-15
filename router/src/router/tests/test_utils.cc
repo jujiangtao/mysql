@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2015, 2018, Oracle and/or its affiliates. All rights reserved.
+  Copyright (c) 2015, 2020, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -22,33 +22,35 @@
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
+#include <fstream>
+#include <stdexcept>
+#include <vector>
+
 // ignore GMock warnings
 #ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wconversion"
 #endif
 
-#include "gmock/gmock.h"
+#include <gmock/gmock.h>
 
 #ifdef __clang__
 #pragma clang diagnostic pop
 #endif
 
-#include <fstream>
-#include <stdexcept>
-#include <vector>
 #include "mysql/harness/filesystem.h"
+#include "mysql/harness/string_utils.h"
 #include "mysqlrouter/utils.h"
 
 const std::string kIPv6AddrRange = "fd84:8829:117d:63d5";
 
-using ::testing::ContainerEq;
-using ::testing::Pair;
+using mysql_harness::split_string;
 using mysqlrouter::get_tcp_port;
 using mysqlrouter::hexdump;
 using mysqlrouter::split_addr_port;
-using mysqlrouter::split_string;
 using std::string;
+using ::testing::ContainerEq;
+using ::testing::Pair;
 
 class SplitAddrPortTest : public ::testing::Test {
  protected:
@@ -152,68 +154,6 @@ class UtilsTests : public ::testing::Test {
  protected:
   virtual void SetUp() {}
 };
-
-TEST_F(UtilsTests, SplitStringWithEmpty) {
-  std::vector<string> exp;
-  std::string tcase;
-
-  exp = {"val1", "val2"};
-  EXPECT_THAT(exp, ContainerEq(split_string("val1;val2", ';')));
-
-  exp = {"", "val1", "val2"};
-  EXPECT_THAT(exp, ContainerEq(split_string(";val1;val2", ';')));
-
-  exp = {"val1", "val2", ""};
-  EXPECT_THAT(exp, ContainerEq(split_string("val1;val2;", ';')));
-
-  exp = {};
-  EXPECT_THAT(exp, ContainerEq(split_string("", ';')));
-
-  exp = {"", ""};
-  EXPECT_THAT(exp, ContainerEq(split_string(";", ';')));
-
-  // No trimming
-  exp = {"  val1", "val2  "};
-  EXPECT_THAT(exp, ContainerEq(split_string("  val1&val2  ", '&')));
-}
-
-TEST_F(UtilsTests, SplitStringWithoutEmpty) {
-  std::vector<string> exp;
-  std::string tcase;
-
-  exp = {"val1", "val2"};
-  EXPECT_THAT(exp, ContainerEq(split_string("val1;val2", ';', false)));
-
-  exp = {"val1", "val2"};
-  EXPECT_THAT(exp, ContainerEq(split_string(";val1;val2", ';', false)));
-
-  exp = {"val1", "val2"};
-  EXPECT_THAT(exp, ContainerEq(split_string("val1;val2;", ';', false)));
-
-  exp = {};
-  EXPECT_THAT(exp, ContainerEq(split_string("", ';', false)));
-
-  exp = {};
-  EXPECT_THAT(exp, ContainerEq(split_string(";", ';', false)));
-
-  // No trimming
-  exp = {"  val1", "val2  "};
-  EXPECT_THAT(exp, ContainerEq(split_string("  val1&val2  ", '&', false)));
-}
-
-TEST_F(UtilsTests, delete_dir_recursive) {
-  using mysqlrouter::mkdir;
-  std::ofstream ofs;
-  mkdir("testdir", 0700);
-  mkdir("testdir/a", 0700);
-  mkdir("testdir/a/b", 0700);
-  mkdir("testdir/a/a", 0700);
-  std::ofstream().open("testdir/f");
-  std::ofstream().open("testdir/f2");
-  std::ofstream().open("testdir/a/f");
-  std::ofstream().open("testdir/a/b/f");
-  EXPECT_EQ(0, mysql_harness::delete_dir_recursive("testdir"));
-}
 
 static bool files_equal(const std::string &f1, const std::string &f2) {
   std::ifstream if1(f1);
@@ -362,4 +302,9 @@ TEST_F(UtilsTests, uint_conversion) {
   // extra + sign
   EXPECT_EQ(12u, strtoui_checked("+12", 66));
   EXPECT_EQ(0u, strtoui_checked("+0", 66));
+}
+
+int main(int argc, char **argv) {
+  ::testing::InitGoogleTest(&argc, argv);
+  return RUN_ALL_TESTS();
 }

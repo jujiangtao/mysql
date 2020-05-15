@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2011, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -52,7 +52,7 @@ class UnionSyntaxTest : public ParserTest {
 
     if (num_terms > 1) {
       SELECT_LEX *term2 = term1->next_select();
-      ASSERT_FALSE(term2 == NULL);
+      ASSERT_FALSE(term2 == nullptr);
 
       EXPECT_EQ(nullptr, term2->first_inner_unit());
       EXPECT_EQ(term1, term2->next_select_in_list());
@@ -92,20 +92,12 @@ class UnionSyntaxTest : public ParserTest {
     EXPECT_EQ(expected_limit, term1->next_select()->select_limit->val_int())
         << " Outer limit clause should be ignored.";
   }
-
-  void check_braces(const char *query, bool braces1, bool braces2) const {
-    SELECT_LEX *block1 = parse(query);
-    SELECT_LEX *block2 = block1->next_select();
-    EXPECT_EQ(braces1, block1->braces) << "Error for this: " << query;
-    EXPECT_EQ(braces2, block2->braces) << "Error for this: " << query;
-  }
 };
 
 TEST_F(UnionSyntaxTest, First) {
   SELECT_LEX *top = parse("SELECT 1");
   SELECT_LEX_UNIT *top_union = top->master_unit();
 
-  EXPECT_FALSE(top->braces);
   EXPECT_EQ(nullptr, top->outer_select());
   EXPECT_EQ(top, top_union->first_select());
 }
@@ -121,13 +113,13 @@ string parenthesize(string query, int n) {
 
 TEST_F(UnionSyntaxTest, QueryExpParensDualOrder) {
   SELECT_LEX *term = parse("( SELECT 1 FROM t1 ORDER BY 2 ) ORDER BY 3");
-  ASSERT_FALSE(term == NULL);
+  ASSERT_FALSE(term == nullptr);
   EXPECT_EQ(nullptr, term->next_select());
   EXPECT_EQ(nullptr, term->first_inner_unit());
 
   // The query expression.
   SELECT_LEX_UNIT *exp = term->master_unit();
-  ASSERT_FALSE(exp == NULL);
+  ASSERT_FALSE(exp == nullptr);
   EXPECT_EQ(term, exp->first_select());
 
   // Table expression
@@ -144,13 +136,13 @@ TEST_F(UnionSyntaxTest, QueryExpParensDualOrder) {
 
 TEST_F(UnionSyntaxTest, QueryExpParensOrder) {
   SELECT_LEX *term = parse("(SELECT 1 FROM t1) ORDER BY 3");
-  ASSERT_FALSE(term == NULL);
+  ASSERT_FALSE(term == nullptr);
   EXPECT_EQ(nullptr, term->next_select());
   EXPECT_EQ(nullptr, term->first_inner_unit());
 
   // The query expression.
   SELECT_LEX_UNIT *exp = term->master_unit();
-  ASSERT_FALSE(exp == NULL);
+  ASSERT_FALSE(exp == nullptr);
   EXPECT_EQ(term, exp->first_select());
 
   // Table expression
@@ -161,20 +153,20 @@ TEST_F(UnionSyntaxTest, QueryExpParensOrder) {
   // Inner order clause, outer is used when inner is missing
   EXPECT_EQ(1U, term->order_list.elements);
   ORDER *inner_order = term->order_list.first;
-  ASSERT_FALSE(inner_order == NULL);
+  ASSERT_FALSE(inner_order == nullptr);
   Item *order_exp = *inner_order->item;
   EXPECT_EQ(3, order_exp->val_int());
 }
 
 TEST_F(UnionSyntaxTest, QueryExpParensLimit) {
   SELECT_LEX *term = parse("(SELECT 1 FROM t1 LIMIT 2) LIMIT 3");
-  ASSERT_FALSE(term == NULL);
+  ASSERT_FALSE(term == nullptr);
   EXPECT_EQ(nullptr, term->next_select());
   EXPECT_EQ(nullptr, term->first_inner_unit());
 
   // The query expression.
   SELECT_LEX_UNIT *exp = term->master_unit();
-  ASSERT_FALSE(exp == NULL);
+  ASSERT_FALSE(exp == nullptr);
   EXPECT_EQ(term, exp->first_select());
 
   // Table expression
@@ -227,7 +219,7 @@ const char *get_order_by_column_name(SELECT_LEX_UNIT *query_expression,
                                      int index = 0) {
   SELECT_LEX *fake = query_expression->fake_select_lex;
   // Why can't I use ASSERT_FALSE here?!
-  EXPECT_FALSE(fake == NULL);
+  EXPECT_FALSE(fake == nullptr);
   return get_order_by_column_name(fake, index);
 }
 
@@ -239,8 +231,6 @@ TEST_F(UnionSyntaxTest, UnionOrderLimit) {
   SELECT_LEX *block1 =
       parse("SELECT 1 UNION SELECT 2 FROM t1 ORDER BY a LIMIT 123");
   SELECT_LEX *block2 = block1->next_select();
-  EXPECT_FALSE(block1->braces);
-  EXPECT_FALSE(block2->braces);
 
   EXPECT_EQ(nullptr, block1->select_limit)
       << "First query block should not have a limit clause.";
@@ -264,13 +254,6 @@ TEST_F(UnionSyntaxTest, UnionOrderLimit) {
 
   //  EXPECT_STREQ("union",
   //  ((Item_field*)fake->order_list.first->item[0])->context->first_name_resolution_table->alias);
-}
-
-TEST_F(UnionSyntaxTest, TheThingTheyCallBraces) {
-  check_braces("SELECT 1 UNION SELECT 2", false, false);
-  check_braces("(SELECT 1) UNION SELECT 2", true, false);
-  check_braces("SELECT 1 UNION (SELECT 2)", false, true);
-  check_braces("(SELECT 1) UNION (SELECT 2)", true, true);
 }
 
 TEST_F(UnionSyntaxTest, UnionNestedQueryBlock) {
@@ -349,7 +332,6 @@ TEST_F(UnionSyntaxTest, InnerVsOuterOrder) {
   EXPECT_STREQ("a", get_order_by_column_name(query_block, 1));
   EXPECT_EQ(3, get_limit(query_block));
 
-  EXPECT_TRUE(query_block->braces);
   SELECT_LEX_UNIT *query_expression = query_block->master_unit();
   EXPECT_STREQ("a", get_order_by_column_name(query_expression, 0));
   EXPECT_STREQ("b", get_order_by_column_name(query_expression, 1));
