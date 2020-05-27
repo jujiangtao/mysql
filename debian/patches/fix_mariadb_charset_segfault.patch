@@ -1,0 +1,30 @@
+Description: Fix libmysqlclient21 segfault when using mariadb charset files
+
+Mariadb installs charset files in usr/share/mysql, and libmysqlclient21,
+which is linked by various software like mythtv, may attempt to use those files
+thinking they are mysql-provided. The parser doesn't correctly handle the
+unexpected contents, causing a segfault in the client library because the
+charset collation has a NULL value. This patch simply checks that the collation
+pointer isn't NULL before using it further.
+---
+The information above should follow the Patch Tagging Guidelines, please
+checkout http://dep.debian.net/deps/dep3/ to learn about the format. Here
+are templates for supplementary fields that you might want to add:
+
+Origin: upstream
+Bug: https://bugs.mysql.com/bug.php?id=99663
+Bug-Ubuntu: https://bugs.launchpad.net/ubuntu/+source/mysql-8.0/+bug/1877504
+Forwarded: not-needed
+Last-Update: 2020-05-27
+
+--- mysql-8.0-8.0.20.orig/mysys/charset.cc
++++ mysql-8.0-8.0.20/mysys/charset.cc
+@@ -922,7 +922,7 @@ size_t escape_quotes_for_mysql(CHARSET_I
+ 
+ void charset_uninit() {
+   for (CHARSET_INFO *cs : all_charsets) {
+-    if (cs && cs->coll->uninit) {
++    if (cs && cs->coll && cs->coll->uninit) {
+       cs->coll->uninit(cs);
+     }
+   }
