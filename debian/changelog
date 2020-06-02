@@ -1,3 +1,9 @@
+mysql-5.7 (5.7.30-1ubuntu1) UNRELEASED; urgency=medium
+
+  * Dummy entry
+
+ -- Lars Tangvald <lars.tangvald@oracle.com>  Tue, 02 Jun 2020 07:28:32 +0000
+
 mysql-5.7 (5.7.28-1) unstable; urgency=high (security fixes)
 
   * Imported upstream version 5.7.28 to fix security issues:
