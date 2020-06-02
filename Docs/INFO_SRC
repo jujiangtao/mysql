@@ -1,7 +1,7 @@
-commit: 2f8088af9733d4275c46ea8e9d8beed14e5d5fe4
-date: 2019-09-27 12:28:40 +0530
-build-date: 2019-09-27 09:00:29 +0200
-short: 2f8088a
-branch: mysql-5.7.28-release
+commit: 2c28eddc02bb0fd9c7d8330bc161cecd53dd3c51
+date: 2020-03-19 23:54:11 +0530
+build-date: 2020-03-23 18:35:31 +0100
+short: 2c28edd
+branch: mysql-5.7.30-release
 
-MySQL source 5.7.28
+MySQL source 5.7.30
