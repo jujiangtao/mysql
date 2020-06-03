@@ -1,0 +1,53 @@
+Description: Fix inconsistent CONCAT('') behavior
+ CONCAT of an empty string should return and empty string, but there's a regression
+ causing it to be NULL instead if the result of the CONCAT call is assigned to a variable.
+Author: Lars Tangvald <lars.tangvald@oracle.com>
+Origin: upstream
+Bug: https://bugs.mysql.com/bug.php?id=99485
+Bug-Ubuntu: https://bugs.launchpad.net/ubuntu/+source/mysql-5.7/+bug/1877442
+Forwarded: not-needed
+Last-Update: 2020-06-03
+
+--- mysql-5.7-5.7.30.orig/sql/item_strfunc.h
++++ mysql-5.7-5.7.30/sql/item_strfunc.h
+@@ -1,7 +1,7 @@
+ #ifndef ITEM_STRFUNC_INCLUDED
+ #define ITEM_STRFUNC_INCLUDED
+ 
+-/* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
++/* Copyright (c) 2000, 2020, Oracle and/or its affiliates. All rights reserved.
+ 
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License, version 2.0,
+@@ -236,11 +236,11 @@ class Item_func_concat :public Item_str_
+   String tmp_value;
+ public:
+   Item_func_concat(const POS &pos, PT_item_list *opt_list)
+-    :Item_str_func(pos, opt_list)
+-  {}
+-
+-  Item_func_concat(Item *a,Item *b) :Item_str_func(a,b) {}
+-  Item_func_concat(const POS &pos, Item *a,Item *b) :Item_str_func(pos, a,b) {}
++      : Item_str_func(pos, opt_list), tmp_value("", 0, collation.collation) {}
++  Item_func_concat(Item *a, Item *b)
++      : Item_str_func(a, b), tmp_value("", 0, collation.collation) {}
++  Item_func_concat(const POS &pos, Item *a, Item *b)
++      : Item_str_func(pos, a, b), tmp_value("", 0, collation.collation) {}
+ 
+   String *val_str(String *);
+   void fix_length_and_dec();
+@@ -251,10 +251,11 @@ class Item_func_concat_ws :public Item_s
+ {
+   String tmp_value;
+ public:
+-  Item_func_concat_ws(List<Item> &list) :Item_str_func(list) {}
++  Item_func_concat_ws(List<Item> &list)
++      : Item_str_func(list), tmp_value("", 0, collation.collation) {}
+   Item_func_concat_ws(const POS &pos, PT_item_list *opt_list)
+-    :Item_str_func(pos, opt_list)
+-  {}
++      : Item_str_func(pos, opt_list), tmp_value("", 0, collation.collation) {}
++
+   String *val_str(String *);
+   void fix_length_and_dec();
+   const char *func_name() const { return "concat_ws"; }
