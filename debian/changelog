@@ -1,45 +1,21 @@
-mysql-8.0 (8.0.14-1) UNRELEASED; urgency=medium
+mysql-8.0 (8.0.20-1~exp1) experimental; urgency=medium
 
   [ Lars Tangvald ]
   * New upstream major release
+    See https://dev.mysql.com/doc/refman/8.0/en/mysql-nutshell.html
   * libmysqlclient20 soname bump to libmysqlclient21
-  * Remove libmysqld (removed from upstream)
-  * Remove mysql_embedded and manpage (removed from upstream)
-  * General update of everything from 5.7 to 8.0 as required
-  * Breaks/Replaces/Conflicts as required
-  * d/rules, d/control: Build with native openssl instead of bundled yassl
-    following upstream licence change to allow openssl linking
-  * d/systemd service file:
-    - Increase open file limit
-    - Change type to notify
-    - Add environment variable needed for "restart" command
-  * d/additions:
-    - Remove deprecated config options
-    - Cleaned up default configuration files
-  * d/tests:
-    - Disable failing test main.mysqlpump_basic
-    - Skip test main.file_contents for dep8
-    - Fix test failures on openssl 1.1.1
-  * d/lintian-overrides:
-    - Override errors about the json license
-    - Override binary-without-manpage for test package
-  * d/patches: Remove mipsel64 patch (no longer required)
-  * d/rules: Enable pie (position independent executable)
-    - Update path for getting symbols list from server binary
-    - Disable WITH_LIBWRAP to fix build error in 8.0.13
-    - Run the innodb_fts.mecab-utf8 test
-    - Use bundled rapidjson headers in Ubuntu
-    - Remove unneeded copy of files
-  * d/copyright: Update intro to blanket license for 8.0
-  * d/rules: Disable broken test
-  * d/postinst: Automatically comment out options removed in 8.0
-  * d/control:
-    - Add dependency on libssl-dev to libmysqlclient-dev
-    - Add recommends on mecab-ipadic-utf8
-    - Add to build-dep and testsuite dependencies
-  * d/install: Remove sql files that are not in 8.0.13
-  * d/apparmor: Add access to mecab files
-  * d/install: Remove legacy utils resolveip and resolve_stack_dump
+  * Removed libmysqld, mysql_embedded, resolveip and resolve_stack_dump
+  * Removed mysql_upgrade
+    Internal data upgrades are now handled automatically by mysqld
+    on startup, so the separate utility is no longer needed.
+  * Removed deprecated config options
+    Installation should automatically comment out deprecated options that
+    were in the default 5.7 configuration.
+  * Bundled yaSSL library has been removed. MySQL now uses OpenSSL.
+    MySQL license has been updated to be compatible with the OpenSSL
+    license.
+  * Cleaned up default configuration files
+    Options set to the internal default value were removed.
 
  -- Lars Tangvald <lars.tangvald@oracle.com>  Fri, 11 Jan 2019 13:05:54 +0100
 
