@@ -8,3 +8,7 @@ license-problem-json-evil extra/rapidjson/license.txt
 license-problem-json-evil LICENSE
 license-problem-json-evil router/LICENSE.router
 
+# The LICENSE file contains a paragraph explaining why the timezone
+# database is NOT under BCP 78
+license-problem-non-free-RFC-BCP78 LICENSE
+
