@@ -1,7 +1,7 @@
-commit: 860ea8fd9e0ab9c79f200c62bfa6b4696382d0bd
-date: 2020-03-26 13:34:15 +0100
-build-date: 2020-03-26 14:32:25 +0100
-short: 860ea8f
-branch: mysql-8.0.20-release
+commit: 09901861e2ef411f49aff8905fa99ad479280bf4
+date: 2020-06-16 15:51:03 +0200
+build-date: 2020-06-16 18:31:54 +0200
+short: 0990186
+branch: mysql-8.0.21-release
 
-MySQL source 8.0.20
+MySQL source 8.0.21
