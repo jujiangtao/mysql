@@ -1,3 +1,27 @@
+mysql-8.0 (8.0.21-0ubuntu1) groovy; urgency=medium
+
+  * SECURITY UPDATE: Update to 8.0.21 to fix security issues
+    - CVE-2020-14539, CVE-2020-14540, CVE-2020-14547, CVE-2020-14550,
+      CVE-2020-14553, CVE-2020-14559, CVE-2020-14568, CVE-2020-14575,
+      CVE-2020-14576, CVE-2020-14586, CVE-2020-14591, CVE-2020-14597,
+      CVE-2020-14619, CVE-2020-14620, CVE-2020-14623, CVE-2020-14624,
+      CVE-2020-14631, CVE-2020-14632, CVE-2020-14633, CVE-2020-14634,
+      CVE-2020-14641, CVE-2020-14643, CVE-2020-14651, CVE-2020-14654,
+      CVE-2020-14656, CVE-2020-14663, CVE-2020-14678, CVE-2020-14680,
+      CVE-2020-14697, CVE-2020-14702
+  * debian/rules: disable some tests that have expired certificates until
+    new ones can be obtained from the upstream repo.
+  * debian/mysql-router.install, debian/mysql-server-core-8.0.install,
+    debian/mysql-testsuite-8.0.install: use wildcard for libprotobuf-lite
+    library version.
+  * debian/mysql-router.install: added router_protobuf.so.
+  * debian/mysql-testsuite-8.0.install: added
+    component_test_component_deinit.so.
+  * debian/patches/charset_file_crash.patch: don't crash on malformed
+    charset files in mysys/charset.cc (LP: #1884809)
+
+ -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Sun, 19 Jul 2020 09:40:56 -0400
+
 mysql-8.0 (8.0.20-0ubuntu1) groovy; urgency=medium
 
   * SECURITY UPDATE: Update to 8.0.20 to fix security issues

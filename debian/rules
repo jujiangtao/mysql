@@ -164,6 +164,11 @@ else
 	echo "main.mysqlpump_basic		: BUG#00000 - needs openssl with zlib" >> $(builddir)/mysql-test/skiplist
 	# Test is broken for 32bit. Fixed upstream, so remove in 8.0.12+
 	echo "main.window_functions_explain	: BUG#00000 -  broken on i386" >> $(builddir)/mysql-test/skiplist
+	# These tests have certificates that are expired, disable for now
+	echo "main.ssl_crl_crlpath		: BUG#00000 -  expired cert" >> $(builddir)/mysql-test/skiplist
+	echo "main.ssl_ca			: BUG#00000 -  expired cert" >> $(builddir)/mysql-test/skiplist
+	echo "main.ssl_crl			: BUG#00000 -  expired cert" >> $(builddir)/mysql-test/skiplist
+	echo "main.ssl_crl_clients_valid	: BUG#00000 -  expired cert" >> $(builddir)/mysql-test/skiplist
 
 	# Skip replication tests since they are timing sensitive and may
 	# result in false positives.
