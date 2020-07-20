@@ -32,6 +32,11 @@ main.type_ranges                   : BUG#92375 - Test is breaking on ppc64el. ht
 main.mysqlpump_basic               : BUG#86608 - Requires openssl with zlib support. https://bugs.mysql.com/bug.php?id=86608
 main.file_contents                 : BUG#00000 - Tests package contents, which differs from upstream
 main.loaddata_special              : BUG#96341 - Access blocked by apparmor. https://bugs.mysql.com/bug.php?id=96341
+main.mtr_unit_tests                : BUG#00000 - FIXME: can't find mysqltest_safe_process binary
+main.ssl_crl_crlpath               : BUG#00000 - expired cert
+main.ssl_ca                        : BUG#00000 - expired cert
+main.ssl_crl                       : BUG#00000 - expired cert
+main.ssl_crl_clients_valid         : BUG#00000 - expired cert
 EOF
 
 cd /usr/lib/mysql-test

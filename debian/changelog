@@ -1,3 +1,12 @@
+mysql-8.0 (8.0.21-0ubuntu2) groovy; urgency=medium
+
+  * debian/tests/upstream: disable some tests that have expired
+    certificates until new ones can be obtained from the upstream repo.
+  * debian/tests/upstream: disable new test that can't locate
+    mysqltest_safe_process binary.
+
+ -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Mon, 20 Jul 2020 10:04:27 -0400
+
 mysql-8.0 (8.0.21-0ubuntu1) groovy; urgency=medium
 
   * SECURITY UPDATE: Update to 8.0.21 to fix security issues
