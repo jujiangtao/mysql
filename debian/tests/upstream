@@ -32,6 +32,7 @@ main.type_ranges                   : BUG#92375 - Test is breaking on ppc64el. ht
 main.mysqlpump_basic               : BUG#86608 - Requires openssl with zlib support. https://bugs.mysql.com/bug.php?id=86608
 main.file_contents                 : BUG#00000 - Tests package contents, which differs from upstream
 main.loaddata_special              : BUG#96341 - Access blocked by apparmor. https://bugs.mysql.com/bug.php?id=96341
+main.mysql_client_test             : BUG#100274 - Unstable test
 EOF
 
 cd /usr/lib/mysql-test

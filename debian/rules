@@ -149,6 +149,7 @@ else
 	# Tests that are known to be unstable on all platforms are skipped
 	# http://bugs.mysql.com/bug.php?id=83340
 	echo "main.xa_prepared_binlog_off	: BUG#00000 - unstable test" >> $(builddir)/mysql-test/skiplist
+	echo "main.mysql_client_test		: BUG#100274 - unstable test" >> $(builddir)/mysql-test/skiplist  
 	echo "main.type_float			: BUG#92375 - fails on ppc64el. Ref https://bugs.mysql.com/bug.php?id=92375" >> $(builddir)/mysql-test/skiplist
 	echo "main.type_newdecimal		: BUG#92375 - Same as above" >> $(builddir)/mysql-test/skiplist
 	echo "main.type_ranges			: BUG#92375 - Same as above" >> $(builddir)/mysql-test/skiplist
