@@ -4,3 +4,4 @@ fix_grant_user_lock_as_root.patch
 atomic-test-words.patch
 fix_mariadb_charset_segfault.patch
 fix_expired_test_certs.patch
+use-largest-lock-free-type-selector-on-riscv.patch
