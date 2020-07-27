@@ -1,3 +1,15 @@
+mysql-8.0 (8.0.21-0ubuntu3) groovy; urgency=medium
+
+  * Fix FTBFS on RISC-V.
+    - d/p/use-largest-lock-free-type-selector-on-riscv.patch: Force
+      the use of Largest_lock_free_type_selector instead of
+      Lock_free_type_selector when compiling for RISC-V, since the
+      latter will cause a compilation failure due to RISC-V's
+      inability to provide the always-lock-free property for some
+      specific types.
+
+ -- Sergio Durigan Junior <sergio.durigan@canonical.com>  Mon, 27 Jul 2020 09:00:46 -0400
+
 mysql-8.0 (8.0.21-0ubuntu2) groovy; urgency=medium
 
   * debian/tests/upstream: disable some tests that have expired
