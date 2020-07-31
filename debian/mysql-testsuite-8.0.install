@@ -4,7 +4,6 @@ usr/bin/mysqltest usr/lib/mysql-test/bin/
 usr/bin/mysqltest_safe_process usr/lib/mysql-test/bin/
 usr/bin/mysqlxtest usr/lib/mysql-test/bin/
 usr/lib/mysql-test/*
-usr/lib/mysql/private/libprotobuf.so.3.6.1 usr/lib/mysql-test/lib/mysql/private
 usr/lib/mysql/plugin/auth.so
 usr/lib/mysql/plugin/auth_test_plugin.so
 usr/lib/mysql/plugin/component_example_component1.so
@@ -16,6 +15,7 @@ usr/lib/mysql/plugin/component_pfs_example.so
 usr/lib/mysql/plugin/component_pfs_example_component_population.so
 usr/lib/mysql/plugin/component_test_audit_api_message.so
 usr/lib/mysql/plugin/component_test_backup_lock_service.so
+usr/lib/mysql/plugin/component_test_component_deinit.so
 usr/lib/mysql/plugin/component_test_host_application_signal.so
 usr/lib/mysql/plugin/component_test_mysql_runtime_error.so
 usr/lib/mysql/plugin/component_test_pfs_notification.so
@@ -83,5 +83,6 @@ usr/lib/mysql/plugin/test_services_host_application_signal.so
 usr/lib/mysql/plugin/test_services_plugin_registry.so
 usr/lib/mysql/plugin/test_udf_services.so
 usr/lib/mysql/plugin/udf_example.so
+usr/lib/mysql/private/libprotobuf.so* usr/lib/mysql-test/lib/mysql/private
 usr/share/mysql/messages_to_clients.txt
 usr/share/mysql/messages_to_error_log.txt
