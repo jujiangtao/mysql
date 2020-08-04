@@ -1,3 +1,13 @@
+mysql-8.0 (8.0.21-0ubuntu4) groovy; urgency=medium
+
+  * SECURITY REGRESSION: libmysqlclient loading issues (LP: #1889851)
+    - debian/patches/revert_faster_tls_model.patch: revert an upstream
+      commit that switches the tls-model to initial-exec. This is causing
+      "cannot allocate memory in static TLS block" errors when attempting
+      to load the library in certain scenarios.
+
+ -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Tue, 04 Aug 2020 07:39:21 -0400
+
 mysql-8.0 (8.0.21-0ubuntu3) groovy; urgency=medium
 
   * Fix FTBFS on RISC-V.
