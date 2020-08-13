@@ -34,7 +34,7 @@ Comments:
  The text of the Above URL is quoted below, as of June 5, 2018.
  .
  > The Universal FOSS Exception, Version 1.0
- > . 
+ > .
  > In addition to the rights set forth in the other license(s) included in the
  > distribution for this software, data, and/or documentation (collectively the
  > "Software," and such licenses collectively with this additional permission the
@@ -46,7 +46,7 @@ Comments:
  > the Software with Other FOSS, and the constants, function signatures, data
  > structures and other invocation methods used to run or interact with each of
  > them (as to each, such software's "Interfaces"):
- > . 
+ > .
  > (i) The Software's Interfaces may, to the extent permitted by the license of
  > the Other FOSS, be copied into, used and distributed in the Other FOSS in
  > order to enable interoperability, without requiring a change to the license of
@@ -55,7 +55,7 @@ Comments:
  > License, including without limitation as used in the Other FOSS (which upon
  > any such use also then contains a portion of the Software under the Software
  > License).
- > . 
+ > .
  > (ii) The Other FOSS's Interfaces may, to the extent permitted by the license
  > of the Other FOSS, be copied into, used and distributed in the Software in
  > order to enable interoperability, without requiring that such Interfaces be
@@ -63,7 +63,7 @@ Comments:
  > original terms, if this does not require any portion of the Software other
  > than such Interfaces to be licensed under the terms other than the Software
  > License.
- > . 
+ > .
  > (iii) If only Interfaces and no other code is copied between the Software and
  > the Other FOSS in either direction, the use and/or distribution of the
  > Software with the Other FOSS shall not be deemed to require that the Other
@@ -73,7 +73,7 @@ Comments:
  > Software together with Other FOSS after enabling interoperability using the
  > Interfaces of one or both, and distributing the resulting combination under
  > different licenses for the respective portions thereof.
- > . 
+ > .
  > For avoidance of doubt, a license which is OSI-approved or categorized by the
  > FSF as free, includes, for the purpose of this permission, such licenses with
  > additional permissions, and any license that has previously been so-approved
