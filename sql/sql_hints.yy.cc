@@ -91,7 +91,7 @@ static bool parse_int(longlong *to, const char *from, size_t from_length)
 }
 
 
-#line 95 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:339  */
+#line 95 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:339  */
 
 # ifndef YY_NULLPTR
 #  if defined __cplusplus && 201103L <= __cplusplus
@@ -111,8 +111,8 @@ static bool parse_int(longlong *to, const char *from, size_t from_length)
 
 /* In a future release of Bison, this section will be replaced
    by #include "sql_hints.yy.h".  */
-#ifndef YY_HINT_PARSER_EXPORT_HOME_PB2_BUILD_SB_3_38522761_1585229681_91_DIST_GPL_SQL_SQL_HINTS_YY_H_INCLUDED
-# define YY_HINT_PARSER_EXPORT_HOME_PB2_BUILD_SB_3_38522761_1585229681_91_DIST_GPL_SQL_SQL_HINTS_YY_H_INCLUDED
+#ifndef YY_HINT_PARSER_EXPORT_HOME2_PB2_BUILD_SB_4_39697340_1592325428_65_DIST_GPL_SQL_SQL_HINTS_YY_H_INCLUDED
+# define YY_HINT_PARSER_EXPORT_HOME2_PB2_BUILD_SB_4_39697340_1592325428_65_DIST_GPL_SQL_SQL_HINTS_YY_H_INCLUDED
 /* Debug traces.  */
 #ifndef YYDEBUG
 # define YYDEBUG 0
@@ -172,7 +172,8 @@ extern int HINT_PARSER_debug;
     GROUP_INDEX_HINT = 1043,
     NO_GROUP_INDEX_HINT = 1044,
     ORDER_INDEX_HINT = 1045,
-    NO_ORDER_INDEX_HINT = 1046
+    NO_ORDER_INDEX_HINT = 1046,
+    YYUNDEF = 1150
   };
 #endif
 /* Tokens.  */
@@ -223,6 +224,7 @@ extern int HINT_PARSER_debug;
 #define NO_GROUP_INDEX_HINT 1044
 #define ORDER_INDEX_HINT 1045
 #define NO_ORDER_INDEX_HINT 1046
+#define YYUNDEF 1150
 
 /* Value type.  */
 
@@ -230,11 +232,11 @@ extern int HINT_PARSER_debug;
 
 int HINT_PARSER_parse (class THD *thd, class Hint_scanner *scanner, class PT_hint_list **ret);
 
-#endif /* !YY_HINT_PARSER_EXPORT_HOME_PB2_BUILD_SB_3_38522761_1585229681_91_DIST_GPL_SQL_SQL_HINTS_YY_H_INCLUDED  */
+#endif /* !YY_HINT_PARSER_EXPORT_HOME2_PB2_BUILD_SB_4_39697340_1592325428_65_DIST_GPL_SQL_SQL_HINTS_YY_H_INCLUDED  */
 
 /* Copy the second part of user declarations.  */
 
-#line 238 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:358  */
+#line 240 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:358  */
 
 #ifdef short
 # undef short
@@ -476,10 +478,10 @@ union yyalloc
 /* YYFINAL -- State number of the termination state.  */
 #define YYFINAL  63
 /* YYLAST -- Last index in YYTABLE.  */
-#define YYLAST   173
+#define YYLAST   195
 
 /* YYNTOKENS -- Number of terminals.  */
-#define YYNTOKENS  54
+#define YYNTOKENS  55
 /* YYNNTS -- Number of nonterminals.  */
 #define YYNNTS  34
 /* YYNRULES -- Number of rules.  */
@@ -490,7 +492,7 @@ union yyalloc
 /* YYTRANSLATE[YYX] -- Symbol number corresponding to YYX as returned
    by yylex, with out-of-bounds checking.  */
 #define YYUNDEFTOK  2
-#define YYMAXUTOK   1047
+#define YYMAXUTOK   1151
 
 #define YYTRANSLATE(YYX)                                                \
   ((unsigned int) (YYX) <= YYMAXUTOK ? yytranslate[YYX] : YYUNDEFTOK)
@@ -503,9 +505,9 @@ static const yytype_uint8 yytranslate[] =
        2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
        2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
        2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
-      50,    51,     2,     2,    52,     2,     2,     2,     2,     2,
+      51,    52,     2,     2,    53,     2,     2,     2,     2,     2,
        2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
-       2,    53,     2,     2,     2,     2,     2,     2,     2,     2,
+       2,    54,     2,     2,     2,     2,     2,     2,     2,     2,
        2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
        2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
        2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
@@ -603,23 +605,34 @@ static const yytype_uint8 yytranslate[] =
       13,    14,    15,    16,    17,    18,    19,    20,    21,    22,
       23,    24,    25,    26,    27,    28,    29,    30,    31,    32,
       33,    34,    35,    36,    37,    38,    39,    40,    41,    42,
-      43,    44,    45,    46,    47,    48,    49,     2
+      43,    44,    45,    46,    47,    48,    49,     2,     2,     2,
+       2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
+       2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
+       2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
+       2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
+       2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
+       2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
+       2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
+       2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
+       2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
+       2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
+      50,     2
 };
 
 #if YYDEBUG
   /* YYRLINE[YYN] -- Source line where rule number YYN was defined.  */
 static const yytype_uint16 yyrline[] =
 {
-       0,   182,   182,   184,   186,   191,   197,   205,   206,   207,
-     208,   209,   210,   211,   216,   236,   237,   241,   247,   256,
-     257,   261,   267,   276,   277,   281,   287,   296,   300,   308,
-     316,   317,   325,   326,   330,   337,   344,   351,   358,   365,
-     372,   379,   386,   393,   402,   403,   407,   414,   415,   416,
-     417,   421,   423,   428,   434,   441,   447,   457,   464,   474,
-     478,   482,   486,   493,   497,   501,   505,   512,   516,   520,
-     524,   528,   532,   536,   540,   547,   551,   555,   559,   563,
-     567,   571,   575,   582,   591,   600,   612,   613,   617,   632,
-     667,   668,   672,   680,   681
+       0,   188,   188,   190,   192,   197,   203,   211,   212,   213,
+     214,   215,   216,   217,   222,   242,   243,   247,   253,   262,
+     263,   267,   273,   282,   283,   287,   293,   302,   306,   314,
+     322,   323,   331,   332,   336,   343,   350,   357,   364,   371,
+     378,   385,   392,   399,   408,   409,   413,   420,   421,   422,
+     423,   427,   429,   434,   440,   447,   453,   463,   470,   480,
+     484,   488,   492,   499,   503,   507,   511,   518,   522,   526,
+     530,   534,   538,   542,   546,   553,   557,   561,   565,   569,
+     573,   577,   581,   588,   597,   606,   618,   619,   623,   638,
+     673,   674,   678,   686,   687
 };
 #endif
 
@@ -642,9 +655,9 @@ static const char *const yytname[] =
   "HINT_ARG_QB_NAME", "HINT_ARG_TEXT", "HINT_IDENT_OR_NUMBER_WITH_SCALE",
   "HINT_CLOSE", "HINT_ERROR", "INDEX_HINT", "NO_INDEX_HINT",
   "JOIN_INDEX_HINT", "NO_JOIN_INDEX_HINT", "GROUP_INDEX_HINT",
-  "NO_GROUP_INDEX_HINT", "ORDER_INDEX_HINT", "NO_ORDER_INDEX_HINT", "'('",
-  "')'", "','", "'='", "$accept", "start", "hint_list", "hint",
-  "max_execution_time_hint", "opt_hint_param_table_list",
+  "NO_GROUP_INDEX_HINT", "ORDER_INDEX_HINT", "NO_ORDER_INDEX_HINT",
+  "YYUNDEF", "'('", "')'", "','", "'='", "$accept", "start", "hint_list",
+  "hint", "max_execution_time_hint", "opt_hint_param_table_list",
   "hint_param_table_list", "opt_hint_param_table_list_empty_qb",
   "hint_param_table_list_empty_qb", "opt_hint_param_index_list",
   "hint_param_index_list", "hint_param_index", "hint_param_table_empty_qb",
@@ -664,12 +677,12 @@ static const char *const yytname[] =
    (internal) symbol number NUM (which must be that of a token).  */
 static const yytype_uint16 yytoknum[] =
 {
-       0,   256,  1047,  1000,  1001,  1002,  1003,  1004,  1005,  1006,
+       0,   256,  1151,  1000,  1001,  1002,  1003,  1004,  1005,  1006,
     1007,  1008,  1009,  1010,  1011,  1012,  1013,  1014,  1015,  1016,
     1017,  1018,  1019,  1020,  1021,  1022,  1023,  1024,  1025,  1026,
     1027,  1028,  1029,  1030,  1031,  1032,  1033,  1034,  1035,  1036,
     1037,  1038,  1039,  1040,  1041,  1042,  1043,  1044,  1045,  1046,
-      40,    41,    44,    61
+    1150,    40,    41,    44,    61
 };
 # endif
 
@@ -687,22 +700,22 @@ static const yytype_uint16 yytoknum[] =
      STATE-NUM.  */
 static const yytype_int8 yypact[] =
 {
-      58,   -36,   -42,   -33,   -77,   -77,   -77,   -77,   -77,   -77,
-     -77,    -4,   -77,    -2,    10,    17,   -77,   -77,    47,    64,
+      58,   -36,   -43,   -34,   -77,   -77,   -77,   -77,   -77,   -77,
+     -77,    -3,   -77,    16,    46,    48,   -77,   -77,    63,    75,
       77,    78,   -77,   -77,    79,   -77,   -77,   -77,   -77,   -77,
-     -77,   -77,   -77,   -77,   -77,   -77,   -77,    99,     9,   -77,
+     -77,   -77,   -77,   -77,   -77,   -77,   -77,    60,     9,   -77,
      -77,   -77,   -77,   -77,    80,    81,    83,    85,   -77,   -77,
-     -77,   -77,    91,    96,    97,   100,    97,    97,   -17,    59,
-      74,    97,     8,   -77,    98,   -77,   -77,    76,    82,    84,
-      84,    86,    88,   -77,    -5,    89,    -5,    36,    97,   105,
-      92,    90,   -77,   105,    93,   105,    94,    95,   -77,   -77,
-     101,   -77,   105,   102,   105,   104,   111,   -77,   112,   112,
-     -77,   -77,   -77,   -77,   -77,   -77,    71,   -77,   -77,    73,
-     -77,   -77,   106,   -77,   -77,   107,   108,   -77,   -77,   113,
-     110,   -77,   114,   -77,   -77,    30,   115,   -77,   116,   -77,
-     -77,   -77,   117,   118,   -77,   120,   -77,    -5,   -77,   -77,
+     -77,   -77,    11,    91,    96,    99,    96,    96,   -17,    59,
+      74,    96,     8,   -77,    97,   -77,   -77,    76,    82,    84,
+      84,    86,    87,   -77,    -5,    88,    -5,    36,    96,   105,
+      90,    92,   -77,   105,    94,   105,    95,    98,   -77,   -77,
+      89,   -77,   105,   100,   105,   101,   108,   -77,   112,   112,
+     -77,   -77,   -77,   -77,   -77,   -77,    70,   -77,   -77,    72,
+     -77,   -77,   102,   -77,   -77,   103,   104,   -77,   -77,   113,
+     106,   -77,   107,   -77,   -77,    30,   109,   -77,   110,   -77,
+     -77,   -77,   111,   114,   -77,   116,   -77,    -5,   -77,   -77,
      -77,   105,   -77,   -77,   -77,   -77,   -77,   -77,   -77,   -77,
-     -77,   -77,   121,   -77,   -77,   -77,   112,   -77,   -77,   -77,
+     -77,   -77,   117,   -77,   -77,   -77,   112,   -77,   -77,   -77,
      -77,   -77
 };
 
@@ -733,8 +746,8 @@ static const yytype_uint8 yydefact[] =
   /* YYPGOTO[NTERM-NUM].  */
 static const yytype_int8 yypgoto[] =
 {
-     -77,   -77,   -77,   124,   -77,    49,   -77,   -76,   -77,    51,
-     -77,     0,    11,   -69,   103,    37,   -77,    75,    22,   -77,
+     -77,   -77,   -77,   118,   -77,    49,   -77,   -76,   -77,    52,
+     -77,     4,    23,   -69,   115,    37,   -77,   119,    28,   -77,
      -77,   -77,   -77,   -77,   -77,   -77,   -77,   -77,   -77,   -77,
      -77,   -77,   -77,   -77
 };
@@ -757,42 +770,46 @@ static const yytype_uint8 yytable[] =
       64,    88,     2,     3,     4,     5,   126,    53,   128,    78,
       79,     6,     7,     8,     9,    10,    11,    12,    13,    14,
       15,    16,    17,    18,    19,    20,    21,    22,    23,    24,
-      25,    26,    27,    28,    89,   110,    54,   111,    55,    65,
+      25,    26,    27,    28,    89,   110,    71,   111,    54,    65,
      142,    29,    30,    31,    32,    33,    34,    35,    36,     1,
-      56,     2,     3,     4,     5,   145,   146,    57,   147,   148,
+      63,     2,     3,     4,     5,   145,   146,    55,   147,   148,
        6,     7,     8,     9,    10,    11,    12,    13,    14,    15,
       16,    17,    18,    19,    20,    21,    22,    23,    24,    25,
-      26,    27,    28,    76,    77,    78,    83,    58,    87,    63,
+      26,    27,    28,    76,    77,    78,    83,    56,    87,    57,
       29,    30,    31,    32,    33,    34,    35,    36,    84,    86,
-      78,    85,    78,    92,    59,   113,    93,    95,    78,    94,
-      78,    96,   136,   137,   138,   137,    71,    60,    61,    62,
-      67,    68,    72,    69,    73,    70,    75,   100,    91,   101,
-     108,   114,   119,   118,   121,   123,   124,   130,   131,    78,
-     135,   109,   159,   127,   125,   129,   161,   139,   140,   158,
-     141,   143,    66,     0,     0,   144,   153,   154,   155,     0,
-     156,   157,   160,    99
+      78,    85,    78,    92,    58,   113,    93,    95,    78,    94,
+      78,    96,   136,   137,   138,   137,    59,    72,    60,    61,
+      62,    67,    68,    73,    69,    75,    70,    91,   100,   101,
+     108,   114,   118,   125,   130,   119,   121,   123,   131,    78,
+     124,   135,   127,   129,   139,   140,    66,   141,   143,   144,
+     161,   153,   154,   155,   159,   158,     0,   156,   157,   160,
+       0,     0,     0,     0,     0,     0,     0,     0,     0,     0,
+       0,     0,     0,     0,     0,    99,     0,     0,     0,     0,
+       0,     0,     0,     0,     0,   109
 };
 
 static const yytype_int16 yycheck[] =
 {
-      69,    70,     7,     8,    40,    10,    11,    83,    50,    85,
-       1,     3,     3,     4,     5,     6,    92,    50,    94,    36,
+      69,    70,     7,     8,    40,    10,    11,    83,    51,    85,
+       1,     3,     3,     4,     5,     6,    92,    51,    94,    36,
       37,    12,    13,    14,    15,    16,    17,    18,    19,    20,
       21,    22,    23,    24,    25,    26,    27,    28,    29,    30,
-      31,    32,    33,    34,    36,     9,    50,    11,    50,    40,
+      31,    32,    33,    34,    36,     9,    35,    11,    51,    40,
      119,    42,    43,    44,    45,    46,    47,    48,    49,     1,
-      50,     3,     4,     5,     6,    35,    36,    50,    38,    39,
+       0,     3,     4,     5,     6,    35,    36,    51,    38,    39,
       12,    13,    14,    15,    16,    17,    18,    19,    20,    21,
       22,    23,    24,    25,    26,    27,    28,    29,    30,    31,
-      32,    33,    34,    56,    57,    36,    37,    50,    61,     0,
+      32,    33,    34,    56,    57,    36,    37,    51,    61,    51,
       42,    43,    44,    45,    46,    47,    48,    49,    59,    60,
-      36,    37,    36,    37,    50,    78,    67,    68,    36,    37,
-      36,    37,    51,    52,    51,    52,    35,    50,    50,    50,
-      50,    50,    36,    50,    37,    50,    36,    51,    40,    51,
-      51,    36,    52,    51,    51,    51,    51,    36,    36,    36,
-      99,    76,   141,    51,    53,    51,   156,    51,    51,   137,
-      52,    51,    38,    -1,    -1,    51,    51,    51,    51,    -1,
-      52,    51,    51,    70
+      36,    37,    36,    37,    51,    78,    67,    68,    36,    37,
+      36,    37,    52,    53,    52,    53,    51,    36,    51,    51,
+      51,    51,    51,    37,    51,    36,    51,    40,    52,    52,
+      52,    36,    52,    54,    36,    53,    52,    52,    36,    36,
+      52,    99,    52,    52,    52,    52,    38,    53,    52,    52,
+     156,    52,    52,    52,   141,   137,    -1,    53,    52,    52,
+      -1,    -1,    -1,    -1,    -1,    -1,    -1,    -1,    -1,    -1,
+      -1,    -1,    -1,    -1,    -1,    70,    -1,    -1,    -1,    -1,
+      -1,    -1,    -1,    -1,    -1,    76
 };
 
   /* YYSTOS[STATE-NUM] -- The (internal number of the) accessing
@@ -802,35 +819,35 @@ static const yytype_uint8 yystos[] =
        0,     1,     3,     4,     5,     6,    12,    13,    14,    15,
       16,    17,    18,    19,    20,    21,    22,    23,    24,    25,
       26,    27,    28,    29,    30,    31,    32,    33,    34,    42,
-      43,    44,    45,    46,    47,    48,    49,    55,    56,    57,
-      58,    70,    74,    75,    76,    77,    78,    79,    80,    81,
-      82,    40,    50,    50,    50,    50,    50,    50,    50,    50,
-      50,    50,    50,     0,     1,    40,    57,    50,    50,    50,
-      50,    35,    36,    37,    69,    36,    69,    69,    36,    37,
-      59,    60,    67,    37,    59,    37,    59,    69,     3,    36,
-      83,    40,    37,    59,    37,    59,    37,    67,    68,    68,
-      51,    51,     7,     8,    10,    11,    71,    72,    51,    71,
-       9,    11,    73,    69,    36,    61,    62,    66,    51,    52,
-      61,    51,    61,    51,    51,    53,    61,    51,    61,    51,
-      36,    36,    63,    64,    65,    63,    51,    52,    51,    51,
-      51,    52,    67,    51,    51,    35,    36,    38,    39,    84,
-      85,    86,    87,    51,    51,    51,    52,    51,    72,    66,
-      51,    65
+      43,    44,    45,    46,    47,    48,    49,    56,    57,    58,
+      59,    71,    75,    76,    77,    78,    79,    80,    81,    82,
+      83,    40,    51,    51,    51,    51,    51,    51,    51,    51,
+      51,    51,    51,     0,     1,    40,    58,    51,    51,    51,
+      51,    35,    36,    37,    70,    36,    70,    70,    36,    37,
+      60,    61,    68,    37,    60,    37,    60,    70,     3,    36,
+      84,    40,    37,    60,    37,    60,    37,    68,    69,    69,
+      52,    52,     7,     8,    10,    11,    72,    73,    52,    72,
+       9,    11,    74,    70,    36,    62,    63,    67,    52,    53,
+      62,    52,    62,    52,    52,    54,    62,    52,    62,    52,
+      36,    36,    64,    65,    66,    64,    52,    53,    52,    52,
+      52,    53,    68,    52,    52,    35,    36,    38,    39,    85,
+      86,    87,    88,    52,    52,    52,    53,    52,    73,    67,
+      52,    66
 };
 
   /* YYR1[YYN] -- Symbol number of symbol that rule YYN derives.  */
 static const yytype_uint8 yyr1[] =
 {
-       0,    54,    55,    55,    55,    56,    56,    57,    57,    57,
-      57,    57,    57,    57,    58,    59,    59,    60,    60,    61,
-      61,    62,    62,    63,    63,    64,    64,    65,    66,    67,
-      68,    68,    69,    69,    70,    70,    70,    70,    70,    70,
-      70,    70,    70,    70,    71,    71,    71,    72,    72,    72,
-      72,    73,    73,    74,    74,    74,    74,    75,    75,    76,
-      76,    76,    76,    77,    77,    77,    77,    78,    78,    78,
-      78,    78,    78,    78,    78,    79,    79,    79,    79,    79,
-      79,    79,    79,    80,    81,    82,    83,    83,    84,    84,
-      85,    85,    86,    87,    87
+       0,    55,    56,    56,    56,    57,    57,    58,    58,    58,
+      58,    58,    58,    58,    59,    60,    60,    61,    61,    62,
+      62,    63,    63,    64,    64,    65,    65,    66,    67,    68,
+      69,    69,    70,    70,    71,    71,    71,    71,    71,    71,
+      71,    71,    71,    71,    72,    72,    72,    73,    73,    73,
+      73,    74,    74,    75,    75,    75,    75,    76,    76,    77,
+      77,    77,    77,    78,    78,    78,    78,    79,    79,    79,
+      79,    79,    79,    79,    79,    80,    80,    80,    80,    80,
+      80,    80,    80,    81,    82,    83,    84,    84,    85,    85,
+      86,    86,    87,    88,    88
 };
 
   /* YYR2[YYN] -- Number of symbols on the right hand side of rule YYN.  */
@@ -1532,44 +1549,44 @@ yyreduce:
   switch (yyn)
     {
         case 2:
-#line 183 "sql_hints.yy" /* yacc.c:1646  */
+#line 189 "sql_hints.yy" /* yacc.c:1646  */
     { *ret= (yyvsp[-1].hint_list); }
-#line 1538 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1555 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 3:
-#line 185 "sql_hints.yy" /* yacc.c:1646  */
+#line 191 "sql_hints.yy" /* yacc.c:1646  */
     { *ret= (yyvsp[-2].hint_list); }
-#line 1544 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1561 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 4:
-#line 187 "sql_hints.yy" /* yacc.c:1646  */
+#line 193 "sql_hints.yy" /* yacc.c:1646  */
     { *ret= NULL; }
-#line 1550 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1567 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 5:
-#line 192 "sql_hints.yy" /* yacc.c:1646  */
+#line 198 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint_list)= NEW_PTN PT_hint_list(thd->mem_root);
             if ((yyval.hint_list) == NULL || (yyval.hint_list)->push_back((yyvsp[0].hint)))
               YYABORT; // OOM
           }
-#line 1560 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1577 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 6:
-#line 198 "sql_hints.yy" /* yacc.c:1646  */
+#line 204 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyvsp[-1].hint_list)->push_back((yyvsp[0].hint));
             (yyval.hint_list)= (yyvsp[-1].hint_list);
           }
-#line 1569 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1586 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 14:
-#line 217 "sql_hints.yy" /* yacc.c:1646  */
+#line 223 "sql_hints.yy" /* yacc.c:1646  */
     {
             longlong n;
             if (parse_int(&n, (yyvsp[-1].lexer.hint_string).str, (yyvsp[-1].lexer.hint_string).length) || n > UINT_MAX32)
@@ -1585,553 +1602,553 @@ yyreduce:
                 YYABORT; // OOM
             }
           }
-#line 1589 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1606 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 15:
-#line 236 "sql_hints.yy" /* yacc.c:1646  */
+#line 242 "sql_hints.yy" /* yacc.c:1646  */
     { (yyval.hint_param_table_list).init(thd->mem_root); }
-#line 1595 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1612 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 17:
-#line 242 "sql_hints.yy" /* yacc.c:1646  */
+#line 248 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint_param_table_list).init(thd->mem_root);
             if ((yyval.hint_param_table_list).push_back((yyvsp[0].hint_param_table)))
               YYABORT; // OOM
           }
-#line 1605 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1622 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 18:
-#line 248 "sql_hints.yy" /* yacc.c:1646  */
+#line 254 "sql_hints.yy" /* yacc.c:1646  */
     {
             if ((yyvsp[-2].hint_param_table_list).push_back((yyvsp[0].hint_param_table)))
               YYABORT; // OOM
             (yyval.hint_param_table_list)= (yyvsp[-2].hint_param_table_list);
           }
-#line 1615 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1632 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 19:
-#line 256 "sql_hints.yy" /* yacc.c:1646  */
+#line 262 "sql_hints.yy" /* yacc.c:1646  */
     { (yyval.hint_param_table_list).init(thd->mem_root); }
-#line 1621 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1638 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 21:
-#line 262 "sql_hints.yy" /* yacc.c:1646  */
+#line 268 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint_param_table_list).init(thd->mem_root);
             if ((yyval.hint_param_table_list).push_back((yyvsp[0].hint_param_table)))
               YYABORT; // OOM
           }
-#line 1631 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1648 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 22:
-#line 268 "sql_hints.yy" /* yacc.c:1646  */
+#line 274 "sql_hints.yy" /* yacc.c:1646  */
     {
             if ((yyvsp[-2].hint_param_table_list).push_back((yyvsp[0].hint_param_table)))
               YYABORT; // OOM
             (yyval.hint_param_table_list)= (yyvsp[-2].hint_param_table_list);
           }
-#line 1641 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1658 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 23:
-#line 276 "sql_hints.yy" /* yacc.c:1646  */
+#line 282 "sql_hints.yy" /* yacc.c:1646  */
     { (yyval.hint_param_index_list).init(thd->mem_root); }
-#line 1647 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1664 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 25:
-#line 282 "sql_hints.yy" /* yacc.c:1646  */
+#line 288 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint_param_index_list).init(thd->mem_root);
             if ((yyval.hint_param_index_list).push_back((yyvsp[0].lexer.hint_string)))
               YYABORT; // OOM
           }
-#line 1657 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1674 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 26:
-#line 288 "sql_hints.yy" /* yacc.c:1646  */
+#line 294 "sql_hints.yy" /* yacc.c:1646  */
     {
             if ((yyvsp[-2].hint_param_index_list).push_back((yyvsp[0].lexer.hint_string)))
               YYABORT; // OOM
             (yyval.hint_param_index_list)= (yyvsp[-2].hint_param_index_list);
           }
-#line 1667 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1684 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 28:
-#line 301 "sql_hints.yy" /* yacc.c:1646  */
+#line 307 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint_param_table).table= (yyvsp[0].lexer.hint_string);
             (yyval.hint_param_table).opt_query_block= NULL_CSTR;
           }
-#line 1676 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1693 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 29:
-#line 309 "sql_hints.yy" /* yacc.c:1646  */
+#line 315 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint_param_table).table= (yyvsp[-1].lexer.hint_string);
             (yyval.hint_param_table).opt_query_block= (yyvsp[0].lexer.hint_string);
           }
-#line 1685 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1702 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 31:
-#line 318 "sql_hints.yy" /* yacc.c:1646  */
+#line 324 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint_param_table).table= (yyvsp[0].lexer.hint_string);
             (yyval.hint_param_table).opt_query_block= (yyvsp[-1].lexer.hint_string);
           }
-#line 1694 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1711 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 32:
-#line 325 "sql_hints.yy" /* yacc.c:1646  */
+#line 331 "sql_hints.yy" /* yacc.c:1646  */
     { (yyval.lexer.hint_string)= NULL_CSTR; }
-#line 1700 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1717 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 34:
-#line 331 "sql_hints.yy" /* yacc.c:1646  */
+#line 337 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint)= NEW_PTN PT_qb_level_hint((yyvsp[-2].lexer.hint_string), true, SEMIJOIN_HINT_ENUM, (yyvsp[-1].ulong_num));
             if ((yyval.hint) == NULL)
               YYABORT; // OOM
           }
-#line 1710 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1727 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 35:
-#line 338 "sql_hints.yy" /* yacc.c:1646  */
+#line 344 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint)= NEW_PTN PT_qb_level_hint((yyvsp[-2].lexer.hint_string), false, SEMIJOIN_HINT_ENUM, (yyvsp[-1].ulong_num));
             if ((yyval.hint) == NULL)
               YYABORT; // OOM
           }
-#line 1720 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1737 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 36:
-#line 345 "sql_hints.yy" /* yacc.c:1646  */
+#line 351 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint)= NEW_PTN PT_qb_level_hint((yyvsp[-2].lexer.hint_string), true, SUBQUERY_HINT_ENUM, (yyvsp[-1].ulong_num));
             if ((yyval.hint) == NULL)
               YYABORT; // OOM
           }
-#line 1730 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1747 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 37:
-#line 352 "sql_hints.yy" /* yacc.c:1646  */
+#line 358 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint)= NEW_PTN PT_qb_level_hint(NULL_CSTR, true, JOIN_PREFIX_HINT_ENUM, (yyvsp[-1].hint_param_table_list));
             if ((yyval.hint) == NULL)
               YYABORT; // OOM
           }
-#line 1740 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1757 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 38:
-#line 359 "sql_hints.yy" /* yacc.c:1646  */
+#line 365 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint)= NEW_PTN PT_qb_level_hint((yyvsp[-2].lexer.hint_string), true, JOIN_PREFIX_HINT_ENUM, (yyvsp[-1].hint_param_table_list));
             if ((yyval.hint) == NULL)
               YYABORT; // OOM
           }
-#line 1750 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1767 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 39:
-#line 366 "sql_hints.yy" /* yacc.c:1646  */
+#line 372 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint)= NEW_PTN PT_qb_level_hint(NULL_CSTR, true, JOIN_SUFFIX_HINT_ENUM, (yyvsp[-1].hint_param_table_list));
             if ((yyval.hint) == NULL)
               YYABORT; // OOM
           }
-#line 1760 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1777 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 40:
-#line 373 "sql_hints.yy" /* yacc.c:1646  */
+#line 379 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint)= NEW_PTN PT_qb_level_hint((yyvsp[-2].lexer.hint_string), true, JOIN_SUFFIX_HINT_ENUM, (yyvsp[-1].hint_param_table_list));
             if ((yyval.hint) == NULL)
               YYABORT; // OOM
           }
-#line 1770 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1787 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 41:
-#line 380 "sql_hints.yy" /* yacc.c:1646  */
+#line 386 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint)= NEW_PTN PT_qb_level_hint(NULL_CSTR, true, JOIN_ORDER_HINT_ENUM, (yyvsp[-1].hint_param_table_list));
             if ((yyval.hint) == NULL)
               YYABORT; // OOM
           }
-#line 1780 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1797 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 42:
-#line 387 "sql_hints.yy" /* yacc.c:1646  */
+#line 393 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint)= NEW_PTN PT_qb_level_hint((yyvsp[-2].lexer.hint_string), true, JOIN_ORDER_HINT_ENUM, (yyvsp[-1].hint_param_table_list));
             if ((yyval.hint) == NULL)
               YYABORT; // OOM
           }
-#line 1790 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1807 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 43:
-#line 394 "sql_hints.yy" /* yacc.c:1646  */
+#line 400 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint)= NEW_PTN PT_qb_level_hint((yyvsp[-1].lexer.hint_string), true, JOIN_FIXED_ORDER_HINT_ENUM, 0);
             if ((yyval.hint) == NULL)
               YYABORT; // OOM
           }
-#line 1800 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1817 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 44:
-#line 402 "sql_hints.yy" /* yacc.c:1646  */
+#line 408 "sql_hints.yy" /* yacc.c:1646  */
     { (yyval.ulong_num)= 0; }
-#line 1806 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1823 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 45:
-#line 404 "sql_hints.yy" /* yacc.c:1646  */
+#line 410 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.ulong_num)= (yyvsp[0].ulong_num);
           }
-#line 1814 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1831 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 46:
-#line 408 "sql_hints.yy" /* yacc.c:1646  */
+#line 414 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.ulong_num)= (yyvsp[-2].ulong_num) | (yyvsp[0].ulong_num);
           }
-#line 1822 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1839 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 47:
-#line 414 "sql_hints.yy" /* yacc.c:1646  */
+#line 420 "sql_hints.yy" /* yacc.c:1646  */
     { (yyval.ulong_num)= OPTIMIZER_SWITCH_FIRSTMATCH; }
-#line 1828 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1845 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 48:
-#line 415 "sql_hints.yy" /* yacc.c:1646  */
+#line 421 "sql_hints.yy" /* yacc.c:1646  */
     { (yyval.ulong_num)= OPTIMIZER_SWITCH_LOOSE_SCAN; }
-#line 1834 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1851 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 49:
-#line 416 "sql_hints.yy" /* yacc.c:1646  */
+#line 422 "sql_hints.yy" /* yacc.c:1646  */
     { (yyval.ulong_num)= OPTIMIZER_SWITCH_MATERIALIZATION; }
-#line 1840 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1857 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 50:
-#line 417 "sql_hints.yy" /* yacc.c:1646  */
+#line 423 "sql_hints.yy" /* yacc.c:1646  */
     { (yyval.ulong_num)= OPTIMIZER_SWITCH_DUPSWEEDOUT; }
-#line 1846 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1863 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 51:
-#line 421 "sql_hints.yy" /* yacc.c:1646  */
+#line 427 "sql_hints.yy" /* yacc.c:1646  */
     { (yyval.ulong_num)=
-                                   static_cast<long>(SubqueryExecMethod::EXEC_MATERIALIZATION); }
-#line 1853 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+                                   static_cast<long>(Subquery_strategy::SUBQ_MATERIALIZATION); }
+#line 1870 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 52:
-#line 423 "sql_hints.yy" /* yacc.c:1646  */
-    { (yyval.ulong_num)= static_cast<long>(SubqueryExecMethod::EXEC_EXISTS); }
-#line 1859 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 429 "sql_hints.yy" /* yacc.c:1646  */
+    { (yyval.ulong_num)= static_cast<long>(Subquery_strategy::SUBQ_EXISTS); }
+#line 1876 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 53:
-#line 429 "sql_hints.yy" /* yacc.c:1646  */
+#line 435 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint)= NEW_PTN PT_table_level_hint(NULL_CSTR, (yyvsp[-1].hint_param_table_list), true, (yyvsp[-3].hint_type));
             if ((yyval.hint) == NULL)
               YYABORT; // OOM
           }
-#line 1869 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1886 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 54:
-#line 436 "sql_hints.yy" /* yacc.c:1646  */
+#line 442 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint)= NEW_PTN PT_table_level_hint((yyvsp[-2].lexer.hint_string), (yyvsp[-1].hint_param_table_list), true, (yyvsp[-4].hint_type));
             if ((yyval.hint) == NULL)
               YYABORT; // OOM
           }
-#line 1879 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1896 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 55:
-#line 442 "sql_hints.yy" /* yacc.c:1646  */
+#line 448 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint)= NEW_PTN PT_table_level_hint(NULL_CSTR, (yyvsp[-1].hint_param_table_list), false, (yyvsp[-3].hint_type));
             if ((yyval.hint) == NULL)
               YYABORT; // OOM
           }
-#line 1889 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1906 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 56:
-#line 449 "sql_hints.yy" /* yacc.c:1646  */
+#line 455 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint)= NEW_PTN PT_table_level_hint((yyvsp[-2].lexer.hint_string), (yyvsp[-1].hint_param_table_list), false, (yyvsp[-4].hint_type));
             if ((yyval.hint) == NULL)
               YYABORT; // OOM
           }
-#line 1899 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1916 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 57:
-#line 459 "sql_hints.yy" /* yacc.c:1646  */
+#line 465 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint)= NEW_PTN PT_key_level_hint((yyvsp[-2].hint_param_table), (yyvsp[-1].hint_param_index_list), true, (yyvsp[-4].hint_type));
             if ((yyval.hint) == NULL)
               YYABORT; // OOM
           }
-#line 1909 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1926 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 58:
-#line 466 "sql_hints.yy" /* yacc.c:1646  */
+#line 472 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint)= NEW_PTN PT_key_level_hint((yyvsp[-2].hint_param_table), (yyvsp[-1].hint_param_index_list), false, (yyvsp[-4].hint_type));
             if ((yyval.hint) == NULL)
               YYABORT; // OOM
           }
-#line 1919 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1936 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 59:
-#line 475 "sql_hints.yy" /* yacc.c:1646  */
+#line 481 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint_type)= BKA_HINT_ENUM;
           }
-#line 1927 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1944 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 60:
-#line 479 "sql_hints.yy" /* yacc.c:1646  */
+#line 485 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint_type)= BNL_HINT_ENUM;
           }
-#line 1935 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1952 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 61:
-#line 483 "sql_hints.yy" /* yacc.c:1646  */
+#line 489 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint_type)= HASH_JOIN_HINT_ENUM;
           }
-#line 1943 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1960 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 62:
-#line 487 "sql_hints.yy" /* yacc.c:1646  */
+#line 493 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint_type)= DERIVED_MERGE_HINT_ENUM;
           }
-#line 1951 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1968 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 63:
-#line 494 "sql_hints.yy" /* yacc.c:1646  */
+#line 500 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint_type)= BKA_HINT_ENUM;
           }
-#line 1959 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1976 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 64:
-#line 498 "sql_hints.yy" /* yacc.c:1646  */
+#line 504 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint_type)= BNL_HINT_ENUM;
           }
-#line 1967 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1984 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 65:
-#line 502 "sql_hints.yy" /* yacc.c:1646  */
+#line 508 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint_type)= HASH_JOIN_HINT_ENUM;
           }
-#line 1975 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 1992 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 66:
-#line 506 "sql_hints.yy" /* yacc.c:1646  */
+#line 512 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint_type)= DERIVED_MERGE_HINT_ENUM;
           }
-#line 1983 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 2000 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 67:
-#line 513 "sql_hints.yy" /* yacc.c:1646  */
+#line 519 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint_type)= MRR_HINT_ENUM;
           }
-#line 1991 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 2008 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 68:
-#line 517 "sql_hints.yy" /* yacc.c:1646  */
+#line 523 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint_type)= NO_RANGE_HINT_ENUM;
           }
-#line 1999 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 2016 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 69:
-#line 521 "sql_hints.yy" /* yacc.c:1646  */
+#line 527 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint_type)= INDEX_MERGE_HINT_ENUM;
           }
-#line 2007 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 2024 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 70:
-#line 525 "sql_hints.yy" /* yacc.c:1646  */
+#line 531 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint_type)= SKIP_SCAN_HINT_ENUM;
           }
-#line 2015 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 2032 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 71:
-#line 529 "sql_hints.yy" /* yacc.c:1646  */
+#line 535 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint_type)= INDEX_HINT_ENUM;
           }
-#line 2023 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 2040 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 72:
-#line 533 "sql_hints.yy" /* yacc.c:1646  */
+#line 539 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint_type)= JOIN_INDEX_HINT_ENUM;
           }
-#line 2031 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 2048 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 73:
-#line 537 "sql_hints.yy" /* yacc.c:1646  */
+#line 543 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint_type)= GROUP_INDEX_HINT_ENUM;
           }
-#line 2039 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 2056 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 74:
-#line 541 "sql_hints.yy" /* yacc.c:1646  */
+#line 547 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint_type)= ORDER_INDEX_HINT_ENUM;
           }
-#line 2047 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 2064 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 75:
-#line 548 "sql_hints.yy" /* yacc.c:1646  */
+#line 554 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint_type)= ICP_HINT_ENUM;
           }
-#line 2055 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 2072 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 76:
-#line 552 "sql_hints.yy" /* yacc.c:1646  */
+#line 558 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint_type)= MRR_HINT_ENUM;
           }
-#line 2063 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 2080 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 77:
-#line 556 "sql_hints.yy" /* yacc.c:1646  */
+#line 562 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint_type)= INDEX_MERGE_HINT_ENUM;
           }
-#line 2071 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 2088 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 78:
-#line 560 "sql_hints.yy" /* yacc.c:1646  */
+#line 566 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint_type)= SKIP_SCAN_HINT_ENUM;
           }
-#line 2079 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 2096 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 79:
-#line 564 "sql_hints.yy" /* yacc.c:1646  */
+#line 570 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint_type)= INDEX_HINT_ENUM;
           }
-#line 2087 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 2104 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 80:
-#line 568 "sql_hints.yy" /* yacc.c:1646  */
+#line 574 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint_type)= JOIN_INDEX_HINT_ENUM;
           }
-#line 2095 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 2112 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 81:
-#line 572 "sql_hints.yy" /* yacc.c:1646  */
+#line 578 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint_type)= GROUP_INDEX_HINT_ENUM;
           }
-#line 2103 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 2120 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 82:
-#line 576 "sql_hints.yy" /* yacc.c:1646  */
+#line 582 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint_type)= ORDER_INDEX_HINT_ENUM;
           }
-#line 2111 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 2128 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 83:
-#line 583 "sql_hints.yy" /* yacc.c:1646  */
+#line 589 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint)= NEW_PTN PT_hint_qb_name((yyvsp[-1].lexer.hint_string));
             if ((yyval.hint) == NULL)
               YYABORT; // OOM
           }
-#line 2121 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 2138 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 84:
-#line 592 "sql_hints.yy" /* yacc.c:1646  */
+#line 598 "sql_hints.yy" /* yacc.c:1646  */
     {
             (yyval.hint)= NEW_PTN PT_hint_sys_var((yyvsp[-3].lexer.hint_string), (yyvsp[-1].item));
             if ((yyval.hint) == NULL)
               YYABORT; // OOM
           }
-#line 2131 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 2148 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 85:
-#line 601 "sql_hints.yy" /* yacc.c:1646  */
+#line 607 "sql_hints.yy" /* yacc.c:1646  */
     {
            if (check_resource_group_name_len((yyvsp[-1].lexer.hint_string), Sql_condition::SL_WARNING))
              YYERROR;
@@ -2140,11 +2157,11 @@ yyreduce:
            if ((yyval.hint) == nullptr)
               YYABORT; // OOM
          }
-#line 2144 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 2161 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 88:
-#line 618 "sql_hints.yy" /* yacc.c:1646  */
+#line 624 "sql_hints.yy" /* yacc.c:1646  */
     {
             longlong n;
             if (parse_int(&n, (yyvsp[0].lexer.hint_string).str, (yyvsp[0].lexer.hint_string).length))
@@ -2159,11 +2176,11 @@ yyreduce:
                 YYABORT; // OOM
             }
           }
-#line 2163 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 2180 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 89:
-#line 633 "sql_hints.yy" /* yacc.c:1646  */
+#line 639 "sql_hints.yy" /* yacc.c:1646  */
     {
             longlong n;
             if (parse_int(&n, (yyvsp[0].lexer.hint_string).str, (yyvsp[0].lexer.hint_string).length - 1))
@@ -2195,21 +2212,21 @@ yyreduce:
               }
             }
           }
-#line 2199 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 2216 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
   case 92:
-#line 673 "sql_hints.yy" /* yacc.c:1646  */
+#line 679 "sql_hints.yy" /* yacc.c:1646  */
     {
           (yyval.item)= NEW_PTN Item_string((yyvsp[0].lexer.hint_string).str, (yyvsp[0].lexer.hint_string).length, thd->charset());
           if ((yyval.item) == NULL)
             YYABORT; // OOM
         }
-#line 2209 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 2226 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
     break;
 
 
-#line 2213 "/export/home/pb2/build/sb_3-38522761-1585229681.91/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
+#line 2230 "/export/home2/pb2/build/sb_4-39697340-1592325428.65/dist_GPL/sql/sql_hints.yy.cc" /* yacc.c:1646  */
       default: break;
     }
   /* User semantic actions sometimes alter yychar, and that requires
