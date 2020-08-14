@@ -94,6 +94,7 @@ configure-stamp:
 		-DWITH_SSL=system \
 		-DWITH_MECAB=system \
 		-DWITH_BOOST=../boost \
+		-DWITH_PROTOBUF=system \
 		-DCOMPILATION_COMMENT="($(DISTRIBUTION))" \
 		-DMYSQL_SERVER_SUFFIX="-$(DEBVERSION)" \
 		-DINSTALL_LAYOUT=DEB \

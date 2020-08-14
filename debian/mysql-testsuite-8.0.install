@@ -83,6 +83,5 @@ usr/lib/mysql/plugin/test_services_host_application_signal.so
 usr/lib/mysql/plugin/test_services_plugin_registry.so
 usr/lib/mysql/plugin/test_udf_services.so
 usr/lib/mysql/plugin/udf_example.so
-usr/lib/mysql/private/libprotobuf.so* usr/lib/mysql-test/lib/mysql/private
 usr/share/mysql/messages_to_clients.txt
 usr/share/mysql/messages_to_error_log.txt
