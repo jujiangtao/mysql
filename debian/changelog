@@ -1,3 +1,26 @@
+mysql-8.0 (8.0.21-1) unstable; urgency=medium
+
+  [ Robie Basak ]
+  * New upstream release.
+
+  [ Lars Tangvald ]
+  * Add patch for replacing expired test certificates.
+  * Disable unstable test main.mysql_client_test.
+  * Disable broken test main.mtr_unit_tests.
+  * Use system version of protobuf library. Closes: #968149.
+  * Override BCP78 lintian error.
+
+  [ Sergio Durigan Junior ]
+  * Fix FTBFS on RISC-V.
+
+  [ Marc Deslauriers ]
+  * Revert an upstream commit that switches the tls-model to
+    initial-exec. This is causing "cannot allocate memory in static TLS
+    block" errors when attempting to load the library in certain
+    scenarios.
+
+ -- Robie Basak <robie@justgohome.co.uk>  Tue, 18 Aug 2020 15:34:21 +0100
+
 mysql-8.0 (8.0.20-1~exp1) experimental; urgency=medium
 
   [ Lars Tangvald ]
